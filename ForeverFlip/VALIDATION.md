@@ -1,6 +1,11 @@
 # Validation and release status
 
-Release: **5.1.0-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
+Release: **5.2.0-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
+
+5.2 adds daily-balanced price caps, own-sale statistics and turnover/position
+constraints, pending probe quantities, quote revalidation of fresh advisor caps,
+and an automatic assistant with clickable pagination. No live outcome comparison
+has been performed.
 
 5.1 adds a bounded capital/risk/group allocator, fixed-exit stress scenarios,
 confirmed-cost performance and prior-only asking-price replay. Tests cover
@@ -45,7 +50,7 @@ receipts to a variant. Mail matching is a suggestion; the player confirms actual
 receipt and amount. Bank/mail physical quantities are not inferred as known:
 positions show in-bag quantity separately from quantities outside bags.
 
-Live acceptance steps: install with backup, open AH, check all eight pages,
+Live acceptance steps: install with backup, open AH, check all nine pages,
 scan an item and a variant, request and cancel a commodity quote, test one small
 purchase and one post manually, reconcile receipts, verify an NPC valuation,
 then reload and check that reservations and FIFO balances remain correct.

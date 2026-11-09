@@ -134,6 +134,7 @@ function M.plan(input, history, o)
         roi = 0,
         mode = o.mode or "flip",
         complete = o.complete ~= false,
+        advice = o.advice,
     }
     local rows = {}
     local totalQty = 0
@@ -191,8 +192,18 @@ function M.plan(input, history, o)
     else
         local sources =
             { market = s.lower, recent = p.minimum, vendorsell = o.vendor, avgbuy = o.avgBuy, tsm = o.tsm, aux = o.aux }
+        if o.advice then
+            sources.ewma = o.advice.prices.known and o.advice.prices.ewma or nil
+            sources.pricefloor = o.advice.priceCap
+            sources.winlower = o.advice.trades.winLower
+            sources.profitfactor = o.advice.trades.profitFactor
+            sources.salesperday = o.advice.rateKnown and o.advice.trades.rateLower or nil
+        end
         local explicit = o.sellPrice or F.Expr.eval(o.sellFormula or "90% market", sources)
         target = explicit and math.floor(explicit)
+        if target and o.advice and o.advice.priceCap then
+            target = math.min(target, o.advice.priceCap)
+        end
         limit = o.buyLimit or F.Expr.eval(o.buyFormula or "70% market", sources)
         if not U.finite(limit) or limit <= 0 then
             limit = 0
@@ -214,6 +225,12 @@ function M.plan(input, history, o)
     p.target = target
     p.buyLimit = limit or 0
     local maxQty = math.floor(U.number(o.maxQty, 100, 1, 100000))
+    if o.advice and p.mode ~= "vendor" then
+        maxQty = math.min(maxQty, o.advice.maxQty)
+        if maxQty <= 0 then
+            p.reasons[#p.reasons + 1] = "advisor:" .. o.advice.reason
+        end
+    end
     if p.mode ~= "vendor" then
         maxQty = math.min(maxQty, math.max(1, math.floor(totalQty * (o.maxShare or 0.15))))
     end
@@ -270,6 +287,9 @@ function M.plan(input, history, o)
         if p.mode ~= "vendor" and o.velocity and o.velocity.known and o.velocity.lower > 0 then
             p.daysToExit = ((o.ownedQty or 0) + p.qty) / o.velocity.lower
             p.score = p.score / math.max(1, p.daysToExit)
+        end
+        if o.advice and o.advice.rateKnown and o.advice.trades.rateLower > 0 then
+            p.daysToExit = ((o.ownedQty or 0) + p.qty) / o.advice.trades.rateLower
         end
     end
     if not p.complete then

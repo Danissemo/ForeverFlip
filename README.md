@@ -1,4 +1,4 @@
-# ForeverFlip 5.1
+# ForeverFlip 5.2
 
 Auction-window addon for WoW Forever 1.60.1, Interface 16001. Pre-release until
 live-client checks validate the native protected-action paths.
@@ -21,3 +21,8 @@ code or data; the addon implements its own models and limited formula language.
 known-cost performance, loss-streak exclusions and chronological asking-price
 replay. It does not establish trading superiority over TSM or provide paid feeds.
 See docs/workbench-plan.md and docs/workbench-review.md.
+
+5.2 adds an optional conservative advisor with day-balanced EWMA/quantile price
+caps, Wilson profitable-close statistics, ROI-normalized quarter-Kelly sizing,
+own-sale turnover caps, one-unit probes and click-through paged recommendations.
+No formula entry is required for automatic planning.

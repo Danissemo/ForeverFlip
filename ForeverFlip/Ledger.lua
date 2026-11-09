@@ -61,6 +61,7 @@ function L.summary(entries, owner, scope)
         stock = 0,
         positions = {},
         salesHistory = {},
+        activity = {},
         transactions = 0,
     }
     local void, seen, queues = {}, {}, {}
@@ -85,6 +86,11 @@ function L.summary(entries, owner, scope)
                 queues[identity] = q
                 r.transactions = r.transactions + 1
                 if e.kind == "buy" then
+                    if U.finite(e.at) then
+                        local a = r.activity[e.key] or {}
+                        a.since = math.min(a.since or e.at, e.at)
+                        r.activity[e.key] = a
+                    end
                     q.lots[#q.lots + 1] = { qty = qty, cost = total, at = e.at }
                     r.buys = r.buys + total
                 elseif e.kind == "expense" then
@@ -114,6 +120,7 @@ function L.summary(entries, owner, scope)
                     r.realized = r.realized + profit
                     r.unknown = r.unknown + left
                     r.salesHistory[#r.salesHistory + 1] = {
+                        kind = e.kind,
                         key = e.key,
                         qty = qty,
                         known = known,

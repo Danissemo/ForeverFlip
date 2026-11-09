@@ -15,6 +15,22 @@ local reasons = {
     partial = L("Partial results", "Partial results"),
     ["budget/price"] = L("Price or budget limit", "Price or budget limit"),
     margin = L("Profit/ROI below rule", "Profit/ROI below rule"),
+    ["advisor:probe"] = L(
+        "Probe: sell current stock first",
+        "Probe: sell current stock first"
+    ),
+    ["advisor:stock_limit"] = L(
+        "Stock covers the sale horizon",
+        "Stock covers the sale horizon"
+    ),
+    ["advisor:no_sales"] = L(
+        "Stock without confirmed sales for 7+ days",
+        "Stock without confirmed sales for 7+ days"
+    ),
+    ["advisor:loss_history"] = L(
+        "Unfavorable profit history",
+        "Unfavorable profit history"
+    ),
     stale = L("Stale snapshot", "Stale snapshot"),
 }
 local messages = {
@@ -242,7 +258,7 @@ function UI.create(c)
         s:StopMovingOrSizing()
     end)
     text(host, 18, 15, 175, "FOREVER|cff6dd7bdFLIP|r", "GameFontNormalLarge")
-    text(host, 18, 42, 150, "5.1 · PREVIEW")
+    text(host, 18, 42, 150, "5.2 · PREVIEW")
     self.header = text(host, 190, 15, 760, "", "GameFontNormal")
     self.fields.item =
         field(host, 190, 40, 190, L("Item: ID / link / key", "Item: ID / link / key"), "")
@@ -361,78 +377,157 @@ function UI.create(c)
         self.fields[name] = e
         return e
     end
+    local function routeAdvice(line)
+        if not line then
+            return
+        end
+        c:stop()
+        c.overrides = {
+            maxQty = math.min(line.qty, c.overrides and c.overrides.maxQty or math.huge),
+            budget = math.min(line.cost, c.overrides and c.overrides.budget or math.huge),
+        }
+        c.mode = line.mode
+        self.fields.item:SetText(U.key(line.key))
+        self.fields.tradeQty:SetText(tostring(c.overrides.maxQty))
+        self.fields.tradeBudget:SetText(U.gold(c.overrides.budget))
+        c:search(line.key)
+        self:show("trade")
+    end
+    local function buildAdvice(profile)
+        local result = c:recommend(profile)
+        if result.error then
+            c:notify(result.error == "busy" and "search_busy" or "buy_blocked")
+            self:refresh()
+            return
+        end
+        self.allocation = result
+        self.advicePage = 1
+        if F.Store.writable(db) then
+            db.ui.advisorProfile = profile
+        end
+        self:show("workbench")
+    end
     do
-        local b = body("workbench")
-        b:SetSize(840, 1350)
-        text(
-            b,
+        local hostBody = body("workbench")
+        hostBody:SetSize(840, 1600)
+        text(hostBody, 0, 0, 810, L("PURCHASE ASSISTANT", "PURCHASE ASSISTANT"), "GameFontNormalLarge")
+        action(
+            "easyBuild",
+            hostBody,
             0,
-            0,
-            810,
-            L("CAPITAL PLAN AND ANALYTICS", "CAPITAL PLAN AND ANALYTICS"),
-            "GameFontNormalLarge"
+            35,
+            225,
+            L("Suggest purchases", "Suggest purchases"),
+            function()
+                buildAdvice("balanced")
+            end
         )
-        val("planBudget", b, 0, 36, 155, L("Budget, gold", "Budget, gold"), "100")
-        val("planRisk", b, 175, 36, 155, L("Stress loss cap, gold", "Stress loss cap, gold"), "10")
-        val("planDrop", b, 350, 36, 140, L("Price drop, %", "Price drop, %"), "20")
-        val("planIndex", b, 510, 36, 90, L("Row", "Row"), "1")
-        local report = text(b, 0, 145, 810, "", "GameFontNormal")
-        action("planBuild", b, 0, 97, 230, L("Build capital plan", "Build capital plan"), function()
+        action(
+            "easySafe",
+            hostBody,
+            240,
+            35,
+            225,
+            L("Conservative plan", "Conservative plan"),
+            function()
+                buildAdvice("safe")
+            end
+        )
+        self.advancedPlan = CreateFrame("Frame", nil, hostBody)
+        self.advancedPlan:SetSize(820, 110)
+        self.advancedPlan:SetPoint("TOPLEFT", 0, -85)
+        self.advancedPlan:Hide()
+        local advanced = self.advancedPlan
+        local content = CreateFrame("Frame", nil, hostBody)
+        content:SetSize(820, 1350)
+        action(
+            "adviceAdvanced",
+            hostBody,
+            480,
+            35,
+            280,
+            L("Advanced controls", "Advanced controls"),
+            function()
+                if advanced:IsShown() then
+                    advanced:Hide()
+                else
+                    advanced:Show()
+                end
+                self:refresh()
+            end
+        )
+        val("planBudget", advanced, 0, 0, 155, L("Budget, gold", "Budget, gold"), "100")
+        val("planRisk", advanced, 175, 0, 155, L("Stress loss cap, gold", "Stress loss cap, gold"), "10")
+        val("planDrop", advanced, 350, 0, 140, L("Price drop, %", "Price drop, %"), "20")
+        val("planIndex", advanced, 510, 0, 90, L("Row", "Row"), "1")
+        action("planBuild", advanced, 0, 60, 230, L("Manual allocation", "Manual allocation"), function()
             local budget = U.copper(self.fields.planBudget:GetText())
             local risk = U.copper(self.fields.planRisk:GetText())
             local drop = tonumber(self.fields.planDrop:GetText())
             if not budget or not risk or not drop or drop < 0 or drop > 95 then
                 return
             end
+            if c.job or c.fullJob or c.active then
+                c:notify("search_busy")
+                return
+            end
+            c.advisorProfile = nil
+            c:invalidate()
             self.allocation = c:allocate({ budget = budget, riskCap = risk, drop = drop / 100 })
+            self.advicePage = 1
             self:refresh()
         end)
         action(
             "planRoute",
-            b,
+            advanced,
             250,
-            97,
+            60,
             290,
             L("Row → fresh exact search", "Row → fresh exact search"),
             function()
-                local index = tonumber(self.fields.planIndex:GetText())
-                local line = self.allocation and self.allocation.lines[index or 0]
-                if not line then
-                    return
-                end
-                c:stop()
-                c.overrides = {
-                    maxQty = math.min(line.qty, c.overrides and c.overrides.maxQty or math.huge),
-                    budget = math.min(line.cost, c.overrides and c.overrides.budget or math.huge),
-                }
-                c.mode = line.mode
-                self.fields.item:SetText(U.key(line.key))
-                self.fields.tradeQty:SetText(tostring(c.overrides.maxQty))
-                self.fields.tradeBudget:SetText(U.gold(c.overrides.budget))
-                c:search(line.key)
-                self:show("trade")
+                routeAdvice(self.allocation and self.allocation.lines[tonumber(self.fields.planIndex:GetText()) or 0])
             end
         )
-        local performance = text(b, 0, 525, 810, "", "GameFontNormal")
+        local b = content
+        local report = text(b, 0, 0, 810, "", "GameFontNormal")
+        self.adviceReport = report
+        local rowButtons = {}
+        for i = 1, 8 do
+            local index = i
+            rowButtons[i] = action("adviceRow" .. i, b, 0, 140 + (i - 1) * 44, 795, "", function()
+                routeAdvice(self.allocation and self.allocation.lines[((self.advicePage or 1) - 1) * 8 + index])
+            end)
+            rowButtons[i]:SetSize(795, 40)
+        end
+        action("advicePrevious", b, 0, 503, 170, L("← Previous", "← Previous"), function()
+            self.advicePage = math.max(1, (self.advicePage or 1) - 1)
+            self:refresh()
+        end)
+        action("adviceNext", b, 185, 503, 170, L("Next →", "Next →"), function()
+            local pages = math.max(1, math.ceil(#(self.allocation and self.allocation.lines or {}) / 8))
+            self.advicePage = math.min(pages, (self.advicePage or 1) + 1)
+            self:refresh()
+        end)
+        local performance = text(b, 0, 555, 810, "", "GameFontNormal")
         text(
             b,
             0,
-            815,
+            840,
             810,
             L(
-                "HISTORY REPLAY: SCENARIO, NOT REAL FILLS",
-                "HISTORY REPLAY: SCENARIO, NOT REAL FILLS"
+                "REPLAY: HYPOTHETICAL PRICES, NOT FILLS",
+                "REPLAY: HYPOTHETICAL PRICES, NOT FILLS"
             ),
             "GameFontNormalLarge"
         )
-        val("replayHold", b, 0, 850, 170, L("Holding period, days", "Holding period, days"), "1")
-        val("replayHaircut", b, 190, 850, 170, L("Exit haircut, %", "Exit haircut, %"), "5")
-        local replayText = text(b, 0, 950, 810, "", "GameFontNormal")
+        val("replayHold", b, 0, 875, 170, L("Holding period, days", "Holding period, days"), "1")
+        val("replayHaircut", b, 190, 875, 170, L("Exit haircut, %", "Exit haircut, %"), "5")
+        local replayText = text(b, 0, 980, 810, "", "GameFontNormal")
         action(
             "replay",
             b,
             0,
-            910,
+            935,
             350,
             L("Replay item from header", "Replay item from header"),
             function()
@@ -460,99 +555,160 @@ function UI.create(c)
             end
         )
         self.refreshers.workbench = function()
+            content:ClearAllPoints()
+            content:SetPoint("TOPLEFT", 0, advanced:IsShown() and -215 or -85)
             local a = self.allocation
             local lines = {
                 L(
-                    "Scan first. Items with 3 consecutive losses and nonpositive total P/L are paused.",
-                    "Scan first. Items with 3 consecutive losses and nonpositive total P/L are paused."
+                    "1. Full scan → 2. Suggest purchases → 3. Click an item to verify.",
+                    "1. Full scan → 2. Suggest purchases → 3. Click an item to verify."
                 ),
             }
             if a then
-                lines[#lines + 1] = L(
-                    "Cost / estimated P/L / stress: ",
-                    "Cost / estimated P/L / stress: "
-                ) .. U.money(a.cost) .. " / " .. U.money(a.profit) .. " / " .. U.money(a.stressed)
-                lines[#lines + 1] = L("Unused / stress loss: ", "Unused / stress loss: ")
-                    .. U.money(a.budget - a.cost)
+                local profile = a.profile == "safe" and L("Conservative", "Conservative")
+                    or a.profile == "balanced" and L("Balanced", "Balanced")
+                    or L("Manual", "Manual")
+                lines[#lines + 1] = profile
+                    .. L(" · cost / potential / stress: ", " · cost / potential / stress: ")
+                    .. U.money(a.cost)
                     .. " / "
-                    .. U.money(a.loss)
-                lines[#lines + 1] = L(
-                    "Approximate allocation, budget step: ",
-                    "Approximate allocation, budget step: "
-                ) .. U.money(a.cashStep or 0) .. (a.truncated and L(
-                    "; candidates truncated",
-                    "; candidates truncated"
-                ) or "")
-                for i = 1, math.min(8, #a.lines) do
-                    local row = a.lines[i]
-                    lines[#lines + 1] = i
-                        .. ". "
-                        .. U.key(row.key)
-                        .. " ×"
-                        .. row.qty
-                        .. " ["
-                        .. row.mode
-                        .. "] "
-                        .. U.money(row.cost)
-                        .. " → "
-                        .. U.money(row.profit)
-                        .. L("; stress ", "; stress ")
-                        .. U.money(row.stressed)
+                    .. U.money(a.profit)
+                    .. " / "
+                    .. U.money(a.stressed)
+                lines[#lines + 1] = L("Unused: ", "Unused: ")
+                    .. U.money(a.budget - a.cost)
+                    .. L(
+                        " · approximate plan; page ",
+                        " · approximate plan; page "
+                    )
+                    .. (self.advicePage or 1)
+                    .. " / "
+                    .. math.max(1, math.ceil(#a.lines / 8))
+                if #a.lines == 0 then
+                    lines[#lines + 1] = L(
+                        "No qualifying buys: check scan age, history, limits and holdings. New items use a 1-unit probe.",
+                        "No qualifying buys: check scan age, history, limits and holdings. New items use a 1-unit probe."
+                    )
                 end
+                if a.truncated then
+                    lines[#lines + 1] = L(
+                        "Best 60 candidates checked; list truncated.",
+                        "Best 60 candidates checked; list truncated."
+                    )
+                end
+            else
                 lines[#lines + 1] = L(
-                    "Fresh search and confirmation required. This plan does not reserve funds.",
-                    "Fresh search and confirmation required. This plan does not reserve funds."
+                    "Start with a full scan. No formula or budget entry required.",
+                    "Start with a full scan. No formula or budget entry required."
                 )
             end
+            lines[#lines + 1] = L(
+                "Estimates do not guarantee sales. Spending requires confirmation.",
+                "Estimates do not guarantee sales. Spending requires confirmation."
+            )
             report:SetText(table.concat(lines, "\n"))
-            local stats = F.Workbench.performance(c:summary(), c.api.clock())
+            local page = self.advicePage or 1
+            for i, btn in ipairs(rowButtons) do
+                local row = a and a.lines[(page - 1) * 8 + i]
+                if row then
+                    local status = row.mode == "vendor" and "NPC"
+                        or row.advice and (row.advice.rateKnown and L(
+                            "own sales measured",
+                            "own sales measured"
+                        ) or L("probe", "probe"))
+                        or "AH"
+                    local horizon = row.daysToExit
+                            and string.format(L(" · ~%.1f days", " · ~%.1f days"), row.daysToExit)
+                        or ""
+                    btn:SetText(
+                        U.name(row.key.itemID)
+                            .. " ×"
+                            .. row.qty
+                            .. " · "
+                            .. U.money(row.cost)
+                            .. " → "
+                            .. U.money(row.profit)
+                            .. " · "
+                            .. status
+                            .. horizon
+                            .. L(" · Verify →", " · Verify →")
+                    )
+                    btn:Show()
+                    btn:SetEnabled(true)
+                else
+                    btn:Hide()
+                    btn:SetEnabled(false)
+                end
+            end
+            self.actions.advicePrevious:SetEnabled(page > 1)
+            self.actions.adviceNext:SetEnabled(a and page * 8 < #a.lines or false)
+            local summary = c:summary()
+            local stats = F.Workbench.performance(summary, c.api.clock())
             local t = {
                 L(
-                    "CONFIRMED SALES WITH KNOWN COST",
-                    "CONFIRMED SALES WITH KNOWN COST"
+                    "ACTUAL RESULTS: KNOWN COST",
+                    "ACTUAL RESULTS: KNOWN COST"
                 ),
                 L("Wins / losses: ", "Wins / losses: ")
                     .. stats.wins
                     .. " / "
                     .. stats.losses,
             }
-            for i = 1, math.min(8, #stats.ranked) do
+            for i = 1, math.min(5, #stats.ranked) do
                 local r = stats.ranked[i]
-                t[#t + 1] = r.key
+                local key = U.fromKey(r.key)
+                local own = F.Advisor.trades(
+                    summary.salesHistory,
+                    r.key,
+                    c.api.clock(),
+                    summary.activity[r.key] and summary.activity[r.key].since
+                )
+                t[#t + 1] = (key and U.name(key.itemID) or r.key)
                     .. ": "
                     .. U.money(r.profit)
                     .. "; ROI "
                     .. (r.roi and string.format("%.1f%%", r.roi * 100) or "?")
-                    .. L("; loss streak ", "; loss streak ")
-                    .. r.lossStreak
+                    .. (
+                        own.winLower
+                            and string.format(
+                                L(
+                                    "; lower profitable-close fraction %.0f%%",
+                                    "; lower profitable-close fraction %.0f%%"
+                                ),
+                                own.winLower * 100
+                            )
+                        or ""
+                    )
             end
             performance:SetText(table.concat(t, "\n"))
             if self.replay then
                 local r = self.replay
                 local t = {
                     L(
-                        "Exit uses a future asking price with haircut. Fills and demand are unproven.",
-                        "Exit uses a future asking price with haircut. Fills and demand are unproven."
+                        "Exit uses a future ask with haircut; demand and fills are unknown.",
+                        "Exit uses a future ask with haircut; demand and fills are unknown."
                     ),
                 }
                 for _, name in ipairs({ "robust", "baseline" }) do
-                    local s = r[name]
+                    local v = r[name]
                     t[#t + 1] = (
-                        name == "robust" and "ForeverFlip"
+                        name == "robust" and "ForeverFlip 5.0"
                         or L("Fixed 30% discount (not TSM)", "Fixed 30% discount (not TSM)")
                     )
                         .. ": "
-                        .. U.money(s.pnl)
+                        .. U.money(v.pnl)
                         .. L("; exits ", "; exits ")
-                        .. s.closed
+                        .. v.closed
                         .. L("; open cost ", "; open cost ")
-                        .. U.money(s.openCost)
+                        .. U.money(v.openCost)
                 end
+                t[#t + 1] = L(
+                    "Replay compares the base pricing model, without the new advisor or own sales rate.",
+                    "Replay compares the base pricing model, without the new advisor or own sales rate."
+                )
                 if r.trainingInsufficient then
-                    t[#t + 1] = L(
-                        "Insufficient independent training history.",
-                        "Insufficient independent training history."
-                    )
+                    t[#t + 1] =
+                        L("Insufficient independent history.", "Insufficient independent history.")
                 end
                 replayText:SetText(table.concat(t, "\n"))
             end
@@ -562,7 +718,20 @@ function UI.create(c)
     do
         local b = body("overview")
         text(b, 0, 0, 820, L("YOUR TRADING DAY", "YOUR TRADING DAY"), "GameFontNormalLarge")
-        local overview = text(b, 0, 42, 810, "", "GameFontNormal")
+        action("overviewAdvice", b, 0, 35, 250, L("Suggest purchases", "Suggest purchases"), function()
+            buildAdvice(db.ui.advisorProfile or "balanced")
+        end)
+        text(
+            b,
+            270,
+            40,
+            535,
+            L(
+                "Full scan → plan → verify item → confirm",
+                "Full scan → plan → verify item → confirm"
+            )
+        )
+        local overview = text(b, 0, 85, 810, "", "GameFontNormal")
         self.refreshers.overview = function()
             local r = c:summary()
             local now = c.api.clock()
@@ -618,16 +787,16 @@ function UI.create(c)
                     )
             )
         end
-        action("toDeals", b, 0, 365, 170, L("Find deals", "Find deals"), function()
+        action("toDeals", b, 0, 410, 170, L("Find deals", "Find deals"), function()
             self:show("deals")
         end)
-        action("toPortfolio", b, 185, 365, 170, L("Reconcile", "Reconcile"), function()
+        action("toPortfolio", b, 185, 410, 170, L("Reconcile", "Reconcile"), function()
             self:show("portfolio")
         end)
         text(
             b,
             0,
-            415,
+            465,
             800,
             L(
                 "Current character and selected market only. Asking prices and valuations are not earned gold.",
@@ -890,8 +1059,56 @@ function UI.create(c)
             c:bid(tonumber(self.fields.bidIndex:GetText()))
         end)
         self.bidText = text(b, 0, 728, 810, "")
+        self.tradeAdvice = text(b, 0, 825, 810, "", "GameFontNormal")
         self.refreshers.trade = function()
             local p = c.plan
+            local advice = p and p.advice
+            local details = {}
+            if advice then
+                details[#details + 1] = L("WHY THIS SIZE AND PRICE", "WHY THIS SIZE AND PRICE")
+                details[#details + 1] = L("Advisor cap: ", "Advisor cap: ")
+                    .. advice.maxQty
+                    .. L(" units / ", " units / ")
+                    .. U.money(advice.maxBudget)
+                if advice.priceCap then
+                    details[#details + 1] = "EWMA / Q25 / "
+                        .. L("price cap: ", "price cap: ")
+                        .. U.money(advice.prices.ewma)
+                        .. " / "
+                        .. U.money(advice.prices.q25)
+                        .. " / "
+                        .. U.money(advice.priceCap)
+                end
+                if advice.rateKnown then
+                    details[#details + 1] = string.format(
+                        L(
+                            "Conservative own rate: %.2f units/day; %d-day stock horizon.",
+                            "Conservative own rate: %.2f units/day; %d-day stock horizon."
+                        ),
+                        advice.trades.rateLower,
+                        advice.horizon
+                    )
+                else
+                    details[#details + 1] = L(
+                        "Rate unknown: probe up to 1 unit less current holdings.",
+                        "Rate unknown: probe up to 1 unit less current holdings."
+                    )
+                end
+                if advice.trades.kelly then
+                    details[#details + 1] = string.format(
+                        L(
+                            "Quarter Kelly: %.2f%% of wallet, further limited by profile.",
+                            "Quarter Kelly: %.2f%% of wallet, further limited by profile."
+                        ),
+                        advice.trades.kelly * 25
+                    )
+                end
+                details[#details + 1] = L(
+                    "Your recorded sale rate is not the whole market's sale rate.",
+                    "Your recorded sale rate is not the whole market's sale rate."
+                )
+            end
+            self.tradeAdvice:SetText(table.concat(details, "\n"))
             local lines = {}
             if p then
                 lines = {
@@ -1824,7 +2041,17 @@ function UI.create(c)
             end
             local buy = self.fields.buyFormula:GetText()
             local sell = self.fields.sellFormula:GetText()
-            local sample = { market = 10000, recent = 10000, vendorsell = 500, avgbuy = 500 }
+            local sample = {
+                market = 10000,
+                recent = 10000,
+                vendorsell = 500,
+                avgbuy = 500,
+                ewma = 9500,
+                pricefloor = 9000,
+                winlower = 0.5,
+                profitfactor = 1.5,
+                salesperday = 2,
+            }
             if not F.Expr.eval(buy, sample) or not F.Expr.eval(sell, sample) then
                 c:notify(L("Check formula.", "Check formula."))
                 return

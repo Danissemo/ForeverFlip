@@ -19,6 +19,9 @@ function W.stress(p, qty, cost, drop)
         return nil
     end
     drop = U.number(drop, 0.20, 0, 0.95)
+    if p.advice then
+        drop = math.max(drop, p.advice.drop or 0)
+    end
     local function net(price)
         local gross = math.floor(price * qty)
         if p.mode == "vendor" then
@@ -87,6 +90,9 @@ local function prefixes(p, o)
             local confidence = U.number(p.confidence, p.mode == "vendor" and 1 or 0, 0, 1)
             local carry = math.floor(cost * (o.carryRate or 0) * math.max(1, p.daysToExit or o.holdDays or 3))
             local utility = s and s.base * confidence - s.loss * (1 - confidence) - carry or 0
+            if p.advice then
+                utility = utility / math.max(1, p.daysToExit or p.advice.horizon)
+            end
             if
                 s
                 and s.base > 0
@@ -110,6 +116,8 @@ local function prefixes(p, o)
                     groupRemaining = p.groupRemaining,
                     at = p.at,
                     target = p.target,
+                    advice = p.advice and U.copy(p.advice),
+                    daysToExit = p.daysToExit,
                 }
             end
         end

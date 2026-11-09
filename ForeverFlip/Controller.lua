@@ -97,7 +97,7 @@ function C:rule(value)
     end
     return out
 end
-function C:options(key, mode)
+function C:options(key, mode, ownOp)
     local o = self:rule(key)
     local summary = self:summary()
     local identity = U.key(key)
@@ -173,6 +173,40 @@ function C:options(key, mode)
     o.now = self.api.clock()
     o.mode = mode or self.mode
     o.vendor = self.api.vendor and self.api.vendor(key.itemID)
+    if self.advisorProfile and o.mode ~= "vendor" then
+        local activity = summary.activity and summary.activity[identity]
+        local held = o.ownedQty
+        for _, op in pairs(self.db.pending or {}) do
+            if
+                op ~= ownOp
+                and op.owner == self.api.owner()
+                and op.scope == self.api.scope()
+                and op.key == identity
+                and (
+                    op.status == "quote"
+                    or op.status == "quoted"
+                    or op.status == "awaiting"
+                    or op.status == "unknown"
+                    or op.status == "bid"
+                )
+            then
+                held = held + math.ceil(U.number(op.qty, 1, 1, 100000))
+            end
+        end
+        o.advice = F.Advisor.parameters(
+            F.Market.evidence(self:history(key)),
+            self.salesByKey and (self.salesByKey[identity] or {}) or summary.salesHistory,
+            activity and activity.since,
+            o.now,
+            self.advisorProfile,
+            o.wallet,
+            held,
+            identity
+        )
+        o.velocity = { known = o.advice.rateKnown, lower = o.advice.trades.rateLower }
+        o.minROI = math.max(o.minROI or 0, o.advice.minROI)
+        o.budget = math.min(o.budget or math.huge, o.advice.maxBudget)
+    end
     if (key.itemLevel or 0) ~= 0 or (key.itemSuffix or 0) ~= 0 or (key.battlePetSpeciesID or 0) ~= 0 then
         o.vendor = nil
     end
@@ -850,6 +884,32 @@ function C:rank()
     self.salesByKey = nil
     return out
 end
+function C:recommend(profile)
+    if
+        self.job
+        or self.fullJob
+        or (
+            self.active
+            and (self.active.status == "awaiting" or self.active.status == "unknown" or self.active.status == "bid")
+        )
+    then
+        return { error = "busy" }
+    end
+    if not self:allowed() then
+        return { error = "unavailable" }
+    end
+    profile = F.Advisor.profiles[profile] and profile or "balanced"
+    self.advisorProfile = profile
+    self:invalidate()
+    local config = F.Advisor.profiles[profile]
+    local result = self:allocate({
+        budget = self.api.wallet(),
+        riskCap = math.floor(self.api.wallet() * config.fraction),
+        drop = config.drop,
+    })
+    result.profile = profile
+    return result
+end
 function C:allocate(o)
     o = U.copy(o or {})
     o.now = self.api.clock()
@@ -1021,7 +1081,7 @@ function C:post(item, qty, price, duration)
     return true
 end
 function C:budgetStillValid(p, ownOp)
-    local o = self:options(p.key, p.mode)
+    local o = self:options(p.key, p.mode, ownOp)
     o.complete = p.complete
     o.commodity = p.kind == "commodity"
     if ownOp then
@@ -1032,6 +1092,9 @@ function C:budgetStillValid(p, ownOp)
                 self.overrides and self.overrides.budget or math.huge
             )
         end
+    end
+    if o.advice then
+        o.budget = math.min(o.budget or math.huge, o.advice.maxBudget)
     end
     if p.mode == "vendor" and p.kind == "item" then
         o.vendor = self:variantVendor(p.rows, p.key) or o.vendor

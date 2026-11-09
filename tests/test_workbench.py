@@ -24,6 +24,12 @@ class WorkbenchTests(unittest.TestCase):
         self.check('''local r=W.allocate({offer(1,6,18),offer(2,5,14),offer(3,5,14)},
         {budget=10,riskCap=0,drop=0,now=1000})
         assert(r.cost==10 and r.profit==18 and #r.lines==2 and r.cost<=r.budget)''')
+    def test_advisor_penalizes_slow_capital_turnover(self):
+        self.check('''local a,b=offer(1,100,160),offer(2,100,150)
+        a.advice={horizon=3,drop=0};a.daysToExit=6
+        b.advice={horizon=3,drop=0};b.daysToExit=1
+        local r=W.allocate({a,b},{budget=100,riskCap=0,drop=0,now=1000})
+        assert(#r.lines==1 and r.lines[1].key.itemID==2)''')
     def test_group_budget_shared_across_recommendations(self):
         self.check('''local a,b=offer(1,50,80),offer(2,50,80);a.group='g';b.group='g';a.groupRemaining=50;b.groupRemaining=50
         local r=W.allocate({a,b},{budget=100,riskCap=100,drop=0,now=1000})
