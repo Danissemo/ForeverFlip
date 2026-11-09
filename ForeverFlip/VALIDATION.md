@@ -1,6 +1,6 @@
 # Validation and release status
 
-Release: **5.2.4-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
+Release: **5.3.0-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
 
 5.2 adds daily-balanced price caps, own-sale statistics and turnover/position
 constraints, pending probe quantities, quote revalidation of fresh advisor caps,
@@ -78,3 +78,11 @@ Native rendering and clipping still require an in-client visual check.
 
 5.2.4: 167 tests, including integer/decimal oracle batches and actual UI
 mail-preparation / formula-posting regressions. No live money actions performed.
+
+5.3: 175 tests. Native layout tests cover no global scale, horizontal native
+tabs, split inset panes, price-first headers, resize at800x538/1100x700, list
+filters, exact-search row actions without purchases, responsive history plotting,
+native OnShow tab resizing and selected Ukrainian tab font restoration. The
+reviewer checked actual Blizzard templates and caught the fixed chart clipping.
+Game window capture still timed out after foreground activation. Native visual
+acceptance remains unverified; no screenshot comparison success is claimed.

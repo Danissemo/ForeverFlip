@@ -91,12 +91,54 @@ local function label(parent, x, y, w, title)
     f:SetText(title or "")
     return f
 end
+function D.columns(width, compact)
+    compact = compact or width < 600
+    if compact then
+        return { price = 0, icon = 90, itemName = 116, quantity = width - 145, profit = width - 88, detail = width }, {
+            price = 86,
+            itemName = math.max(20, width - 261),
+            quantity = 55,
+            profit = 88,
+            detail = 0,
+        }
+    end
+    return { price = 0, icon = 118, itemName = 148, quantity = width - 260, profit = width - 200, detail = width - 95 }, {
+        price = 110,
+        itemName = math.max(20, width - 408),
+        quantity = 50,
+        profit = 100,
+        detail = 95,
+    }
+end
 function D.headers(parent, x, y)
-    label(parent, x + 40, y, 245, L("Item", "Item"))
-    label(parent, x + 292, y, 48, L("Qty", "Qty"))
-    label(parent, x + 345, y, 145, L("Unit price", "Unit price"))
-    label(parent, x + 500, y, 140, L("Potential P/L", "Potential P/L"))
-    label(parent, x + 650, y, 150, L("Route / status", "Route / status"))
+    local frame = CreateFrame("Frame", nil, parent)
+    local headings = {
+        price = L("Unit price", "Unit price"),
+        itemName = L("Item", "Item"),
+        quantity = L("Qty", "Qty"),
+        profit = L("Potential P/L", "Potential P/L"),
+        detail = L("Route / status", "Route / status"),
+    }
+    local labels = {}
+    for name, title in pairs(headings) do
+        labels[name] = F.NativeLayout.header(frame, title)
+    end
+    function frame:LayoutColumns(width)
+        local x, w = D.columns(width)
+        for name, h in pairs(labels) do
+            h:ClearAllPoints()
+            h:SetPoint("TOPLEFT", self, "TOPLEFT", x[name], 0)
+            h:SetSize(math.max(1, w[name]), 22)
+            if w[name] == 0 then
+                h:Hide()
+            else
+                h:Show()
+            end
+        end
+    end
+    F.NativeLayout.place(frame, parent, x, y, 810, 22)
+    frame:LayoutColumns(frame:GetWidth())
+    return frame
 end
 function D.row(parent, x, y, width, onClick)
     local r = CreateFrame("Button", nil, parent)
@@ -104,20 +146,40 @@ function D.row(parent, x, y, width, onClick)
     r:SetSize(width, 30)
     local bg = r:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(0.12, 0.14, 0.16, 0.8)
+    bg:SetColorTexture(0, 0, 0, 0.12)
     r:SetHighlightTexture("Interface/QuestFrame/UI-QuestTitleHighlight", "ADD")
     r.qualityBorder = r:CreateTexture(nil, "ARTWORK")
     r.qualityBorder:SetPoint("LEFT", r, "LEFT", 4, 0)
-    r.qualityBorder:SetSize(28, 28)
+    r.qualityBorder:SetSize(22, 22)
     r.icon = r:CreateTexture(nil, "OVERLAY")
     r.icon:SetPoint("LEFT", r, "LEFT", 6, 0)
-    r.icon:SetSize(24, 24)
+    r.icon:SetSize(20, 20)
     r.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     r.itemName = label(r, 40, 9, 245)
     r.quantity = label(r, 292, 9, 48)
     r.price = label(r, 345, 9, 145)
     r.profit = label(r, 500, 9, 140)
     r.detail = label(r, 650, 9, 150)
+    function r:LayoutColumns(width, compact)
+        local xs, ws = D.columns(width, compact or self.nativeCompact)
+        for _, name in ipairs({ "itemName", "quantity", "price", "profit", "detail" }) do
+            local f = self[name]
+            f:ClearAllPoints()
+            f:SetPoint("LEFT", self, "LEFT", xs[name], 0)
+            f:SetWidth(math.max(1, ws[name]))
+            if ws[name] == 0 then
+                f:Hide()
+            else
+                f:Show()
+            end
+        end
+        self.icon:ClearAllPoints()
+        self.icon:SetPoint("LEFT", self, "LEFT", xs.icon + 2, 0)
+        self.qualityBorder:ClearAllPoints()
+        self.qualityBorder:SetPoint("LEFT", self, "LEFT", xs.icon + 1, 0)
+    end
+    F.NativeLayout.place(r, parent, x, y, width, 30)
+    r:LayoutColumns(r:GetWidth())
     r:SetScript("OnEnter", function(row)
         local m = row.metadata
         if not m or not GameTooltip then

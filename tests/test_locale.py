@@ -6,7 +6,7 @@ from test_controller import controller_runtime
 
 
 def translated_pairs():
-    for name in ['UI','ItemDisplay','Core']:
+    for name in ['UI','ItemDisplay','Core','NativeLayout','NativeShopping']:
         source=(ROOT/'ForeverFlip'/(name+'.lua')).read_text(encoding='utf-8-sig')
         for match in re.finditer(r'\bL\(\s*("(?:[^"\\]|\\.)*")\s*,\s*("(?:[^"\\]|\\.)*")\s*\)',source):
             yield json.loads(match[1]), json.loads(match[2])
@@ -44,7 +44,7 @@ class LocaleTests(unittest.TestCase):
         SlashCmdList.FOREVERFLIP('lang uk')
         assert(ForeverFlip.db.ui.language=='ukUA' and ForeverFlip.db.settings.fee==.05)
         ForeverFlip.attach();assert(ForeverFlip.ui.nav.overview:GetText()=='Огляд')
-        assert(ForeverFlip.ui.actions.search:GetText()=='Точний пошук')''')
+        assert(ForeverFlip.ui.actions.search:GetText()=='Пошук')''')
         l.execute('''for _,section in ipairs({'overview','deals','workbench','trade','watch','portfolio','history','tools','settings'})do
             ForeverFlip.ui:show(section);ForeverFlip.ui:refresh()
         end''')

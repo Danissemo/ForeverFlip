@@ -45,7 +45,9 @@ function F.boot(name)
         end
     end)
     print(
-        "|cff6dd7bdForeverFlip 5|r · /ff · PREVIEW · "
+        "|cff6dd7bdForeverFlip "
+            .. F.version
+            .. "|r · /ff · PREVIEW · "
             .. L(
                 "Open from the auction window. Legacy data retained.",
                 "Open from the auction window. Legacy data retained."
@@ -79,7 +81,7 @@ function F.attach()
             if ok and lib and lib.CreateTab then
                 local made = pcall(function()
                     if not lib:DoesIDExist("ForeverFlip") then
-                        lib:CreateTab("ForeverFlip", F.ui.frame, "ForeverFlip", "ForeverFlip 5")
+                        lib:CreateTab("ForeverFlip", F.ui.frame, "ForeverFlip", "ForeverFlip")
                     end
                 end)
                 if made then

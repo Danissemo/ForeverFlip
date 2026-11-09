@@ -1,4 +1,4 @@
-# ForeverFlip 5.2
+# ForeverFlip 5.3
 
 Auction-window addon for WoW Forever 1.60.1, Interface 16001. Pre-release until
 live-client checks validate the native protected-action paths.
@@ -30,3 +30,8 @@ No formula entry is required for automatic planning.
 
 5.2.3: Ukrainian interface with /ff lang uk and an OFL Cyrillic font, placeholder
 and glyph coverage tests. See ForeverFlip/README_UK.md.
+
+5.3 replaces the scaled dashboard shell with native auction top tabs, a two-pane
+shopping list/results view, native table headers and responsive unscaled item
+columns. Existing trade/math/accounting callbacks remain behind the new shell.
+English uses native WoW fonts; Cyrillic keeps the bundled font fallback.

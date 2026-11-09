@@ -169,8 +169,7 @@ end
 local function text(parent, x, y, w, value, font)
     local v = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
     F.Locale.font(v, font == "GameFontNormalLarge" and 16 or 12)
-    v:SetPoint("TOPLEFT", x, -y)
-    v:SetWidth(w)
+    F.NativeLayout.place(v, parent, x, y, w)
     v:SetJustifyH("LEFT")
     v:SetJustifyV("TOP")
     v:SetWordWrap(true)
@@ -179,8 +178,7 @@ local function text(parent, x, y, w, value, font)
 end
 local function button(parent, x, y, w, value, callback)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    b:SetPoint("TOPLEFT", x, -y)
-    b:SetSize(w, 30)
+    F.NativeLayout.place(b, parent, x, y, w, 30)
     b:SetText(value)
     local label = b:GetFontString()
     if label then
@@ -202,8 +200,8 @@ local function field(parent, x, y, w, title, value, multi)
     F.Locale.font(titleText, 10)
     titleText:SetHeight(28)
     local e = CreateFrame("EditBox", nil, parent, multi and "BackdropTemplate" or "InputBoxTemplate")
-    e:SetPoint("TOPLEFT", x + 4, -y - 30)
-    e:SetSize(w - 8, multi and 110 or 24)
+    F.NativeLayout.place(e, parent, x + 4, y + 30, w - 8)
+    e:SetHeight(multi and 110 or 24)
     e:SetAutoFocus(false)
     e:SetFontObject("GameFontHighlightSmall")
     F.Locale.font(e, 12)
@@ -226,11 +224,7 @@ local function field(parent, x, y, w, title, value, multi)
     return e
 end
 local function panel(parent)
-    local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    f:SetBackdrop({ bgFile = "Interface/Buttons/WHITE8X8", edgeFile = "Interface/Buttons/WHITE8X8", edgeSize = 1 })
-    f:SetBackdropColor(0.035, 0.05, 0.075, 0.99)
-    f:SetBackdropBorderColor(0.20, 0.36, 0.46, 1)
-    return f
+    return CreateFrame("Frame", nil, parent, "InsetFrameTemplate")
 end
 local function warningList(p)
     local out = {}
@@ -248,7 +242,7 @@ function UI.create(c)
         refreshers = {},
         section = "overview",
         dealPage = 1,
-        sort = "score",
+        sort = "price",
         filterMode = "all",
         toolMode = "craft",
     }, { __index = UI })
@@ -261,11 +255,7 @@ function UI.create(c)
     root:SetMovable(false)
     root:SetResizable(false)
     root:SetClipsChildren(true)
-    local host = panel(root)
-    self.canvas = host
-    host:SetSize(1080, 680)
-    host:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
-    host:EnableMouse(true)
+    local host = F.NativeLayout.shell(self)
     root:SetScript("OnSizeChanged", function()
         self:layout()
     end)
@@ -273,85 +263,89 @@ function UI.create(c)
         self:layout()
         self:refresh()
     end)
-    text(host, 18, 15, 175, "FOREVER|cff6dd7bdFLIP|r", "GameFontNormalLarge")
-    text(host, 18, 42, 150, "5.2.4 · " .. L("Preview", "Preview"))
-    self.header = text(host, 190, 15, 760, "", "GameFontNormal")
-    self.fields.item =
-        field(host, 190, 40, 190, L("Item: ID / link / key", "Item: ID / link / key"), "")
+    local label = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    F.Locale.font(label, 12)
+    label:SetPoint("TOPLEFT", host, "TOPLEFT", 68, -12)
+    label:SetText(L("Search:", "Search:"))
+    local item = CreateFrame("EditBox", nil, host, "InputBoxTemplate")
+    item:SetPoint("TOPLEFT", host, "TOPLEFT", 140, -6)
+    item:SetSize(205, 23)
+    item:SetAutoFocus(false)
+    item:SetFontObject("ChatFontNormal")
+    F.Locale.font(item, 12)
+    item:SetMaxLetters(1024)
+    item:SetText("")
+    self.fields.item = item
+    item:SetScript("OnEscapePressed", function(e)
+        e:ClearFocus()
+    end)
     local function readKey()
-        local key, err = F.Adapters.keyFromInput(self.fields.item:GetText())
+        local key, err = F.Adapters.keyFromInput(item:GetText())
         if not key then
             c:notify(err)
         end
         return key or {}
     end
     self.readKey = readKey
-    self.actions.search = button(host, 390, 60, 130, L("Exact search", "Exact search"), function()
-        local key = readKey()
-        if c:search(key) then
-            self:show("trade")
+    local function toolbar(name, x, w, title, fn)
+        local b = CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
+        b:SetPoint("TOPLEFT", host, "TOPLEFT", x, -5)
+        b:SetSize(w, 24)
+        b:SetText(title)
+        F.Locale.font(b:GetFontString(), 11)
+        b:SetScript("OnClick", fn)
+        self.actions[name] = b
+        return b
+    end
+    toolbar("search", 356, 85, L("Search", "Search"), function()
+        local key, err = F.Adapters.keyFromInput(item:GetText())
+        if key then
+            if c:search(key) then
+                self:show("trade")
+            end
+        elseif
+            item:GetText() ~= ""
+            and not item:GetText():find("|H", 1, true)
+            and not item:GetText():match("^item:")
+        then
+            c:notify(
+                L(
+                    "Filtered current snapshot. Select an item for exact search.",
+                    "Filtered current snapshot. Select an item for exact search."
+                )
+            )
+            self.fields.dealFilter:SetText(item:GetText())
+            self.dealPage = 1
+            self:show("deals")
+        else
+            c:notify(err)
         end
     end)
-    self.actions.fullScan = button(host, 530, 60, 135, L("Full scan", "Full scan"), function()
+    item:SetScript("OnEnterPressed", function(e)
+        e:ClearFocus()
+        self.actions.search:Click()
+    end)
+    toolbar("fullScan", 446, 115, L("Full scan", "Full scan"), function()
         c:fullScan()
         self:show("deals")
     end)
-    self.actions.stop = button(host, 675, 60, 90, L("Stop", "Stop"), function()
-        c:stop()
+    toolbar("quickPlan", 566, 125, L("Planner", "Planner"), function()
+        self.actions.easyBuild:Click()
     end)
-    button(host, 775, 60, 100, L("Watch", "Watch"), function()
-        c:watchStart()
+    toolbar("stop", 696, 75, L("Stop", "Stop"), function()
+        c:stop()
     end)
     host:SetScript("OnReceiveDrag", function()
         if GetCursorInfo then
             local kind, id = GetCursorInfo()
             if kind == "item" then
-                self.fields.item:SetText(tostring(id))
+                item:SetText(tostring(id))
                 if ClearCursor then
                     ClearCursor()
                 end
             end
         end
     end)
-    local nav = {
-        { "overview", L("Overview", "Overview") },
-        { "deals", L("Deals", "Deals") },
-        { "workbench", L("Plan / analytics", "Plan / analytics") },
-        { "trade", L("Trading", "Trading") },
-        { "watch", L("Watch / rules", "Watch / rules") },
-        { "portfolio", L("Portfolio / ledger", "Portfolio / ledger") },
-        { "history", L("History", "History") },
-        { "tools", L("NPC / professions", "NPC / professions") },
-        { "settings", L("Settings / data", "Settings / data") },
-    }
-    self.nav = {}
-    for i, n in ipairs(nav) do
-        local id = n[1]
-        self.nav[id] = button(host, 16, 94 + (i - 1) * 38, 160, n[2], function()
-            self:show(id)
-        end)
-        local scroll = CreateFrame("ScrollFrame", nil, host, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT", 190, -102)
-        scroll:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -30, 44)
-        local body = CreateFrame("Frame", nil, scroll)
-        body:SetSize(840, 1100)
-        scroll:SetScrollChild(body)
-        self.sections[id] = { scroll = scroll, body = body }
-        scroll:Hide()
-    end
-    self.status = text(host, 190, 643, 850, "")
-    self.status:ClearAllPoints()
-    self.status:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 190, 20)
-    text(
-        host,
-        18,
-        480,
-        155,
-        L(
-            "Scan → verify → click → receipt.\n\nEstimated profit is not a guaranteed sale.",
-            "Scan → verify → click → receipt.\n\nEstimated profit is not a guaranteed sale."
-        )
-    )
     local function body(id)
         return self.sections[id].body
     end
@@ -430,11 +424,13 @@ function UI.create(c)
         )
         self.advancedPlan = CreateFrame("Frame", nil, hostBody)
         self.advancedPlan:SetSize(820, 110)
+        F.NativeLayout.container(self.advancedPlan, hostBody, 20)
         self.advancedPlan:SetPoint("TOPLEFT", 0, -85)
         self.advancedPlan:Hide()
         local advanced = self.advancedPlan
         local content = CreateFrame("Frame", nil, hostBody)
         content:SetSize(820, 1350)
+        F.NativeLayout.container(content, hostBody, 20)
         action(
             "adviceAdvanced",
             hostBody,
@@ -790,116 +786,7 @@ function UI.create(c)
             )
         )
     end
-    -- A fixed pool of visible rows, paging and deterministic sorting.
-    do
-        local b = body("deals")
-        val(
-            "dealFilter",
-            b,
-            0,
-            0,
-            260,
-            L("Filter by name / ID / group", "Filter by name / ID / group"),
-            ""
-        )
-        action("filterApply", b, 275, 20, 110, L("Apply", "Apply"), function()
-            self.dealPage = 1
-            self:refresh()
-        end)
-        action("filterMode", b, 395, 20, 170, L("All strategies", "All strategies"), function(btn)
-            self.filterMode = self.filterMode == "all" and "vendor" or self.filterMode == "vendor" and "flip" or "all"
-            btn:SetText(
-                self.filterMode == "all" and L("All strategies", "All strategies")
-                    or self.filterMode == "vendor" and "NPC"
-                    or L("Resale", "Resale")
-            )
-            self:refresh()
-        end)
-        action(
-            "dealSort",
-            b,
-            580,
-            20,
-            220,
-            L("Sort: risk / capital", "Sort: risk / capital"),
-            function(btn)
-                self.sort = self.sort == "score" and "profit" or "score"
-                btn:SetText(
-                    self.sort == "score" and L("Risk / capital", "Risk / capital")
-                        or L("Net profit", "Net profit")
-                )
-                self:refresh()
-            end
-        )
-        F.ItemDisplay.headers(b, 0, 64)
-        self.dealRows = {}
-        for i = 1, 12 do
-            local index = i
-            self.dealRows[i] = F.ItemDisplay.row(b, 0, 86 + (i - 1) * 31, 810, function()
-                local p = self.visibleDeals and self.visibleDeals[(self.dealPage - 1) * 12 + index]
-                if p then
-                    self.fields.item:SetText(U.key(p.key))
-                    c.mode = p.mode
-                    c:stop()
-                    c.mode = p.mode
-                    c:search(p.key)
-                    self:show("trade")
-                end
-            end)
-        end
-        local pages = text(b, 270, 473, 260, "")
-        button(b, 0, 467, 110, "<-", function()
-            self.dealPage = math.max(1, self.dealPage - 1)
-            self:refresh()
-        end)
-        button(b, 120, 467, 110, "->", function()
-            self.dealPage = self.dealPage + 1
-            self:refresh()
-        end)
-        text(
-            b,
-            0,
-            515,
-            810,
-            L(
-                "A row opens exact verification. Discovery never buys from an old price. NPC and FLIP require different evidence.",
-                "A row opens exact verification. Discovery never buys from an old price. NPC and FLIP require different evidence."
-            )
-        )
-        self.refreshers.deals = function()
-            local all = c:rank()
-            local out = {}
-            local query = self.fields.dealFilter:GetText():lower()
-            for _, p in ipairs(all) do
-                local name = F.ItemDisplay.metadata(p.key, p.link).name
-                local group = c:rule(p.key).group or ""
-                if
-                    (self.filterMode == "all" or p.mode == self.filterMode)
-                    and (query == "" or (name .. " " .. p.key.itemID .. " " .. group):lower():find(query, 1, true))
-                then
-                    out[#out + 1] = p
-                end
-            end
-            if self.sort == "profit" then
-                table.sort(out, function(a, d)
-                    return a.profit > d.profit
-                end)
-            end
-            self.visibleDeals = out
-            local count = math.max(1, math.ceil(#out / 12))
-            self.dealPage = math.max(1, math.min(count, self.dealPage))
-            pages:SetText(self.dealPage .. " / " .. count .. " · " .. #out)
-            for i, btn in ipairs(self.dealRows) do
-                local p = out[(self.dealPage - 1) * 12 + i]
-                btn:SetEnabled(not not p)
-                if p then
-                    btn:SetItem(p, p.canBuy and L("Verify", "Verify") or warningList(p))
-                else
-                    btn:SetItem(nil)
-                end
-            end
-        end
-    end
+    F.NativeShopping.create(self, warningList)
     do
         local b = body("trade")
         action("tradeMode", b, 0, 0, 200, L("Strategy: FLIP / NPC", "Strategy: FLIP / NPC"), function(btn)
@@ -930,6 +817,7 @@ function UI.create(c)
         local tradeContent = CreateFrame("Frame", nil, b)
         tradeContent:SetPoint("TOPLEFT", b, "TOPLEFT", 0, -40)
         tradeContent:SetSize(840, 1140)
+        F.NativeLayout.container(tradeContent, b, 0)
         b:SetHeight(1180)
         b = tradeContent
         self.tradeText = text(b, 0, 45, 805, "", "GameFontNormal")
@@ -1581,8 +1469,7 @@ function UI.create(c)
         )
         self.historyText = text(b, 0, 40, 810, "")
         local chart = panel(b)
-        chart:SetPoint("TOPLEFT", 0, -108)
-        chart:SetSize(800, 220)
+        F.NativeLayout.place(chart, b, 0, 108, 800, 220)
         self.chart = chart
         self.chartLines = {}
         local tableText = text(b, 0, 350, 810, "")
@@ -1624,8 +1511,18 @@ function UI.create(c)
                     local function y(v)
                         return 200 - (v - (low or 0)) / math.max(1, (high or 1) - (low or 0)) * 175
                     end
-                    line:SetStartPoint("TOPLEFT", chart, (i - 2) / (#days - 1) * 770 + 12, -y(days[i - 1].price))
-                    line:SetEndPoint("TOPLEFT", chart, (i - 1) / (#days - 1) * 770 + 12, -y(days[i].price))
+                    line:SetStartPoint(
+                        "TOPLEFT",
+                        chart,
+                        (i - 2) / (#days - 1) * math.max(1, chart:GetWidth() - 24) + 12,
+                        -y(days[i - 1].price)
+                    )
+                    line:SetEndPoint(
+                        "TOPLEFT",
+                        chart,
+                        (i - 1) / (#days - 1) * math.max(1, chart:GetWidth() - 24) + 12,
+                        -y(days[i].price)
+                    )
                     line:SetThickness(2)
                     line:SetColorTexture(0.35, 0.85, 0.74, 1)
                     line:Show()
@@ -2204,11 +2101,13 @@ function UI.create(c)
                 end
             end)
         end
-        self.sections.settings.body:SetHeight(1190)
+        text(b, 0, 1165, 800, "ForeverFlip " .. F.version)
+        self.sections.settings.body:SetHeight(1200)
     end
     self.exchangeFrame = panel(host)
     self.exchangeFrame:SetPoint("CENTER")
     self.exchangeFrame:SetSize(850, 450)
+    F.NativeLayout.container(self.exchangeFrame, host, 24)
     self.exchangeFrame:SetFrameLevel(host:GetFrameLevel() + 20)
     self.exchangeFrame:Hide()
     self.exchangeEdit = field(
@@ -2227,7 +2126,7 @@ function UI.create(c)
     button(self.exchangeFrame, 650, 400, 160, L("Close", "Close"), function()
         self.exchangeFrame:Hide()
     end)
-    self:show((db.ui and db.ui.section) or "overview")
+    self:show((db.ui and db.ui.section and db.ui.section ~= "overview") and db.ui.section or "deals")
     host:Show()
     root:Hide()
     return self
@@ -2269,13 +2168,10 @@ function UI:renderToolResult()
     self.toolText:SetText(table.concat(lines, "\n"))
 end
 function UI:layout()
-    local parent = self.frame:GetParent()
-    local width = parent:GetWidth() - 8
-    local height = parent:GetHeight() - 62
-    if width <= 0 or height <= 0 then
-        return
+    F.NativeLayout.reflow(self)
+    if self.section == "history" and not self.refreshing and self.refreshers.history then
+        self:refresh()
     end
-    self.canvas:SetScale(math.min(1, width / 1080, height / 680))
 end
 function UI:show(id)
     if not self.sections[id] then
@@ -2289,9 +2185,7 @@ function UI:show(id)
             v.scroll:Hide()
         end
     end
-    for k, b in pairs(self.nav) do
-        b:SetEnabled(k ~= id)
-    end
+    F.NativeLayout.select(self, id)
     if F.Store.writable(self.c.db) then
         self.c.db.ui.section = id
     end

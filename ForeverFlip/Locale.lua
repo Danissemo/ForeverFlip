@@ -344,6 +344,23 @@ T.uk = {
     ["search_error: "] = "Помилка пошуку: ",
     ["Invoice net proceeds unknown. Check returned deposit manually."] = "Чиста виручка листа невідома. Перевірте повернений завдаток вручну.",
     ["Net sale excludes returned deposit, fee 0. Record after receipt; never deduct the fee twice."] = "Виручка без поверненого завдатку, комісія 0. Записуйте після отримання; не віднімайте комісію двічі.",
+    ["Search:"] = "Пошук:",
+    ["Search"] = "Пошук",
+    ["Planner"] = "Підбір",
+    ["Auction"] = "Аукціон",
+    ["Portfolio"] = "Портфель",
+    ["Professions"] = "Професії",
+    ["Settings"] = "Налаштування",
+    ["Lists"] = "Списки",
+    ["Scan the auction house or search for an item."] = "Зробіть знімок аукціону або знайдіть предмет.",
+    ["Price"] = "Ціна",
+    ["Name"] = "Назва",
+    ["Available"] = "Доступно",
+    ["Profit"] = "Прибуток",
+    ["All"] = "Усі",
+    ["All items"] = "Усі предмети",
+    ["Watchlist"] = "Спостереження",
+    ["Filtered current snapshot. Select an item for exact search."] = "Фільтр поточного знімка. Натисніть предмет для точного пошуку.",
 }
 for key, value in pairs(T.uk) do
     T.uk[key] = value:gsub("→", "->"):gsub("←", "<-")
@@ -394,6 +411,9 @@ function T.choose(value)
 end
 T.fontPath = "Interface\\AddOns\\ForeverFlip\\Fonts\\NotoSans-Regular.ttf"
 function T.font(region, size)
+    if T.current() ~= "ukUA" and T.current() ~= "uk" then
+        return
+    end
     if region and region.SetFont then
         region:SetFont(T.fontPath, size or 12, "")
     end

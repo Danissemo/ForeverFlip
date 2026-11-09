@@ -20,6 +20,8 @@ function methods:Disable() self.enabled=false end
 function methods:SetChecked(v) self.checked=v end
 function methods:GetChecked() return self.checked end
 function methods:SetSize(w,h) self.width=w; self.height=h end
+function methods:SetWidth(w) self.width=w end
+function methods:SetHeight(h) self.height=h end
 function methods:GetWidth() return self.width end
 function methods:GetHeight() return self.height end
 function methods:GetFrameLevel() return 1 end
@@ -38,7 +40,7 @@ function methods:SetMovable(v) self.movable=v end
 function methods:SetResizable(v) self.resizable=v end
 function methods:SetFrameStrata(v) self.strata=v end
 function methods:Click() if self.enabled and self.scripts.OnClick then self.scripts.OnClick(self) end end
-function CreateFrame(kind,name,parent) return widget(kind,name,parent) end
+function CreateFrame(kind,name,parent,template) local w=widget(kind,name,parent);w.template=template or '';return w end
 function GetLocale() return 'enUS' end
 function GetTime() return now end
 function date(fmt,t) return os.date(fmt,t) end
