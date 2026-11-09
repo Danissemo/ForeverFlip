@@ -242,7 +242,7 @@ function UI.create(c)
         s:StopMovingOrSizing()
     end)
     text(host, 18, 15, 175, "FOREVER|cff6dd7bdFLIP|r", "GameFontNormalLarge")
-    text(host, 18, 42, 150, "5.0 · PREVIEW")
+    text(host, 18, 42, 150, "5.1 · PREVIEW")
     self.header = text(host, 190, 15, 760, "", "GameFontNormal")
     self.fields.item =
         field(host, 190, 40, 190, L("Item: ID / link / key", "Item: ID / link / key"), "")
@@ -287,6 +287,7 @@ function UI.create(c)
     local nav = {
         { "overview", L("Overview", "Overview") },
         { "deals", L("Deals", "Deals") },
+        { "workbench", L("Plan / analytics", "Plan / analytics") },
         { "trade", L("Trading", "Trading") },
         { "watch", L("Watch / rules", "Watch / rules") },
         { "portfolio", L("Portfolio / ledger", "Portfolio / ledger") },
@@ -359,6 +360,203 @@ function UI.create(c)
         local e = field(parent, x, y, w, title, value, multi)
         self.fields[name] = e
         return e
+    end
+    do
+        local b = body("workbench")
+        b:SetSize(840, 1350)
+        text(
+            b,
+            0,
+            0,
+            810,
+            L("CAPITAL PLAN AND ANALYTICS", "CAPITAL PLAN AND ANALYTICS"),
+            "GameFontNormalLarge"
+        )
+        val("planBudget", b, 0, 36, 155, L("Budget, gold", "Budget, gold"), "100")
+        val("planRisk", b, 175, 36, 155, L("Stress loss cap, gold", "Stress loss cap, gold"), "10")
+        val("planDrop", b, 350, 36, 140, L("Price drop, %", "Price drop, %"), "20")
+        val("planIndex", b, 510, 36, 90, L("Row", "Row"), "1")
+        local report = text(b, 0, 145, 810, "", "GameFontNormal")
+        action("planBuild", b, 0, 97, 230, L("Build capital plan", "Build capital plan"), function()
+            local budget = U.copper(self.fields.planBudget:GetText())
+            local risk = U.copper(self.fields.planRisk:GetText())
+            local drop = tonumber(self.fields.planDrop:GetText())
+            if not budget or not risk or not drop or drop < 0 or drop > 95 then
+                return
+            end
+            self.allocation = c:allocate({ budget = budget, riskCap = risk, drop = drop / 100 })
+            self:refresh()
+        end)
+        action(
+            "planRoute",
+            b,
+            250,
+            97,
+            290,
+            L("Row → fresh exact search", "Row → fresh exact search"),
+            function()
+                local index = tonumber(self.fields.planIndex:GetText())
+                local line = self.allocation and self.allocation.lines[index or 0]
+                if not line then
+                    return
+                end
+                c:stop()
+                c.overrides = {
+                    maxQty = math.min(line.qty, c.overrides and c.overrides.maxQty or math.huge),
+                    budget = math.min(line.cost, c.overrides and c.overrides.budget or math.huge),
+                }
+                c.mode = line.mode
+                self.fields.item:SetText(U.key(line.key))
+                self.fields.tradeQty:SetText(tostring(c.overrides.maxQty))
+                self.fields.tradeBudget:SetText(U.gold(c.overrides.budget))
+                c:search(line.key)
+                self:show("trade")
+            end
+        )
+        local performance = text(b, 0, 525, 810, "", "GameFontNormal")
+        text(
+            b,
+            0,
+            815,
+            810,
+            L(
+                "HISTORY REPLAY: SCENARIO, NOT REAL FILLS",
+                "HISTORY REPLAY: SCENARIO, NOT REAL FILLS"
+            ),
+            "GameFontNormalLarge"
+        )
+        val("replayHold", b, 0, 850, 170, L("Holding period, days", "Holding period, days"), "1")
+        val("replayHaircut", b, 190, 850, 170, L("Exit haircut, %", "Exit haircut, %"), "5")
+        local replayText = text(b, 0, 950, 810, "", "GameFontNormal")
+        action(
+            "replay",
+            b,
+            0,
+            910,
+            350,
+            L("Replay item from header", "Replay item from header"),
+            function()
+                local key = readKey()
+                if not key then
+                    return
+                end
+                local hold = tonumber(self.fields.replayHold:GetText())
+                local haircut = tonumber(self.fields.replayHaircut:GetText())
+                if not hold or hold < 1 or hold > 30 or not haircut or haircut < 0 or haircut > 95 then
+                    return
+                end
+                local rule = c:rule(key)
+                self.replay = F.Workbench.replay(F.Market.evidence(c:history(key)), {
+                    now = c.api.clock(),
+                    capital = U.copper(self.fields.planBudget:GetText()) or 0,
+                    hold = hold * 86400,
+                    haircut = haircut / 100,
+                    fee = rule.fee,
+                    minFee = rule.minFee,
+                    reserve = rule.reserve,
+                    minROI = rule.minROI,
+                })
+                self:refresh()
+            end
+        )
+        self.refreshers.workbench = function()
+            local a = self.allocation
+            local lines = {
+                L(
+                    "Scan first. Items with 3 consecutive losses and nonpositive total P/L are paused.",
+                    "Scan first. Items with 3 consecutive losses and nonpositive total P/L are paused."
+                ),
+            }
+            if a then
+                lines[#lines + 1] = L(
+                    "Cost / estimated P/L / stress: ",
+                    "Cost / estimated P/L / stress: "
+                ) .. U.money(a.cost) .. " / " .. U.money(a.profit) .. " / " .. U.money(a.stressed)
+                lines[#lines + 1] = L("Unused / stress loss: ", "Unused / stress loss: ")
+                    .. U.money(a.budget - a.cost)
+                    .. " / "
+                    .. U.money(a.loss)
+                lines[#lines + 1] = L(
+                    "Approximate allocation, budget step: ",
+                    "Approximate allocation, budget step: "
+                ) .. U.money(a.cashStep or 0) .. (a.truncated and L(
+                    "; candidates truncated",
+                    "; candidates truncated"
+                ) or "")
+                for i = 1, math.min(8, #a.lines) do
+                    local row = a.lines[i]
+                    lines[#lines + 1] = i
+                        .. ". "
+                        .. U.key(row.key)
+                        .. " ×"
+                        .. row.qty
+                        .. " ["
+                        .. row.mode
+                        .. "] "
+                        .. U.money(row.cost)
+                        .. " → "
+                        .. U.money(row.profit)
+                        .. L("; stress ", "; stress ")
+                        .. U.money(row.stressed)
+                end
+                lines[#lines + 1] = L(
+                    "Fresh search and confirmation required. This plan does not reserve funds.",
+                    "Fresh search and confirmation required. This plan does not reserve funds."
+                )
+            end
+            report:SetText(table.concat(lines, "\n"))
+            local stats = F.Workbench.performance(c:summary(), c.api.clock())
+            local t = {
+                L(
+                    "CONFIRMED SALES WITH KNOWN COST",
+                    "CONFIRMED SALES WITH KNOWN COST"
+                ),
+                L("Wins / losses: ", "Wins / losses: ")
+                    .. stats.wins
+                    .. " / "
+                    .. stats.losses,
+            }
+            for i = 1, math.min(8, #stats.ranked) do
+                local r = stats.ranked[i]
+                t[#t + 1] = r.key
+                    .. ": "
+                    .. U.money(r.profit)
+                    .. "; ROI "
+                    .. (r.roi and string.format("%.1f%%", r.roi * 100) or "?")
+                    .. L("; loss streak ", "; loss streak ")
+                    .. r.lossStreak
+            end
+            performance:SetText(table.concat(t, "\n"))
+            if self.replay then
+                local r = self.replay
+                local t = {
+                    L(
+                        "Exit uses a future asking price with haircut. Fills and demand are unproven.",
+                        "Exit uses a future asking price with haircut. Fills and demand are unproven."
+                    ),
+                }
+                for _, name in ipairs({ "robust", "baseline" }) do
+                    local s = r[name]
+                    t[#t + 1] = (
+                        name == "robust" and "ForeverFlip"
+                        or L("Fixed 30% discount (not TSM)", "Fixed 30% discount (not TSM)")
+                    )
+                        .. ": "
+                        .. U.money(s.pnl)
+                        .. L("; exits ", "; exits ")
+                        .. s.closed
+                        .. L("; open cost ", "; open cost ")
+                        .. U.money(s.openCost)
+                end
+                if r.trainingInsufficient then
+                    t[#t + 1] = L(
+                        "Insufficient independent training history.",
+                        "Insufficient independent training history."
+                    )
+                end
+                replayText:SetText(table.concat(t, "\n"))
+            end
+        end
     end
     -- Overview: realized money is kept apart from portfolio valuation.
     do
@@ -1195,7 +1393,7 @@ function UI.create(c)
             local key = readKey()
             local h = U.key(key) and c:history(key)
             local days = h and h.days or {}
-            local stat = F.Market.stats(h and h.samples or {}, c.api.clock())
+            local stat = F.Market.stats(F.Market.evidence(h), c.api.clock())
             self.historyText:SetText(
                 L("Reference / lower bound: ", "Reference / lower bound: ")
                     .. U.money(stat.reference)

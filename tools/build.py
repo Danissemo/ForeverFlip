@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -32,8 +33,9 @@ def archive(path,files):
             z.writestr(info,file.read_bytes())
     with ZipFile(path)as z: assert z.testzip()is None
     return {'file':path.name,'bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
-package=out/'ForeverFlip-5.0.0-preview-WoW-Forever.zip'
-source=out/'ForeverFlip-5.0.0-preview-source.zip'
+version=re.search(r'^## Version: ([A-Za-z0-9.\-]+)$',toc,re.M).group(1)
+package=out/f'ForeverFlip-{version}-WoW-Forever.zip'
+source=out/f'ForeverFlip-{version}-source.zip'
 addon_files=[(p,Path('ForeverFlip')/p.relative_to(addon))for p in addon.rglob('*')if p.is_file()]
 allowed={'.lua','.toc','.md','.txt','.json','.py'}
 source_files=[(p,Path('ForeverFlip-source')/p.relative_to(repo))for p in repo.rglob('*')

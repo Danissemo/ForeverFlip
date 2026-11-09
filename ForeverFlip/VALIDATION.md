@@ -1,6 +1,11 @@
 # Validation and release status
 
-Release: **5.0.0-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
+Release: **5.1.0-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
+
+5.1 adds a bounded capital/risk/group allocator, fixed-exit stress scenarios,
+confirmed-cost performance and prior-only asking-price replay. Tests cover
+shared capital, greedy counterexample, indivisible lots, group caps, unknown
+reservations, scope changes, current replay fees and actual daily anchors.
 
 Automated coverage runs actual Lua 5.1 through Lupa, not Lua 5.4 syntax alone:
 
@@ -16,7 +21,7 @@ Automated coverage runs actual Lua 5.1 through Lupa, not Lua 5.4 syntax alone:
   malformed/future schemas preserved without enabling trading.
 - Safe formulas, malformed group exchange, exact-key groups/watchlist,
   market/timestamp checks on price import, bounded history/ladders.
-- Eight UI sections, callbacks, calculator persistence, formula changes,
+- Nine UI sections, callbacks, calculator persistence, formula changes,
   actual LibAHTab major name and native line endpoint signature.
 - 100,000 synthetic replicate rows processed in batches of 220; no trade
   API calls occur from the full-scan path.

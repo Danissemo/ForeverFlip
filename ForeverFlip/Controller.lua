@@ -259,7 +259,7 @@ function C:results(kind, key)
         o.vendor = self:variantVendor(rows, key) or o.vendor
     end
     local h = self:history(key)
-    self.plan = F.Market.plan(rows, h and h.samples or {}, o)
+    self.plan = F.Market.plan(rows, F.Market.evidence(h), o)
     self.plan.key = U.copy(key)
     self.plan.kind = resultKind or kind
     self.plan.at = self.api.clock()
@@ -290,6 +290,8 @@ function C:results(kind, key)
                     end
                     r.at = self.api.clock()
                     r.family = false
+                    r.scope = j.scope
+                    r.kind = resultKind or kind
                     found = true
                 end
             end
@@ -301,8 +303,15 @@ function C:results(kind, key)
                 for i = 1, math.min(64, #rows) do
                     displayRows[i] = U.copy(rows[i])
                 end
-                self.candidates[#self.candidates + 1] =
-                    { key = U.copy(key), rows = displayRows, at = self.api.clock(), complete = true }
+                self.candidates[#self.candidates + 1] = {
+                    key = U.copy(key),
+                    rows = displayRows,
+                    at = self.api.clock(),
+                    complete = true,
+                    scope = j.scope,
+                    kind = resultKind or kind,
+                    family = false,
+                }
             end
         end
         self:notify(self.plan.canBuy and "plan_ready" or "plan_review")
@@ -664,6 +673,7 @@ function C:tick()
                 table.sort(g.rows, function(a, b)
                     return a.unit < b.unit
                 end)
+                g.scope = j.scope
                 self.candidates[#self.candidates + 1] = g
                 local qty = 0
                 for _, r in ipairs(g.rows) do
@@ -797,29 +807,35 @@ function C:rank()
         table.insert(self.salesByKey[s.key], s)
     end
     for _, r in ipairs(self.candidates) do
-        local history = self:history(r.key)
-        local best
-        for _, mode in ipairs({ "vendor", "flip" }) do
-            local o = self:options(r.key, mode)
-            o.complete = true
-            local p = F.Market.plan(r.rows, history and history.samples or {}, o)
-            if
-                not best
-                or (p.canBuy and not best.canBuy)
-                or (p.canBuy == best.canBuy and p.score and p.score > (best.score or -math.huge))
-            then
-                best = p
+        if r.scope == self.api.scope() then
+            local history = self:history(r.key)
+            local best
+            for _, mode in ipairs({ "vendor", "flip" }) do
+                local o = self:options(r.key, mode)
+                o.commodity = r.kind == "commodity" or (r.kind == nil and r.family == false)
+                o.complete = true
+                local p = F.Market.plan(r.rows, F.Market.evidence(history), o)
+                if
+                    not best
+                    or (p.canBuy and not best.canBuy)
+                    or (p.canBuy == best.canBuy and p.score and p.score > (best.score or -math.huge))
+                then
+                    best = p
+                    best.group = o.group
+                    best.groupRemaining = o.groupBudget and math.max(0, o.groupBudget - (o.groupExposure or 0))
+                end
             end
+            best.kind = r.kind or (r.family == false and "commodity" or "item")
+            best.key = r.key
+            best.at = r.at
+            best.family = r.family
+            best.source = "discovery"
+            if self.api.clock() - r.at > 1800 then
+                best.canBuy = false
+                best.reasons[#best.reasons + 1] = "stale"
+            end
+            out[#out + 1] = best
         end
-        best.key = r.key
-        best.at = r.at
-        best.family = r.family
-        best.source = "discovery"
-        if self.api.clock() - r.at > 1800 then
-            best.canBuy = false
-            best.reasons[#best.reasons + 1] = "stale"
-        end
-        out[#out + 1] = best
     end
     table.sort(out, function(a, b)
         if a.canBuy ~= b.canBuy then
@@ -833,6 +849,25 @@ function C:rank()
     self.cachedSummary = nil
     self.salesByKey = nil
     return out
+end
+function C:allocate(o)
+    o = U.copy(o or {})
+    o.now = self.api.clock()
+    local wallet = self.api.wallet()
+    local floor = U.number(self.db.settings and self.db.settings.cashFloor, 0.2, 0, 1)
+    local available = math.max(0, wallet - self:reserved() - math.floor(wallet * floor))
+    if not F.Store.writable(self.db) then
+        available = 0
+    end
+    o.budget = math.min(U.number(o.budget, 0, 0, 1e12), available)
+    o.pauseItems = {}
+    local performance = F.Workbench.performance(self:summary(), o.now)
+    for key, item in pairs(performance.items) do
+        if item.pauseSuggested then
+            o.pauseItems[key] = true
+        end
+    end
+    return F.Workbench.allocate(self:rank(), o)
 end
 function C:price(id)
     local h = self:history({ itemID = id })
@@ -884,7 +919,7 @@ function C:bid(index)
     local h = self:history(self.key)
     local check = F.Market.plan(
         { { qty = live.quantity, unit = price / live.quantity, cost = price, auctionID = live.auctionID } },
-        h and h.samples or {},
+        F.Market.evidence(h),
         rule
     )
     if not check.canBuy or check.qty ~= live.quantity or check.cost ~= price then
@@ -1002,7 +1037,7 @@ function C:budgetStillValid(p, ownOp)
         o.vendor = self:variantVendor(p.rows, p.key) or o.vendor
     end
     local h = self:history(p.key)
-    local fresh = F.Market.plan(p.rows, h and h.samples or {}, o)
+    local fresh = F.Market.plan(p.rows, F.Market.evidence(h), o)
     return fresh.canBuy and fresh.qty == p.qty and fresh.cost == p.cost
 end
 function C:mailProposals()

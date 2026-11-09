@@ -2,6 +2,29 @@ local F = ForeverFlip
 local U = F.Util
 local M = {}
 F.Market = M
+function M.evidence(h)
+    local out = {}
+    local earliest = math.huge
+    for _, s in ipairs(h and h.samples or {}) do
+        out[#out + 1] = s
+        if U.finite(s.at) then
+            earliest = math.min(earliest, s.at)
+        end
+    end
+    for _, d in ipairs(h and h.days or {}) do
+        if U.finite(d.firstAt) and d.firstAt < earliest - 600 and U.finite(d.firstPrice) then
+            out[#out + 1] = {
+                at = d.firstAt,
+                price = d.firstPrice,
+                token = d.firstToken or ("anchor:" .. d.day),
+                complete = true,
+                family = d.firstFamily,
+                source = "daily-anchor",
+            }
+        end
+    end
+    return out
+end
 function M.snapshot(rows)
     local a, total = {}, 0
     for _, r in ipairs(rows or {}) do
@@ -155,6 +178,12 @@ function M.plan(input, history, o)
     local roi = U.number(o.minROI, 0.25, 0, 10)
     local fee = U.number(o.fee, 0.05, 0, 0.5)
     local reserve = U.number(o.reserve, 0.02, 0, 0.5)
+    p.extraCost = o.extraCost or 0
+    p.feeRate = fee
+    p.reserveRate = reserve
+    p.minFee = o.minFee or 0
+    p.minProfit = o.minProfit or 10000
+    p.minROI = roi
     local target, limit
     if p.mode == "vendor" then
         target = U.number(o.vendor, nil, 1)

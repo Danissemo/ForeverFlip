@@ -248,7 +248,18 @@ function S.observe(db, scope, key, o)
         end
     end
     if not d then
-        d = { day = day, price = 0, n = 0, low = o.price, high = o.price, qty = 0 }
+        d = {
+            day = day,
+            price = 0,
+            n = 0,
+            low = o.price,
+            high = o.price,
+            qty = 0,
+            firstAt = o.at,
+            firstPrice = o.price,
+            firstToken = o.token,
+            firstFamily = o.family,
+        }
         h.days[#h.days + 1] = d
     end
     d.price = (d.price * d.n + o.price) / (d.n + 1)
