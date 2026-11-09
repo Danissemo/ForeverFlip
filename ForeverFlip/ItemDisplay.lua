@@ -2,9 +2,7 @@ local F = ForeverFlip
 local U = F.Util
 local D = { requested = {}, requestCount = 0 }
 F.ItemDisplay = D
-local function L(source, en)
-    return en or source
-end
+local L = F.Locale.text
 local function validLink(key, link)
     if type(link) ~= "string" then
         return nil
@@ -62,7 +60,7 @@ function D.metadata(key, link, family)
     end
     return {
         key = key,
-        name = name or ("Item " .. tostring(id)),
+        name = name or (L("Item", "Item") .. " " .. tostring(id)),
         link = link,
         quality = quality,
         icon = icon or 134400,
@@ -85,6 +83,7 @@ function D.money(value)
 end
 local function label(parent, x, y, w, title)
     local f = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    F.Locale.font(f, 11)
     f:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
     f:SetWidth(w)
     f:SetJustifyH("LEFT")

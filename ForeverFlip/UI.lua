@@ -2,170 +2,173 @@ local F = ForeverFlip
 local U = F.Util
 local UI = {}
 F.UI = UI
-local function L(r, e)
-    return e or r
+local L = F.Locale.text
+local function reasons()
+    return {
+        history = L("Insufficient independent history", "Insufficient independent history"),
+        volatility = L("High volatility", "High volatility"),
+        crash = L("Market drop", "Market drop"),
+        legacy = L("Reconcile legacy positions", "Reconcile legacy positions"),
+        exit = L("No exit price", "No exit price"),
+        formula = L("Formula source unavailable", "Formula source unavailable"),
+        partial = L("Partial results", "Partial results"),
+        ["budget/price"] = L("Price or budget limit", "Price or budget limit"),
+        margin = L("Profit/ROI below rule", "Profit/ROI below rule"),
+        ["advisor:probe"] = L(
+            "Probe: sell current stock first",
+            "Probe: sell current stock first"
+        ),
+        ["advisor:stock_limit"] = L(
+            "Stock covers the sale horizon",
+            "Stock covers the sale horizon"
+        ),
+        ["advisor:no_sales"] = L(
+            "Stock without confirmed sales for 7+ days",
+            "Stock without confirmed sales for 7+ days"
+        ),
+        ["advisor:loss_history"] = L(
+            "Unfavorable profit history",
+            "Unfavorable profit history"
+        ),
+        stale = L("Stale snapshot", "Stale snapshot"),
+    }
 end
-local reasons = {
-    history = L("Insufficient independent history", "Insufficient independent history"),
-    volatility = L("High volatility", "High volatility"),
-    crash = L("Market drop", "Market drop"),
-    legacy = L("Reconcile legacy positions", "Reconcile legacy positions"),
-    exit = L("No exit price", "No exit price"),
-    formula = L("Formula source unavailable", "Formula source unavailable"),
-    partial = L("Partial results", "Partial results"),
-    ["budget/price"] = L("Price or budget limit", "Price or budget limit"),
-    margin = L("Profit/ROI below rule", "Profit/ROI below rule"),
-    ["advisor:probe"] = L(
-        "Probe: sell current stock first",
-        "Probe: sell current stock first"
-    ),
-    ["advisor:stock_limit"] = L(
-        "Stock covers the sale horizon",
-        "Stock covers the sale horizon"
-    ),
-    ["advisor:no_sales"] = L(
-        "Stock without confirmed sales for 7+ days",
-        "Stock without confirmed sales for 7+ days"
-    ),
-    ["advisor:loss_history"] = L(
-        "Unfavorable profit history",
-        "Unfavorable profit history"
-    ),
-    stale = L("Stale snapshot", "Stale snapshot"),
-}
-local messages = {
-    ready = L(
-        "Open AH and scan or enter an item ID.",
-        "Open AH and scan or enter an item ID."
-    ),
-    searching = L("Searching…", "Searching…"),
-    plan_ready = L(
-        "Plan ready. Request quote or buy one lot.",
-        "Plan ready. Request quote or buy one lot."
-    ),
-    plan_review = L(
-        "Review the reasons in the trade card.",
-        "Review the reasons in the trade card."
-    ),
-    partial = L(
-        "Full results required; request more.",
-        "Full results required; request more."
-    ),
-    quote_wait = L(
-        "Waiting for a quote; no purchase yet.",
-        "Waiting for a quote; no purchase yet."
-    ),
-    quote_ready = L(
-        "Quote ready; confirm with a separate click.",
-        "Quote ready; confirm with a separate click."
-    ),
-    await_receipt = L(
-        "Sent; awaiting purchase receipt.",
-        "Sent; awaiting purchase receipt."
-    ),
-    purchase_recorded = L(
-        "Purchase recorded. Collect your items.",
-        "Purchase recorded. Collect your items."
-    ),
-    unknown = L(
-        "Unknown result. Funds remain reserved; reconcile.",
-        "Unknown result. Funds remain reserved; reconcile."
-    ),
-    price_changed = L(
-        "Price changed; quote cancelled.",
-        "Price changed; quote cancelled."
-    ),
-    readonly = L(
-        "Unsupported data schema: read-only.",
-        "Unsupported data schema: read-only."
-    ),
-    auction_closed = L(
-        "Trading requires an open AH and no combat.",
-        "Trading requires an open AH and no combat."
-    ),
-    buy_blocked = L(
-        "Purchase blocked. Check plan freshness and conditions.",
-        "Purchase blocked. Check plan freshness and conditions."
-    ),
-    resolve_pending = L(
-        "Reconcile the pending trade in Portfolio first.",
-        "Reconcile the pending trade in Portfolio first."
-    ),
-    throttled = L(
-        "AH throttled; retry after a pause.",
-        "AH throttled; retry after a pause."
-    ),
-    search_busy = L(
-        "Wait for the current search or press Stop.",
-        "Wait for the current search or press Stop."
-    ),
-    search_timeout = L(
-        "Search timed out; retry manually.",
-        "Search timed out; retry manually."
-    ),
-    replicate_cooldown = L(
-        "Full scan cooldown: approximately 15 minutes.",
-        "Full scan cooldown: approximately 15 minutes."
-    ),
-    replicate_wait = L(
-        "Waiting for full replication…",
-        "Waiting for full replication…"
-    ),
-    replicate_done = L(
-        "Scan ready. Select a deal for exact verification.",
-        "Scan ready. Select a deal for exact verification."
-    ),
-    replicate_timeout = L(
-        "Replication timed out; another addon may have scanned.",
-        "Replication timed out; another addon may have scanned."
-    ),
-    watching = L(
-        "Watching for 10 minutes. All trades require clicks.",
-        "Watching for 10 minutes. All trades require clicks."
-    ),
-    watch_finished = L("Watch session ended.", "Watch session ended."),
-    stopped = L("Stopped.", "Stopped."),
-    rescan = L(
-        "Settings changed. Search again.",
-        "Settings changed. Search again."
-    ),
-    post_values = L(
-        "Check quantity and price; increment is 1 silver.",
-        "Check quantity and price; increment is 1 silver."
-    ),
-    post_floor = L(
-        "Price below sale floor or NPC net value.",
-        "Price below sale floor or NPC net value."
-    ),
-    deposit_unknown = L(
-        "Cannot verify deposit or funds.",
-        "Cannot verify deposit or funds."
-    ),
-    post_confirm = L(
-        "Click Post again to confirm.",
-        "Click Post again to confirm."
-    ),
-    post_sent = L(
-        "Posting sent. Check your auctions.",
-        "Posting sent. Check your auctions."
-    ),
-    bid_reserved = L(
-        "Bid sent; funds reserved until reconciliation.",
-        "Bid sent; funds reserved until reconciliation."
-    ),
-    ledger_full = L(
-        "Ledger blocked: limit or invalid receipt.",
-        "Ledger blocked: limit or invalid receipt."
-    ),
-    reconciled = L("Reconciliation saved.", "Reconciliation saved."),
-    quote_expired = L("Quote expired.", "Quote expired."),
-    mail_review = L(
-        "Mail invoices ready for manual reconciliation.",
-        "Mail invoices ready for manual reconciliation."
-    ),
-}
+local function messages()
+    return {
+        ready = L(
+            "Open AH and scan or enter an item ID.",
+            "Open AH and scan or enter an item ID."
+        ),
+        searching = L("Searching…", "Searching…"),
+        plan_ready = L(
+            "Plan ready. Request quote or buy one lot.",
+            "Plan ready. Request quote or buy one lot."
+        ),
+        plan_review = L(
+            "Review the reasons in the trade card.",
+            "Review the reasons in the trade card."
+        ),
+        partial = L(
+            "Full results required; request more.",
+            "Full results required; request more."
+        ),
+        quote_wait = L(
+            "Waiting for a quote; no purchase yet.",
+            "Waiting for a quote; no purchase yet."
+        ),
+        quote_ready = L(
+            "Quote ready; confirm with a separate click.",
+            "Quote ready; confirm with a separate click."
+        ),
+        await_receipt = L(
+            "Sent; awaiting purchase receipt.",
+            "Sent; awaiting purchase receipt."
+        ),
+        purchase_recorded = L(
+            "Purchase recorded. Collect your items.",
+            "Purchase recorded. Collect your items."
+        ),
+        unknown = L(
+            "Unknown result. Funds remain reserved; reconcile.",
+            "Unknown result. Funds remain reserved; reconcile."
+        ),
+        price_changed = L(
+            "Price changed; quote cancelled.",
+            "Price changed; quote cancelled."
+        ),
+        readonly = L(
+            "Unsupported data schema: read-only.",
+            "Unsupported data schema: read-only."
+        ),
+        auction_closed = L(
+            "Trading requires an open AH and no combat.",
+            "Trading requires an open AH and no combat."
+        ),
+        buy_blocked = L(
+            "Purchase blocked. Check plan freshness and conditions.",
+            "Purchase blocked. Check plan freshness and conditions."
+        ),
+        resolve_pending = L(
+            "Reconcile the pending trade in Portfolio first.",
+            "Reconcile the pending trade in Portfolio first."
+        ),
+        throttled = L(
+            "AH throttled; retry after a pause.",
+            "AH throttled; retry after a pause."
+        ),
+        search_busy = L(
+            "Wait for the current search or press Stop.",
+            "Wait for the current search or press Stop."
+        ),
+        search_timeout = L(
+            "Search timed out; retry manually.",
+            "Search timed out; retry manually."
+        ),
+        replicate_cooldown = L(
+            "Full scan cooldown: approximately 15 minutes.",
+            "Full scan cooldown: approximately 15 minutes."
+        ),
+        replicate_wait = L(
+            "Waiting for full replication…",
+            "Waiting for full replication…"
+        ),
+        replicate_done = L(
+            "Scan ready. Select a deal for exact verification.",
+            "Scan ready. Select a deal for exact verification."
+        ),
+        replicate_timeout = L(
+            "Replication timed out; another addon may have scanned.",
+            "Replication timed out; another addon may have scanned."
+        ),
+        watching = L(
+            "Watching for 10 minutes. All trades require clicks.",
+            "Watching for 10 minutes. All trades require clicks."
+        ),
+        watch_finished = L("Watch session ended.", "Watch session ended."),
+        stopped = L("Stopped.", "Stopped."),
+        rescan = L(
+            "Settings changed. Search again.",
+            "Settings changed. Search again."
+        ),
+        post_values = L(
+            "Check quantity and price; increment is 1 silver.",
+            "Check quantity and price; increment is 1 silver."
+        ),
+        post_floor = L(
+            "Price below sale floor or NPC net value.",
+            "Price below sale floor or NPC net value."
+        ),
+        deposit_unknown = L(
+            "Cannot verify deposit or funds.",
+            "Cannot verify deposit or funds."
+        ),
+        post_confirm = L(
+            "Click Post again to confirm.",
+            "Click Post again to confirm."
+        ),
+        post_sent = L(
+            "Posting sent. Check your auctions.",
+            "Posting sent. Check your auctions."
+        ),
+        bid_reserved = L(
+            "Bid sent; funds reserved until reconciliation.",
+            "Bid sent; funds reserved until reconciliation."
+        ),
+        ledger_full = L(
+            "Ledger blocked: limit or invalid receipt.",
+            "Ledger blocked: limit or invalid receipt."
+        ),
+        reconciled = L("Reconciliation saved.", "Reconciliation saved."),
+        quote_expired = L("Quote expired.", "Quote expired."),
+        mail_review = L(
+            "Mail invoices ready for manual reconciliation.",
+            "Mail invoices ready for manual reconciliation."
+        ),
+    }
+end
 local function text(parent, x, y, w, value, font)
     local v = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
+    F.Locale.font(v, font == "GameFontNormalLarge" and 16 or 12)
     v:SetPoint("TOPLEFT", x, -y)
     v:SetWidth(w)
     v:SetJustifyH("LEFT")
@@ -177,18 +180,33 @@ end
 local function button(parent, x, y, w, value, callback)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     b:SetPoint("TOPLEFT", x, -y)
-    b:SetSize(w, 26)
+    b:SetSize(w, 30)
     b:SetText(value)
+    local label = b:GetFontString()
+    if label then
+        F.Locale.font(label, 11)
+        label:SetWidth(w - 14)
+        label:SetWordWrap(true)
+        if label:GetStringHeight() > 26 then
+            F.Locale.font(label, 10)
+        end
+        if label:GetStringHeight() > 26 then
+            F.Locale.font(label, 9)
+        end
+    end
     b:SetScript("OnClick", callback)
     return b
 end
 local function field(parent, x, y, w, title, value, multi)
-    text(parent, x, y, w, title)
+    local titleText = text(parent, x, y, w, title)
+    F.Locale.font(titleText, 10)
+    titleText:SetHeight(28)
     local e = CreateFrame("EditBox", nil, parent, multi and "BackdropTemplate" or "InputBoxTemplate")
-    e:SetPoint("TOPLEFT", x + 4, -y - 20)
+    e:SetPoint("TOPLEFT", x + 4, -y - 30)
     e:SetSize(w - 8, multi and 110 or 24)
     e:SetAutoFocus(false)
     e:SetFontObject("GameFontHighlightSmall")
+    F.Locale.font(e, 12)
     e:SetText(tostring(value or ""))
     if multi then
         e:SetMultiLine(true)
@@ -217,7 +235,7 @@ end
 local function warningList(p)
     local out = {}
     for _, r in ipairs(p.reasons or {}) do
-        out[#out + 1] = reasons[r] or r
+        out[#out + 1] = reasons()[r] or F.Locale.message(r)
     end
     return table.concat(out, "; ")
 end
@@ -256,7 +274,7 @@ function UI.create(c)
         self:refresh()
     end)
     text(host, 18, 15, 175, "FOREVER|cff6dd7bdFLIP|r", "GameFontNormalLarge")
-    text(host, 18, 42, 150, "5.2.2 · PREVIEW")
+    text(host, 18, 42, 150, "5.2.3 · " .. L("Preview", "Preview"))
     self.header = text(host, 190, 15, 760, "", "GameFontNormal")
     self.fields.item =
         field(host, 190, 40, 190, L("Item: ID / link / key", "Item: ID / link / key"), "")
@@ -699,6 +717,7 @@ function UI.create(c)
             )
         )
         local overview = text(b, 0, 85, 810, "", "GameFontNormal")
+        self.overviewText = overview
         self.refreshers.overview = function()
             local r = c:summary()
             local now = c.api.clock()
@@ -760,7 +779,7 @@ function UI.create(c)
         action("toPortfolio", b, 185, 410, 170, L("Reconcile", "Reconcile"), function()
             self:show("portfolio")
         end)
-        text(
+        self.overviewNote = text(
             b,
             0,
             465,
@@ -792,7 +811,7 @@ function UI.create(c)
             btn:SetText(
                 self.filterMode == "all" and L("All strategies", "All strategies")
                     or self.filterMode == "vendor" and "NPC"
-                    or "FLIP"
+                    or L("Resale", "Resale")
             )
             self:refresh()
         end)
@@ -829,11 +848,11 @@ function UI.create(c)
             end)
         end
         local pages = text(b, 270, 473, 260, "")
-        button(b, 0, 467, 110, "←", function()
+        button(b, 0, 467, 110, "<-", function()
             self.dealPage = math.max(1, self.dealPage - 1)
             self:refresh()
         end)
-        button(b, 120, 467, 110, "→", function()
+        button(b, 120, 467, 110, "->", function()
             self.dealPage = self.dealPage + 1
             self:refresh()
         end)
@@ -886,7 +905,7 @@ function UI.create(c)
         action("tradeMode", b, 0, 0, 200, L("Strategy: FLIP / NPC", "Strategy: FLIP / NPC"), function(btn)
             c:stop()
             c.mode = c.mode == "vendor" and "flip" or "vendor"
-            btn:SetText(c.mode == "vendor" and "NPC" or "FLIP")
+            btn:SetText(c.mode == "vendor" and "NPC" or L("Resale", "Resale"))
             self:refresh()
         end)
         action("more", b, 215, 0, 170, L("More results", "More results"), function()
@@ -2067,7 +2086,7 @@ function UI.create(c)
             230,
             L("Preview legacy ledger", "Preview legacy ledger"),
             function()
-                local lines = { "LEGACY · " .. #(db.legacyLedger or {}) }
+                local lines = { L("Legacy", "Legacy") .. " · " .. #(db.legacyLedger or {}) }
                 for i, e in ipairs(db.legacyLedger or {}) do
                     if i <= 100 then
                         lines[#lines + 1] = (e.kind or "?")
@@ -2157,7 +2176,25 @@ function UI.create(c)
                 )
             end
         )
-        self.sections.settings.body:SetHeight(1100)
+        text(b, 0, 1095, 810, L("Language (reload required)", "Language (reload required)"))
+        for i, language in ipairs({
+            { "uk", "Українська" },
+            { "en", "English" },
+            { "auto", "Auto" },
+        }) do
+            local choice = language[1]
+            action("language" .. choice, b, (i - 1) * 175, 1120, 165, language[2], function()
+                if F.Locale.choose(choice) then
+                    c:notify(
+                        L(
+                            "Language saved. Use /reload to apply.",
+                            "Language saved. Use /reload to apply."
+                        )
+                    )
+                end
+            end)
+        end
+        self.sections.settings.body:SetHeight(1190)
     end
     self.exchangeFrame = panel(host)
     self.exchangeFrame:SetPoint("CENTER")
@@ -2264,7 +2301,7 @@ function UI:refresh()
             .. L("  · reserved ", "  · reserved ")
             .. U.money(c:reserved())
     )
-    local message = messages[c.message] or c.message
+    local message = messages()[c.message] or F.Locale.message(c.message)
     if c.fullJob and not c.fullJob.waiting then
         message = L("Processing: ", "Processing: ") .. c.fullJob.index .. " / " .. c.fullJob.total
     end
@@ -2273,6 +2310,18 @@ function UI:refresh()
     local ok, err = true, nil
     if fn then
         ok, err = pcall(fn)
+    end
+    if ok then
+        if self.section == "overview" and self.overviewText then
+            local y = 85 + self.overviewText:GetStringHeight() + 20
+            self.actions.toDeals:ClearAllPoints()
+            self.actions.toDeals:SetPoint("TOPLEFT", self.sections.overview.body, "TOPLEFT", 0, -y)
+            self.actions.toPortfolio:ClearAllPoints()
+            self.actions.toPortfolio:SetPoint("TOPLEFT", self.sections.overview.body, "TOPLEFT", 185, -y)
+            self.overviewNote:ClearAllPoints()
+            self.overviewNote:SetPoint("TOPLEFT", self.sections.overview.body, "TOPLEFT", 0, -y - 50)
+            self.sections.overview.body:SetHeight(math.max(1100, y + 150))
+        end
     end
     self.refreshing = false
     if not ok then

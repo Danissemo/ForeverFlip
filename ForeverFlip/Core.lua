@@ -1,5 +1,6 @@
 local ADDON = ... or "ForeverFlip"
 local F = ForeverFlip
+local L = F.Locale.text
 local frame = CreateFrame("Frame")
 F.eventFrame = frame
 function F.boot(name)
@@ -45,7 +46,8 @@ function F.boot(name)
     end)
     print(
         "|cff6dd7bdForeverFlip 5|r · /ff · PREVIEW · "
-            .. (
+            .. L(
+                "Open from the auction window. Legacy data retained.",
                 "Open from the auction window. Legacy data retained."
             )
     )
@@ -57,7 +59,13 @@ function F.attach()
     if not F.ui then
         -- Unsupported future data stays untouched; only a read-only message is shown.
         if not F.Store.writable(F.db) then
-            print("ForeverFlip: unsupported SavedVariables schema; restore a supported backup.")
+            print(
+                "ForeverFlip: "
+                    .. L(
+                        "Unsupported SavedVariables schema; restore a supported backup.",
+                        "Unsupported SavedVariables schema; restore a supported backup."
+                    )
+            )
             return
         end
         F.ui = F.UI.create(F.controller)
@@ -188,12 +196,26 @@ SlashCmdList.FOREVERFLIP = function(message)
     if not F.controller then
         return
     end
-    if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
+    local language = message and message:match("^lang%s+(%S+)%s*$")
+    if language or message == "lang" then
         print(
             "ForeverFlip: "
                 .. (
-                    "Open an auction house first."
+                    language
+                        and F.Locale.choose(language)
+                        and L(
+                            "Language saved. Use /reload to apply.",
+                            "Language saved. Use /reload to apply."
+                        )
+                    or L("Language: /ff lang uk | en | auto", "Language: /ff lang uk | en | auto")
                 )
+        )
+        return
+    end
+    if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
+        print(
+            "ForeverFlip: "
+                .. L("Open an auction house first.", "Open an auction house first.")
         )
         return
     end

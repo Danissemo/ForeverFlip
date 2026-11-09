@@ -1,6 +1,6 @@
 ForeverFlip = ForeverFlip or {}
 local F = ForeverFlip
-F.version = "5.2.2-preview"
+F.version = "5.2.3-preview"
 local U = {}
 F.Util = U
 function U.finite(n)

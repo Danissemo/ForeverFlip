@@ -5,9 +5,10 @@ live-client checks validate the native protected-action paths.
 
 Money/source formats: [ForeverFlip/DATA_FORMATS.md](ForeverFlip/DATA_FORMATS.md).
 
-Run tests with Python 3.12 and `lupa==2.8` (module `lupa.lua51`):
+Run tests with Python 3.12; install requirements-dev.txt (Lua tests use lupa.lua51):
 
 ```powershell
+python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 python tools/build.py --output dist
 ```
@@ -26,3 +27,6 @@ See docs/workbench-plan.md and docs/workbench-review.md.
 caps, Wilson profitable-close statistics, ROI-normalized quarter-Kelly sizing,
 own-sale turnover caps, one-unit probes and click-through paged recommendations.
 No formula entry is required for automatic planning.
+
+5.2.3: Ukrainian interface with /ff lang uk and an OFL Cyrillic font, placeholder
+and glyph coverage tests. See ForeverFlip/README_UK.md.

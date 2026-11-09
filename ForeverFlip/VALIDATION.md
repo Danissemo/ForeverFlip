@@ -1,6 +1,6 @@
 # Validation and release status
 
-Release: **5.2.2-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
+Release: **5.2.3-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
 
 5.2 adds daily-balanced price caps, own-sale statistics and turnover/position
 constraints, pending probe quantities, quote revalidation of fresh advisor caps,
@@ -67,3 +67,11 @@ icon/name/currency columns, deal/assistant/trade integration, hover without
 spending, and one deferred refresh for 100 item-cache notifications. Independent
 review checked actual native API signatures and reran the suite. Live graphics
 capture timed out, so visible layout and tooltip acceptance remain unverified.
+
+5.2.3 verifies every localized UI key has a Ukrainian translation and the same
+printf-style parameters; the bundled OFL font contains all catalog glyphs and
+ІіЇїЄєҐґ. Language override works with AH closed, preserves financial settings
+and initializes all nine pages. Tests catch Lua multiple-return propagation and
+measure filled overview text before placing controls. A fresh reviewer found
+missing raw errors and first-open overview overlap; both have regressions.
+Native rendering and clipping still require an in-client visual check.

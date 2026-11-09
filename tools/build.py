@@ -37,7 +37,7 @@ version=re.search(r'^## Version: ([A-Za-z0-9.\-]+)$',toc,re.M).group(1)
 package=out/f'ForeverFlip-{version}-WoW-Forever.zip'
 source=out/f'ForeverFlip-{version}-source.zip'
 addon_files=[(p,Path('ForeverFlip')/p.relative_to(addon))for p in addon.rglob('*')if p.is_file()]
-allowed={'.lua','.toc','.md','.txt','.json','.py'}
+allowed={'.lua','.toc','.md','.txt','.json','.py','.ttf'}
 source_files=[(p,Path('ForeverFlip-source')/p.relative_to(repo))for p in repo.rglob('*')
     if p.is_file()and p.suffix in allowed and not any(part in {'.git','dist','__pycache__'}for part in p.relative_to(repo).parts)]
 report={'client':'1.60.1.70862','interface':16001,'lua':'5.1','compiled_modules':len(modules),
