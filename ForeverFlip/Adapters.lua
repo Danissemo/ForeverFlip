@@ -18,7 +18,7 @@ function A.native(db)
     api.wallet=function() return GetMoney() end
     api.owner=function() return tostring(GetRealmID and GetRealmID() or GetRealmName())..':'..tostring(UnitGUID('player')) end
     api.scope=function() return 'wowf:'..tostring(GetCurrentRegion and GetCurrentRegion() or '?')..':'..
-        tostring(GetRealmID and GetRealmID() or GetRealmName())..':'..tostring(db.ui.house or UnitFactionGroup('player')) end
+        tostring(GetRealmID and GetRealmID() or GetRealmName())..':'..tostring(db.ui and db.ui.house or UnitFactionGroup('player')) end
     api.isOpen=function() return AuctionHouseFrame and AuctionHouseFrame:IsShown() and not (InCombatLockdown and InCombatLockdown()) end
     api.ready=function() return not C.IsThrottledMessageSystemReady or C.IsThrottledMessageSystemReady() end
     api.search=function(key)

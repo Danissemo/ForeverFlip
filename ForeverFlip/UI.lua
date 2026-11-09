@@ -70,6 +70,8 @@ function UI.create(c)
     local host=panel(AuctionHouseFrame or UIParent); self.frame=host
     host:SetSize(1080,680); host:SetPoint('TOPLEFT',AuctionHouseFrame or UIParent,'TOPLEFT',0,0)
     host:SetFrameStrata('HIGH'); host:SetClampedToScreen(true); host:SetMovable(true); host:EnableMouse(true)
+    local screenWidth=UIParent and UIParent.GetWidth and UIParent:GetWidth()or 1920
+    if U.finite(screenWidth)and screenWidth>0 and screenWidth<1140 then host:SetScale(math.max(.60,(screenWidth-30)/1080))end
     host:RegisterForDrag('LeftButton'); host:SetScript('OnDragStart',function(s)s:StartMoving()end); host:SetScript('OnDragStop',function(s)s:StopMovingOrSizing()end)
     text(host,18,15,175,'FOREVER|cff6dd7bdFLIP|r','GameFontNormalLarge')
     text(host,18,42,150,'5.0 · PREVIEW')
@@ -477,12 +479,19 @@ function UI.create(c)
             db.legacyAssigned=true;c:invalidate()
         end)
         text(b,0,790,810,L('References: TSM, Auctionator, auxForever, Auctioneer, AuctionMin, AHSentinel, AHledger, Everloot. Paid data access is not included. External prices require matching scope and timestamps.','References: TSM, Auctionator, auxForever, Auctioneer, AuctionMin, AHSentinel, AHledger, Everloot. Paid data access is not included. External prices require matching scope and timestamps.'))
+        val('priceImport',b,0,875,810,L('Import prices: FFP1|exact_scope|Unix_time, then key,copper,quantity rows','Import prices: FFP1|exact_scope|Unix_time, then key,copper,quantity rows'),'',true)
+        action('priceImport',b,0,1020,220,L('Validate and import','Validate and import'),function()
+            if not saveable()then return end
+            local ok,err=F.Store.importPrices(db,self.fields.priceImport:GetText(),c.api.scope(),c.api.clock())
+            c:notify(ok and L('Imported with source label.','Imported with source label.')or err)
+        end)
+        self.sections.settings.body:SetHeight(1100)
     end
     self.exchangeFrame=panel(host);self.exchangeFrame:SetPoint('CENTER');self.exchangeFrame:SetSize(850,450);self.exchangeFrame:SetFrameLevel(host:GetFrameLevel()+20);self.exchangeFrame:Hide()
     self.exchangeEdit=field(self.exchangeFrame,15,15,810,L('Select Ctrl+A → Ctrl+C. Text only.','Select Ctrl+A → Ctrl+C. Text only.'),'',true)
     self.exchangeEdit:SetHeight(335)
     button(self.exchangeFrame,650,400,160,L('Close','Close'),function()self.exchangeFrame:Hide()end)
-    host:Hide();return self
+    self:show((db.ui and db.ui.section)or 'overview');host:Hide();return self
 end
 function UI:exchange(value)self.exchangeEdit:SetText(value);self.exchangeFrame:Show();self.exchangeEdit:SetFocus();self.exchangeEdit:HighlightText()end
 function UI:renderToolResult()

@@ -23,6 +23,8 @@ class UITests(unittest.TestCase):
     def test_buy_controls_start_disabled(self):
         ui_runtime().execute('''u:show('trade'); u:refresh()
         assert(not u.actions.buy:IsEnabled() and not u.actions.confirm:IsEnabled())''')
+    def test_library_can_show_initialized_default_page(self):
+        ui_runtime().execute("assert(u.sections.overview.scroll:IsShown())")
     def test_watchlist_and_rule_group_import(self):
         ui_runtime().execute('''u.fields.item:SetText('2589'); u.actions.watchAdd:Click(); assert(db.watchlist[1]==2589)
         u.fields.exchange:SetText('FFG1|Cloth|2589,2592|30|1|50|10'); u.actions.groupImport:Click()

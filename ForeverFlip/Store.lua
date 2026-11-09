@@ -15,10 +15,15 @@ function S.open(old)
     local db={schemaVersion=5,settings=U.copy(S.defaults),watchlist={},groups={},ledger={},legacyLedger={},
         markets={},pending={},recipes={},disenchant={},vendorPrices={},receipts={},ui={},quarantine={},sequence=0}
     if type(old)=='table' then
-        db.watchlist=U.copy(old.watchlist or {}); db.recipes=U.copy(old.recipes or {})
-        db.disenchant=U.copy(old.disenchant or {}); db.legacyLedger=U.copy(old.ledger or {})
-        db.legacyHistory=U.copy(old.history or {}); db.legacyRadarHistory=U.copy(old.radarHistory or {})
-        db.groups=U.copy(old.groups or {}); db.ui.theme=old.uiTheme
+        local function legacy(name)
+            if type(old[name])=='table'then return U.copy(old[name])end
+            if old[name]~=nil then db.quarantine[#db.quarantine+1]={field=name,value=U.copy(old[name])}end
+            return {}
+        end
+        db.watchlist=legacy('watchlist'); db.recipes=legacy('recipes')
+        db.disenchant=legacy('disenchant'); db.legacyLedger=legacy('ledger')
+        db.legacyHistory=legacy('history'); db.legacyRadarHistory=legacy('radarHistory')
+        db.groups=legacy('groups'); db.ui.theme=old.uiTheme
         if U.finite(old.fee) then db.settings.fee=old.fee end
         if U.finite(old.reserve) then db.settings.reserve=old.reserve end
         if U.finite(old.beginnerMaxCopper) then db.settings.absoluteCap=old.beginnerMaxCopper end
@@ -43,7 +48,8 @@ function S.observe(db,scope,key,o)
         h={samples={},days={}}; m[key]=h
     end
     for _,s in ipairs(h.samples) do if (o.token and s.token==o.token) or math.abs(s.at-o.at)<600 then return false end end
-    h.samples[#h.samples+1]=U.copy(o); while #h.samples>120 do table.remove(h.samples,1) end
+    local sample={at=o.at,price=o.price,qty=o.qty,token=o.token,complete=true,source=o.source}
+    h.samples[#h.samples+1]=sample; while #h.samples>120 do table.remove(h.samples,1) end
     h.at=math.max(h.at or 0,o.at); h.latest=U.copy(o)
     local day=math.floor(o.at/86400); local d
     for _,v in ipairs(h.days) do if v.day==day then d=v end end
@@ -74,4 +80,22 @@ end
 function S.exportGroup(g)
     local ids=U.sortedKeys(g.items); local r=g.rule or {}
     return table.concat({'FFG1',g.name,table.concat(ids,','),(r.minROI or .25)*100,U.gold(r.minProfit or 10000),U.gold(r.budget or 1000000),r.maxQty or 100},'|')
+end
+function S.importPrices(db,text,scope,now)
+    if not S.writable(db)or type(text)~='string'or #text>200000 then return false,'Input limit/read-only' end
+    local header,body=text:match('^([^\r\n]+)[\r\n]+(.*)$')
+    local sourceScope,stamp
+    if header then sourceScope,stamp=header:match('^FFP1|([^|]+)|(%d+)$')end
+    stamp=tonumber(stamp)
+    if sourceScope~=scope or not stamp or stamp>now or stamp<now-60*86400 then return false,'Market scope / timestamp mismatch' end
+    local pending={};local count=0
+    for line in body:gmatch('[^\r\n]+')do
+        local key,price,qty=line:match('^([%d:%-]+),(%d+),(%d+)$');price,qty=tonumber(price),tonumber(qty)
+        if not U.fromKey(key)or not price or price<=0 or price>1e12 or not qty or qty<1 or qty>100000000 then return false,'Invalid price row' end
+        count=count+1;if count>2000 then return false,'2000 rows maximum' end
+        pending[#pending+1]={key=key,price=price,qty=qty}
+    end
+    if #pending==0 then return false,'No price rows' end
+    for _,p in ipairs(pending)do S.observe(db,scope,p.key,{at=stamp,price=p.price,qty=p.qty,complete=true,token='import:'..stamp,source='import'})end
+    return true
 end

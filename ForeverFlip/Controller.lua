@@ -27,7 +27,7 @@ function C:reserved()
     end
     return n
 end
-function C:summary() return F.Ledger.summary(self.db.ledger,self.api.owner(),self.api.scope()) end
+function C:summary() return self.cachedSummary or F.Ledger.summary(self.db.ledger,self.api.owner(),self.api.scope()) end
 function C:rule(id)
     local out=U.copy(self.db.settings or F.Store.defaults)
     for _,g in ipairs(self.db.groups or {}) do
@@ -37,8 +37,11 @@ function C:rule(id)
 end
 function C:options(key,mode)
     local o=self:rule(key.itemID); local summary=self:summary(); local identity=U.key(key)
-    o.stock=summary.stock; o.exposure=0
-    for _,p in ipairs(summary.positions) do if p.key==identity then o.exposure=p.cost end end
+    o.stock=summary.stock; o.exposure=0;o.ownedQty=0
+    for _,p in ipairs(summary.positions) do if p.key==identity then o.exposure=p.cost;o.ownedQty=p.qty end end
+    o.velocity=F.Market.velocity(summary.salesHistory,identity,self.api.clock())
+    o.avgBuy=o.ownedQty>0 and o.exposure/o.ownedQty or nil
+    for _,source in ipairs(F.Adapters.prices(key.itemID))do if source.source=='auxForever'then o.aux=source.price elseif source.source=='TSM'then o.tsm=source.price end end
     o.legacyUnresolved=false
     if o.safe~=false and not self.db.legacyAssigned then
         for _,e in ipairs(self.db.legacyLedger or {}) do if e.id==key.itemID then o.legacyUnresolved=true; break end end
@@ -77,7 +80,8 @@ function C:results(kind,key)
     if complete then
         self.job=nil
         if self.plan.minimum then
-            F.Store.observe(self.db,j.scope,U.key(key),{at=self.api.clock(),price=self.plan.minimum,
+            local snap=F.Market.snapshot(rows)
+            F.Store.observe(self.db,j.scope,U.key(key),{at=self.api.clock(),price=snap.price,
                 qty=self.plan.totalQty,complete=true,token=tostring(j.token)..':'..self.api.clock(),source='exact',rows=U.copy(rows)})
             local found=false
             for _,r in ipairs(self.candidates) do if U.key(r.key)==U.key(key) then r.rows=rows; r.at=self.api.clock(); r.family=false; found=true end end
@@ -180,6 +184,12 @@ function C:fullScan()
 end
 function C:tick()
     local now=self.api.clock()
+    local resolved={}
+    for id,op in pairs(self.db.pending or {})do if op.status=='done'or op.status=='cancelled'then resolved[#resolved+1]=id end end
+    if #resolved>100 then
+        table.sort(resolved,function(a,b)return (self.db.pending[a].at or 0)<(self.db.pending[b].at or 0)end)
+        for i=1,#resolved-100 do self.db.pending[resolved[i]]=nil end
+    end
     if self.active and self.active.status=='awaiting' and now-self.active.at>90 then self.active.status='unknown'; self:notify('unknown') end
     if self.active and (self.active.status=='quote' or self.active.status=='quoted') and now-self.active.at>30 then self:cancelQuote(); self:notify('quote_expired') end
     if not self.api.isOpen() then if self.watching or self.job or self.fullJob then self:stop() end; return end
@@ -213,7 +223,7 @@ function C:tick()
                 table.sort(g.rows,function(a,b)return a.unit<b.unit end)
                 self.candidates[#self.candidates+1]=g
                 local qty=0; for _,r in ipairs(g.rows) do qty=qty+r.qty end
-                local price=g.rows[1] and g.rows[1].unit
+                local price=F.Market.snapshot(g.rows).price
                 if price then F.Store.observe(self.db,j.scope,k,{at=now,price=price,qty=g.depth or qty,complete=true,source='replicate',token='replicate:'..j.at,rows=U.copy(g.rows),family=g.family}) end
             end
             self.db.lastScan={at=now,total=j.total,skipped=j.skipped,scope=j.scope}; self.fullJob=nil; self:notify('replicate_done')
@@ -256,7 +266,7 @@ function C:more()
     local ok=pcall(self.api.more,self.key,self.plan.kind); return ok
 end
 function C:rank()
-    local out={}
+    local out={};self.cachedSummary=self:summary()
     for _,r in ipairs(self.candidates) do
         local history=self:history(r.key); local best
         for _,mode in ipairs({'vendor','flip'}) do
@@ -273,7 +283,7 @@ function C:rank()
         if (a.score or -math.huge)~=(b.score or -math.huge) then return (a.score or -math.huge)>(b.score or -math.huge) end
         return U.key(a.key)<U.key(b.key)
     end)
-    return out
+    self.cachedSummary=nil;return out
 end
 function C:price(id)
     local h=self:history({itemID=id}); local latest=h and h.latest
@@ -299,15 +309,16 @@ end
 function C:post(item,qty,price,duration)
     if not self:allowed() or not self:fresh() or not item or U.key(item.key)~=U.key(self.key) or self.active then return false end
     if not U.finite(qty) or qty<1 or qty~=math.floor(qty) or qty>item.qty or not U.finite(price) or price<100 or price%100~=0 then self:notify('post_values'); return false end
+    duration=duration or 2;if duration~=1 and duration~=2 and duration~=3 then return false end
     local p=self.plan; local o=self:options(self.key); local floorPrice=F.Expr.eval(o.sellFormula,{market=p.stats.lower,vendorsell=o.vendor,recent=p.minimum})
     if not floorPrice or price<floorPrice or (o.vendor and price*(1-o.fee-o.reserve)<o.vendor) then self:notify('post_floor'); return false end
     local quantity=p.kind=='commodity' and qty or 1
     local ok,deposit=pcall(self.api.deposit,item,p.kind,quantity,duration or 2)
     if not ok or not U.finite(deposit) or deposit>self.api.wallet()-self:reserved() then self:notify('deposit_unknown'); return false end
-    local confirm=self.postPending and self.postPending.price==price and self.postPending.qty==quantity and self.postPending.item==item
+    local confirm=self.postPending and self.postPending.price==price and self.postPending.qty==quantity and self.postPending.item==item and self.postPending.duration==duration
     local sent,needs=pcall(self.api.post,item,p.kind,quantity,price,duration or 2,confirm)
     if not sent then self.postPending=nil; self:notify('post_error'); return false end
-    if needs and not confirm then self.postPending={item=item,price=price,qty=quantity}; self:notify('post_confirm')
+    if needs and not confirm then self.postPending={item=item,price=price,qty=quantity,duration=duration}; self:notify('post_confirm')
     else self.postPending=nil; self.plan=nil; self:notify('post_sent') end
     return true
 end

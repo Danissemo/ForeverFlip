@@ -1,4 +1,22 @@
 local F=ForeverFlip; local U=F.Util; local M={}; F.Market=M
+function M.snapshot(rows)
+    local a,total={},0
+    for _,r in ipairs(rows or {})do if U.finite(r.unit)and r.unit>0 and U.finite(r.qty)and r.qty>0 then a[#a+1]=r;total=total+r.qty end end
+    table.sort(a,function(x,y)return x.unit<y.unit end)
+    local function quantile(f)local n=0;for _,r in ipairs(a)do n=n+r.qty;if n>=total*f then return r.unit end end end
+    return {price=quantile(.20),median=quantile(.5),minimum=a[1]and a[1].unit,qty=total}
+end
+function M.velocity(sales,key,now)
+    local units,first,days=0,nil,{}
+    for _,s in ipairs(sales or {})do
+        if s.key==key and U.finite(s.at)and s.at<=now and s.at>=now-14*86400 and (s.known or 0)>0 then
+            units=units+s.known;first=math.min(first or s.at,s.at);days[math.floor(s.at/86400)]=true
+        end
+    end
+    local count=0;for _ in pairs(days)do count=count+1 end
+    local span=first and math.max(1,(now-first)/86400)or 1
+    return {known=units>=5 and count>=2,units=units,days=count,daily=units/span,lower=math.max(0,(units-1.645*math.sqrt(units))/span)}
+end
 function M.stats(history,now)
     local prices,days,tokens,first,last={},{},{},nil,nil
     for _,h in ipairs(history or {}) do
@@ -54,6 +72,9 @@ function M.plan(input,history,o)
     p.target=target; p.buyLimit=limit or 0
     local maxQty=math.floor(U.number(o.maxQty,100,1,100000))
     if p.mode~='vendor' then maxQty=math.min(maxQty,math.max(1,math.floor(totalQty*(o.maxShare or .15)))) end
+    if p.mode~='vendor'and o.velocity and o.velocity.known then
+        maxQty=math.min(maxQty,math.max(0,math.floor(o.velocity.lower*3-(o.ownedQty or 0))))
+    end
     if o.legacyUnresolved then p.reasons[#p.reasons+1]='legacy' end
     if not target or target<=0 or not limit or limit<=0 then p.reasons[#p.reasons+1]='exit' end
     for index,row in ipairs(rows) do
@@ -82,6 +103,10 @@ function M.plan(input,history,o)
         p.confidence=p.mode=='vendor' and 1 or s.confidence
         p.downside=math.max(0,-(p.liquidation or -p.cost))
         p.score=(p.profit*p.confidence-p.downside*(1-p.confidence))/math.max(1,p.cost)
+        if p.mode~='vendor'and o.velocity and o.velocity.known and o.velocity.lower>0 then
+            p.daysToExit=((o.ownedQty or 0)+p.qty)/o.velocity.lower
+            p.score=p.score/math.max(1,p.daysToExit)
+        end
     end
     if not p.complete then p.reasons[#p.reasons+1]='partial' end
     if p.qty==0 then p.reasons[#p.reasons+1]='budget/price' end
