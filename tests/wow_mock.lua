@@ -29,7 +29,14 @@ function methods:CreateFontString() return widget('FontString',nil,self) end
 function methods:CreateTexture() return widget('Texture',nil,self) end
 function methods:CreateLine() return widget('Line',nil,self) end
 function methods:GetParent() return self.parent end
-function methods:GetPoint() return 'TOPLEFT',nil,'TOPLEFT',0,0 end
+function methods:SetPoint(...) self.points=rawget(self,'points') or {};table.insert(self.points,{...}) end
+function methods:ClearAllPoints() self.points={} end
+function methods:GetPoint(i) local p=rawget(self,'points') and self.points[i or 1];if p then return unpack(p)end;return 'TOPLEFT',nil,'TOPLEFT',0,0 end
+function methods:SetScale(s) self.scale=s end
+function methods:GetScale() return rawget(self,'scale') or 1 end
+function methods:SetMovable(v) self.movable=v end
+function methods:SetResizable(v) self.resizable=v end
+function methods:SetFrameStrata(v) self.strata=v end
 function methods:Click() if self.enabled and self.scripts.OnClick then self.scripts.OnClick(self) end end
 function CreateFrame(kind,name,parent) return widget(kind,name,parent) end
 function GetLocale() return 'enUS' end
@@ -41,6 +48,6 @@ function UnitFactionGroup() return 'Alliance' end
 function UnitGUID() return 'Player-1' end
 function InCombatLockdown() return false end
 function GetItemInfo(id) return 'Item '..tostring(id),nil,1,1,1,nil,nil,20,nil,nil,1000 end
-UIParent=widget('Frame','UIParent'); AuctionHouseFrame=widget('Frame','AuctionHouseFrame'); AuctionHouseFrame:Show()
+UIParent=widget('Frame','UIParent'); AuctionHouseFrame=widget('Frame','AuctionHouseFrame'); AuctionHouseFrame.Tabs={}; AuctionHouseFrame:Show()
 GameTooltip=widget('Frame','GameTooltip'); SlashCmdList={}; UISpecialFrames={}
 SOUNDKIT={}; C_Timer={After=function(_,fn) fn() end}

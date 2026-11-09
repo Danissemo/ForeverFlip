@@ -1,6 +1,6 @@
 # Validation and release status
 
-Release: **5.2.0-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
+Release: **5.2.2-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
 
 5.2 adds daily-balanced price caps, own-sale statistics and turnover/position
 constraints, pending probe quantities, quote revalidation of fresh advisor caps,
@@ -54,3 +54,16 @@ Live acceptance steps: install with backup, open AH, check all nine pages,
 scan an item and a variant, request and cancel a commodity quote, test one small
 purchase and one post manually, reconcile receipts, verify an NPC valuation,
 then reload and check that reservations and FIFO balances remain correct.
+
+5.2.1 embedding regressions check AH interior anchors, absence of detached
+movement/resize/high strata, logical canvas fitting 800x538 and larger windows,
+old saved dimensions ignored, library selection visibility and native fallback
+display selection. The screenshot bug was traced to assuming LibAHTab lays out
+the supplied frame; its actual contract only controls tab visibility.
+
+5.2.2 adds native item rows and tooltip metadata. Tests cover exact native
+links, unknown variant/family tooltip suppression, cold cache request bounds,
+icon/name/currency columns, deal/assistant/trade integration, hover without
+spending, and one deferred refresh for 100 item-cache notifications. Independent
+review checked actual native API signatures and reran the suite. Live graphics
+capture timed out, so visible layout and tooltip acceptance remain unverified.

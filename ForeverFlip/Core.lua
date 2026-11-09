@@ -37,7 +37,8 @@ function F.boot(name)
         end
         if paint >= 1 then
             paint = 0
-            if F.ui and F.ui.frame:IsShown() and F.ui.section == "trade" then
+            if F.ui and F.ui.frame:IsShown() and (F.ui.section == "trade" or F.itemDataDirty) then
+                F.itemDataDirty = false
                 F.ui:refresh()
             end
         end
@@ -81,19 +82,65 @@ function F.attach()
             end
         end
         if not attached then
-            local b = CreateFrame("Button", nil, AuctionHouseFrame, "UIPanelButtonTemplate")
-            b:SetSize(125, 25)
-            b:SetPoint("TOPRIGHT", AuctionHouseFrame, "TOPRIGHT", -45, -8)
-            b:SetText("ForeverFlip 5")
+            local b = CreateFrame("Button", nil, AuctionHouseFrame, "AuctionHouseFrameDisplayModeTabTemplate")
+            b:SetText("ForeverFlip")
+            if PanelTemplates_TabResize then
+                PanelTemplates_TabResize(b, 20, nil, 70)
+            end
+            local tabs = AuctionHouseFrame.Tabs
+            if tabs and #tabs > 0 then
+                b:SetPoint("TOPLEFT", tabs[#tabs], "TOPRIGHT", 3, 0)
+            else
+                b:SetPoint("TOPLEFT", AuctionHouseFrame, "BOTTOMLEFT", 20, 0)
+            end
             b:SetScript("OnClick", function()
-                F.ui:show(F.db.ui.section or "overview")
+                F.open(F.db.ui.section or "overview")
             end)
+            if hooksecurefunc then
+                hooksecurefunc(AuctionHouseFrame, "SetDisplayMode", function(_, mode)
+                    if type(mode) == "table" and #mode > 0 then
+                        F.ui.frame:Hide()
+                        if PanelTemplates_DeselectTab then
+                            PanelTemplates_DeselectTab(b)
+                        end
+                    end
+                end)
+            end
             F.entry = b
         end
     end
 end
+function F.open(section)
+    F.attach()
+    if not F.ui then
+        return
+    end
+    if F.tabLibrary then
+        local ok = pcall(function()
+            F.tabLibrary:SetSelected("ForeverFlip")
+        end)
+        if not ok then
+            F.controller:notify("tab_error")
+            return
+        end
+    else
+        AuctionHouseFrame:SetDisplayMode({})
+        AuctionHouseFrame.displayMode = nil
+        if PanelTemplates_DeselectTab then
+            for _, tab in ipairs(AuctionHouseFrame.Tabs or {}) do
+                PanelTemplates_DeselectTab(tab)
+            end
+        end
+        if PanelTemplates_SelectTab then
+            PanelTemplates_SelectTab(F.entry)
+        end
+        AuctionHouseFrame:SetTitle("ForeverFlip")
+    end
+    F.ui:show(section or F.db.ui.section or "overview")
+end
 frame:RegisterEvent("ADDON_LOADED")
 for _, event in ipairs({
+    "GET_ITEM_INFO_RECEIVED",
     "AUCTION_HOUSE_SHOW",
     "AUCTION_HOUSE_CLOSED",
     "COMMODITY_SEARCH_RESULTS_UPDATED",
@@ -116,6 +163,10 @@ frame:SetScript("OnEvent", function(_, event, ...)
         return
     end
     if not F.controller then
+        return
+    end
+    if event == "GET_ITEM_INFO_RECEIVED" then
+        F.itemDataDirty = true
         return
     end
     if event == "AUCTION_HOUSE_SHOW" then
@@ -154,10 +205,5 @@ SlashCmdList.FOREVERFLIP = function(message)
     if id then
         F.ui.fields.item:SetText(tostring(id))
     end
-    F.ui:show(id and "trade" or F.db.ui.section or "overview")
-    if F.tabLibrary and F.tabLibrary.SetSelected then
-        pcall(function()
-            F.tabLibrary:SetSelected("ForeverFlip")
-        end)
-    end
+    F.open(id and "trade" or F.db.ui.section or "overview")
 end

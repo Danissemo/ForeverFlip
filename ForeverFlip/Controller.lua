@@ -680,7 +680,7 @@ function C:tick()
                     local price = r.buyout / r.qty
                     g.depth = (g.depth or 0) + r.qty
                     -- Bounded discovery ladder; exact search always replaces it before trading.
-                    local row = { qty = r.qty, unit = price, cost = r.buyout }
+                    local row = { qty = r.qty, unit = price, cost = r.buyout, link = r.link }
                     if #g.rows < 64 then
                         g.rows[#g.rows + 1] = row
                     else
@@ -861,6 +861,7 @@ function C:rank()
             end
             best.kind = r.kind or (r.family == false and "commodity" or "item")
             best.key = r.key
+            best.link = r.rows[1] and r.rows[1].link
             best.at = r.at
             best.family = r.family
             best.source = "discovery"

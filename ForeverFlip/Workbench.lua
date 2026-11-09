@@ -102,6 +102,7 @@ local function prefixes(p, o)
             then
                 options[#options + 1] = {
                     key = U.copy(p.key),
+                    link = p.link or (p.rows and p.rows[1] and p.rows[1].link),
                     mode = p.mode,
                     kind = p.kind,
                     qty = qty,

@@ -236,29 +236,27 @@ function UI.create(c)
     }, { __index = UI })
     local db = c.db
     local settings = db.settings or F.Store.defaults
-    local host = panel(AuctionHouseFrame or UIParent)
-    self.frame = host
-    host:SetSize(U.number(db.ui and db.ui.width, 1080, 1080, 1600), U.number(db.ui and db.ui.height, 680, 680, 1000))
-    host:SetResizable(true)
-    host:SetResizeBounds(1080, 680, 1600, 1000)
-    host:SetPoint("TOPLEFT", AuctionHouseFrame or UIParent, "TOPLEFT", 0, 0)
-    host:SetFrameStrata("HIGH")
-    host:SetClampedToScreen(true)
-    host:SetMovable(true)
+    local root = CreateFrame("Frame", nil, AuctionHouseFrame)
+    self.frame = root
+    root:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPLEFT", 4, -34)
+    root:SetPoint("BOTTOMRIGHT", AuctionHouseFrame, "BOTTOMRIGHT", -4, 28)
+    root:SetMovable(false)
+    root:SetResizable(false)
+    root:SetClipsChildren(true)
+    local host = panel(root)
+    self.canvas = host
+    host:SetSize(1080, 680)
+    host:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
     host:EnableMouse(true)
-    local screenWidth = UIParent and UIParent.GetWidth and UIParent:GetWidth() or 1920
-    if U.finite(screenWidth) and screenWidth > 0 and screenWidth < 1140 then
-        host:SetScale(math.max(0.60, (screenWidth - 30) / 1080))
-    end
-    host:RegisterForDrag("LeftButton")
-    host:SetScript("OnDragStart", function(s)
-        s:StartMoving()
+    root:SetScript("OnSizeChanged", function()
+        self:layout()
     end)
-    host:SetScript("OnDragStop", function(s)
-        s:StopMovingOrSizing()
+    root:SetScript("OnShow", function()
+        self:layout()
+        self:refresh()
     end)
     text(host, 18, 15, 175, "FOREVER|cff6dd7bdFLIP|r", "GameFontNormalLarge")
-    text(host, 18, 42, 150, "5.2 · PREVIEW")
+    text(host, 18, 42, 150, "5.2.2 · PREVIEW")
     self.header = text(host, 190, 15, 760, "", "GameFontNormal")
     self.fields.item =
         field(host, 190, 40, 190, L("Item: ID / link / key", "Item: ID / link / key"), "")
@@ -285,9 +283,6 @@ function UI.create(c)
     end)
     button(host, 775, 60, 100, L("Watch", "Watch"), function()
         c:watchStart()
-    end)
-    button(host, 1005, 10, 55, "×", function()
-        host:Hide()
     end)
     host:SetScript("OnReceiveDrag", function()
         if GetCursorInfo then
@@ -329,24 +324,6 @@ function UI.create(c)
     self.status = text(host, 190, 643, 850, "")
     self.status:ClearAllPoints()
     self.status:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 190, 20)
-    local grip = CreateFrame("Button", nil, host)
-    grip:SetSize(22, 22)
-    grip:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -2, 2)
-    local arrow = grip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    arrow:SetAllPoints()
-    arrow:SetText("↘")
-    grip:SetScript("OnMouseDown", function(_, which)
-        if which == "LeftButton" then
-            host:StartSizing("BOTTOMRIGHT")
-        end
-    end)
-    grip:SetScript("OnMouseUp", function()
-        host:StopMovingOrSizing()
-        if F.Store.writable(db) then
-            db.ui.width = host:GetWidth()
-            db.ui.height = host:GetHeight()
-        end
-    end)
     text(
         host,
         18,
@@ -492,12 +469,14 @@ function UI.create(c)
         local report = text(b, 0, 0, 810, "", "GameFontNormal")
         self.adviceReport = report
         local rowButtons = {}
+        F.ItemDisplay.headers(b, 0, 120)
         for i = 1, 8 do
             local index = i
-            rowButtons[i] = action("adviceRow" .. i, b, 0, 140 + (i - 1) * 44, 795, "", function()
+            rowButtons[i] = F.ItemDisplay.row(b, 0, 140 + (i - 1) * 44, 795, function()
                 routeAdvice(self.allocation and self.allocation.lines[((self.advicePage or 1) - 1) * 8 + index])
             end)
             rowButtons[i]:SetSize(795, 40)
+            self.actions["adviceRow" .. i] = rowButtons[i]
         end
         action("advicePrevious", b, 0, 503, 170, L("← Previous", "← Previous"), function()
             self.advicePage = math.max(1, (self.advicePage or 1) - 1)
@@ -620,19 +599,7 @@ function UI.create(c)
                     local horizon = row.daysToExit
                             and string.format(L(" · ~%.1f days", " · ~%.1f days"), row.daysToExit)
                         or ""
-                    btn:SetText(
-                        U.name(row.key.itemID)
-                            .. " ×"
-                            .. row.qty
-                            .. " · "
-                            .. U.money(row.cost)
-                            .. " → "
-                            .. U.money(row.profit)
-                            .. " · "
-                            .. status
-                            .. horizon
-                            .. L(" · Verify →", " · Verify →")
-                    )
+                    btn:SetItem(row, status .. horizon)
                     btn:Show()
                     btn:SetEnabled(true)
                 else
@@ -845,21 +812,11 @@ function UI.create(c)
                 self:refresh()
             end
         )
-        text(
-            b,
-            0,
-            62,
-            820,
-            L(
-                "ITEM / STRATEGY                      COST             PROFIT          ROI / EVIDENCE",
-                "ITEM / STRATEGY                      COST             PROFIT          ROI / EVIDENCE"
-            ),
-            "GameFontNormal"
-        )
+        F.ItemDisplay.headers(b, 0, 64)
         self.dealRows = {}
         for i = 1, 12 do
             local index = i
-            self.dealRows[i] = button(b, 0, 86 + (i - 1) * 31, 810, "", function()
+            self.dealRows[i] = F.ItemDisplay.row(b, 0, 86 + (i - 1) * 31, 810, function()
                 local p = self.visibleDeals and self.visibleDeals[(self.dealPage - 1) * 12 + index]
                 if p then
                     self.fields.item:SetText(U.key(p.key))
@@ -895,7 +852,7 @@ function UI.create(c)
             local out = {}
             local query = self.fields.dealFilter:GetText():lower()
             for _, p in ipairs(all) do
-                local name = U.name(p.key.itemID)
+                local name = F.ItemDisplay.metadata(p.key, p.link).name
                 local group = c:rule(p.key).group or ""
                 if
                     (self.filterMode == "all" or p.mode == self.filterMode)
@@ -917,22 +874,9 @@ function UI.create(c)
                 local p = out[(self.dealPage - 1) * 12 + i]
                 btn:SetEnabled(not not p)
                 if p then
-                    local mark = p.canBuy and "|cff7ee2ba[+]|r" or "|cffffc86a[?]|r"
-                    btn:SetText(
-                        string.format(
-                            "%s %s [%d] · %s · %s → %s · %.1f%% · %s",
-                            mark,
-                            U.name(p.key.itemID),
-                            p.key.itemID,
-                            p.mode == "vendor" and "NPC" or "FLIP",
-                            U.money(p.cost),
-                            U.money(p.profit),
-                            p.roi * 100,
-                            p.canBuy and L("Verify", "Verify") or warningList(p)
-                        )
-                    )
+                    btn:SetItem(p, p.canBuy and L("Verify", "Verify") or warningList(p))
                 else
-                    btn:SetText("")
+                    btn:SetItem(nil)
                 end
             end
         end
@@ -963,6 +907,12 @@ function UI.create(c)
             local ok, err = F.Store.watch(db, value)
             c:notify(ok and L("Item added.", "Item added.") or err)
         end)
+        self.tradeItem = F.ItemDisplay.row(b, 0, 44, 810, function() end)
+        local tradeContent = CreateFrame("Frame", nil, b)
+        tradeContent:SetPoint("TOPLEFT", b, "TOPLEFT", 0, -40)
+        tradeContent:SetSize(840, 1140)
+        b:SetHeight(1180)
+        b = tradeContent
         self.tradeText = text(b, 0, 45, 805, "", "GameFontNormal")
         val("tradeQty", b, 0, 266, 140, L("Quantity cap", "Quantity cap"), settings.maxQty)
         val(
@@ -1062,6 +1012,7 @@ function UI.create(c)
         self.tradeAdvice = text(b, 0, 825, 810, "", "GameFontNormal")
         self.refreshers.trade = function()
             local p = c.plan
+            self.tradeItem:SetItem(p, p and L("Exact result", "Exact result") or nil)
             local advice = p and p.advice
             local details = {}
             if advice then
@@ -2230,7 +2181,8 @@ function UI.create(c)
         self.exchangeFrame:Hide()
     end)
     self:show((db.ui and db.ui.section) or "overview")
-    host:Hide()
+    host:Show()
+    root:Hide()
     return self
 end
 function UI:exchange(value)
@@ -2268,6 +2220,15 @@ function UI:renderToolResult()
         end
     end
     self.toolText:SetText(table.concat(lines, "\n"))
+end
+function UI:layout()
+    local parent = self.frame:GetParent()
+    local width = parent:GetWidth() - 8
+    local height = parent:GetHeight() - 62
+    if width <= 0 or height <= 0 then
+        return
+    end
+    self.canvas:SetScale(math.min(1, width / 1080, height / 680))
 end
 function UI:show(id)
     if not self.sections[id] then
