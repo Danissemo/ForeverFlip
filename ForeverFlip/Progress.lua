@@ -51,6 +51,13 @@ local done = {
 }
 function P.state(c)
     local now = c.api.clock()
+    if c.selectionRequest then
+        return waiting(
+            L("Loading selected item data", "Loading selected item data"),
+            c.selectionRequest.at,
+            now
+        )
+    end
     local full = c.fullJob
     if full then
         if full.waiting then

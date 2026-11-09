@@ -242,6 +242,15 @@ function C:options(key, mode, ownOp, ignoreOverrides)
     if (key.itemLevel or 0) ~= 0 or (key.itemSuffix or 0) ~= 0 or (key.battlePetSpeciesID or 0) ~= 0 then
         o.vendor = nil
     end
+    local npcBudget = self:npcRemaining(ownOp)
+    if npcBudget then
+        o.budget = math.min(o.budget or math.huge, npcBudget)
+        o.absoluteCap = math.min(o.absoluteCap or math.huge, npcBudget)
+        if o.mode == "vendor" then
+            o.minProfit = 1
+            o.minROI = 0.05
+        end
+    end
     for k, v in pairs(not ignoreOverrides and self.overrides or {}) do
         if k == "budget" or k == "maxQty" then
             o[k] = math.min(o[k] or math.huge, v)
@@ -272,6 +281,131 @@ function C:history(key)
     local h = self.db.markets and self.db.markets[self.api.scope()]
     return h and h[U.key(key)]
 end
+function C:npcRemaining(ownOp)
+    local run = self.smallNPCActive and self.db.ui.npcTrials and self.db.ui.npcTrials[self.api.owner()]
+    if not run or run.owner ~= self.api.owner() then
+        return nil
+    end
+    local spent = 0
+    for i = run.first + 1, #self.db.ledger do
+        local e = self.db.ledger[i]
+        if e.owner == run.owner and e.kind == "buy" then
+            spent = spent + e.total
+        end
+    end
+    for _, op in pairs(self.db.pending) do
+        if
+            op ~= ownOp
+            and op.owner == run.owner
+            and (
+                op.status == "quote"
+                or op.status == "quoted"
+                or op.status == "awaiting"
+                or op.status == "unknown"
+                or op.status == "bid"
+            )
+        then
+            spent = spent + op.total
+        end
+    end
+    return math.max(0, 10000 - spent)
+end
+function C:easyNPC()
+    if not self:allowed() or self.active then
+        return false
+    end
+    self.db.ui.npcTrials = self.db.ui.npcTrials or {}
+    local run = self.db.ui.npcTrials[self.api.owner()]
+    if not run then
+        self.db.ui.npcTrials[self.api.owner()] = { first = #self.db.ledger, owner = self.api.owner() }
+    end
+    self.smallNPCActive = true
+    self.mode = "vendor"
+    self.overrides = nil
+    self:invalidate()
+    return self:radarStart()
+end
+function C:openDeal(p)
+    if not self:allowed() or not p or not U.key(p.key) then
+        return false
+    end
+    if
+        self.active
+        and (self.active.status == "awaiting" or self.active.status == "unknown" or self.active.status == "bid")
+    then
+        self:notify("resolve_pending")
+        return false
+    end
+    self:stop("manual")
+    self.mode = p.mode or self.mode
+    self.selection = {
+        key = U.copy(p.key),
+        link = p.link or (p.rows and p.rows[1] and p.rows[1].link),
+        family = p.family,
+        mode = self.mode,
+        totalQty = p.totalQty,
+        minimum = p.minimum,
+    }
+    local key = p.key
+    if p.family then
+        key = self.selection.link and F.Adapters.keyFromInput(self.selection.link)
+        if not key then
+            F.Adapters.requestData(p.key.itemID)
+            self.selectionRequest = {
+                at = self.api.clock(),
+                scope = self.api.scope(),
+                owner = self.api.owner(),
+                input = self.selection.link or tostring(p.key.itemID),
+            }
+            self:notify("item_loading")
+            return true
+        end
+    end
+    self.selection.key = U.copy(key)
+    if
+        not self.api.ready()
+        or self.api.clock() - self.lastRequest < 2
+        or (self.api.keyReady and not self.api.keyReady(key))
+    then
+        self.reviewRequest =
+            { key = U.copy(key), at = self.api.clock(), scope = self.api.scope(), owner = self.api.owner() }
+        self:notify("review_wait")
+        return true
+    end
+    return self:search(key)
+end
+function C:searchInput(value)
+    local id = tonumber(value)
+    if id then
+        local best
+        for _, row in ipairs(self.candidates) do
+            if
+                row.scope == self.api.scope()
+                and row.key.itemID == id
+                and row.rows[1]
+                and (not best or row.rows[1].unit < best.rows[1].unit)
+            then
+                best = row
+            end
+        end
+        if best then
+            return self:openDeal({ key = best.key, family = best.family, rows = best.rows, mode = self.mode })
+        end
+    end
+    local key, err = F.Adapters.keyFromInput(value)
+    local linkedID = tostring(value):match("item:(%d+)")
+    if not key and linkedID then
+        return self:openDeal({ key = { itemID = tonumber(linkedID) }, family = true, mode = self.mode, link = value })
+    end
+    if not key and id then
+        return self:openDeal({ key = { itemID = id }, family = true, mode = self.mode })
+    end
+    if not key then
+        self:notify(err)
+        return false
+    end
+    return self:openDeal({ key = key, mode = self.mode, link = tostring(value):find("item:", 1, true) and value or nil })
+end
 function C:radarStart()
     return F.Radar.start(self)
 end
@@ -283,6 +417,10 @@ function C:search(key, origin)
         self:radarPause()
     end
     if not self:allowed() or not U.key(key) then
+        return false
+    end
+    if self.api.keyReady and not self.api.keyReady(key) then
+        self:notify("item_loading")
         return false
     end
     if
@@ -390,6 +528,7 @@ function C:results(kind, key)
                         r.rows[i] = U.copy(rows[i])
                     end
                     r.at = self.api.clock()
+                    r.exactAt = self.api.clock()
                     r.family = false
                     r.scope = j.scope
                     r.kind = resultKind or kind
@@ -408,6 +547,7 @@ function C:results(kind, key)
                     key = U.copy(key),
                     rows = displayRows,
                     at = self.api.clock(),
+                    exactAt = self.api.clock(),
                     complete = true,
                     scope = j.scope,
                     kind = resultKind or kind,
@@ -649,6 +789,11 @@ function C:stop(reason)
     self.job = reason == "manual" and self.job and self.job.origin == "radar" and self.job or nil
     self.fullJob = reason == "manual" and self.fullJob and self.fullJob.origin == "radar" and self.fullJob or nil
     self.reviewRequest = nil
+    self.selectionRequest = nil
+    if reason ~= "manual" then
+        self.smallNPCActive = false
+        self.replicaRecovery = nil
+    end
     self.plan = nil
     self.postPending = nil
     self:cancelQuote()
@@ -686,7 +831,17 @@ function C:fullScan(origin)
         return false
     end
     self.watching = false
-    self.fullJob = { waiting = true, at = self.api.clock(), scope = self.api.scope(), origin = origin }
+    self.replicaRecovery = nil
+    self.fullJob = {
+        waiting = true,
+        at = self.api.clock(),
+        scope = self.api.scope(),
+        owner = self.api.owner(),
+        origin = origin,
+        deferred = {},
+        deferredCount = 0,
+        readyData = {},
+    }
     local ok = pcall(self.api.replicate)
     if not ok then
         self.fullJob = nil
@@ -696,6 +851,142 @@ function C:fullScan(origin)
     self.db.lastReplicate = self.api.clock()
     self:notify("replicate_wait")
     return true
+end
+function C:ingestReplica(j, r, now)
+    local k = U.key(r.key)
+    local g = j.groups[k]
+    if g and g.exactAt and g.exactAt >= j.at then
+        return nil
+    end
+    if not g and j.groupsCount < 2000 then
+        g = { key = r.key, rows = {}, at = now, family = r.family, complete = true }
+        j.groups[k] = g
+        j.groupsCount = j.groupsCount + 1
+    end
+    if g then
+        local price = r.buyout / r.qty
+        g.depth = (g.depth or 0) + r.qty
+        -- Bounded discovery ladder; exact search always replaces it before trading.
+        local row = { qty = r.qty, unit = price, cost = r.buyout, link = r.link }
+        if #g.rows < 64 then
+            g.rows[#g.rows + 1] = row
+        else
+            local worst, index = 0, nil
+            for n, v in ipairs(g.rows) do
+                if v.unit > worst then
+                    worst = v.unit
+                    index = n
+                end
+            end
+            if index and price < worst then
+                g.rows[index] = row
+            end
+        end
+    end
+    return g, k
+end
+function C:itemDataLoaded(id, success)
+    local j = self.fullJob or self.replicaRecovery
+    if not j or not j.deferred or j.scope ~= self.api.scope() or j.owner ~= self.api.owner() then
+        return
+    end
+    local entry = j.deferred[id]
+    if not entry then
+        return
+    end
+    if success == false then
+        j.deferredCount = j.deferredCount - (#entry.indexes - entry.cursor + 1)
+        j.deferred[id] = nil
+    else
+        j.readyData[id] = true
+    end
+end
+function C:recoverReplica(now)
+    local j = self.replicaRecovery
+    if not j or self.fullJob then
+        return
+    end
+    if j.scope ~= self.api.scope() or j.owner ~= self.api.owner() or now - j.at > 180 then
+        self.replicaRecovery = nil
+        return
+    end
+    local changed = false
+    for _ = 1, 4 do
+        local id = next(j.readyData)
+        if not id then
+            break
+        end
+        local entry = j.deferred[id]
+        if not entry then
+            j.readyData[id] = nil
+        else
+            local index = entry.indexes[entry.cursor]
+            local ok, r = pcall(self.api.replicateRow, index)
+            if
+                ok
+                and r
+                and r.complete
+                and r.key
+                and U.finite(r.qty)
+                and r.qty > 0
+                and U.finite(r.buyout)
+                and r.buyout > 0
+            then
+                local g, key = self:ingestReplica(j, r, now)
+                if g then
+                    if not g.scope then
+                        if #self.candidates >= 2000 then
+                            table.remove(self.candidates, 1)
+                        end
+                        self.candidates[#self.candidates + 1] = g
+                    end
+                    g.scope, g.at = j.scope, now
+                    table.sort(g.rows, function(a, b)
+                        return a.unit < b.unit
+                    end)
+                    local price = F.Market.snapshot(g.rows).price
+                    F.Store.observe(self.db, j.scope, key, {
+                        at = now,
+                        price = price,
+                        qty = g.depth,
+                        complete = true,
+                        source = "replicate",
+                        token = "replicate:" .. j.at,
+                        rows = g.rows,
+                        family = g.family,
+                    })
+                    changed = true
+                end
+                entry.tries = 3
+                j.skipped = math.max(0, j.skipped - 1)
+            else
+                entry.tries = (entry.tries or 0) + 1
+            end
+            if entry.tries >= 3 then
+                entry.cursor = entry.cursor + 1
+                entry.tries = 0
+                j.deferredCount = j.deferredCount - 1
+                if entry.cursor > #entry.indexes then
+                    j.deferred[id] = nil
+                    j.readyData[id] = nil
+                end
+            end
+        end
+    end
+    if j.deferredCount <= 0 then
+        self.replicaRecovery = nil
+    end
+    if changed then
+        self.candidateVersion = (self.candidateVersion or 0) + 1
+        if self.radar then
+            self.radar.dataDirty = true
+            self.radar.nextAt = math.min(self.radar.nextAt, now)
+        end
+        if self.db.lastScan and self.db.lastScan.scope == j.scope then
+            self.db.lastScan.skipped = j.skipped
+        end
+        self:notify()
+    end
 end
 function C:tick()
     if not F.Store.writable(self.db) then
@@ -737,10 +1028,33 @@ function C:tick()
         return
     end
     if not self.api.isOpen() then
-        if self.watching or self.job or self.fullJob or (self.radar and self.radar.enabled) then
+        if
+            self.watching
+            or self.job
+            or self.fullJob
+            or self.reviewRequest
+            or self.selectionRequest
+            or (self.radar and self.radar.enabled)
+        then
             self:stop()
         end
         return
+    end
+    F.Adapters.pumpData(GetTime and GetTime() or now)
+    self:recoverReplica(now)
+    local selection = self.selectionRequest
+    if selection then
+        if selection.scope ~= self.api.scope() or selection.owner ~= self.api.owner() or now - selection.at > 15 then
+            self.selectionRequest = nil
+            self:notify("item_unavailable")
+        else
+            local key = F.Adapters.keyFromInput(selection.input)
+            if key then
+                self.selectionRequest = nil
+                self.selection.key = U.copy(key)
+                self.reviewRequest = { key = key, at = selection.at, scope = selection.scope, owner = selection.owner }
+            end
+        end
     end
     if self.job and now - self.job.at > 20 then
         if self.job.origin == "radar" then
@@ -776,35 +1090,18 @@ function C:tick()
                 and U.finite(r.qty)
                 and r.qty > 0
             then
-                local k = U.key(r.key)
-                local g = j.groups[k]
-                if not g and j.groupsCount < 2000 then
-                    g = { key = r.key, rows = {}, at = now, family = r.family, complete = true }
-                    j.groups[k] = g
-                    j.groupsCount = j.groupsCount + 1
-                end
-                if g then
-                    local price = r.buyout / r.qty
-                    g.depth = (g.depth or 0) + r.qty
-                    -- Bounded discovery ladder; exact search always replaces it before trading.
-                    local row = { qty = r.qty, unit = price, cost = r.buyout, link = r.link }
-                    if #g.rows < 64 then
-                        g.rows[#g.rows + 1] = row
-                    else
-                        local worst, index = 0, nil
-                        for n, v in ipairs(g.rows) do
-                            if v.unit > worst then
-                                worst = v.unit
-                                index = n
-                            end
-                        end
-                        if index and price < worst then
-                            g.rows[index] = row
-                        end
-                    end
-                end
+                self:ingestReplica(j, r, now)
             else
                 j.skipped = j.skipped + 1
+                if ok and r and r.id and not r.complete and (j.deferredCount or 0) < 4096 then
+                    j.deferred = j.deferred or {}
+                    j.readyData = j.readyData or {}
+                    j.owner = j.owner or self.api.owner()
+                    j.deferred[r.id] = j.deferred[r.id] or { indexes = {}, cursor = 1 }
+                    table.insert(j.deferred[r.id].indexes, i)
+                    j.deferredCount = (j.deferredCount or 0) + 1
+                    F.Adapters.requestData(r.id)
+                end
             end
         end
         j.index = stop
@@ -836,6 +1133,9 @@ function C:tick()
             end
             self.db.lastScan = { at = now, total = j.total, skipped = j.skipped, scope = j.scope }
             self.candidateVersion = (self.candidateVersion or 0) + 1
+            if (j.deferredCount or 0) > 0 then
+                self.replicaRecovery = j
+            end
             self.fullJob = nil
             self:notify("replicate_done")
         end
@@ -852,6 +1152,7 @@ function C:tick()
             and not self.active
             and self.api.ready()
             and now - self.lastRequest >= 2
+            and (not self.api.keyReady or self.api.keyReady(review.key))
         then
             self.reviewRequest = nil
             self:search(review.key)

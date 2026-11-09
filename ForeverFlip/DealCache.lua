@@ -18,6 +18,7 @@ local function inputs(c)
         sequence = c.db.sequence,
         scope = c.api.scope(),
         owner = c.api.owner(),
+        npcBudget = c:npcRemaining(),
     }
 end
 local function same(a, b, quotesMayAdvance)

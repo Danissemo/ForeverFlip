@@ -180,6 +180,7 @@ end
 frame:RegisterEvent("ADDON_LOADED")
 for _, event in ipairs({
     "GET_ITEM_INFO_RECEIVED",
+    "ITEM_DATA_LOAD_RESULT",
     "AUCTION_HOUSE_SHOW",
     "AUCTION_HOUSE_CLOSED",
     "COMMODITY_SEARCH_RESULTS_UPDATED",
@@ -204,8 +205,21 @@ frame:SetScript("OnEvent", function(_, event, ...)
     if not F.controller then
         return
     end
-    if event == "GET_ITEM_INFO_RECEIVED" then
-        local id = ...
+    if event == "GET_ITEM_INFO_RECEIVED" or event == "ITEM_DATA_LOAD_RESULT" then
+        local id, success = ...
+        if event == "ITEM_DATA_LOAD_RESULT" then
+            F.controller:itemDataLoaded(id, success)
+        end
+        if event == "ITEM_DATA_LOAD_RESULT" and F.Adapters.dataLoaded(id, success) then
+            local r = F.controller.radar
+            if r and r.enabled then
+                r.dataDirty = true
+                if not r.build then
+                    r.nextAt = math.min(r.nextAt, F.controller.api.clock())
+                end
+            end
+            F.itemDataDirty = true
+        end
         if F.ItemDisplay.invalidate(id) then
             F.itemDataDirty = true
         end

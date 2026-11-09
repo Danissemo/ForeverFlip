@@ -104,9 +104,21 @@ local function messages()
             "Search timed out; retry manually.",
             "Search timed out; retry manually."
         ),
+        item_loading = L(
+            "Loading item data; search will continue automatically.",
+            "Loading item data; search will continue automatically."
+        ),
+        item_unavailable = L(
+            "Item data unavailable. Load its tooltip and retry.",
+            "Item data unavailable. Load its tooltip and retry."
+        ),
+        review_wait = L(
+            "Waiting for auction readiness for exact search.",
+            "Waiting for auction readiness for exact search."
+        ),
         replicate_cooldown = L(
-            "Full scan cooldown: approximately 15 minutes.",
-            "Full scan cooldown: approximately 15 minutes."
+            "Full snapshot: 15-minute interval. Exact search and Live remain available.",
+            "Full snapshot: 15-minute interval. Exact search and Live remain available."
         ),
         replicate_wait = L(
             "Waiting for full replication…",
@@ -313,9 +325,9 @@ function UI.create(c)
         return b
     end
     toolbar("search", 356, 80, L("Search", "Search"), function()
-        local key, err = F.Adapters.keyFromInput(item:GetText())
-        if key then
-            if c:search(key) then
+        local input = item:GetText()
+        if U.fromKey(input) or tonumber(input) or input:find("item:", 1, true) then
+            if c:searchInput(item:GetText()) then
                 self:show("trade")
             end
         elseif
@@ -333,7 +345,7 @@ function UI.create(c)
             self.dealPage = 1
             self:show("deals")
         else
-            c:notify(err)
+            c:notify("Item ID / exact key required")
         end
     end)
     item:SetScript("OnEnterPressed", function(e)
@@ -948,7 +960,14 @@ function UI.create(c)
         self.tradeAdvice = text(b, 0, 825, 810, "", "GameFontNormal")
         self.refreshers.trade = function()
             local p = c.plan
-            self.tradeItem:SetItem(p, p and L("Exact result", "Exact result") or nil)
+            if p and (p.origin == "radar" or (c.selection and U.key(p.key) ~= U.key(c.selection.key))) then
+                p = nil
+            end
+            self.tradeItem:SetItem(
+                p or c.selection,
+                p and L("Exact result", "Exact result")
+                    or L("Waiting for exact verification", "Waiting for exact verification")
+            )
             local advice = p and p.advice
             local details = {}
             if advice then
@@ -2254,11 +2273,15 @@ function UI:refresh()
     if c.fullJob and not c.fullJob.waiting then
         message = L("Processing: ", "Processing: ") .. c.fullJob.index .. " / " .. c.fullJob.total
     end
-    if radar and radar.enabled then
+    if radar and radar.enabled and self.section == "deals" then
         message = L(
             "Live: candidates at least 3 s apart · market snapshot every 15 min · select a deal to pause.",
             "Live: candidates at least 3 s apart · market snapshot every 15 min · select a deal to pause."
         )
+    end
+    if c:npcRemaining() and self.section == "deals" then
+        message = L("NPC: purchase budget remaining ", "NPC: purchase budget remaining ")
+            .. U.money(c:npcRemaining())
     end
     self.status:SetText(message)
     local fn = self.refreshers[self.section]

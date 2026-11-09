@@ -116,10 +116,8 @@ function S.create(ui, warning)
             if not p then
                 return
             end
-            ui.fields.item:SetText(U.key(p.key))
-            c:stop("manual")
-            c.mode = p.mode
-            if c:search(p.key) then
+            if c:openDeal(p) then
+                ui.fields.item:SetText(U.key(c.selection.key))
                 ui:show("trade")
             end
         end)
@@ -189,6 +187,7 @@ function S.create(ui, warning)
             data[#data + 1] = { title = g.name, kind = "group" }
         end
         data[#data + 1] = { title = L("Live opportunities", "Live opportunities"), kind = "live" }
+        data[#data + 1] = { title = L("NPC: start with 1g", "NPC: start with 1g"), kind = "starter" }
         for i, entry in ipairs(data) do
             if not state.listRows[i] then
                 local row = CreateFrame("Button", nil, listBody)
@@ -202,6 +201,20 @@ function S.create(ui, warning)
                 F.Locale.font(label, 12)
                 row.label = label
                 row:SetScript("OnClick", function(b)
+                    if b.entry.kind == "starter" then
+                        if c:easyNPC() then
+                            ui.liveOnly = true
+                            ui.watchOnly = false
+                            ui.groupFilter = nil
+                            ui.filterMode = "vendor"
+                            ui.sort = "profit"
+                            ui.sortDescending = true
+                            ui.dealPage = 1
+                            ui.fields.dealFilter:SetText("")
+                        end
+                        ui:refresh()
+                        return
+                    end
                     ui.groupFilter = b.entry.kind == "group" and b.entry.title or nil
                     ui.watchOnly = b.entry.kind == "watch"
                     ui.liveOnly = b.entry.kind == "live"
@@ -226,6 +239,11 @@ function S.create(ui, warning)
         listBody:SetHeight(math.max(1, #data * 25))
     end
     ui.refreshers.deals = function()
+        ui.actions.filterMode:SetText(
+            ui.filterMode == "vendor" and "NPC"
+                or ui.filterMode == "flip" and L("Resale", "Resale")
+                or L("All strategies", "All strategies")
+        )
         refreshLists()
         local all = ui.liveOnly and F.Radar.list(c) or F.DealCache.get(c)
         local out = {}
@@ -295,10 +313,15 @@ function S.create(ui, warning)
         if #out == 0 then
             empty:SetText(
                 ui.liveOnly
+                        and c.smallNPCActive
                         and L(
-                            "Live is looking for eligible deals. Resale needs price history; add items to your watchlist.",
-                            "Live is looking for eligible deals. Resale needs price history; add items to your watchlist."
+                            "Looking for lots below vendor value. Data loads gradually; profitable lots may be absent.",
+                            "Looking for lots below vendor value. Data loads gradually; profitable lots may be absent."
                         )
+                    or ui.liveOnly and L(
+                        "Live is looking for eligible deals. Resale needs price history; add items to your watchlist.",
+                        "Live is looking for eligible deals. Resale needs price history; add items to your watchlist."
+                    )
                     or L(
                         "Scan the auction house or search for an item.",
                         "Scan the auction house or search for an item."

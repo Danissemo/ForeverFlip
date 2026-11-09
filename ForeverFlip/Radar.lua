@@ -14,12 +14,15 @@ local function better(a, b)
 end
 local function evaluate(c, key, rows, kind)
     local best
-    for _, mode in ipairs({ "vendor", "flip" }) do
+    for _, mode in ipairs(c.smallNPCActive and { "vendor" } or { "vendor", "flip" }) do
         local o = c:options(key, mode, nil, true)
         o.complete = true
         o.commodity = kind == "commodity"
         if not o.commodity then
             o.vendor = c:variantVendor(rows, key) or o.vendor
+        end
+        if not o.vendor then
+            F.Adapters.requestData(key.itemID)
         end
         local p = F.Market.plan(rows, F.Market.evidence(c:history(key)), o)
         if p.canBuy and (not best or (p.score or 0) > (best.score or 0)) then
@@ -358,7 +361,8 @@ function R.tick(c)
             return
         end
         if #r.queue == 0 then
-            r.nextAt = now + 15
+            r.nextAt = now + (r.dataDirty and 1 or 15)
+            r.dataDirty = false
             return
         end
     end

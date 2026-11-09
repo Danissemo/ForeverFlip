@@ -2,6 +2,64 @@ local F = ForeverFlip
 local U = F.Util
 local A = {}
 F.Adapters = A
+function A.normalKey(key)
+    local id = U.key(key)
+    return id and U.fromKey(id) or nil
+end
+local dataQueue, dataPending, nextData, dataCount = {}, {}, 0, 0
+local dataFailed, failedCount = {}, 0
+function A.requestData(id)
+    if not U.key(id) or not C_Item or not C_Item.RequestLoadItemDataByID or dataPending[id] or dataFailed[id] then
+        return false
+    end
+    if C_Item.IsItemDataCachedByID and C_Item.IsItemDataCachedByID(id) then
+        return false
+    end
+    if dataCount >= 2000 then
+        return false
+    end
+    dataPending[id] = true
+    dataCount = dataCount + 1
+    dataQueue[#dataQueue + 1] = id
+    return true
+end
+function A.pumpData(now)
+    if now < nextData then
+        return
+    end
+    nextData = now + 0.1
+    for _ = 1, 2 do
+        local id = table.remove(dataQueue, 1)
+        if not id then
+            break
+        end
+        if C_Item and C_Item.RequestLoadItemDataByID then
+            local ok = pcall(C_Item.RequestLoadItemDataByID, id)
+            if not ok then
+                A.dataLoaded(id, false)
+            end
+        end
+    end
+end
+function A.dataLoaded(id, success)
+    local pending = dataPending[id]
+    if pending then
+        dataCount = math.max(0, dataCount - 1)
+    end
+    dataPending[id] = nil
+    if success == false then
+        if failedCount >= 2000 then
+            dataFailed, failedCount = {}, 0
+        end
+        if not dataFailed[id] then
+            dataFailed[id] = true
+            failedCount = failedCount + 1
+        end
+    else
+        dataFailed[id] = nil
+    end
+    return pending
+end
 function A.keyFromInput(s)
     s = tostring(s or "")
     local exact = U.fromKey(s)
@@ -24,10 +82,25 @@ function A.keyFromInput(s)
                 level = v
             end
         end
+        local info
+        if C_AuctionHouse and C_AuctionHouse.GetItemKeyInfo and id then
+            local ok, value = pcall(C_AuctionHouse.GetItemKeyInfo, A.normalKey({ itemID = id }))
+            if ok then
+                info = value
+            end
+            if not info then
+                A.requestData(id)
+                return nil, "Item link data not loaded; use an exact key or bag item"
+            end
+        end
+        if info and (info.isCommodity or info.isEquipment == false) then
+            level = 0
+        end
         if not level then
+            A.requestData(id)
             return nil, "Item link data not loaded; use an exact key or bag item"
         end
-        local key = { itemID = id, itemLevel = level, itemSuffix = suffix }
+        local key = A.normalKey({ itemID = id, itemLevel = level, itemSuffix = suffix })
         if U.key(key) then
             return key
         end
@@ -35,7 +108,22 @@ function A.keyFromInput(s)
     end
     local id = tonumber(s)
     if id and U.key(id) then
-        return { itemID = id }
+        if C_AuctionHouse and C_AuctionHouse.GetItemKeyInfo then
+            local ok, info = pcall(C_AuctionHouse.GetItemKeyInfo, A.normalKey({ itemID = id }))
+            if not ok or not info or info.isEquipment then
+                local get = C_Item and C_Item.GetItemInfo or GetItemInfo
+                local got, _, link
+                if get then
+                    got, _, link = pcall(get, id)
+                end
+                if got and link then
+                    return A.keyFromInput(link)
+                end
+                A.requestData(id)
+                return nil, "Item link data not loaded; use an exact key or bag item"
+            end
+        end
+        return A.normalKey({ itemID = id })
     end
     return nil, "Item ID / exact key required"
 end
@@ -85,13 +173,27 @@ function A.native(db)
         return not C.IsThrottledMessageSystemReady or C.IsThrottledMessageSystemReady()
     end
     api.search = function(key)
-        C.SendSearchQuery(key, { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }, true)
+        C.SendSearchQuery(
+            A.normalKey(key),
+            { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } },
+            true
+        )
+    end
+    api.keyReady = function(key)
+        if not C.GetItemKeyInfo then
+            return true
+        end
+        local info = C.GetItemKeyInfo(A.normalKey(key))
+        if not info then
+            A.requestData(key.itemID)
+        end
+        return info ~= nil
     end
     api.more = function(key, kind)
         if kind == "commodity" then
             C.RequestMoreCommoditySearchResults(key.itemID)
         else
-            C.RequestMoreItemSearchResults(key)
+            C.RequestMoreItemSearchResults(A.normalKey(key))
         end
     end
     api.rows = function(key, kind)
@@ -117,6 +219,7 @@ function A.native(db)
                 end
             end
         else
+            key = A.normalKey(key)
             complete = C.HasFullItemSearchResults(key)
             for i = 1, (C.GetNumItemSearchResults(key) or 0) do
                 local r = C.GetItemSearchResultInfo(key, i)
@@ -170,6 +273,9 @@ function A.native(db)
     end
     api.replicateRow = function(i)
         local _, _, qty, _, _, _, _, bid, _, buyout, _, _, _, owner, _, _, id, complete = C.GetReplicateItemInfo(i)
+        if id and not complete then
+            return { id = id, complete = false }
+        end
         if not id or not qty or qty < 1 or (buyout or 0) <= 0 then
             return nil
         end

@@ -112,3 +112,10 @@ fixed with RED→GREEN tests. StyLua and LuaLS19/19 pass. Synthetic page open1.9
 prepared reopen5.333ms versus baseline1,581.3ms. Preparation itself remains
 538.018ms total CPU spread over500 updates. See ../docs/page-performance-review.md;
 these are external Lua5.1 timings, not in-client FPS measurements.
+
+5.4.2:244 tests. Canonical native keys, cold data/loading completion contracts,
+family selection, deferred toolbar search, late radar preview, snapshot recovery
+and cumulative1g starter budget are covered. Fresh review found6 issues, all
+fixed with RED→GREEN regressions. Actual game test was blocked by native window
+capture timeout via both available bindings, even after switching windowed.
+No gold spent or earned.
