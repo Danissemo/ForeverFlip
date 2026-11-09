@@ -342,6 +342,8 @@ T.uk = {
     ["No materials"] = "Матеріалів немає",
     ["Invalid legacy row "] = "Некоректний старий запис ",
     ["search_error: "] = "Помилка пошуку: ",
+    ["Invoice net proceeds unknown. Check returned deposit manually."] = "Чиста виручка листа невідома. Перевірте повернений завдаток вручну.",
+    ["Net sale excludes returned deposit, fee 0. Record after receipt; never deduct the fee twice."] = "Виручка без поверненого завдатку, комісія 0. Записуйте після отримання; не віднімайте комісію двічі.",
 }
 for key, value in pairs(T.uk) do
     T.uk[key] = value:gsub("→", "->"):gsub("←", "<-")

@@ -1,6 +1,6 @@
 # Validation and release status
 
-Release: **5.2.3-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
+Release: **5.2.4-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
 
 5.2 adds daily-balanced price caps, own-sale statistics and turnover/position
 constraints, pending probe quantities, quote revalidation of fresh advisor caps,
@@ -75,3 +75,6 @@ and initializes all nine pages. Tests catch Lua multiple-return propagation and
 measure filled overview text before placing controls. A fresh reviewer found
 missing raw errors and first-open overview overlap; both have regressions.
 Native rendering and clipping still require an in-client visual check.
+
+5.2.4: 167 tests, including integer/decimal oracle batches and actual UI
+mail-preparation / formula-posting regressions. No live money actions performed.

@@ -13,10 +13,21 @@ function P.parse(text, fraction)
             id, q = part:match("^%s*(%d+)%s*%*%s*([%d%.]+)%s*$")
         end
         id, q = tonumber(id), tonumber(q)
-        if not id or id < 1 or not U.finite(q) or q <= 0 or q > 100000 or (not fraction and q ~= math.floor(q)) then
+        if
+            not U.finite(id)
+            or id < 1
+            or not U.finite(q)
+            or q <= 0
+            or q > 100000
+            or (not fraction and q ~= math.floor(q))
+        then
             return nil, "ID*quantity@price"
         end
-        out[#out + 1] = { id = id, qty = q, price = price and U.copper(price) }
+        local explicit = price and U.copper(price)
+        if price and not explicit then
+            return nil, "ID*quantity@price"
+        end
+        out[#out + 1] = { id = id, qty = q, price = explicit }
         if #out > 100 then
             return nil, "Maximum 100 materials"
         end
@@ -39,16 +50,16 @@ function P.calculate(materials, lookup, outputQty, outputPrice, o)
             r.complete = false
             r.missing[#r.missing + 1] = m.id
         else
-            local cost = math.ceil(m.qty * price)
+            local cost = U.ceil(m.qty * price)
             local missing = math.max(0, m.qty - (m.owned or 0))
             r.cost = r.cost + cost
-            r.cashCost = r.cashCost + math.ceil(missing * price)
-            r.shopping[#r.shopping + 1] = { id = m.id, qty = missing, price = price, cost = math.ceil(missing * price) }
+            r.cashCost = r.cashCost + U.ceil(missing * price)
+            r.shopping[#r.shopping + 1] = { id = m.id, qty = missing, price = price, cost = U.ceil(missing * price) }
         end
     end
     if r.complete then
-        local gross = math.floor(outputQty * outputPrice)
-        r.net = gross - F.Market.fee(gross, o.fee or 0.05, o.minFee) - math.floor(gross * (o.reserve or 0))
+        local gross = U.floor(outputQty * outputPrice)
+        r.net = gross - F.Market.fee(gross, o.fee or 0.05, o.minFee) - U.floor(gross * (o.reserve or 0))
         r.profit = r.net - r.cost - (o.extraCost or 0)
         r.roi = r.cost > 0 and r.profit / r.cost or 0
     end
@@ -69,8 +80,13 @@ function P.disenchant(yields, lookup, cost, o)
         return { complete = false, missing = missing }
     end
     o = o or {}
-    local net = math.floor(total)
-        - F.Market.fee(math.floor(total), o.fee, o.minFee)
-        - math.floor(total * (o.reserve or 0))
-    return { complete = true, value = total, net = net, profit = net - cost, roi = (net - cost) / cost }
+    local gross = U.floor(total)
+    local net = gross - F.Market.fee(gross, o.fee, o.minFee) - U.floor(gross * (o.reserve or 0))
+    return {
+        complete = true,
+        value = total,
+        net = net,
+        profit = net - cost - (o.extraCost or 0),
+        roi = (net - cost - (o.extraCost or 0)) / cost,
+    }
 end

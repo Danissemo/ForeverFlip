@@ -50,7 +50,14 @@ end
 function M.velocity(sales, key, now)
     local units, first, days = 0, nil, {}
     for _, s in ipairs(sales or {}) do
-        if s.key == key and U.finite(s.at) and s.at <= now and s.at >= now - 14 * 86400 and (s.known or 0) > 0 then
+        if
+            (s.kind == nil or s.kind == "sell")
+            and s.key == key
+            and U.finite(s.at)
+            and s.at <= now
+            and s.at >= now - 14 * 86400
+            and (s.known or 0) > 0
+        then
             units = units + s.known
             first = math.min(first or s.at, s.at)
             days[math.floor(s.at / 86400)] = true
@@ -117,7 +124,25 @@ function M.stats(history, now)
     }
 end
 function M.fee(total, rate, minimum)
-    return math.min(total, math.max(math.floor(total * (rate or 0.05) + 0.5), minimum or 0))
+    return math.min(total, math.max(U.round(total * (rate or 0.05)), minimum or 0))
+end
+function M.sources(stats, recent, o)
+    local sources = {
+        market = stats and stats.lower,
+        recent = recent,
+        vendorsell = o.vendor,
+        avgbuy = o.avgBuy,
+        tsm = o.tsm,
+        aux = o.aux,
+    }
+    if o.advice then
+        sources.ewma = o.advice.prices.known and o.advice.prices.ewma or nil
+        sources.pricefloor = o.advice.priceCap
+        sources.winlower = o.advice.trades.winLower
+        sources.profitfactor = o.advice.trades.profitFactor
+        sources.salesperday = o.advice.rateKnown and o.advice.trades.rateLower or nil
+    end
+    return sources
 end
 function M.plan(input, history, o)
     o = o or {}
@@ -190,15 +215,7 @@ function M.plan(input, history, o)
         target = U.number(o.vendor, nil, 1)
         limit = target and math.floor(target / (1 + roi))
     else
-        local sources =
-            { market = s.lower, recent = p.minimum, vendorsell = o.vendor, avgbuy = o.avgBuy, tsm = o.tsm, aux = o.aux }
-        if o.advice then
-            sources.ewma = o.advice.prices.known and o.advice.prices.ewma or nil
-            sources.pricefloor = o.advice.priceCap
-            sources.winlower = o.advice.trades.winLower
-            sources.profitfactor = o.advice.trades.profitFactor
-            sources.salesperday = o.advice.rateKnown and o.advice.trades.rateLower or nil
-        end
+        local sources = M.sources(s, p.minimum, o)
         local explicit = o.sellPrice or F.Expr.eval(o.sellFormula or "90% market", sources)
         target = explicit and math.floor(explicit)
         if target and o.advice and o.advice.priceCap then
@@ -272,13 +289,17 @@ function M.plan(input, history, o)
     if p.qty > 0 and target then
         local gross = math.floor(p.qty * target)
         local cut = p.mode == "vendor" and 0 or M.fee(gross, fee, o.minFee)
-        local riskReserve = p.mode == "vendor" and 0 or math.floor(gross * reserve)
+        local riskReserve = p.mode == "vendor" and 0 or U.floor(gross * reserve)
         p.fee = cut
         p.reserve = riskReserve
         p.profit = gross - cut - riskReserve - p.cost - (o.extraCost or 0)
         p.roi = p.cost > 0 and p.profit / p.cost or 0
         local factor = p.mode == "vendor" and 1 or 1 - fee - reserve
-        p.breakEven = factor > 0 and math.ceil((p.cost + (o.extraCost or 0) + (o.minFee or 0)) / p.qty / factor) or nil
+        p.breakEven = factor > 0
+                and math.ceil(
+                    (p.cost + (o.extraCost or 0) + (p.mode == "vendor" and 0 or (o.minFee or 0))) / p.qty / factor
+                )
+            or nil
         p.liquidation = o.vendor and math.floor(p.qty * o.vendor - p.cost) or nil
         -- Risk-adjusted capital efficiency, not a promised expected return.
         p.confidence = p.mode == "vendor" and 1 or s.confidence

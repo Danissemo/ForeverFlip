@@ -29,7 +29,7 @@ function W.stress(p, qty, cost, drop)
         end
         return gross
             - M.fee(gross, p.feeRate or 0.05, p.minFee or 0)
-            - math.floor(gross * (p.reserveRate or 0))
+            - U.floor(gross * (p.reserveRate or 0))
             - cost
             - (p.extraCost or 0)
     end
@@ -425,7 +425,7 @@ function W.replay(input, o)
                 local gross = math.floor(s.price * (1 - U.number(o.haircut, 0.05, 0, 0.95)))
                 local net = gross
                     - M.fee(gross, U.number(o.fee, 0.05, 0, 0.5), U.number(o.minFee, 0, 0))
-                    - math.floor(gross * U.number(o.reserve, 0, 0, 0.5))
+                    - U.floor(gross * U.number(o.reserve, 0, 0, 0.5))
                 local pnl = net - position.cost
                 r.cash = r.cash + net
                 r.pnl = r.pnl + pnl

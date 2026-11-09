@@ -274,7 +274,7 @@ function UI.create(c)
         self:refresh()
     end)
     text(host, 18, 15, 175, "FOREVER|cff6dd7bdFLIP|r", "GameFontNormalLarge")
-    text(host, 18, 42, 150, "5.2.3 · " .. L("Preview", "Preview"))
+    text(host, 18, 42, 150, "5.2.4 · " .. L("Preview", "Preview"))
     self.header = text(host, 190, 15, 760, "", "GameFontNormal")
     self.fields.item =
         field(host, 190, 40, 190, L("Item: ID / link / key", "Item: ID / link / key"), "")
@@ -1445,16 +1445,26 @@ function UI.create(c)
                     )
                     return
                 end
+                if not U.finite(m.amount) or not U.finite(m.deposit) or m.deposit < 0 or m.deposit > m.amount then
+                    c:notify(
+                        L(
+                            "Invoice net proceeds unknown. Check returned deposit manually.",
+                            "Invoice net proceeds unknown. Check returned deposit manually."
+                        )
+                    )
+                    return
+                end
+                local saleNet = m.amount - m.deposit
                 self.fields.entryKey:SetText(m.suggestedKey)
                 self.fields.entryQty:SetText(tostring(m.qty))
-                self.fields.entryTotal:SetText(U.gold(m.amount))
+                self.fields.entryTotal:SetText(U.gold(saleNet))
                 self.fields.entryFee:SetText("0")
                 self.entryKind = "sell"
                 self.actions.entryKind:SetText(L("AH sale", "AH sale"))
                 c:notify(
                     L(
-                        "Invoice net amount prepared, fee 0. Record only after receipt; never deduct the fee twice.",
-                        "Invoice net amount prepared, fee 0. Record only after receipt; never deduct the fee twice."
+                        "Net sale excludes returned deposit, fee 0. Record after receipt; never deduct the fee twice.",
+                        "Net sale excludes returned deposit, fee 0. Record after receipt; never deduct the fee twice."
                     )
                 )
             end

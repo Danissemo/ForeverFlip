@@ -30,7 +30,7 @@ function E.eval(text, sources)
             end
         end
         local p, depth = 1, 0
-        local expr, unary
+        local expr, unary, power
         local function checked(v)
             if v == nil then
                 return nil
@@ -131,14 +131,11 @@ function E.eval(text, sources)
                             end
                         end
                     elseif token == "round" or token == "roundup" or token == "rounddown" then
-                        local step = args[2] or 1
-                        if args[1] and step > 0 then
+                        local step = count >= 2 and args[2] or (count < 2 and 1 or nil)
+                        if args[1] and step and step > 0 then
                             local x = args[1] / step
-                            v = (
-                                token == "roundup" and math.ceil(x)
-                                or token == "rounddown" and math.floor(x)
-                                or math.floor(x + 0.5)
-                            ) * step
+                            v = (token == "roundup" and U.ceil(x) or token == "rounddown" and U.floor(x) or U.round(x))
+                                * step
                         end
                     else
                         error("Unknown function: " .. token)
@@ -152,6 +149,21 @@ function E.eval(text, sources)
             depth = depth - 1
             return checked(v)
         end
+        power = function()
+            local v = primary()
+            if t[p] == "^" then
+                p = p + 1
+                local r = unary()
+                if v == nil or r == nil then
+                    return nil
+                end
+                if math.abs(r) > 16 then
+                    error("Exponent range")
+                end
+                v = checked(v ^ r)
+            end
+            return v
+        end
         unary = function()
             if t[p] == "-" then
                 p = p + 1
@@ -162,7 +174,7 @@ function E.eval(text, sources)
                 p = p + 1
                 return unary()
             end
-            local v = primary()
+            local v = power()
             if t[p] == "%" then
                 p = p + 1
                 local r = unary()
@@ -172,7 +184,7 @@ function E.eval(text, sources)
         end
         local function product()
             local v = unary()
-            while t[p] == "*" or t[p] == "/" or t[p] == "^" do
+            while t[p] == "*" or t[p] == "/" do
                 local op = t[p]
                 p = p + 1
                 local r = unary()
@@ -185,11 +197,6 @@ function E.eval(text, sources)
                         error("Division by zero")
                     end
                     v = v / r
-                else
-                    if math.abs(r) > 16 then
-                        error("Exponent range")
-                    end
-                    v = v ^ r
                 end
                 checked(v)
             end

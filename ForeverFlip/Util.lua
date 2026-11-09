@@ -1,6 +1,6 @@
 ForeverFlip = ForeverFlip or {}
 local F = ForeverFlip
-F.version = "5.2.3-preview"
+F.version = "5.2.4-preview"
 local U = {}
 F.Util = U
 function U.finite(n)
@@ -19,6 +19,23 @@ function U.number(n, fallback, lo, hi)
     end
     return n
 end
+-- Snap only within a few binary rounding units, not a monetary tolerance.
+local function integerBoundary(n)
+    local nearest = math.floor(n + 0.5)
+    if math.abs(n - nearest) <= math.max(1, math.abs(n)) * 4.440892098500626e-16 then
+        return nearest
+    end
+    return n
+end
+function U.round(n)
+    return math.floor(n + 0.5 + math.abs(n) * 4.440892098500626e-16)
+end
+function U.floor(n)
+    return math.floor(integerBoundary(n))
+end
+function U.ceil(n)
+    return math.ceil(integerBoundary(n))
+end
 function U.copper(s)
     s = tostring(s or ""):gsub(",", "."):gsub("%s", "")
     if not s:match("^%d+%.?%d*$") then
@@ -28,10 +45,10 @@ function U.copper(s)
     if not U.finite(n) or n < 0 or n > 100000000 then
         return nil
     end
-    return math.floor(n * 10000 + 0.5)
+    return U.round(n * 10000)
 end
 function U.money(n)
-    n = math.floor(U.number(n, 0) + 0.5)
+    n = U.round(U.number(n, 0))
     local sign = n < 0 and "-" or ""
     n = math.abs(n)
     return string.format("%s%dg %02ds %02dc", sign, math.floor(n / 10000), math.floor(n % 10000 / 100), n % 100)

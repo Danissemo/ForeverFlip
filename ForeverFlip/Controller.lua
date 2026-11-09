@@ -1019,12 +1019,17 @@ function C:post(item, qty, price, duration)
     end
     local p = self.plan
     local o = self:options(self.key)
-    local floorPrice = F.Expr.eval(o.sellFormula, { market = p.stats.lower, vendorsell = o.vendor, recent = p.minimum })
-    if not floorPrice or price < floorPrice or (o.vendor and price * (1 - o.fee - o.reserve) < o.vendor) then
+    local floorPrice = F.Expr.eval(o.sellFormula, F.Market.sources(p.stats, p.minimum, o))
+    local quantity = p.kind == "commodity" and qty or 1
+    local gross = price * quantity
+    local saleNet = gross
+        - F.Market.fee(gross, o.fee, o.minFee)
+        - U.floor(gross * (o.reserve or 0))
+        - (o.extraCost or 0)
+    if not floorPrice or price < floorPrice or (o.vendor and saleNet < quantity * o.vendor) then
         self:notify("post_floor")
         return false
     end
-    local quantity = p.kind == "commodity" and qty or 1
     local ok, deposit = pcall(self.api.deposit, item, p.kind, quantity, duration or 2)
     if not ok or not U.finite(deposit) or deposit > self.api.wallet() - self:reserved() then
         self:notify("deposit_unknown")

@@ -2,7 +2,7 @@
 ## Title: ForeverFlip |cff6dd7bd5|r
 ## Notes: Auction-window trade workbench, scoped FIFO, rules, risk-adjusted deal discovery and NPC arbitrage.
 ## Author: ForeverFlip contributors
-## Version: 5.2.3-preview
+## Version: 5.2.4-preview
 ## OptionalDeps: Auctionator, LibAHTab, auxForever, TradeSkillMaster
 ## SavedVariables: ForeverFlipDB, ForeverFlipLegacyDB
 
