@@ -33,8 +33,12 @@ function F.boot(name)
         elapsed = elapsed + dt
         paint = paint + dt
         if elapsed >= 0.05 then
+            local progressElapsed = elapsed
             elapsed = 0
             c:tick()
+            if F.ui and F.ui.frame:IsShown() then
+                F.ui:updateProgress(progressElapsed)
+            end
         end
         if paint >= 1 then
             paint = 0

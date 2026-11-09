@@ -3,7 +3,7 @@ from pathlib import Path
 from lupa.lua51 import LuaRuntime
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULES = ['Util', 'Locale', 'Expressions', 'Store', 'Ledger', 'Market', 'Professions', 'Advisor', 'Workbench', 'NativeLayout', 'ItemDisplay', 'NativeShopping']
+MODULES = ['Util', 'Locale', 'Expressions', 'Store', 'Ledger', 'Market', 'Professions', 'Advisor', 'Workbench', 'Progress', 'NativeLayout', 'ItemDisplay', 'NativeShopping']
 
 def runtime():
     lua = LuaRuntime(unpack_returned_tuples=True)

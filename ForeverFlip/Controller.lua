@@ -582,7 +582,15 @@ function C:watchStart()
     return true
 end
 function C:fullScan()
-    if not self:allowed() or self.job or self.fullJob or self.active or not self.api.ready() then
+    if not self:allowed() then
+        return false
+    end
+    if self.job or self.fullJob or self.active then
+        self:notify("search_busy")
+        return false
+    end
+    if not self.api.ready() then
+        self:notify("throttled")
         return false
     end
     if self.api.clock() - (self.db.lastReplicate or 0) < 900 then
@@ -830,6 +838,10 @@ function C:more()
         return false
     end
     local ok = pcall(self.api.more, self.key, self.plan.kind)
+    if ok then
+        self.job.at = self.api.clock()
+        self:notify("searching")
+    end
     return ok
 end
 function C:rank()
@@ -909,6 +921,7 @@ function C:recommend(profile)
         drop = config.drop,
     })
     result.profile = profile
+    self:notify("planner_done")
     return result
 end
 function C:allocate(o)

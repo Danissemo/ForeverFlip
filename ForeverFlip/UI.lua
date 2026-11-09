@@ -160,6 +160,15 @@ local function messages()
         ),
         reconciled = L("Reconciliation saved.", "Reconciliation saved."),
         quote_expired = L("Quote expired.", "Quote expired."),
+        planner_done = L(
+            "Plan complete. Select an item to verify.",
+            "Plan complete. Select an item to verify."
+        ),
+        calculation_done = L("Calculation complete.", "Calculation complete."),
+        calculation_incomplete = L(
+            "Insufficient data for calculation.",
+            "Insufficient data for calculation."
+        ),
         mail_review = L(
             "Mail invoices ready for manual reconciliation.",
             "Mail invoices ready for manual reconciliation."
@@ -466,6 +475,7 @@ function UI.create(c)
             c:invalidate()
             self.allocation = c:allocate({ budget = budget, riskCap = risk, drop = drop / 100 })
             self.advicePage = 1
+            c:notify("planner_done")
             self:refresh()
         end)
         action(
@@ -2149,6 +2159,7 @@ function UI:renderToolResult()
                 "Missing input prices/output. Profit unknown."
             )
         )
+        self.c:notify("calculation_incomplete")
         return
     end
     local lines = {
@@ -2166,6 +2177,10 @@ function UI:renderToolResult()
         end
     end
     self.toolText:SetText(table.concat(lines, "\n"))
+    self.c:notify("calculation_done")
+end
+function UI:updateProgress(dt)
+    F.Progress.paint(self, dt)
 end
 function UI:layout()
     F.NativeLayout.reflow(self)
@@ -2227,6 +2242,7 @@ function UI:refresh()
             self.sections.overview.body:SetHeight(math.max(1100, y + 150))
         end
     end
+    self:updateProgress(0)
     self.refreshing = false
     if not ok then
         error(err)

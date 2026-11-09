@@ -1,6 +1,6 @@
 # Validation and release status
 
-Release: **5.3.0-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
+Release: **5.3.1-preview**, target WoW Forever 1.60.1.70862 / Interface 16001.
 
 5.2 adds daily-balanced price caps, own-sale statistics and turnover/position
 constraints, pending probe quantities, quote revalidation of fresh advisor caps,
@@ -86,3 +86,11 @@ native OnShow tab resizing and selected Ukrainian tab font restoration. The
 reviewer checked actual Blizzard templates and caught the fixed chart clipping.
 Game window capture still timed out after foreground activation. Native visual
 acceptance remains unverified; no screenshot comparison success is claimed.
+
+5.3.1: 185 tests. Full scan waiting/actual220-of1000/finish, partial search
+action and More transition, quote/manual-confirm/receipt, timeout/Stop, unknown
+reservation, throttled scan and Core.OnUpdate painting without full refresh
+are covered. Footer exists across sections. Dense20-unit rows and native coin
+strings/item levels come from game data. Fresh review found no Important or
+Critical issues and reran182 tests; further throttle/core-paint/item tests pass.
+No actual gold actions or in-client pixel verification were performed.

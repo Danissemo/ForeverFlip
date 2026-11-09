@@ -139,6 +139,7 @@ function N.shell(ui)
     ui.status:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 8, 5)
     ui.status:SetJustifyH("LEFT")
     ui.status:SetWordWrap(false)
+    F.Progress.create(ui)
     N.reflow(ui)
     host:Show()
     return host
@@ -184,8 +185,8 @@ function N.reflow(ui)
         local top = (id == "workbench" or id == "watch") and 94 or 68
         s.scroll:ClearAllPoints()
         s.scroll:SetPoint("TOPLEFT", ui.canvas, "TOPLEFT", 0, -top)
-        s.scroll:SetPoint("BOTTOMRIGHT", ui.canvas, "BOTTOMRIGHT", 0, 25)
-        s.scroll:SetSize(width, math.max(1, height - top - 25))
+        s.scroll:SetPoint("BOTTOMRIGHT", ui.canvas, "BOTTOMRIGHT", 0, 44)
+        s.scroll:SetSize(width, math.max(1, height - top - 44))
         s.body:SetWidth(math.max(1, width - 42))
     end
     for _, c in ipairs(ui.nativeLayout.containers) do
@@ -195,8 +196,9 @@ function N.reflow(ui)
         apply(e)
     end
     ui.status:SetWidth(math.max(1, width - 20))
+    F.Progress.layout(ui, width)
     if ui.shopping and ui.shopping.layout then
-        ui.shopping.layout(width, math.max(1, height - 68 - 25))
+        ui.shopping.layout(width, math.max(1, height - 68 - 44))
     end
 end
 function N.select(ui, id)

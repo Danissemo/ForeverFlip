@@ -19,15 +19,16 @@ end
 function D.metadata(key, link, family)
     local id = key.itemID
     link = validLink(key, link)
-    local name, cachedLink, quality, icon
+    local name, cachedLink, quality, icon, level
     local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
     if getInfo then
-        local ok, n, l, q, _, _, _, _, _, _, tex = pcall(getInfo, link or id)
+        local ok, n, l, q, itemLevel, _, _, _, _, _, tex = pcall(getInfo, link or id)
         if ok then
             name = n
             cachedLink = l
             quality = q
             icon = tex
+            level = itemLevel
         end
     end
     local base = not family
@@ -63,6 +64,7 @@ function D.metadata(key, link, family)
         name = name or (L("Item", "Item") .. " " .. tostring(id)),
         link = link,
         quality = quality,
+        level = (key.itemLevel or 0) > 0 and key.itemLevel or ((link or base) and level or nil),
         icon = icon or 134400,
         exact = not not (link or base),
         base = base,
@@ -94,9 +96,9 @@ end
 function D.columns(width, compact)
     compact = compact or width < 600
     if compact then
-        return { price = 0, icon = 90, itemName = 116, quantity = width - 145, profit = width - 88, detail = width }, {
-            price = 86,
-            itemName = math.max(20, width - 261),
+        return { price = 0, icon = 104, itemName = 130, quantity = width - 145, profit = width - 88, detail = width }, {
+            price = 100,
+            itemName = math.max(20, width - 275),
             quantity = 55,
             profit = 88,
             detail = 0,
@@ -145,9 +147,14 @@ function D.row(parent, x, y, width, onClick)
     r:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
     r:SetSize(width, 30)
     local bg = r:CreateTexture(nil, "BACKGROUND")
+    r.background = bg
     bg:SetAllPoints()
     bg:SetColorTexture(0, 0, 0, 0.12)
-    r:SetHighlightTexture("Interface/QuestFrame/UI-QuestTitleHighlight", "ADD")
+    local highlight = r:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAtlas("auctionhouse-ui-row-highlight")
+    highlight:SetAllPoints()
+    highlight:SetBlendMode("ADD")
+    r:SetHighlightTexture(highlight, "ADD")
     r.qualityBorder = r:CreateTexture(nil, "ARTWORK")
     r.qualityBorder:SetPoint("LEFT", r, "LEFT", 4, 0)
     r.qualityBorder:SetSize(22, 22)
@@ -173,6 +180,12 @@ function D.row(parent, x, y, width, onClick)
                 f:Show()
             end
         end
+        local small = compact or self.nativeCompact
+        self.icon:SetSize(small and 16 or 20, small and 16 or 20)
+        self.qualityBorder:SetSize(small and 18 or 22, small and 18 or 22)
+        self.price:SetJustifyH("RIGHT")
+        self.quantity:SetJustifyH("CENTER")
+        self.profit:SetJustifyH("RIGHT")
         self.icon:ClearAllPoints()
         self.icon:SetPoint("LEFT", self, "LEFT", xs.icon + 2, 0)
         self.qualityBorder:ClearAllPoints()
@@ -246,7 +259,7 @@ function D.row(parent, x, y, width, onClick)
         local red, green, blue = c and c.r or 0.8, c and c.g or 0.8, c and c.b or 0.8
         self.qualityBorder:SetColorTexture(red, green, blue, 1)
         self.itemName:SetTextColor(red, green, blue)
-        self.itemName:SetText(m.name)
+        self.itemName:SetText(m.name .. (U.finite(m.level) and m.level > 0 and (" (" .. m.level .. ")") or ""))
         self.quantity:SetText(p.qty and p.qty > 0 and p.qty or p.totalQty or 0)
         self.price:SetText(D.money(p.qty and p.qty > 0 and p.cost and p.cost / p.qty or p.minimum))
         self.profit:SetText(D.money(p.profit))

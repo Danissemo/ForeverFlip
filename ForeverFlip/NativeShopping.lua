@@ -2,6 +2,7 @@ local F = ForeverFlip
 local U = F.Util
 local L = F.Locale.text
 local S = {}
+local PAGE_SIZE = 20
 F.NativeShopping = S
 local function button(parent, title, fn)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
@@ -30,7 +31,7 @@ function S.create(ui, warning)
     resultScroll:SetPoint("TOPLEFT", right, "TOPLEFT", 4, -5)
     resultScroll:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", -27, 5)
     local resultBody = CreateFrame("Frame", nil, resultScroll)
-    resultBody:SetSize(480, 312)
+    resultBody:SetSize(480, PAGE_SIZE * 20)
     resultScroll:SetScrollChild(resultBody)
     local empty = right:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     empty:SetPoint("TOP", right, "TOP", 0, -70)
@@ -107,10 +108,10 @@ function S.create(ui, warning)
     end)
     local pages = host:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     ui.dealRows = {}
-    for i = 1, 12 do
+    for i = 1, PAGE_SIZE do
         local index = i
-        local r = F.ItemDisplay.row(resultBody, 0, (i - 1) * 26, 480, function()
-            local p = ui.visibleDeals and ui.visibleDeals[(ui.dealPage - 1) * 12 + index]
+        local r = F.ItemDisplay.row(resultBody, 0, (i - 1) * 20, 480, function()
+            local p = ui.visibleDeals and ui.visibleDeals[(ui.dealPage - 1) * PAGE_SIZE + index]
             if not p then
                 return
             end
@@ -121,6 +122,10 @@ function S.create(ui, warning)
                 ui:show("trade")
             end
         end)
+        r.background:SetAtlas("auctionhouse-rowstripe-1")
+        r.background:SetBlendMode("ADD")
+        r.background:SetVertexColor(1, 1, 1, 1)
+        r.background:SetAlpha(i % 2 == 0 and 0.8 or 0.25)
         r.nativeCompact = true
         ui.dealRows[i] = r
     end
@@ -139,13 +144,19 @@ function S.create(ui, warning)
         local x, w = F.ItemDisplay.columns(rw - 31, true)
         for name, h in pairs(state.headers) do
             h:ClearAllPoints()
-            h:SetPoint("TOPLEFT", host, "TOPLEFT", rx + 4 + x[name], 0)
-            h:SetSize(w[name], 23)
+            local hx = x[name]
+            local hw = w[name]
+            if name == "itemName" then
+                hx = x.icon
+                hw = w.itemName + x.itemName - x.icon
+            end
+            h:SetPoint("TOPLEFT", host, "TOPLEFT", rx + 4 + hx, 0)
+            h:SetSize(hw, 23)
         end
         for i, r in ipairs(ui.dealRows) do
             r:ClearAllPoints()
-            r:SetPoint("TOPLEFT", resultBody, "TOPLEFT", 0, -(i - 1) * 26)
-            r:SetSize(rw - 31, 25)
+            r:SetPoint("TOPLEFT", resultBody, "TOPLEFT", 0, -(i - 1) * 20)
+            r:SetSize(rw - 31, 20)
             r:LayoutColumns(rw - 31, true)
         end
         for i, b in ipairs(state.listRows) do
@@ -253,8 +264,21 @@ function S.create(ui, warning)
             return x < y
         end)
         ui.visibleDeals = out
-        local count = math.max(1, math.ceil(#out / 12))
+        local count = math.max(1, math.ceil(#out / PAGE_SIZE))
         ui.dealPage = math.max(1, math.min(count, ui.dealPage))
+        local signature = table.concat({
+            ui.dealPage,
+            #out,
+            query,
+            tostring(ui.groupFilter),
+            tostring(ui.watchOnly),
+            ui.sort,
+            tostring(ui.sortDescending),
+        }, "|")
+        if state.signature ~= signature then
+            resultScroll:SetVerticalScroll(0)
+            state.signature = signature
+        end
         pages:SetText(ui.dealPage .. " / " .. count .. "  " .. #out)
         previous:SetEnabled(ui.dealPage > 1)
         nextPage:SetEnabled(ui.dealPage < count)
@@ -264,7 +288,7 @@ function S.create(ui, warning)
             empty:Hide()
         end
         for i, row in ipairs(ui.dealRows) do
-            local p = out[(ui.dealPage - 1) * 12 + i]
+            local p = out[(ui.dealPage - 1) * PAGE_SIZE + i]
             row:SetItem(p, p and (p.canBuy and L("Verify", "Verify") or warning(p)))
             row:SetEnabled(p ~= nil)
             if p then
@@ -273,5 +297,5 @@ function S.create(ui, warning)
             end
         end
     end
-    state.layout(ui.canvas:GetWidth(), ui.canvas:GetHeight() - 68 - 25)
+    state.layout(ui.canvas:GetWidth(), ui.canvas:GetHeight() - 68 - 44)
 end

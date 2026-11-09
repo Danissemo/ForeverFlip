@@ -1,0 +1,252 @@
+local F = ForeverFlip
+local U = F.Util
+local L = F.Locale.text
+local P = {}
+F.Progress = P
+local function result(mode, label, value, done, total)
+    return { mode = mode, label = label, value = value, done = done, total = total }
+end
+local function waiting(label, at, now)
+    return result(
+        "waiting",
+        label .. string.format(L(" · %d s", " · %d s"), math.max(0, math.floor(now - (at or now))))
+    )
+end
+local failures = {
+    throttled = true,
+    buy_blocked = true,
+    readonly = true,
+    auction_closed = true,
+    scope_unknown = true,
+    post_floor = true,
+    post_values = true,
+    deposit_unknown = true,
+    bid_blocked = true,
+    search_busy = true,
+    resolve_pending = true,
+    tab_error = true,
+    replicate_error = true,
+    replicate_timeout = true,
+    replicate_empty = true,
+    search_timeout = true,
+    calculation_incomplete = true,
+    results_error = true,
+    quote_error = true,
+    quote_unavailable = true,
+    quote_expired = true,
+    post_error = true,
+    unknown = true,
+    ledger_full = true,
+}
+local done = {
+    replicate_done = true,
+    plan_ready = true,
+    plan_review = true,
+    purchase_recorded = true,
+    post_sent = true,
+    reconciled = true,
+    watch_finished = true,
+    planner_done = true,
+    calculation_done = true,
+}
+function P.state(c)
+    local now = c.api.clock()
+    local full = c.fullJob
+    if full then
+        if full.waiting then
+            return waiting(
+                L("Waiting for auction data", "Waiting for auction data"),
+                full.at,
+                now
+            )
+        end
+        local total = math.max(1, full.total or 1)
+        local n = math.max(0, math.min(total, full.index or 0))
+        local value = n / total
+        return result(
+            "processing",
+            string.format(
+                L("Processing: %d / %d · %d%%", "Processing: %d / %d · %d%%"),
+                n,
+                total,
+                math.floor(value * 100)
+            ),
+            value,
+            n,
+            total
+        )
+    end
+    local op = c.active
+    if op then
+        if op.status == "quote" then
+            return waiting(L("Requesting quote", "Requesting quote"), op.at, now)
+        end
+        if op.status == "quoted" then
+            return result(
+                "action",
+                L(
+                    "Quote received — confirm purchase",
+                    "Quote received — confirm purchase"
+                ),
+                1
+            )
+        end
+        if op.status == "awaiting" then
+            return waiting(L("Waiting for purchase receipt", "Waiting for purchase receipt"), op.at, now)
+        end
+        if op.status == "bid" then
+            return result(
+                "action",
+                L("Bid reserved — reconcile outcome", "Bid reserved — reconcile outcome"),
+                1
+            )
+        end
+    end
+    if c.job and c.plan and c.plan.complete == false and c.message == "partial" then
+        return result(
+            "action",
+            L(
+                "Click More results to continue",
+                "Click More results to continue"
+            )
+        )
+    end
+    if c.job then
+        return waiting(
+            L("Waiting for search results", "Waiting for search results"),
+            c.job.at,
+            now
+        )
+    end
+    for _, pending in pairs(c.db.pending or {}) do
+        if pending.owner == c.api.owner() and pending.status == "unknown" then
+            return result(
+                "error",
+                L(
+                    "Outcome unknown — reconcile in Portfolio",
+                    "Outcome unknown — reconcile in Portfolio"
+                ),
+                0
+            )
+        end
+    end
+    if c.postPending then
+        return result(
+            "action",
+            L(
+                "Click again to confirm posting",
+                "Click again to confirm posting"
+            ),
+            1
+        )
+    end
+    if c.watching then
+        local elapsed = math.max(0, math.min(600, 600 - (c.watchUntil - now)))
+        return result(
+            "processing",
+            string.format(L("Watching: %d / 600 s", "Watching: %d / 600 s"), elapsed),
+            elapsed / 600,
+            elapsed,
+            600
+        )
+    end
+    if c.message == "replicate_cooldown" then
+        local remain = math.max(0, math.min(900, math.ceil(900 - (now - (c.db.lastReplicate or 0)))))
+        return result(
+            "cooldown",
+            string.format(
+                L("Full scan available in %d s", "Full scan available in %d s"),
+                remain
+            ),
+            1 - remain / 900
+        )
+    end
+    if failures[c.message] or (type(c.message) == "string" and c.message:find("search_error:", 1, true) == 1) then
+        return result(
+            "error",
+            L(
+                "Action incomplete — see message above",
+                "Action incomplete — see message above"
+            ),
+            0
+        )
+    end
+    if c.message == "stopped" then
+        return result("stopped", L("Stopped", "Stopped"), 0)
+    end
+    if done[c.message] then
+        local caption = L("Action complete", "Action complete")
+        if c.message == "replicate_done" then
+            caption = L("Full scan processed", "Full scan processed")
+        elseif c.message == "planner_done" then
+            caption = L("Plan calculated", "Plan calculated")
+        elseif c.message == "plan_ready" or c.message == "plan_review" then
+            caption = L("Search complete", "Search complete")
+        elseif c.message == "post_sent" then
+            caption = L("Posting request sent", "Posting request sent")
+        end
+        return result("done", caption, 1)
+    end
+    return result("idle", L("Ready", "Ready"), 0)
+end
+function P.create(ui)
+    local bar = CreateFrame("StatusBar", nil, ui.canvas)
+    bar:SetStatusBarTexture("Interface/TargetingFrame/UI-StatusBar")
+    bar:SetMinMaxValues(0, 1)
+    bar:SetValue(0)
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.04, 0.04, 0.04, 0.85)
+    local spark = bar:CreateTexture(nil, "ARTWORK")
+    spark:SetTexture("Interface/TargetingFrame/UI-StatusBar")
+    spark:SetVertexColor(0.85, 0.65, 0.15, 0.9)
+    spark:Hide()
+    local text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    text:SetAllPoints()
+    F.Locale.font(text, 10)
+    ui.progressUI = { bar = bar, spark = spark, text = text, phase = 0 }
+    bar:Show()
+end
+function P.layout(ui, width)
+    local p = ui.progressUI
+    if not p then
+        return
+    end
+    p.bar:ClearAllPoints()
+    p.bar:SetPoint("BOTTOMLEFT", ui.canvas, "BOTTOMLEFT", 8, 4)
+    p.bar:SetSize(math.max(1, width - 16), 16)
+    ui.status:ClearAllPoints()
+    ui.status:SetPoint("BOTTOMLEFT", ui.canvas, "BOTTOMLEFT", 8, 24)
+end
+function P.paint(ui, dt)
+    local p = ui.progressUI
+    if not p then
+        return
+    end
+    local state = P.state(ui.c)
+    p.state = state
+    p.phase = p.phase + (dt or 0)
+    p.bar:SetValue(state.mode == "error" and 1 or state.value or 0)
+    p.text:SetText(state.label)
+    if state.mode == "waiting" then
+        local width = p.bar:GetWidth()
+        local segment = math.max(1, width * 0.18)
+        local offset = (math.sin(p.phase * 2) + 1) * 0.5 * math.max(0, width - segment)
+        p.spark:ClearAllPoints()
+        p.spark:SetPoint("LEFT", p.bar, "LEFT", offset, 0)
+        p.spark:SetSize(segment, 16)
+        p.spark:Show()
+    else
+        p.spark:Hide()
+    end
+    if state.mode == "error" then
+        p.bar:SetStatusBarColor(0.75, 0.15, 0.12)
+    elseif state.mode == "action" or state.mode == "cooldown" then
+        p.bar:SetStatusBarColor(0.65, 0.5, 0.15)
+    elseif state.mode == "processing" then
+        p.bar:SetStatusBarColor(0.2, 0.48, 0.75)
+    else
+        p.bar:SetStatusBarColor(0.18, 0.6, 0.25)
+    end
+end
+return P

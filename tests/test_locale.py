@@ -6,7 +6,7 @@ from test_controller import controller_runtime
 
 
 def translated_pairs():
-    for name in ['UI','ItemDisplay','Core','NativeLayout','NativeShopping']:
+    for name in ['UI','ItemDisplay','Core','NativeLayout','NativeShopping','Progress']:
         source=(ROOT/'ForeverFlip'/(name+'.lua')).read_text(encoding='utf-8-sig')
         for match in re.finditer(r'\bL\(\s*("(?:[^"\\]|\\.)*")\s*,\s*("(?:[^"\\]|\\.)*")\s*\)',source):
             yield json.loads(match[1]), json.loads(match[2])
