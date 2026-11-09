@@ -2,6 +2,7 @@ local F = ForeverFlip
 local T = {}
 F.Locale = T
 T.uk = {
+    ["Preparing deals: %d / %d"] = "Підготовка угод: %d / %d",
     ["Waiting for background search before manual review"] = "Очікування фонового запиту перед ручною перевіркою",
     ["Live: selecting candidates %d / %d"] = "Live: відбір кандидатів %d / %d",
     ["Resume"] = "Продовжити",

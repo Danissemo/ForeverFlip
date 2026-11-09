@@ -150,6 +150,27 @@ function P.state(c)
             1
         )
     end
+    if
+        c.dealPageVisible
+        and c.dealCache
+        and c.dealCache.job
+        and not (c.radar and c.radar.enabled and not c.radar.paused)
+    then
+        local j = c.dealCache.job
+        local total = math.max(1, j.inputs.count)
+        local n = math.min(total, j.index - 1)
+        return result(
+            "processing",
+            string.format(
+                L("Preparing deals: %d / %d", "Preparing deals: %d / %d"),
+                n,
+                j.inputs.count
+            ),
+            n / total,
+            n,
+            j.inputs.count
+        )
+    end
     if c.radar and c.radar.enabled then
         local r = c.radar
         if r.paused then

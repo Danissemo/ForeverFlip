@@ -103,3 +103,12 @@ Ranking is incremental and bounded; native Live controls/progress/UK strings
 covered. Fresh review found seven issues, all reproduced and fixed. Details and
 external Lua5.1 benchmark: ../docs/live-radar-review.md. StyLua and LuaLS pass.
 Native server timing and visual rendering are still unverified.
+
+5.4.1:226 tests; incremental page preparation and cache invalidation, identical
+ranking results, no repeated whole-market work on page entry, visible20-row
+metadata, bounded variant cache, deferred relevant item events, financial/scope
+freshness and revision/expiry regressions. Fresh review found four issues; all
+fixed with RED→GREEN tests. StyLua and LuaLS19/19 pass. Synthetic page open1.933ms,
+prepared reopen5.333ms versus baseline1,581.3ms. Preparation itself remains
+538.018ms total CPU spread over500 updates. See ../docs/page-performance-review.md;
+these are external Lua5.1 timings, not in-client FPS measurements.

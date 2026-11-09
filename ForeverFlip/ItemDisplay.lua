@@ -3,7 +3,51 @@ local U = F.Util
 local D = { requested = {}, requestCount = 0 }
 F.ItemDisplay = D
 local L = F.Locale.text
-local function validLink(key, link)
+local cache, cacheCount = {}, 0
+local validLink
+local function bucket(id)
+    if cacheCount >= 2048 then
+        cache, cacheCount = {}, 0
+    end
+    if not cache[id] then
+        cache[id] = { metadata = {}, names = {} }
+    end
+    return cache[id]
+end
+function D.invalidate(id)
+    local relevant = cache[id] ~= nil or D.requested[id] == true
+    cache[id] = nil
+    return relevant
+end
+function D.name(key, link)
+    link = validLink(key, link)
+    local b = bucket(key.itemID)
+    local signature = F.Util.key(key) .. (link or "")
+    if b.names[signature] then
+        return b.names[signature]
+    end
+    local name = type(link) == "string" and link:match("|h%[(.-)%]|h")
+    if not name and (not C_Item or not C_Item.IsItemDataCachedByID or C_Item.IsItemDataCachedByID(key.itemID)) then
+        local get = C_Item and C_Item.GetItemInfo or GetItemInfo
+        if get then
+            local ok, value = pcall(get, link or key.itemID)
+            if ok then
+                name = value
+            end
+        end
+    end
+    if not name and C_AuctionHouse and C_AuctionHouse.GetItemKeyInfo then
+        local ok, info = pcall(C_AuctionHouse.GetItemKeyInfo, key)
+        if ok and info then
+            name = info.itemName
+        end
+    end
+    name = name or (L("Item", "Item") .. " " .. key.itemID)
+    b.names[signature] = name
+    cacheCount = cacheCount + 1
+    return name
+end
+validLink = function(key, link)
     if type(link) ~= "string" then
         return nil
     end
@@ -19,6 +63,11 @@ end
 function D.metadata(key, link, family)
     local id = key.itemID
     link = validLink(key, link)
+    local b = bucket(id)
+    local signature = U.key(key) .. (link or "") .. tostring(family)
+    if b.metadata[signature] then
+        return b.metadata[signature]
+    end
     local name, cachedLink, quality, icon, level
     local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
     if getInfo then
@@ -59,7 +108,7 @@ function D.metadata(key, link, family)
         D.requestCount = D.requestCount + 1
         C_Item.RequestLoadItemDataByID(id)
     end
-    return {
+    local result = {
         key = key,
         name = name or (L("Item", "Item") .. " " .. tostring(id)),
         link = link,
@@ -69,6 +118,9 @@ function D.metadata(key, link, family)
         exact = not not (link or base),
         base = base,
     }
+    b.metadata[signature] = result
+    cacheCount = cacheCount + 1
+    return result
 end
 function D.money(value)
     if not U.finite(value) then

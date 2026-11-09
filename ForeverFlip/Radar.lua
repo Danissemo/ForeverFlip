@@ -29,6 +29,7 @@ local function evaluate(c, key, rows, kind)
     end
     if best then
         best.key = U.copy(key)
+        best.identity = U.key(key)
         best.kind = kind
         best.link = rows[1] and rows[1].link
         best.source = "radar"

@@ -270,9 +270,12 @@ function UI.create(c)
     end)
     root:SetScript("OnShow", function()
         self:layout()
-        self:refresh()
+        if not self.showing then
+            self:refresh()
+        end
     end)
     root:SetScript("OnHide", function()
+        c.dealPageVisible = false
         c:radarPause()
     end)
     local label = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -2223,7 +2226,9 @@ function UI:show(id)
     if F.Store.writable(self.c.db) then
         self.c.db.ui.section = id
     end
+    self.showing = true
     self.frame:Show()
+    self.showing = false
     self:refresh()
 end
 function UI:refresh()
@@ -2232,6 +2237,7 @@ function UI:refresh()
     end
     self.refreshing = true
     local c = self.c
+    c.dealPageVisible = self.frame:IsShown() and self.section == "deals" and not self.liveOnly
     local radar = c.radar
     self.actions.live:SetText(
         radar and radar.enabled and (radar.paused and L("Resume", "Resume") or L("Pause", "Pause"))

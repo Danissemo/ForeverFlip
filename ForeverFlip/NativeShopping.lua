@@ -227,7 +227,7 @@ function S.create(ui, warning)
     end
     ui.refreshers.deals = function()
         refreshLists()
-        local all = ui.liveOnly and F.Radar.list(c) or c:rank()
+        local all = ui.liveOnly and F.Radar.list(c) or F.DealCache.get(c)
         local out = {}
         local query = ui.fields.dealFilter:GetText():lower()
         local watch = {}
@@ -235,8 +235,8 @@ function S.create(ui, warning)
             watch[tostring(v)] = true
         end
         for _, p in ipairs(all) do
-            local name = F.ItemDisplay.metadata(p.key, p.link, p.family).name
-            local group = c:rule(p.key).group or ""
+            local name = query ~= "" and F.ItemDisplay.name(p.key, p.link) or ""
+            local group = p.group or ""
             if
                 (ui.filterMode == "all" or p.mode == ui.filterMode)
                 and (not ui.groupFilter or ui.groupFilter == group)
@@ -244,6 +244,12 @@ function S.create(ui, warning)
                 and (query == "" or (name .. " " .. p.key.itemID .. " " .. group):lower():find(query, 1, true))
             then
                 out[#out + 1] = p
+            end
+        end
+        local names = {}
+        if ui.sort == "itemName" then
+            for _, p in ipairs(out) do
+                names[p] = F.ItemDisplay.name(p.key, p.link)
             end
         end
         table.sort(out, function(a, b)
@@ -255,12 +261,12 @@ function S.create(ui, warning)
             elseif ui.sort == "quantity" then
                 x, y = a.totalQty or 0, b.totalQty or 0
             elseif ui.sort == "itemName" then
-                x, y = U.name(a.key.itemID), U.name(b.key.itemID)
+                x, y = names[a], names[b]
             else
                 x, y = a.score or -math.huge, b.score or -math.huge
             end
             if x == y then
-                return U.key(a.key) < U.key(b.key)
+                return a.identity < b.identity
             end
             if ui.sortDescending then
                 return x > y

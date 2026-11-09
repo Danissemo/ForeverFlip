@@ -48,6 +48,7 @@ class ItemDisplayTests(unittest.TestCase):
         l.execute((ROOT/'ForeverFlip/Core.lua').read_text(encoding='utf-8-sig'))
         l.execute('''ForeverFlip.boot('ForeverFlip');ForeverFlip.attach();ForeverFlip.ui.frame:Show()
         local count=0;ForeverFlip.ui.refresh=function()count=count+1 end
+        ForeverFlip.ItemDisplay.metadata({itemID=1})
         local f=ForeverFlip.eventFrame
         for i=1,100 do f.scripts.OnEvent(f,'GET_ITEM_INFO_RECEIVED',i,true)end
         assert(count==0);f.scripts.OnUpdate(f,1);assert(count==1)''')

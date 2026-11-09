@@ -79,7 +79,39 @@ function C:reserved()
     return n
 end
 function C:summary()
-    return self.cachedSummary or F.Ledger.summary(self.db.ledger, self.api.owner(), self.api.scope())
+    if self.cachedSummary then
+        return self.cachedSummary
+    end
+    local entries, owner, scope = self.db.ledger, self.api.owner(), self.api.scope()
+    local m = self.summaryMemo
+    if
+        not m
+        or m.entries ~= entries
+        or m.count ~= #entries
+        or m.sequence ~= self.db.sequence
+        or m.owner ~= owner
+        or m.scope ~= scope
+    then
+        local value = F.Ledger.summary(entries, owner, scope)
+        value.positionByKey, value.salesByKey = {}, {}
+        for _, p in ipairs(value.positions) do
+            value.positionByKey[p.key] = p
+        end
+        for _, s in ipairs(value.salesHistory) do
+            value.salesByKey[s.key] = value.salesByKey[s.key] or {}
+            table.insert(value.salesByKey[s.key], s)
+        end
+        m = {
+            entries = entries,
+            count = #entries,
+            sequence = self.db.sequence,
+            owner = owner,
+            scope = scope,
+            value = value,
+        }
+        self.summaryMemo = m
+    end
+    return m.value
 end
 function C:rule(value)
     local key = type(value) == "table" and value or { itemID = value }
@@ -136,14 +168,13 @@ function C:options(key, mode, ownOp, ignoreOverrides)
     o.stock = summary.stock
     o.exposure = 0
     o.ownedQty = 0
-    for _, p in ipairs(summary.positions) do
-        if p.key == identity then
-            o.exposure = p.cost
-            o.ownedQty = p.qty
-        end
+    local position = summary.positionByKey and summary.positionByKey[identity]
+    if position then
+        o.exposure, o.ownedQty = position.cost, position.qty
     end
     o.velocity = F.Market.velocity(
-        self.salesByKey and (self.salesByKey[identity] or {}) or summary.salesHistory,
+        (self.salesByKey or summary.salesByKey) and ((self.salesByKey or summary.salesByKey)[identity] or {})
+            or summary.salesHistory,
         identity,
         self.api.clock()
     )
@@ -195,7 +226,8 @@ function C:options(key, mode, ownOp, ignoreOverrides)
         end
         o.advice = F.Advisor.parameters(
             F.Market.evidence(self:history(key)),
-            self.salesByKey and (self.salesByKey[identity] or {}) or summary.salesHistory,
+            (self.salesByKey or summary.salesByKey) and ((self.salesByKey or summary.salesByKey)[identity] or {})
+                or summary.salesHistory,
             activity and activity.since,
             o.now,
             self.advisorProfile,
@@ -338,6 +370,7 @@ function C:results(kind, key)
     self.planMode = self.mode
     if complete then
         self.job = nil
+        self.candidateVersion = (self.candidateVersion or 0) + 1
         if self.plan.minimum then
             local snap = F.Market.snapshot(rows)
             F.Store.observe(self.db, j.scope, U.key(key), {
@@ -802,6 +835,7 @@ function C:tick()
                 end
             end
             self.db.lastScan = { at = now, total = j.total, skipped = j.skipped, scope = j.scope }
+            self.candidateVersion = (self.candidateVersion or 0) + 1
             self.fullJob = nil
             self:notify("replicate_done")
         end
@@ -934,44 +968,48 @@ function C:more()
     end
     return ok
 end
+function C:rankCandidate(r)
+    if r.scope ~= self.api.scope() then
+        return nil
+    end
+    local history = self:history(r.key)
+    local best
+    for _, mode in ipairs({ "vendor", "flip" }) do
+        local o = self:options(r.key, mode)
+        o.commodity = r.kind == "commodity" or (r.kind == nil and r.family == false)
+        o.complete = true
+        local p = F.Market.plan(r.rows, F.Market.evidence(history), o)
+        if
+            not best
+            or (p.canBuy and not best.canBuy)
+            or (p.canBuy == best.canBuy and p.score and p.score > (best.score or -math.huge))
+        then
+            best = p
+            best.group = o.group
+            best.groupRemaining = o.groupBudget and math.max(0, o.groupBudget - (o.groupExposure or 0))
+        end
+    end
+    best.kind = r.kind or (r.family == false and "commodity" or "item")
+    best.key = r.key
+    best.identity = U.key(r.key)
+    best.link = r.rows[1] and r.rows[1].link
+    best.at = r.at
+    best.family = r.family
+    best.source = "discovery"
+    if self.api.clock() - r.at > 1800 then
+        best.canBuy = false
+        best.reasons[#best.reasons + 1] = "stale"
+    end
+    return best
+end
 function C:rank()
     local out = {}
     self.cachedSummary = self:summary()
-    self.salesByKey = {}
-    for _, s in ipairs(self.cachedSummary.salesHistory) do
-        self.salesByKey[s.key] = self.salesByKey[s.key] or {}
-        table.insert(self.salesByKey[s.key], s)
-    end
+    self.salesByKey = self.cachedSummary.salesByKey
     for _, r in ipairs(self.candidates) do
-        if r.scope == self.api.scope() then
-            local history = self:history(r.key)
-            local best
-            for _, mode in ipairs({ "vendor", "flip" }) do
-                local o = self:options(r.key, mode)
-                o.commodity = r.kind == "commodity" or (r.kind == nil and r.family == false)
-                o.complete = true
-                local p = F.Market.plan(r.rows, F.Market.evidence(history), o)
-                if
-                    not best
-                    or (p.canBuy and not best.canBuy)
-                    or (p.canBuy == best.canBuy and p.score and p.score > (best.score or -math.huge))
-                then
-                    best = p
-                    best.group = o.group
-                    best.groupRemaining = o.groupBudget and math.max(0, o.groupBudget - (o.groupExposure or 0))
-                end
-            end
-            best.kind = r.kind or (r.family == false and "commodity" or "item")
-            best.key = r.key
-            best.link = r.rows[1] and r.rows[1].link
-            best.at = r.at
-            best.family = r.family
-            best.source = "discovery"
-            if self.api.clock() - r.at > 1800 then
-                best.canBuy = false
-                best.reasons[#best.reasons + 1] = "stale"
-            end
-            out[#out + 1] = best
+        local p = self:rankCandidate(r)
+        if p then
+            out[#out + 1] = p
         end
     end
     table.sort(out, function(a, b)
@@ -981,7 +1019,7 @@ function C:rank()
         if (a.score or -math.huge) ~= (b.score or -math.huge) then
             return (a.score or -math.huge) > (b.score or -math.huge)
         end
-        return U.key(a.key) < U.key(b.key)
+        return a.identity < b.identity
     end)
     self.cachedSummary = nil
     self.salesByKey = nil

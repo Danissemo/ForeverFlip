@@ -35,6 +35,11 @@ function F.boot(name)
     end
     local elapsed, paint = 0, 0
     frame:SetScript("OnUpdate", function(_, dt)
+        if F.ui and F.ui.frame:IsShown() and F.ui.section == "deals" and not F.ui.liveOnly then
+            if F.DealCache.tick(c) then
+                F.ui:refresh()
+            end
+        end
         elapsed = elapsed + dt
         paint = paint + dt
         if elapsed >= 0.05 then
@@ -47,11 +52,17 @@ function F.boot(name)
         end
         if paint >= 1 then
             paint = 0
+            local dealsChanged = F.ui
+                and F.ui.frame:IsShown()
+                and F.ui.section == "deals"
+                and not F.ui.liveOnly
+                and F.DealCache.poll(c)
             if
                 F.ui
                 and F.ui.frame:IsShown()
                 and (
                     F.ui.section == "trade"
+                    or dealsChanged
                     or F.itemDataDirty
                     or (c.radar and c.radar.enabled and F.ui.section == "deals" and F.ui.liveOnly)
                 )
@@ -194,7 +205,10 @@ frame:SetScript("OnEvent", function(_, event, ...)
         return
     end
     if event == "GET_ITEM_INFO_RECEIVED" then
-        F.itemDataDirty = true
+        local id = ...
+        if F.ItemDisplay.invalidate(id) then
+            F.itemDataDirty = true
+        end
         return
     end
     if event == "AUCTION_HOUSE_SHOW" then

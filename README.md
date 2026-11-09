@@ -44,3 +44,8 @@ results expire after30 seconds and always require a separate manual search
 before trading. Pause preserves passive snapshot ingestion; manual review waits
 for an outstanding radar search to drain. Stop/auction close disable the radar.
 Ranking is incremental, four exact variants per update; no automatic buying.
+
+5.4.1 removes synchronous whole-market ranking from Deals page entry. Results
+prepare between frames, prepared pages reuse a financial-input-aware cache,
+only visible rows request full item metadata and item-name sorting parses each
+key once. See docs/page-performance-review.md and tools/benchmark_ui.py.
