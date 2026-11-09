@@ -272,6 +272,9 @@ function UI.create(c)
         self:layout()
         self:refresh()
     end)
+    root:SetScript("OnHide", function()
+        c:radarPause()
+    end)
     local label = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     F.Locale.font(label, 12)
     label:SetPoint("TOPLEFT", host, "TOPLEFT", 68, -12)
@@ -306,7 +309,7 @@ function UI.create(c)
         self.actions[name] = b
         return b
     end
-    toolbar("search", 356, 85, L("Search", "Search"), function()
+    toolbar("search", 356, 80, L("Search", "Search"), function()
         local key, err = F.Adapters.keyFromInput(item:GetText())
         if key then
             if c:search(key) then
@@ -334,14 +337,27 @@ function UI.create(c)
         e:ClearFocus()
         self.actions.search:Click()
     end)
-    toolbar("fullScan", 446, 115, L("Full scan", "Full scan"), function()
+    toolbar("fullScan", 441, 100, L("Full scan", "Full scan"), function()
         c:fullScan()
         self:show("deals")
     end)
-    toolbar("quickPlan", 566, 125, L("Planner", "Planner"), function()
+    toolbar("live", 546, 88, "Live", function()
+        if c.radar and c.radar.enabled and not c.radar.paused then
+            c:radarPause()
+        elseif c:radarStart() then
+            self.liveOnly = true
+            self.watchOnly = false
+            self.groupFilter = nil
+            self.fields.dealFilter:SetText("")
+            self.dealPage = 1
+        end
+        self:show("deals")
+    end)
+    toolbar("quickPlan", 639, 73, L("Planner", "Planner"), function()
+        c:radarPause()
         self.actions.easyBuild:Click()
     end)
-    toolbar("stop", 696, 75, L("Stop", "Stop"), function()
+    toolbar("stop", 717, 54, L("Stop", "Stop"), function()
         c:stop()
     end)
     host:SetScript("OnReceiveDrag", function()
@@ -379,7 +395,7 @@ function UI.create(c)
         if not line then
             return
         end
-        c:stop()
+        c:stop("manual")
         c.overrides = {
             maxQty = math.min(line.qty, c.overrides and c.overrides.maxQty or math.huge),
             budget = math.min(line.cost, c.overrides and c.overrides.budget or math.huge),
@@ -2192,6 +2208,9 @@ function UI:show(id)
     if not self.sections[id] then
         return
     end
+    if id ~= "deals" and id ~= "overview" and id ~= "history" then
+        self.c:radarPause()
+    end
     self.section = id
     for k, v in pairs(self.sections) do
         if k == id then
@@ -2213,6 +2232,11 @@ function UI:refresh()
     end
     self.refreshing = true
     local c = self.c
+    local radar = c.radar
+    self.actions.live:SetText(
+        radar and radar.enabled and (radar.paused and L("Resume", "Resume") or L("Pause", "Pause"))
+            or "Live"
+    )
     self.header:SetText(
         c.api.scope()
             .. "  ·  "
@@ -2223,6 +2247,12 @@ function UI:refresh()
     local message = messages()[c.message] or F.Locale.message(c.message)
     if c.fullJob and not c.fullJob.waiting then
         message = L("Processing: ", "Processing: ") .. c.fullJob.index .. " / " .. c.fullJob.total
+    end
+    if radar and radar.enabled then
+        message = L(
+            "Live: candidates at least 3 s apart · market snapshot every 15 min · select a deal to pause.",
+            "Live: candidates at least 3 s apart · market snapshot every 15 min · select a deal to pause."
+        )
     end
     self.status:SetText(message)
     local fn = self.refreshers[self.section]

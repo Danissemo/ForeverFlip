@@ -97,7 +97,7 @@ function C:rule(value)
     end
     return out
 end
-function C:options(key, mode, ownOp)
+function C:options(key, mode, ownOp, ignoreOverrides)
     local o = self:rule(key)
     local summary = self:summary()
     local identity = U.key(key)
@@ -210,7 +210,7 @@ function C:options(key, mode, ownOp)
     if (key.itemLevel or 0) ~= 0 or (key.itemSuffix or 0) ~= 0 or (key.battlePetSpeciesID or 0) ~= 0 then
         o.vendor = nil
     end
-    for k, v in pairs(self.overrides or {}) do
+    for k, v in pairs(not ignoreOverrides and self.overrides or {}) do
         if k == "budget" or k == "maxQty" then
             o[k] = math.min(o[k] or math.huge, v)
         else
@@ -240,7 +240,16 @@ function C:history(key)
     local h = self.db.markets and self.db.markets[self.api.scope()]
     return h and h[U.key(key)]
 end
-function C:search(key)
+function C:radarStart()
+    return F.Radar.start(self)
+end
+function C:radarPause()
+    F.Radar.pause(self)
+end
+function C:search(key, origin)
+    if origin ~= "radar" then
+        self:radarPause()
+    end
     if not self:allowed() or not U.key(key) then
         return false
     end
@@ -254,6 +263,23 @@ function C:search(key)
     if self.active then
         self:cancelQuote()
     end
+    if
+        origin ~= "radar"
+        and self.radar
+        and self.radar.enabled
+        and self.radar.paused
+        and (
+            (self.job and self.job.origin == "radar")
+            or (self.fullJob and self.fullJob.origin == "radar")
+            or self.api.clock() - self.lastRequest < 2
+        )
+    then
+        self.reviewRequest =
+            { key = U.copy(key), scope = self.api.scope(), owner = self.api.owner(), at = self.api.clock() }
+        self.plan = nil
+        self:notify("review_wait")
+        return true
+    end
     if self.job or self.fullJob then
         self:notify("search_busy")
         return false
@@ -265,7 +291,14 @@ function C:search(key)
     self.serial = self.serial + 1
     self.key = U.copy(key)
     self.plan = nil
-    self.job = { key = U.copy(key), scope = self.api.scope(), at = self.api.clock(), token = self.serial, tries = 0 }
+    self.job = {
+        key = U.copy(key),
+        scope = self.api.scope(),
+        at = self.api.clock(),
+        token = self.serial,
+        tries = 0,
+        origin = origin,
+    }
     local ok, err = pcall(self.api.search, key)
     if not ok then
         self.job = nil
@@ -300,6 +333,7 @@ function C:results(kind, key)
     self.plan.scope = j.scope
     self.plan.ruleVersion = self.ruleVersion
     self.plan.token = j.token
+    self.plan.origin = j.origin
     self.bidRows = bids or {}
     self.planMode = self.mode
     if complete then
@@ -347,7 +381,15 @@ function C:results(kind, key)
                     family = false,
                 }
             end
+        elseif #rows == 0 then
+            for i = #self.candidates, 1, -1 do
+                local r = self.candidates[i]
+                if r.scope == j.scope and U.key(r.key) == U.key(key) then
+                    table.remove(self.candidates, i)
+                end
+            end
         end
+        F.Radar.results(self, j, rows, true, resultKind or kind)
         self:notify(self.plan.canBuy and "plan_ready" or "plan_review")
         if self.watching and self.plan.canBuy and self.plan.cost > 0 then
             local signature = U.key(key) .. ":" .. self.plan.cost
@@ -365,6 +407,8 @@ end
 function C:fresh()
     local p = self.plan
     return p
+        and p.origin ~= "radar"
+        and not self.reviewRequest
         and p.complete
         and p.scope == self.api.scope()
         and p.at <= self.api.clock()
@@ -374,6 +418,7 @@ function C:fresh()
         and not self.job
 end
 function C:invalidate()
+    self:radarPause()
     self.ruleVersion = self.ruleVersion + 1
     self.plan = nil
     self:cancelQuote()
@@ -561,10 +606,16 @@ function C:reconcile(uid, success)
     self:notify("reconciled")
     return true
 end
-function C:stop()
+function C:stop(reason)
+    if reason == "manual" then
+        self:radarPause()
+    else
+        F.Radar.stop(self)
+    end
     self.watching = false
-    self.job = nil
-    self.fullJob = nil
+    self.job = reason == "manual" and self.job and self.job.origin == "radar" and self.job or nil
+    self.fullJob = reason == "manual" and self.fullJob and self.fullJob.origin == "radar" and self.fullJob or nil
+    self.reviewRequest = nil
     self.plan = nil
     self.postPending = nil
     self:cancelQuote()
@@ -574,6 +625,7 @@ function C:watchStart()
     if not self:allowed() or #(self.db.watchlist or {}) == 0 then
         return false
     end
+    self:radarPause()
     self.watching = true
     self.watchUntil = self.api.clock() + 600
     self.watchIndex = 0
@@ -581,7 +633,10 @@ function C:watchStart()
     self:notify("watching")
     return true
 end
-function C:fullScan()
+function C:fullScan(origin)
+    if origin ~= "radar" then
+        self:radarPause()
+    end
     if not self:allowed() then
         return false
     end
@@ -598,7 +653,7 @@ function C:fullScan()
         return false
     end
     self.watching = false
-    self.fullJob = { waiting = true, at = self.api.clock(), scope = self.api.scope() }
+    self.fullJob = { waiting = true, at = self.api.clock(), scope = self.api.scope(), origin = origin }
     local ok = pcall(self.api.replicate)
     if not ok then
         self.fullJob = nil
@@ -640,13 +695,24 @@ function C:tick()
         self:cancelQuote()
         self:notify("quote_expired")
     end
+    if
+        self.radar
+        and self.radar.enabled
+        and (self.radar.scope ~= self.api.scope() or self.radar.owner ~= self.api.owner())
+    then
+        self:stop()
+        return
+    end
     if not self.api.isOpen() then
-        if self.watching or self.job or self.fullJob then
+        if self.watching or self.job or self.fullJob or (self.radar and self.radar.enabled) then
             self:stop()
         end
         return
     end
     if self.job and now - self.job.at > 20 then
+        if self.job.origin == "radar" then
+            F.Radar.failed(self)
+        end
         self.job = nil
         self.plan = nil
         self:notify("search_timeout")
@@ -741,6 +807,24 @@ function C:tick()
         end
         return
     end
+    local review = self.reviewRequest
+    if review then
+        if review.scope ~= self.api.scope() or review.owner ~= self.api.owner() or now - review.at > 90 then
+            self.reviewRequest = nil
+            self:notify("search_timeout")
+        elseif
+            not self.job
+            and not self.fullJob
+            and not self.active
+            and self.api.ready()
+            and now - self.lastRequest >= 2
+        then
+            self.reviewRequest = nil
+            self:search(review.key)
+        end
+        return
+    end
+    F.Radar.tick(self)
     if self.watching then
         if now >= self.watchUntil then
             self.watching = false
@@ -761,17 +845,23 @@ function C:event(event, ...)
     end
     if event == "COMMODITY_SEARCH_RESULTS_UPDATED" or event == "COMMODITY_SEARCH_RESULTS_ADDED" then
         local id = ...
+        if not self.job or self.job.key.itemID ~= id then
+            F.Radar.invalidate(self, id)
+        end
         if self.job and id == self.job.key.itemID then
             self:results("commodity", self.job.key)
-        elseif self.plan and self.plan.key.itemID == id then
+        elseif self.plan and self.plan.origin ~= "radar" and self.plan.key.itemID == id then
             self:invalidate()
         end
     elseif event == "ITEM_SEARCH_RESULTS_UPDATED" or event == "ITEM_SEARCH_RESULTS_ADDED" then
         local key = ...
         if type(key) == "table" then
+            if not self.job or U.key(self.job.key) ~= U.key(key) then
+                F.Radar.invalidate(self, key)
+            end
             if self.job then
                 self:results("item", key)
-            elseif self.plan and U.key(self.plan.key) == U.key(key) then
+            elseif self.plan and self.plan.origin ~= "radar" and U.key(self.plan.key) == U.key(key) then
                 self:invalidate()
             end
         end

@@ -79,6 +79,7 @@ function S.create(ui, warning)
     local clear = button(left, L("All", "All"), function()
         ui.groupFilter = nil
         ui.watchOnly = false
+        ui.liveOnly = false
         ui.fields.dealFilter:SetText("")
         ui.dealPage = 1
         ui:refresh()
@@ -116,7 +117,7 @@ function S.create(ui, warning)
                 return
             end
             ui.fields.item:SetText(U.key(p.key))
-            c:stop()
+            c:stop("manual")
             c.mode = p.mode
             if c:search(p.key) then
                 ui:show("trade")
@@ -187,6 +188,7 @@ function S.create(ui, warning)
         for _, g in ipairs(c.db.groups or {}) do
             data[#data + 1] = { title = g.name, kind = "group" }
         end
+        data[#data + 1] = { title = L("Live opportunities", "Live opportunities"), kind = "live" }
         for i, entry in ipairs(data) do
             if not state.listRows[i] then
                 local row = CreateFrame("Button", nil, listBody)
@@ -202,6 +204,7 @@ function S.create(ui, warning)
                 row:SetScript("OnClick", function(b)
                     ui.groupFilter = b.entry.kind == "group" and b.entry.title or nil
                     ui.watchOnly = b.entry.kind == "watch"
+                    ui.liveOnly = b.entry.kind == "live"
                     ui.dealPage = 1
                     ui:refresh()
                 end)
@@ -212,7 +215,8 @@ function S.create(ui, warning)
             row.label:SetText(entry.title)
             local selected = (entry.kind == "group" and ui.groupFilter == entry.title)
                 or (entry.kind == "watch" and ui.watchOnly)
-                or (entry.kind == "all" and not ui.watchOnly and not ui.groupFilter)
+                or (entry.kind == "live" and ui.liveOnly)
+                or (entry.kind == "all" and not ui.liveOnly and not ui.watchOnly and not ui.groupFilter)
             row.label:SetTextColor(1, selected and 0.82 or 1, selected and 0 or 1)
             row:Show()
         end
@@ -223,7 +227,7 @@ function S.create(ui, warning)
     end
     ui.refreshers.deals = function()
         refreshLists()
-        local all = c:rank()
+        local all = ui.liveOnly and F.Radar.list(c) or c:rank()
         local out = {}
         local query = ui.fields.dealFilter:GetText():lower()
         local watch = {}
@@ -283,6 +287,17 @@ function S.create(ui, warning)
         previous:SetEnabled(ui.dealPage > 1)
         nextPage:SetEnabled(ui.dealPage < count)
         if #out == 0 then
+            empty:SetText(
+                ui.liveOnly
+                        and L(
+                            "Live is looking for eligible deals. Resale needs price history; add items to your watchlist.",
+                            "Live is looking for eligible deals. Resale needs price history; add items to your watchlist."
+                        )
+                    or L(
+                        "Scan the auction house or search for an item.",
+                        "Scan the auction house or search for an item."
+                    )
+            )
             empty:Show()
         else
             empty:Hide()

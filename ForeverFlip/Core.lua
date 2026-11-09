@@ -25,7 +25,12 @@ function F.boot(name)
     local c = F.controller
     c.changed = function()
         if F.ui and F.ui.frame:IsShown() then
-            F.ui:refresh()
+            if c.radar and c.radar.enabled and not c.radar.paused and F.ui.section == "deals" then
+                c.radarDirty = true
+                F.ui:updateProgress(0)
+            else
+                F.ui:refresh()
+            end
         end
     end
     local elapsed, paint = 0, 0
@@ -42,8 +47,17 @@ function F.boot(name)
         end
         if paint >= 1 then
             paint = 0
-            if F.ui and F.ui.frame:IsShown() and (F.ui.section == "trade" or F.itemDataDirty) then
+            if
+                F.ui
+                and F.ui.frame:IsShown()
+                and (
+                    F.ui.section == "trade"
+                    or F.itemDataDirty
+                    or (c.radar and c.radar.enabled and F.ui.section == "deals" and F.ui.liveOnly)
+                )
+            then
                 F.itemDataDirty = false
+                c.radarDirty = false
                 F.ui:refresh()
             end
         end

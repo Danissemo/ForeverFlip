@@ -94,3 +94,12 @@ are covered. Footer exists across sections. Dense20-unit rows and native coin
 strings/item levels come from game data. Fresh review found no Important or
 Critical issues and reran182 tests; further throttle/core-paint/item tests pass.
 No actual gold actions or in-client pixel verification were performed.
+
+5.4: 211 tests. Runtime-only Live radar, bounded80-key exact queue, >=3-second
+pacing, >=900-second replication, two strategies, no automatic trading, complete
+data/expiry/invalidation, current financial rules, pause/stop/scope, passive
+snapshot ingestion, serialized manual handoff and response-gated pagination.
+Ranking is incremental and bounded; native Live controls/progress/UK strings
+covered. Fresh review found seven issues, all reproduced and fixed. Details and
+external Lua5.1 benchmark: ../docs/live-radar-review.md. StyLua and LuaLS pass.
+Native server timing and visual rendering are still unverified.

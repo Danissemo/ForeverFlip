@@ -102,7 +102,17 @@ function P.state(c)
             )
         end
     end
-    if c.job and c.plan and c.plan.complete == false and c.message == "partial" then
+    if c.reviewRequest then
+        return waiting(
+            L(
+                "Waiting for background search before manual review",
+                "Waiting for background search before manual review"
+            ),
+            c.reviewRequest.at,
+            now
+        )
+    end
+    if c.job and c.job.origin ~= "radar" and c.plan and c.plan.complete == false and c.message == "partial" then
         return result(
             "action",
             L(
@@ -138,6 +148,49 @@ function P.state(c)
                 "Click again to confirm posting"
             ),
             1
+        )
+    end
+    if c.radar and c.radar.enabled then
+        local r = c.radar
+        if r.paused then
+            return result(
+                "action",
+                L("Live paused — click Resume", "Live paused — click Resume")
+            )
+        end
+        if r.build then
+            local n = math.min(#r.build.candidates, r.build.index - 1)
+            local total = math.max(1, #r.build.candidates)
+            return result(
+                "processing",
+                string.format(
+                    L("Live: selecting candidates %d / %d", "Live: selecting candidates %d / %d"),
+                    n,
+                    total
+                ),
+                n / total,
+                n,
+                total
+            )
+        end
+        local found = 0
+        for _, v in pairs(r.opportunities) do
+            if now >= v.at and now - v.at <= 30 then
+                found = found + 1
+            end
+        end
+        return result(
+            "live",
+            string.format(
+                L(
+                    "Live: checked %d / %d candidates · deals %d · wait %d s",
+                    "Live: checked %d / %d candidates · deals %d · wait %d s"
+                ),
+                r.checked,
+                #r.queue,
+                found,
+                math.max(0, math.ceil(r.nextAt - now))
+            )
         )
     end
     if c.watching then
@@ -228,7 +281,7 @@ function P.paint(ui, dt)
     p.phase = p.phase + (dt or 0)
     p.bar:SetValue(state.mode == "error" and 1 or state.value or 0)
     p.text:SetText(state.label)
-    if state.mode == "waiting" then
+    if state.mode == "waiting" or state.mode == "live" then
         local width = p.bar:GetWidth()
         local segment = math.max(1, width * 0.18)
         local offset = (math.sin(p.phase * 2) + 1) * 0.5 * math.max(0, width - segment)

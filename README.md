@@ -1,4 +1,4 @@
-# ForeverFlip 5.3
+# ForeverFlip 5.4
 
 Auction-window addon for WoW Forever 1.60.1, Interface 16001. Pre-release until
 live-client checks validate the native protected-action paths.
@@ -35,3 +35,12 @@ and glyph coverage tests. See ForeverFlip/README_UK.md.
 shopping list/results view, native table headers and responsive unscaled item
 columns. Existing trade/math/accounting callbacks remain behind the new shell.
 English uses native WoW fonts; Cyrillic keeps the bundled font fallback.
+
+5.4 adds an explicit Live radar in the native auction window. Market replication
+runs no more often than every900 seconds; up to80 promising/watched exact keys
+are checked at least3 seconds apart, respecting native readiness. Resale and
+auction-to-NPC opportunities use existing confidence and financial rules. Exact
+results expire after30 seconds and always require a separate manual search
+before trading. Pause preserves passive snapshot ingestion; manual review waits
+for an outstanding radar search to drain. Stop/auction close disable the radar.
+Ranking is incremental, four exact variants per update; no automatic buying.
