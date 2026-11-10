@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use superpowers:subagent-driven-development and test-driven-development. User explicitly requested fixes for all audit findings; execute without additional design approval.
 
-**Goal:** Repair confirmed findings F01РІР‚вЂњF23 and address actionable quality gaps without promising unverified in-game profit.
+**Goal:** Repair confirmed findings F01Р Р†Р вЂљРІР‚СљF23 and address actionable quality gaps without promising unverified in-game profit.
 
 **Architecture:** Keep the user's 6.3 native split-page UI and existing saved schema. Share effective ledger views, financial calculations and price steps. Preserve unknown outcomes and manual spending confirmation. Mail has no reliable immutable server ID: persistent multiplicity reconciliation must conservatively refuse ambiguous scope/identity rather than invent certainty.
 
@@ -25,12 +25,12 @@
 
 ## Tasks
 
-- [x] T1 Transactions: Adapters/Controller/Ledger/Store and new audit_transaction regression tests. F01РІР‚вЂњF04,F08,F11РІР‚вЂњF12,F20. RED then GREEN; incremental restoration interface consumed by Core.
-- [x] T2 Models: Market/Professions/Stats and new audit_models tests. F05РІР‚вЂњF10; effective void accounting via Ledger view; finite/fee/quantity checks; document scenario limitations.
-- [x] T3 UI: UI/NativeLayout/NativeShopping/Progress/Locale/ItemDisplay and new audit_ui tests. F13РІР‚вЂњF19,F21; visible tooltips, bounded list pagination, scrollable long content.
-- [x] T4 Root: Core integration, idempotent registration/setup, deterministic dependency setup, build gates, stronger mock opt-in semantics, current docs/version/status matrix. F22РІР‚вЂњF23,D02РІР‚вЂњD08.
+- [x] T1 Transactions: Adapters/Controller/Ledger/Store and new audit_transaction regression tests. F01Р Р†Р вЂљРІР‚СљF04,F08,F11Р Р†Р вЂљРІР‚СљF12,F20. RED then GREEN; incremental restoration interface consumed by Core.
+- [x] T2 Models: Market/Professions/Stats and new audit_models tests. F05Р Р†Р вЂљРІР‚СљF10; effective void accounting via Ledger view; finite/fee/quantity checks; document scenario limitations.
+- [x] T3 UI: UI/NativeLayout/NativeShopping/Progress/Locale/ItemDisplay and new audit_ui tests. F13Р Р†Р вЂљРІР‚СљF19,F21; visible tooltips, bounded list pagination, scrollable long content.
+- [x] T4 Root: Core integration, idempotent registration/setup, deterministic dependency setup, build gates, stronger mock opt-in semantics, current docs/version/status matrix. F22Р Р†Р вЂљРІР‚СљF23,D02Р Р†Р вЂљРІР‚СљD08.
 - [x] T5 Integration: full tests, compile, lint, LuaLS, benchmarks and independent review. Resolve review findings with regressions.
-- [ ] T6 Delivery: archive/source/receipt, back up installed addon, hash-verified deployment; native live attempt if available; explicitly retain unverified checks and0-spend truth if capture unavailable.
+- [x] T6 Delivery: archive/source/receipt, back up installed addon, hash-verified deployment; native live attempt if available; explicitly retain unverified checks and0-spend truth if capture unavailable.
 
 ## Rulings
 
@@ -46,3 +46,5 @@
 - Native capture attempted twice: FrameArrived/window capture timeout; no input,0 spend.
 
 Final gate checkpoint:351 tests,21 Lua5.1 modules, StyLua and LuaLS passed. Review has no outstanding actionable findings. T6 deployment pending; native test unverified.
+
+Delivery:6.4.0-preview installed;33 source hashes match,2 saved-variable files backed up unchanged. Backup C:/FF/backups/ForeverFlip-before-6.4.0-cb0bdfeee5.351 tests/21 modules/StyLua/LuaLS passed. Actual gold spent/earned0. Client capture unavailable; requires manual /reload and native acceptance.
