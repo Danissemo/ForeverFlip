@@ -583,3 +583,11 @@ function enableBrowse(pageSize)
         return browsePending
     end
 end
+
+-- Time left of full-scan rows (lot-by-lot sales tracking): auction.timeLeft 1..4, default 4.
+function enableTimeLeft()
+    C_AuctionHouse.GetReplicateItemTimeLeft = function(i)
+        local a = replicated[i]
+        return a and (a.timeLeft or 4)
+    end
+end

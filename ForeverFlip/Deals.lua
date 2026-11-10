@@ -52,6 +52,15 @@ function D.trust(key, now)
     return 1
 end
 
+-- The usual asking price, capped by what sales actually reached once enough were seen.
+function D.resaleCap(market, history)
+    local cap = F.Market.saleCap(history)
+    if cap and U.finite(market) then
+        return math.min(market, cap)
+    end
+    return market or cap
+end
+
 function D.evaluate(g, vendor, history, now)
     local room, held = itemRoom(g.key)
     local deal, reason = F.Market.evaluate(g.rows, {
@@ -63,7 +72,7 @@ function D.evaluate(g, vendor, history, now)
         budget = D.budget(),
         deposit = F.AH.depositFn(g.id, g.kind, vendor, F.Trade.durationFor and F.Trade.durationFor() or 3),
         history = history,
-        market = g.market,
+        market = D.resaleCap(g.market, history),
         now = now or clock(),
         settings = settings(),
     })

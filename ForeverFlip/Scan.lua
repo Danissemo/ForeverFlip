@@ -11,6 +11,7 @@ F.Scan = S
 S.COOLDOWN = 900
 S.ROWS = 40 -- cheapest auctions kept per item
 S.RECOVER = 30 -- seconds to wait for item data of rows the game had not loaded
+S.DAYS = 14 -- daily records kept per item (price, cheapest, units listed and sold)
 
 local function clock()
     return F.Engine.clock()
@@ -81,6 +82,7 @@ local function beginReading(j, total)
     j.groups, j.order, j.deferred = {}, {}, {}
     j.read, j.skipped, j.own = 0, 0, 0
     j.player = F.AH.player()
+    j.lots = F.AH.canTrackLots()
 end
 
 -- Automatic full scan: as soon as the 15-minute cooldown ends while the auction house is open
@@ -157,6 +159,16 @@ local function ingest(j, i)
     end
     local unit = r.buyout / r.count
     M.bucketAdd(g.buckets, unit, r.count)
+    if j.lots and r.band then
+        -- Scan order is creation order: the sequence is what lot-by-lot sales tracking compares.
+        local seq = g.seq or {}
+        g.seq = seq
+        if #seq < 3 * M.LOTS then
+            seq[#seq + 1] = math.floor(unit + 0.5)
+            seq[#seq + 1] = r.count
+            seq[#seq + 1] = r.band
+        end
+    end
     g.units = g.units + r.count
     local row = { unit = unit, qty = r.count }
     local rows = g.rows
@@ -201,9 +213,13 @@ local function finish(j, done)
             history[key] = h
         end
         local day, low = math.floor(now / 86400), g.rows[1] and g.rows[1].unit
+        local soldToday = 0
         if h then
             M.recordFlow(h, g.buckets, value, now)
             h.units = g.units
+            if j.lots then
+                soldToday = S.trackLots(h, g.seq or {}, now)
+            end
             -- Weekly pattern only for items traded often enough to have one.
             if g.units >= 10 or h.t then
                 M.recordTiming(h, value, now)
@@ -220,9 +236,11 @@ local function finish(j, done)
                     last.min = low
                 end
                 last.m = value or last.m
+                last.n = g.units
+                last.s = (last.s or 0) + soldToday
             else
-                h.days[#h.days + 1] = { d = day, min = low, m = value }
-                while #h.days > 5 do
+                h.days[#h.days + 1] = { d = day, min = low, m = value, n = g.units, s = soldToday }
+                while #h.days > S.DAYS do
                     table.remove(h.days, 1)
                 end
             end
@@ -265,7 +283,36 @@ local function finish(j, done)
             return false
         end
     end
+    if j.lots and not j.swept then
+        -- Items that vanished from the house since the last scan: all their lots are gone.
+        j.swept = true
+        for key, h in pairs(history) do
+            if type(h) == "table" and h.lots and not j.groups[key] and (h.lotsAt or now) < now then
+                local sold = S.trackLots(h, {}, now)
+                local today = h.days and h.days[#h.days]
+                if sold > 0 and today and today.d == math.floor(now / 86400) then
+                    today.s = (today.s or 0) + sold
+                end
+                h.lots, h.lotsAt = nil, nil
+            end
+        end
+    end
     return true
+end
+
+-- Compares an item's lots with those of the previous scan and records the sales; keeps this scan's
+-- lots for the next comparison. Returns the units sold.
+function S.trackLots(h, seq, now)
+    local sold = 0
+    local dt = now - (h.lotsAt or 0)
+    if h.lots and dt >= 300 and dt <= 3 * 3600 then
+        local _, byPrice = M.trackSales(M.unpackLots(h.lots), seq, dt)
+        sold = M.recordSales(h, byPrice, dt, now)
+    end
+    if #seq > 0 then
+        h.lots, h.lotsAt = M.packLots(seq), now
+    end
+    return sold
 end
 
 -- Called every frame while a scan runs.

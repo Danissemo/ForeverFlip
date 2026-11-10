@@ -127,7 +127,7 @@ function A.market(now)
             local today = days[#days]
             local cheap = today and today.min
             local sum, n = 0, 0
-            for i = 1, #days - 1 do
+            for i = math.max(1, #days - 5), #days - 1 do
                 if U.finite(days[i].m) then
                     sum, n = sum + days[i].m, n + 1
                 end

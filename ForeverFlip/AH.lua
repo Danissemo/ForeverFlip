@@ -135,14 +135,25 @@ function A.replicateRow(i)
     if not complete then
         return { id = id, complete = false }
     end
+    local band
+    if AH.GetReplicateItemTimeLeft then
+        local ok, left = pcall(AH.GetReplicateItemTimeLeft, i)
+        band = ok and U.finite(left) and math.max(0, math.min(3, left - 1)) or nil
+    end
     return {
         id = id,
         count = count or 1,
         buyout = buyout or 0,
         owner = owner,
+        band = band,
         link = AH.GetReplicateItemLink and AH.GetReplicateItemLink(i) or nil,
         complete = true,
     }
+end
+
+-- The full scan tells how long each auction has left: sales can be tracked lot by lot.
+function A.canTrackLots()
+    return AH.GetReplicateItemTimeLeft ~= nil
 end
 
 -- Exact search ----------------------------------------------------------------------------------

@@ -98,6 +98,10 @@ end
 -- Estimated units per day sold at or above 85% of `price`, rounded to the level that does not
 -- overcount. pairs = 0 means not enough scans yet (two scans make one pair).
 function M.demandAt(h, price, now)
+    local lots = U.finite(price) and M.lotDemand(h, price)
+    if lots then
+        return lots
+    end
     local f = h and h.flow
     if
         type(f) ~= "table"
@@ -203,6 +207,19 @@ end
 -- estimates stay numeric but carry the age of the last usable full-scan pair.
 function M.saleability(h, price, now)
     local out = { known = false, pairs = 0, stale = false }
+    local s = type(h) == "table" and h.sales
+    if type(s) == "table" and (s.pairs or 0) >= 1 and U.finite(price) and price > 0 then
+        local d = M.lotDemand(h, price)
+        out.pairs, out.at, out.hours = s.pairs, s.at, s.hours
+        if out.at and U.finite(now) then
+            out.age = math.max(0, now - out.at)
+            out.stale = out.age > 3 * 3600
+        end
+        if d then
+            out.known, out.perDay, out.lots = true, d.perDay, true
+        end
+        return out
+    end
     local f = type(h) == "table" and h.flow
     if type(f) ~= "table" then
         return out
@@ -238,9 +255,195 @@ function M.saleability(h, price, now)
     return out
 end
 
--- Typical price of the units seen sold (median of recent sales), or nil without enough sales.
+-- Sales tracked auction by auction ----------------------------------------------------------------
+-- A full scan lists the auctions of an item in the order they were created, with a time-left band
+-- (0 = under 30 minutes, 1 = up to 2 hours, 2 = up to 12 hours, 3 = longer). Comparing two scans
+-- lot by lot tells sales apart from expiry and cancelling:
+--  * a lot that got smaller was partly bought (an auction can only be cancelled as a whole);
+--  * a lot that disappeared counts as sold only if it could not have expired in between (its band
+--    guaranteed more time than passed) and no cheaper lot of the item survived (buyers take the
+--    cheapest first, so a vanished lot above a surviving cheaper one was cancelled or reposted).
+-- Lots are stored as flat triples {price, count, band, price, count, band, ...}.
+M.BAND_MIN = { [0] = 0, [1] = 1800, [2] = 7200, [3] = 43200 }
+M.LOTS = 300 -- lots kept per item between scans (the oldest, which is where sales are seen)
+M.SALE_HALF_LIFE = 3 * 86400
+
+local function compatible(prev, i, cur, k)
+    local a, b = 3 * i - 2, 3 * k - 2
+    return prev[a] == cur[b] and cur[b + 1] <= prev[a + 1] and cur[b + 2] <= prev[a + 2]
+end
+
+-- Units sold between two scans `dt` seconds apart: total and { [price] = units }.
+function M.trackSales(prev, cur, dt)
+    local np, nc = math.floor(#prev / 3), math.floor(#cur / 3)
+    local match, used = {}, {}
+    local k = 1
+    for i = 1, np do
+        if k <= nc and compatible(prev, i, cur, k) then
+            match[i], used[k] = k, true
+            k = k + 1
+        end
+    end
+    local free = {}
+    for n = 1, nc do
+        if not used[n] then
+            local p = cur[3 * n - 2]
+            free[p] = free[p] or {}
+            table.insert(free[p], n)
+        end
+    end
+    for i = 1, np do
+        local list = not match[i] and free[prev[3 * i - 2]]
+        if list then
+            for n, c in ipairs(list) do
+                if compatible(prev, i, cur, c) then
+                    match[i] = c
+                    table.remove(list, n)
+                    break
+                end
+            end
+        end
+    end
+    local sold, byPrice, cheapest = 0, {}, math.huge
+    local function add(price, units)
+        sold = sold + units
+        byPrice[price] = (byPrice[price] or 0) + units
+    end
+    for i, c in pairs(match) do
+        local price = prev[3 * i - 2]
+        cheapest = math.min(cheapest, price)
+        local bought = prev[3 * i - 1] - cur[3 * c - 1]
+        if bought > 0 then
+            add(price, bought)
+        end
+    end
+    for i = 1, np do
+        local price, count, band = prev[3 * i - 2], prev[3 * i - 1], prev[3 * i]
+        if not match[i] and (M.BAND_MIN[band] or 0) >= dt and price <= cheapest then
+            add(price, count)
+        end
+    end
+    return sold, byPrice
+end
+
+function M.packLots(seq)
+    local n = math.min(#seq, 3 * M.LOTS)
+    local parts = {}
+    for i = 1, n, 3 do
+        parts[#parts + 1] = string.format("%.0f:%d:%d", seq[i], seq[i + 1], seq[i + 2])
+    end
+    return table.concat(parts, ",")
+end
+
+function M.unpackLots(text)
+    local seq = {}
+    if type(text) ~= "string" then
+        return seq
+    end
+    for p, c, b in text:gmatch("([%d%.]+):(%d+):(%d)") do
+        seq[#seq + 1] = tonumber(p)
+        seq[#seq + 1] = tonumber(c)
+        seq[#seq + 1] = tonumber(b)
+    end
+    return seq
+end
+
+-- Adds the sales seen between two scans to the item's decayed sale distribution h.sales =
+-- { hours, pairs, at, b = price histogram of sold units }. Returns the units added.
+function M.recordSales(h, byPrice, dt, now)
+    local s = type(h.sales) == "table" and h.sales or { hours = 0, pairs = 0, at = now, b = {} }
+    s.b = type(s.b) == "table" and s.b or {}
+    local decay = 0.5 ^ (math.max(0, now - (s.at or now)) / M.SALE_HALF_LIFE)
+    s.hours = (s.hours or 0) * decay + dt / 3600
+    for b, units in pairs(s.b) do
+        if b % 2 == 0 then
+            if units * decay < 0.01 then
+                s.b[b], s.b[b + 1] = nil, nil
+            else
+                s.b[b] = units * decay
+            end
+        end
+    end
+    local sold = 0
+    for price, units in pairs(byPrice) do
+        if price > 0 then
+            M.bucketAdd(s.b, price, units)
+            sold = sold + units
+        end
+    end
+    s.pairs, s.at = math.min(99, (s.pairs or 0) + 1), now
+    h.sales = s
+    return sold
+end
+
+-- Price at `share` of the sold units (cheapest first); nil with fewer than `need` units sold.
+local function soldQuantile(h, share, need)
+    local s = type(h) == "table" and h.sales
+    if type(s) ~= "table" or type(s.b) ~= "table" then
+        return nil
+    end
+    local keys, total = {}, 0
+    for b, units in pairs(s.b) do
+        if b % 2 == 0 then
+            keys[#keys + 1] = b
+            total = total + units
+        end
+    end
+    if total < (need or 3) then
+        return nil
+    end
+    table.sort(keys)
+    local seen = 0
+    for _, b in ipairs(keys) do
+        seen = seen + s.b[b]
+        if seen >= total * share then
+            return math.floor(s.b[b + 1])
+        end
+    end
+end
+
+-- Typical price of the units seen sold (median), or nil without at least 3 sales.
 function M.salePrice(h)
-    return nil
+    return soldQuantile(h, 0.5, 3)
+end
+
+-- Highest price a resale may count on: the price that a quarter of the sales reached.
+function M.saleCap(h)
+    return soldQuantile(h, 0.75, 3)
+end
+
+-- Units per day sold at or above 85% of `price` from the lot-tracked sales; nil without data.
+local function lotDemand(h, price)
+    local s = type(h) == "table" and h.sales
+    if type(s) ~= "table" or (s.pairs or 0) < 1 or not U.finite(s.hours) or s.hours <= 0 then
+        return nil
+    end
+    local floor, units = 0.85 * price, 0
+    for b, n in pairs(s.b or {}) do
+        if b % 2 == 0 and s.b[b + 1] >= floor then
+            units = units + n
+        end
+    end
+    return { pairs = s.pairs, perDay = units / (s.hours + M.PRIOR_HOURS) * 24, sold = units, hours = s.hours }
+end
+M.lotDemand = lotDemand
+
+-- Lowest prices seen outside full scans (the sniper's browse rounds, the player's searches) lower
+-- today's cheapest price of an item. `r` = { id, minPrice }.
+function M.learnLow(history, r, now)
+    local kind = F.AH and F.AH.kindOf and F.AH.kindOf(r.id)
+    if not kind or kind == "gear" then
+        return
+    end
+    local h = history[U.key(kind, r.id)]
+    if type(h) ~= "table" or type(h.days) ~= "table" then
+        return
+    end
+    local today = h.days[#h.days]
+    local day = math.floor(now / 86400)
+    if today and today.d == day and (not today.min or r.minPrice < today.min) then
+        today.min = r.minPrice
+    end
 end
 
 -- Deposit of one auction: the game charges at least 1 silver (seen on WoW Forever); it is returned

@@ -5,6 +5,12 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["sells at (median of sales seen)"] = "продається за (медіана помічених продажів)",
+    ["%d min ago"] = "%d хв тому",
+    ["%d h ago"] = "%d год тому",
+    ["%d d ago"] = "%d дн тому",
+    ["No history yet: the item has not been seen in a full scan."] = "Історії ще немає: предмет не траплявся в повному скані.",
+    ["Yellow: usual price · blue: cheapest · green: units sold per day.\nUsual %s · sells at %s · ~%s a day · top of the chart %s"] = "Жовтий: звичайна ціна · синій: найдешевше · зелений: продано за день.\nЗвичайна %s · продається за %s · ~%s на день · верх графіка %s",
     ["Deals: %d · checked: %d · sniper: %d rounds, %d prices read, %d checks"] = "Угод: %d · перевірено: %d · снайпер: кіл %d, прочитано цін %d, перевірок %d",
     ["The price offer was about to expire; a new one was asked. Press Confirm when it arrives."] = "Пропозиція ціни майже минула; запитано нову. Натисніть «Підтвердити», коли вона прийде.",
     ["Below usual"] = "Нижче звичайної",

@@ -232,7 +232,14 @@ local function table_(parent, columns, rows, onClick, onSort)
             c:SetWordWrap(false)
             r.cols[n - 1] = c
         end
-        r:SetScript("OnClick", function(self)
+        if r.RegisterForClicks then
+            r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        end
+        r:SetScript("OnClick", function(self, mouse)
+            if mouse == "RightButton" and self.key then
+                UI.showHistory(self.key, self.link)
+                return
+            end
             onClick(self)
         end)
         r:SetScript("OnEnter", function(self)
@@ -1705,6 +1712,96 @@ function UI.refresh()
     end
 end
 
+-- Price history window -------------------------------------------------------------------------------
+local HISTORY_DAYS = 14
+function UI.showHistory(key, link)
+    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
+    local w = UI.historyFrame
+    if not w then
+        w = CreateFrame("Frame", "ForeverFlipHistory", UIParent)
+        w:SetSize(520, 260)
+        w:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
+        w:SetFrameStrata("DIALOG")
+        if w.EnableMouse then
+            w:EnableMouse(true)
+        end
+        local bg = w:CreateTexture(nil, "BACKGROUND")
+        bg:SetColorTexture(0.05, 0.05, 0.06, 0.95)
+        bg:SetAllPoints()
+        w.title = text(w, "GameFontNormal")
+        w.title:SetPoint("TOPLEFT", w, "TOPLEFT", 12, -10)
+        w.title:SetPoint("TOPRIGHT", w, "TOPRIGHT", -40, -10)
+        w.close = button(w, "X", 24, function()
+            w:Hide()
+        end)
+        w.close:SetPoint("TOPRIGHT", w, "TOPRIGHT", -6, -6)
+        w.summary = text(w, "GameFontHighlightSmall")
+        w.summary:SetPoint("BOTTOMLEFT", w, "BOTTOMLEFT", 12, 10)
+        w.summary:SetPoint("BOTTOMRIGHT", w, "BOTTOMRIGHT", -12, 10)
+        w.bars = {}
+        for i = 1, HISTORY_DAYS do
+            local x = 14 + (i - 1) * 35
+            local price = w:CreateTexture(nil, "ARTWORK")
+            price:SetColorTexture(1, 0.82, 0, 0.8)
+            price:SetWidth(14)
+            price:SetPoint("BOTTOMLEFT", w, "BOTTOMLEFT", x, 110)
+            local cheap = w:CreateTexture(nil, "ARTWORK")
+            cheap:SetColorTexture(0.25, 0.75, 1, 0.8)
+            cheap:SetWidth(14)
+            cheap:SetPoint("BOTTOMLEFT", w, "BOTTOMLEFT", x + 15, 110)
+            local sold = w:CreateTexture(nil, "ARTWORK")
+            sold:SetColorTexture(0.3, 0.9, 0.3, 0.8)
+            sold:SetWidth(29)
+            sold:SetPoint("TOPLEFT", w, "BOTTOMLEFT", x, 104)
+            local label = text(w, "GameFontDisableSmall")
+            label:SetPoint("TOP", w, "BOTTOMLEFT", x + 15, 52)
+            w.bars[i] = { price = price, cheap = cheap, sold = sold, label = label }
+        end
+        UI.historyFrame = w
+    end
+    w.key = key
+    w.title:SetText(nameOf(key, link))
+    local days = h and h.days or {}
+    local top, most = 1, 0
+    for _, d in ipairs(days) do
+        top = math.max(top, d.m or 0, d.min or 0)
+        most = math.max(most, d.s or 0)
+    end
+    local first = #days - HISTORY_DAYS
+    for i, bar in ipairs(w.bars) do
+        local d = days[first + i]
+        if d then
+            bar.price:SetHeight(math.max(1, 100 * (d.m or 0) / top))
+            bar.cheap:SetHeight(math.max(1, 100 * (d.min or 0) / top))
+            bar.sold:SetHeight(math.max(1, 40 * (d.s or 0) / math.max(1, most)))
+            bar.label:SetText(date and date("%d.%m", d.d * 86400) or tostring(d.d))
+            bar.price:Show()
+            bar.cheap:Show()
+            bar.sold:Show()
+        else
+            bar.price:Hide()
+            bar.cheap:Hide()
+            bar.sold:Hide()
+            bar.label:SetText("")
+        end
+    end
+    local sale = F.Market.salePrice(h)
+    local s = h and h.scan and F.Market.saleability(h, h.scan.market, F.Engine.clock()) or {}
+    w.summary:SetText(
+        #days == 0 and L("No history yet: the item has not been seen in a full scan.")
+            or string.format(
+                L(
+                    "Yellow: usual price · blue: cheapest · green: units sold per day.\nUsual %s · sells at %s · ~%s a day · top of the chart %s"
+                ),
+                h.scan and h.scan.market and U.money(h.scan.market) or "-",
+                sale and U.money(sale) or "-",
+                s.known and string.format("%.1f", s.perDay) or "-",
+                U.money(top)
+            )
+    )
+    w:Show()
+end
+
 -- Auction house tab ---------------------------------------------------------------------------------
 function UI.attach()
     if UI.tab or not AuctionHouseFrame then
@@ -1788,6 +1885,20 @@ function UI.mail(open)
     end
 end
 
+-- How long ago a time was: "5 min ago", "3 h ago", "2 d ago".
+function UI.age(at)
+    if not U.finite(at) then
+        return "?"
+    end
+    local s = math.max(0, F.Engine.clock() - at)
+    if s < 3600 then
+        return string.format(L("%d min ago"), math.floor(s / 60))
+    elseif s < 2 * 86400 then
+        return string.format(L("%d h ago"), math.floor(s / 3600))
+    end
+    return string.format(L("%d d ago"), math.floor(s / 86400))
+end
+
 -- Item tooltips: the item's prices from the full scans.
 local function tooltipLines(tooltip)
     if not F.db or not F.db.settings.tooltipPrices or not tooltip.GetItem then
@@ -1802,13 +1913,15 @@ local function tooltipLines(tooltip)
     end
     local today = h.days and h.days[#h.days]
     local low
-    for _, d in ipairs(h.days or {}) do
+    local days = h.days or {}
+    for i = math.max(1, #days - 4), #days do
+        local d = days[i]
         if d.min and (not low or d.min < low) then
             low = d.min
         end
     end
     tooltip:AddDoubleLine(
-        "ForeverFlip " .. L("usual price"),
+        "ForeverFlip " .. L("usual price") .. " |cff999999(" .. UI.age(h.scan.at) .. ")|r",
         h.scan.market and U.money(h.scan.market) or "-",
         0.43,
         0.84,
@@ -1817,6 +1930,10 @@ local function tooltipLines(tooltip)
         1,
         1
     )
+    local sale = F.Market.salePrice(h)
+    if sale then
+        tooltip:AddDoubleLine(L("sells at (median of sales seen)"), U.money(sale), 0.6, 0.6, 0.6, 1, 1, 1)
+    end
     local timing = F.Market.timing(h, F.Engine.clock())
     if timing.ready and timing.spread >= 0.05 then
         tooltip:AddDoubleLine(
