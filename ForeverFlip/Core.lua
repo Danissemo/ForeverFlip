@@ -129,6 +129,7 @@ function E.handle(event, ...)
         F.Scan.stop()
         F.Trade.checkQueue = nil
         F.Trade.checkingOwned = nil
+        F.Trade.held = {}
         F.Deals.clear()
         F.Sniper.reset()
         F.Trade.cancel()

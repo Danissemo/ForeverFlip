@@ -283,31 +283,106 @@ function T.checkPrice(key, callback, fast)
     end, callback or rememberPrice, fast)
 end
 
-function T.suggest(item)
-    local check = T.prices[item.key]
+-- Posting rules -------------------------------------------------------------------------------------
+-- Per item (F.db.rules[key]): min = never post below, normal = price when nobody else sells or the
+-- others ask too much, max = above it the cheapest other seller is ignored, keep = units that stay
+-- in the bags. Settings give the defaults: undercut (one legal step or a percent), a minimum and a
+-- maximum as a percent of the usual price, and what to do below the minimum (hold or post at it).
+function T.rule(key)
+    local r = F.db.rules and F.db.rules[key]
+    return type(r) == "table" and r or nil
+end
+
+function T.setRule(key, rule)
+    F.db.rules = F.db.rules or {}
+    local clean = {}
+    for _, field in ipairs({ "min", "normal", "max", "keep" }) do
+        local v = rule and rule[field]
+        if U.finite(v) and v > 0 then
+            clean[field] = math.floor(v)
+        end
+    end
+    F.db.rules[key] = next(clean) and clean or nil
+    F.Engine.changed()
+end
+
+function T.undercut(price, kind)
+    local step = U.below(price, kind)
+    local share = F.db.settings.undercutPercent or 0
+    if share > 0 then
+        return math.min(step, U.stepDown(price * (1 - share), kind))
+    end
+    return step
+end
+
+local function usualOf(key)
+    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
+    return h and h.scan and U.finite(h.scan.market) and h.scan.market or nil, h
+end
+
+-- Lowest price a post of `item` may use: break-even of the stock, the rule's minimum, the minimum
+-- percent of the usual price.
+function T.floorFor(item)
+    local s = F.db.settings
     local position = char().positions[item.key]
     local floor = position and position.qty > 0 and M.breakEven(position.cost / position.qty, 1, item.kind) or nil
+    local rule = T.rule(item.key)
+    if rule and rule.min then
+        floor = math.max(floor or 0, rule.min)
+    end
+    local usual = usualOf(item.key)
+    if usual and (s.minPricePercent or 0) > 0 then
+        floor = math.max(floor or 0, U.stepUp(usual * s.minPricePercent, item.kind))
+    end
+    return floor
+end
+
+-- Suggested price: below the cheapest other seller (by the undercut setting); the normal price when
+-- nobody else sells or the cheapest asks more than the maximum. Returns price, floor, cheapest, why.
+function T.suggest(item)
+    local check = T.prices[item.key]
+    local floor = T.floorFor(item)
     if not check or clock() - check.at > 300 then
         return nil, floor, nil
     end
+    local s = F.db.settings
+    local rule = T.rule(item.key) or {}
+    local usual = usualOf(item.key)
+    local normal = rule.normal or usual
+    local cap = rule.max or (normal and (s.maxPricePercent or 0) > 0 and normal * s.maxPricePercent) or nil
     local cheapest = check.rows[1] and check.rows[1].unit
-    local price
-    if cheapest then
-        price = U.below(cheapest, item.kind)
-    else
-        local h = F.Data.market(F.db, F.Engine.scope()).history[item.key]
-        price = h and h.scan and h.scan.market and U.stepDown(h.scan.market, item.kind) or nil
+    local price, why
+    if cheapest and not (cap and cheapest > cap and normal) then
+        price, why = T.undercut(cheapest, item.kind), "undercut"
+    elseif normal then
+        price, why = U.stepDown(normal, item.kind), "normal"
     end
     if price and price < (item.kind == "commodity" and 1 or 100) then
         price = item.kind == "commodity" and 1 or 100
     end
-    return price, floor, cheapest
+    return price, floor, cheapest, why
 end
 
--- Posting duration (1 = 2 h, 2 = 8 h, 3 = 24 h) from the setting.
-function T.durationFor()
+-- Posting duration (1 = 2 h, 2 = 8 h, 3 = 24 h). Setting 0 = automatic: the shortest duration that
+-- the measured sales of the item fill (a shorter post costs a smaller deposit); 24 h otherwise.
+function T.durationFor(key, qty)
     local d = F.db and F.db.settings.duration
-    return (d == 1 or d == 2 or d == 3) and d or 3
+    if d == 1 or d == 2 or d == 3 then
+        return d
+    end
+    local usual, h = usualOf(key or "")
+    if usual and h then
+        local s = M.saleability(h, usual, clock())
+        if s.known and s.perDay > 0 then
+            local days = (qty or 1) / s.perDay
+            if days <= 2 / 24 then
+                return 1
+            elseif days <= 8 / 24 then
+                return 2
+            end
+        end
+    end
+    return 3
 end
 
 function T.post(item, qty, price, duration)
@@ -565,18 +640,107 @@ end
 -- One click posts the next bought item: one step below the cheapest other seller, never below
 -- the break-even price. Without a fresh price the click reads the listings first; the next click
 -- posts.
+-- One click of a posting queue: the first item that is not held reads its price or is posted.
+-- Below the floor an item is posted at the floor, or held (skipped) with the "hold" setting.
+T.held = {}
+local function postFirst(list, quantity)
+    for _, item in ipairs(list) do
+        if not T.held[item.key] then
+            local price, floor = T.suggest(item)
+            local check = T.prices[item.key]
+            if not price and not (check and clock() - check.at <= 300) then
+                T.checkPrice(item.key)
+                return true, "checking"
+            end
+            if price and floor and price < floor then
+                if F.db.settings.belowMin == "hold" then
+                    price = nil
+                else
+                    price = U.stepUp(floor, item.kind)
+                end
+            end
+            if price then
+                local qty = quantity(item)
+                if qty >= 1 then
+                    return T.post(item, qty, price, T.durationFor(item.key, qty))
+                end
+            end
+            T.held[item.key] = true
+        end
+    end
+    return false, "nothing_to_post"
+end
+
 function T.postNext()
-    local item = T.toPost()[1]
-    if not item then
-        return false, "nothing_to_post"
+    return postFirst(T.toPost(), function(item)
+        return math.min(item.count, item.position.qty)
+    end)
+end
+
+-- Every sellable bag item, not only purchases: vendor-deal stock and blocked items are left out,
+-- and each item's "keep" rule stays in the bags.
+function T.toPostAll()
+    local positions = char().positions
+    local out, seen = {}, {}
+    for _, b in ipairs(F.AH.bagItems()) do
+        local p = positions[b.key]
+        local rule = T.rule(b.key)
+        local blocked = F.Shopping and F.Shopping.blocked(b.key)
+        if
+            not seen[b.key]
+            and not (p and p.mode == "vendor")
+            and not blocked
+            and not (rule and rule.keep and rule.keep >= T.bagCount(b.key))
+        then
+            seen[b.key] = true
+            out[#out + 1] = b
+        end
     end
-    local price, floor = T.suggest(item)
-    if not price then
-        T.checkPrice(item.key)
-        return true, "checking"
+    return out
+end
+
+function T.bagCount(key)
+    local n = 0
+    for _, b in ipairs(F.AH.bagItems()) do
+        if b.key == key then
+            n = n + b.count
+        end
     end
-    local qty = math.min(item.count, item.position.qty)
-    return T.post(item, qty, math.max(price, floor or 0), F.db.settings.duration or 3)
+    return n
+end
+
+function T.postAll()
+    return postFirst(T.toPostAll(), function(item)
+        local rule = T.rule(item.key)
+        local spare = T.bagCount(item.key) - (rule and rule.keep or 0)
+        return math.min(item.count, spare)
+    end)
+end
+
+-- Undercut own auctions worth reposting: the repost price would still reach the item's floor.
+function T.undercutList()
+    local out = {}
+    for _, a in ipairs(T.owned or {}) do
+        local status, cheapest = T.ownedStatus(a)
+        local item = status == "undercut" and U.parseKey(a.key)
+        if item then
+            local floor = T.floorFor({ key = a.key, kind = item.kind })
+            if not floor or T.undercut(cheapest, item.kind) >= floor then
+                out[#out + 1] = a
+            end
+        end
+    end
+    return out
+end
+
+-- One click cancels the next undercut auction; the item comes back by mail and is posted again
+-- from the Sell page (Post next bought / Post all).
+function T.cancelNextUndercut()
+    local a = T.undercutList()[1]
+    if not a then
+        return false, "nothing_undercut"
+    end
+    return T.cancelAuction(a), "cancelled"
 end
 
 -- My auctions: price checks one item after another (one search per second), and cancelling.

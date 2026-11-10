@@ -5,6 +5,19 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["Keep items in the bags when the market is below their floor"] = "Залишати предмети в сумках, коли ринок нижче їхньої мінімальної ціни",
+    ["Rule: min"] = "Правило: мін.",
+    ["max"] = "макс.",
+    ["keep"] = "залишати",
+    ["Save rule"] = "Зберегти правило",
+    ["Post all"] = "Виставити все",
+    ["Auto"] = "Авто",
+    ["Cancel undercut"] = "Зняти перебиті",
+    ["No undercut auction worth reposting. Press Check prices first."] = "Немає перебитих лотів, які варто перевиставити. Спершу натисніть «Перевірити ціни».",
+    ["The cheapest other seller asks %s, above the maximum. Suggested: the normal price %s."] = "Найдешевший інший продавець просить %s, це вище максимуму. Пропозиція: звичайна ціна %s.",
+    ["Undercut, % (0 = one price step)"] = "Знижка до конкурента, % (0 = один крок ціни)",
+    ["Never post below, % of the usual price"] = "Не виставляти нижче, % від звичайної ціни",
+    ["Ignore sellers above, % of the usual price"] = "Ігнорувати продавців дорожче, % від звичайної ціни",
     ["came back unsold"] = "повернулось непроданим",
     ["purchase failed"] = "покупка не вдалася",
     ["Sell %"] = "Продано %",

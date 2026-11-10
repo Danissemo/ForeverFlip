@@ -14,6 +14,7 @@ local LEFT_WIDTH = 194
 
 local MESSAGES = {
     nothing_to_post = "Nothing bought for resale is waiting in the bags.",
+    nothing_undercut = "No undercut auction worth reposting. Press Check prices first.",
     checking = "Reading the current price first; press again to post.",
     mail_done = "Auction mail taken.",
     mail_closed = "The mailbox was closed.",
@@ -767,11 +768,11 @@ function UI.refreshDeals()
 end
 
 -- Sell page --------------------------------------------------------------------------------------
-local SELL_ROWS = 12
+local SELL_ROWS = 11
 function UI.createSell(p)
     local list = CreateFrame("Frame", nil, p)
     list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
-    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 112)
+    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 142)
     UI.sellTable = table_(
         list,
         {
@@ -788,13 +789,17 @@ function UI.createSell(p)
             if row.item then
                 F.Trade.checkPrice(row.item.key)
                 UI.sellQty:SetText(row.item.count)
+                local rule = F.Trade.rule(row.item.key) or {}
+                UI.ruleMin:SetText(rule.min and U.plainMoney(rule.min) or "")
+                UI.ruleMax:SetText(rule.max and U.plainMoney(rule.max) or "")
+                UI.ruleKeep:SetText(rule.keep and tostring(rule.keep) or "")
             end
             F.Engine.changed()
             UI.refresh()
         end
     )
 
-    local bar = footer(p, 108)
+    local bar = footer(p, 138)
     UI.sellText = bar.text
     local priceLabel = text(bar, "GameFontNormal")
     priceLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 36)
@@ -810,16 +815,46 @@ function UI.createSell(p)
     durationLabel:SetPoint("LEFT", UI.sellQty, "RIGHT", 14, 0)
     durationLabel:SetText(L("Duration"))
     UI.durations = {}
-    local labels = { "2", "8", "24" }
-    for i = 1, 3 do
-        local b = button(bar, labels[i], 34, function()
-            F.db.settings.duration = i
+    local labels = { "2", "8", "24", "Auto" }
+    local values = { 1, 2, 3, 0 }
+    for i = 1, 4 do
+        local b = button(bar, labels[i], i == 4 and 50 or 34, function()
+            F.db.settings.duration = values[i]
             F.Engine.changed()
             UI.refresh()
         end)
+        b.value = values[i]
         b:SetPoint("LEFT", i == 1 and durationLabel or UI.durations[i - 1], "RIGHT", i == 1 and 8 or 2, 0)
         UI.durations[i] = b
     end
+    -- Rule of the selected item: minimum and maximum price, units kept in the bags.
+    local ruleLabel = text(bar, "GameFontNormal")
+    ruleLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 66)
+    ruleLabel:SetText(L("Rule: min"))
+    UI.ruleMin = editbox(bar, 80)
+    UI.ruleMin:SetPoint("LEFT", ruleLabel, "RIGHT", 8, 0)
+    local maxLabel = text(bar, "GameFontNormal")
+    maxLabel:SetPoint("LEFT", UI.ruleMin, "RIGHT", 10, 0)
+    maxLabel:SetText(L("max"))
+    UI.ruleMax = editbox(bar, 80)
+    UI.ruleMax:SetPoint("LEFT", maxLabel, "RIGHT", 8, 0)
+    local keepLabel = text(bar, "GameFontNormal")
+    keepLabel:SetPoint("LEFT", UI.ruleMax, "RIGHT", 10, 0)
+    keepLabel:SetText(L("keep"))
+    UI.ruleKeep = editbox(bar, 40)
+    UI.ruleKeep:SetPoint("LEFT", keepLabel, "RIGHT", 8, 0)
+    UI.ruleSave = button(bar, "Save rule", 110, function()
+        local item = UI.sellSelected
+        if item then
+            F.Trade.setRule(item.key, {
+                min = U.parseMoney(UI.ruleMin:GetText()),
+                max = U.parseMoney(UI.ruleMax:GetText()),
+                keep = tonumber(UI.ruleKeep:GetText()),
+            })
+            F.Engine.notify("saved")
+        end
+    end)
+    UI.ruleSave:SetPoint("LEFT", UI.ruleKeep, "RIGHT", 10, 0)
     UI.postButton = button(bar, "Post", 140, function()
         local item = UI.sellSelected
         if not item then
@@ -827,7 +862,7 @@ function UI.createSell(p)
         end
         local price = U.parseMoney(UI.sellPrice:GetText())
         local qty = tonumber(UI.sellQty:GetText())
-        local ok, why = F.Trade.post(item, qty, price, F.db.settings.duration)
+        local ok, why = F.Trade.post(item, qty, price, F.Trade.durationFor(item.key, qty))
         F.Engine.notify(why)
         if ok and why == "posted" then
             UI.sellSelected = nil
@@ -839,6 +874,11 @@ function UI.createSell(p)
         F.Engine.notify(why)
     end)
     UI.postNext:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
+    UI.postAll = button(bar, "Post all", 130, function()
+        local _, why = F.Trade.postAll()
+        F.Engine.notify(why)
+    end)
+    UI.postAll:SetPoint("LEFT", UI.postNext, "RIGHT", 4, 0)
     UI.sellCheck = button(bar, "Check price", 120, function()
         if UI.sellSelected then
             F.Trade.checkPrice(UI.sellSelected.key)
@@ -943,9 +983,13 @@ function UI.refreshSell()
     else
         empty:Hide()
     end
-    for i, b in ipairs(UI.durations) do
-        b:SetEnabled(F.db.settings.duration ~= i)
+    for _, b in ipairs(UI.durations) do
+        b:SetEnabled(F.db.settings.duration ~= b.value)
     end
+    local all = #F.Trade.toPostAll()
+    UI.postAll:SetText(L("Post all") .. " (" .. all .. ")")
+    UI.postAll:SetEnabled(all > 0 and not F.Trade.posting)
+    UI.ruleSave:SetEnabled(UI.sellSelected ~= nil)
     local item = UI.sellSelected
     if not item then
         UI.sellText:SetText(L("Select an item. Its current listings are read to suggest a price."))
@@ -955,7 +999,7 @@ function UI.refreshSell()
         return
     end
     UI.sellCheck:SetEnabled(not F.Deals.pending(item.key) and not F.Trade.busy() and not F.Scan.busy())
-    local price, floor, cheapest = F.Trade.suggest(item)
+    local price, floor, cheapest, why = F.Trade.suggest(item)
     local lines = {}
     if item.position and item.position.mode == "vendor" then
         lines[#lines + 1] = L("Bought as a vendor deal: sell it to any vendor (button at the merchant).")
@@ -964,13 +1008,21 @@ function UI.refreshSell()
         if UI.sellPrice:GetText() == "" then
             UI.sellPrice:SetText(U.plainMoney(math.max(price, floor or 0)))
         end
-        lines[#lines + 1] = cheapest
-                and string.format(
-                    L("Cheapest other seller: %s each. Suggested: %s."),
-                    U.money(cheapest),
-                    U.money(price)
-                )
-            or L("Nobody else sells it now. Suggested: the usual asking price.")
+        if why == "normal" and cheapest then
+            lines[#lines + 1] = string.format(
+                L("The cheapest other seller asks %s, above the maximum. Suggested: the normal price %s."),
+                U.money(cheapest),
+                U.money(price)
+            )
+        else
+            lines[#lines + 1] = cheapest
+                    and string.format(
+                        L("Cheapest other seller: %s each. Suggested: %s."),
+                        U.money(cheapest),
+                        U.money(price)
+                    )
+                or L("Nobody else sells it now. Suggested: the usual asking price.")
+        end
     elseif F.Deals.search and F.Deals.search.key == item.key then
         lines[#lines + 1] = L("Reading current listings...")
     elseif F.Deals.pending(item.key) then
@@ -1045,6 +1097,11 @@ function UI.createAuctions(p)
         end
     end)
     UI.cancelAuction:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
+    UI.cancelUndercut = button(bar, "Cancel undercut", 170, function()
+        local _, why = F.Trade.cancelNextUndercut()
+        F.Engine.notify(why)
+    end)
+    UI.cancelUndercut:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
     UI.checkOwned = button(bar, "Check prices", 130, function()
         F.Trade.checkOwned()
         UI.refreshAuctions()
@@ -1058,6 +1115,9 @@ end
 
 function UI.refreshAuctions()
     local owned = F.Trade.owned or {}
+    local undercutN = #F.Trade.undercutList()
+    UI.cancelUndercut:SetText(L("Cancel undercut") .. " (" .. undercutN .. ")")
+    UI.cancelUndercut:SetEnabled(undercutN > 0 and F.AH.isOpen())
     local selected, undercut = nil, 0
     for i, r in ipairs(UI.auctionTable.rows) do
         local a = owned[i]
@@ -1481,11 +1541,14 @@ function UI.createSettings(p)
         { "spendShare", "Money one deal may use, %", "percent" },
         { "itemShare", "Money one item may hold (stock and new resale), %", "percent" },
         { "alertMinProfit", "Smallest profit with a sound notice", "money" },
+        { "undercutPercent", "Undercut, % (0 = one price step)", "percent" },
+        { "minPricePercent", "Never post below, % of the usual price", "percent" },
+        { "maxPricePercent", "Ignore sellers above, % of the usual price", "percent+" },
     }
     UI.settingBoxes = {}
     for i, f in ipairs(fields) do
         local label = text(p, "GameFontNormal")
-        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -14 - (i - 1) * 30)
+        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -10 - (i - 1) * 25)
         label:SetWidth(300)
         label:SetText(L(f[2]))
         local e = editbox(p, 110)
@@ -1493,13 +1556,18 @@ function UI.createSettings(p)
         e.field = f
         UI.settingBoxes[i] = e
     end
-    local y = -14 - #fields * 30
+    local y = -10 - #fields * 25
     UI.saveButton = button(p, "Save", 110, function()
         for _, e in ipairs(UI.settingBoxes) do
             local key, kind = e.field[1], e.field[3]
             local v = kind == "money" and U.parseMoney(e:GetText()) or tonumber(e:GetText())
             if v and v >= 0 then
-                F.db.settings[key] = kind == "percent" and U.clamp(v / 100, 0, 1) or v
+                if kind == "percent" then
+                    v = U.clamp(v / 100, 0, 1)
+                elseif kind == "percent+" then
+                    v = U.clamp(v / 100, 0, 10)
+                end
+                F.db.settings[key] = v
             end
         end
         UI.loadSettings()
@@ -1531,12 +1599,18 @@ function UI.createSettings(p)
         box:SetScript("OnClick", function(self)
             if setting == "sniper" then
                 F.Deals.setSniper(self:GetChecked() and true or false)
+            elseif setting == "belowMin" then
+                F.db.settings.belowMin = self:GetChecked() and "hold" or "min"
             else
                 F.db.settings[setting] = self:GetChecked() and true or false
             end
             UI.refresh()
         end)
-        box:SetChecked(F.db.settings[setting])
+        if setting == "belowMin" then
+            box:SetChecked(F.db.settings.belowMin == "hold")
+        else
+            box:SetChecked(F.db.settings[setting])
+        end
         local t = text(p, "GameFontHighlight")
         t:SetPoint("LEFT", box, "RIGHT", 4, 0)
         t:SetText(L(label))
@@ -1545,8 +1619,9 @@ function UI.createSettings(p)
     UI.sniperBox = toggle(90, "sniper", "Sniper: between scans, re-read the items most often near a deal")
     UI.alertBox = toggle(118, "alerts", "Sound and screen notice when a deal can be bought")
     UI.tooltipBox = toggle(146, "tooltipPrices", "Price history from the scans in item tooltips")
+    UI.holdBox = toggle(174, "belowMin", "Keep items in the bags when the market is below their floor")
     local lang = text(p, "GameFontNormal")
-    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 186)
+    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 210)
     lang:SetText(L("Language (applies after /reload)"))
     local en = button(p, "English", 90, function()
         F.db.settings.language = "en"

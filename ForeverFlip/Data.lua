@@ -14,13 +14,17 @@ D.DEFAULTS = {
     minProfit = 100, -- copper per resale deal
     minROI = 0.2, -- resale return on the money spent
     spendShare = 0.8, -- share of the money on hand one deal may use
-    duration = 3, -- 1 = 2 h, 2 = 8 h, 3 = 24 h
+    duration = 3, -- 1 = 2 h, 2 = 8 h, 3 = 24 h, 0 = automatic from the item's sales
     autoScan = true, -- full scan every 15 minutes while the auction house is open
     itemShare = 0.3, -- share of the money one item may hold (stock and new resale)
     sniper = true, -- re-read hot items between full scans (one search per second)
     alerts = true, -- sound and screen notice when a deal can be bought
     alertMinProfit = 50, -- copper: smaller deals are listed without a notice
     tooltipPrices = true, -- price history lines in item tooltips
+    undercutPercent = 0, -- 0: one legal price step below the cheapest other seller
+    minPricePercent = 0, -- never post below this share of the usual price (0 = off)
+    maxPricePercent = 2, -- a cheapest seller above this share of the usual price is ignored
+    belowMin = "min", -- below the floor: "min" posts at the floor, "hold" keeps the item
 }
 
 function D.open(saved)
