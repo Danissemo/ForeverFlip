@@ -201,6 +201,41 @@ function M.plan(input, history, o)
             )
         )
     )
+    if p.mode == "material" then
+        -- Explicit procurement limits, without inventing resale income.
+        local limit = U.finite(o.materialPrice) and o.materialPrice > 0 and o.materialPrice or 0
+        local cap = math.max(0, math.floor(math.min(o.materialQty or 0, o.maxQty or 0)))
+        p.buyLimit, p.material = limit, true
+        for index, row in ipairs(rows) do
+            if row.unit > limit or p.qty >= cap then
+                break
+            end
+            local qty, cost = row.qty, row.cost
+            if o.commodity ~= false then
+                qty = math.min(qty, cap - p.qty, math.floor((p.budget - p.cost) / row.unit))
+                cost = qty * row.unit
+            elseif qty > cap - p.qty or p.cost + cost > p.budget then
+                break
+            end
+            if qty < 1 or cost % 1 ~= 0 then
+                break
+            end
+            p.qty, p.cost, p.maxUnit = p.qty + qty, p.cost + cost, row.unit
+            p.lots[#p.lots + 1] = { qty = qty, cost = cost, unit = row.unit, auctionID = row.auctionID, index = index }
+        end
+        p.avg = p.qty > 0 and p.cost / p.qty or 0
+        if not p.complete then
+            p.reasons[#p.reasons + 1] = "partial"
+        end
+        if p.qty == 0 then
+            p.reasons[#p.reasons + 1] = "budget/price"
+        end
+        if o.legacyUnresolved then
+            p.reasons[#p.reasons + 1] = "legacy"
+        end
+        p.canBuy = p.qty > 0 and #p.reasons == 0
+        return p
+    end
     local roi = U.number(o.minROI, 0.25, 0, 10)
     local fee = U.number(o.fee, 0.05, 0, 0.5)
     local reserve = U.number(o.reserve, 0.02, 0, 0.5)

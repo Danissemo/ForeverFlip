@@ -119,3 +119,12 @@ and cumulative1g starter budget are covered. Fresh review found6 issues, all
 fixed with RED→GREEN regressions. Actual game test was blocked by native window
 capture timeout via both available bindings, even after switching windowed.
 No gold spent or earned.
+
+5.5:263 tests. All9-tab transitions after craft, procurement request/receipt/
+remaining caps, material bid denial, repeated/different reagent rows, scoped
+allocation routing, portfolio pagination/fees/variants, cooperative-vs-sync plan
+equivalence and cancellation pass. Fresh review findings reproduced and fixed.
+StyLua/LuaLS20 modules pass. Large planning start0.037ms vs498.348ms synchronous;
+205 cooperative updates, median3.626ms/max11.969ms in external Lua5.1. Native FPS
+and protected-action checks remain unconfirmed; no real gold actions performed.
+Details: ../docs/2026-11-10-tab-workflows-review.md.

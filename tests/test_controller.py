@@ -3,7 +3,7 @@ from test_domain import runtime, ROOT
 
 def controller_runtime():
     lua=runtime()
-    for name in ['Adapters','Controller','Radar','DealCache']:
+    for name in ['Adapters','Controller','Radar','DealCache','Planner']:
         file=ROOT/'ForeverFlip'/(name+'.lua')
         assert file.exists(), 'Missing controller module: '+name
         lua.execute(file.read_text(encoding='utf-8-sig'))

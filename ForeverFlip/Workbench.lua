@@ -159,12 +159,16 @@ function W.allocate(input, o)
     local now = o.now or time()
     local seen = {}
     local candidates = {}
+    local identities = {}
     for i, p in ipairs(input or {}) do
         if i > 2000 then
             r.truncated = true
             break
         end
         local key = p and U.key(p.key)
+        if p then
+            identities[p] = key
+        end
         local valid = key
             and not seen[key]
             and p.canBuy
@@ -190,6 +194,9 @@ function W.allocate(input, o)
         else
             r.excluded = r.excluded + 1
         end
+        if o.yieldPass and i % 32 == 0 then
+            o.yieldPass("allocating", 0, math.min(60, #candidates))
+        end
     end
     table.sort(candidates, function(a, b)
         local sa = (a.profit or 0) / math.max(1, a.cost)
@@ -197,7 +204,7 @@ function W.allocate(input, o)
         if sa ~= sb then
             return sa > sb
         end
-        return U.key(a.key) < U.key(b.key)
+        return identities[a] < identities[b]
     end)
     if #candidates > 60 then
         r.truncated = true
@@ -212,7 +219,7 @@ function W.allocate(input, o)
     r.cashStep = cashStep
     r.riskStep = riskStep
     local dp = { ["0:0"] = { score = 0, cashUnits = 0, riskUnits = 0, cost = 0, loss = 0, groups = {} } }
-    for _, p in ipairs(candidates) do
+    for candidateIndex, p in ipairs(candidates) do
         local options = prefixes(p, o)
         r.considered = r.considered + 1
         local nextDP = {}
@@ -220,7 +227,7 @@ function W.allocate(input, o)
             nextDP[k] = state
         end
         -- Stable iteration, including exact ties, makes repeated plans reproducible.
-        for _, stateKey in ipairs(U.sortedKeys(dp)) do
+        for stateIndex, stateKey in ipairs(U.sortedKeys(dp)) do
             local state = dp[stateKey]
             for _, option in ipairs(options) do
                 local cashUnits = state.cashUnits + math.ceil(option.cost / cashStep)
@@ -260,8 +267,14 @@ function W.allocate(input, o)
                     end
                 end
             end
+            if o.yieldPass and stateIndex % 16 == 0 then
+                o.yieldPass("allocating", candidateIndex - 1, #candidates)
+            end
         end
         dp = nextDP
+        if o.yieldPass then
+            o.yieldPass("allocating", candidateIndex, #candidates)
+        end
     end
     local best = { score = 0, cost = 0, loss = 0 }
     for _, k in ipairs(U.sortedKeys(dp)) do

@@ -157,6 +157,17 @@ function P.state(c)
             1
         )
     end
+    if c.plannerVisible and c.planning then
+        local j = c.planning
+        local total = math.max(1, j.total)
+        local label = j.phase == "ranking"
+                and L("Planner: checking market %d / %d", "Planner: checking market %d / %d")
+            or L(
+                "Planner: allocating budget %d / %d",
+                "Planner: allocating budget %d / %d"
+            )
+        return result("processing", string.format(label, j.done, total), math.min(1, j.done / total), j.done, total)
+    end
     if
         c.dealPageVisible
         and c.dealCache

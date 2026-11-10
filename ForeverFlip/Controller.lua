@@ -204,7 +204,7 @@ function C:options(key, mode, ownOp, ignoreOverrides)
     o.now = self.api.clock()
     o.mode = mode or self.mode
     o.vendor = self.api.vendor and self.api.vendor(key.itemID)
-    if self.advisorProfile and o.mode ~= "vendor" then
+    if self.advisorProfile and o.mode == "flip" then
         local activity = summary.activity and summary.activity[identity]
         local held = o.ownedQty
         for _, op in pairs(self.db.pending or {}) do
@@ -249,6 +249,51 @@ function C:options(key, mode, ownOp, ignoreOverrides)
         if o.mode == "vendor" then
             o.minProfit = 1
             o.minROI = 0.05
+        end
+    end
+    if o.mode == "material" then
+        local request = self.materialRequest
+        if
+            request
+            and request.owner == self.api.owner()
+            and request.scope == self.api.scope()
+            and request.itemID == key.itemID
+        then
+            local used, spent = 0, 0
+            for i = request.first + 1, #self.db.ledger do
+                local entry = self.db.ledger[i]
+                local item = U.fromKey(entry.key)
+                if
+                    entry.kind == "buy"
+                    and entry.owner == request.owner
+                    and entry.scope == request.scope
+                    and item
+                    and item.itemID == request.itemID
+                then
+                    used, spent = used + entry.qty, spent + entry.total
+                end
+            end
+            for _, op in pairs(self.db.pending) do
+                if
+                    op ~= ownOp
+                    and op.owner == request.owner
+                    and op.scope == request.scope
+                    and op.id == request.itemID
+                    and (
+                        op.status == "quote"
+                        or op.status == "quoted"
+                        or op.status == "awaiting"
+                        or op.status == "unknown"
+                        or op.status == "bid"
+                    )
+                then
+                    used, spent = used + op.qty, spent + op.total
+                end
+            end
+            o.materialPrice = request.price
+            o.materialQty = math.max(0, request.qty - used)
+            o.materialBudget = math.max(0, request.cost - spent)
+            o.budget = math.min(o.budget or math.huge, o.materialBudget)
         end
     end
     for k, v in pairs(not ignoreOverrides and self.overrides or {}) do
@@ -338,6 +383,9 @@ function C:openDeal(p)
     end
     self:stop("manual")
     self.mode = p.mode or self.mode
+    if self.mode ~= "material" then
+        self.materialRequest = nil
+    end
     self.selection = {
         key = U.copy(p.key),
         link = p.link or (p.rows and p.rows[1] and p.rows[1].link),
@@ -780,6 +828,7 @@ function C:reconcile(uid, success)
     return true
 end
 function C:stop(reason)
+    self.planning = nil
     if reason == "manual" then
         self:radarPause()
     else
@@ -791,8 +840,10 @@ function C:stop(reason)
     self.reviewRequest = nil
     self.selectionRequest = nil
     if reason ~= "manual" then
+        self.planning = nil
         self.smallNPCActive = false
         self.replicaRecovery = nil
+        self.materialRequest = nil
     end
     self.plan = nil
     self.postPending = nil
@@ -1303,14 +1354,22 @@ function C:rankCandidate(r)
     end
     return best
 end
-function C:rank()
+function C:rank(yieldPass)
     local out = {}
-    self.cachedSummary = self:summary()
-    self.salesByKey = self.cachedSummary.salesByKey
-    for _, r in ipairs(self.candidates) do
+    local summary = self:summary()
+    local source = {}
+    for i, row in ipairs(self.candidates) do
+        source[i] = row
+    end
+    for i, r in ipairs(source) do
+        self.cachedSummary, self.salesByKey = summary, summary.salesByKey
         local p = self:rankCandidate(r)
+        self.cachedSummary, self.salesByKey = nil, nil
         if p then
             out[#out + 1] = p
+        end
+        if yieldPass and i % 4 == 0 then
+            yieldPass("ranking", i, #source)
         end
     end
     table.sort(out, function(a, b)
@@ -1326,7 +1385,7 @@ function C:rank()
     self.salesByKey = nil
     return out
 end
-function C:recommend(profile)
+function C:recommend(profile, yieldPass)
     if
         self.job
         or self.fullJob
@@ -1348,9 +1407,12 @@ function C:recommend(profile)
         budget = self.api.wallet(),
         riskCap = math.floor(self.api.wallet() * config.fraction),
         drop = config.drop,
+        yieldPass = yieldPass,
     })
     result.profile = profile
-    self:notify("planner_done")
+    if not yieldPass then
+        self:notify("planner_done")
+    end
     return result
 end
 function C:allocate(o)
@@ -1362,23 +1424,39 @@ function C:allocate(o)
     if not F.Store.writable(self.db) then
         available = 0
     end
-    o.budget = math.min(U.number(o.budget, 0, 0, 1e12), available)
+    o.budget = math.min(U.number(o.budget, 0, 0, 1e12), available, self:npcRemaining() or math.huge)
     o.pauseItems = {}
-    local performance = F.Workbench.performance(self:summary(), o.now)
+    local performance = self:performance()
     for key, item in pairs(performance.items) do
         if item.pauseSuggested then
             o.pauseItems[key] = true
         end
     end
-    return F.Workbench.allocate(self:rank(), o)
+    local result = F.Workbench.allocate(self:rank(o.yieldPass), o)
+    result.scope, result.owner = self.api.scope(), self.api.owner()
+    result.ruleVersion = self.ruleVersion
+    return result
+end
+function C:performance()
+    local summary, bucket = self:summary(), math.floor(self.api.clock() / 60)
+    local cached = self.performanceMemo
+    if not cached or cached.summary ~= summary or cached.bucket ~= bucket then
+        cached = { summary = summary, bucket = bucket, value = F.Workbench.performance(summary, self.api.clock()) }
+        self.performanceMemo = cached
+    end
+    return cached.value
 end
 function C:price(id)
-    local h = self:history({ itemID = id })
+    local key = type(id) == "table" and id or { itemID = id }
+    local h = self:history(key)
     local latest = h and h.latest
     if latest and not latest.family and latest.at <= self.api.clock() and self.api.clock() - latest.at < 86400 then
         return latest.price, "local"
     end
-    local sources = F.Adapters.prices(id)
+    if (key.itemLevel or 0) ~= 0 or (key.itemSuffix or 0) ~= 0 or (key.battlePetSpeciesID or 0) ~= 0 then
+        return nil
+    end
+    local sources = F.Adapters.prices(key.itemID)
     for _, p in ipairs(sources) do
         if p.age and p.age >= 0 and p.age < 86400 then
             return p.price, p.source
@@ -1387,6 +1465,10 @@ function C:price(id)
     return nil
 end
 function C:bid(index)
+    if self.mode == "material" then
+        self:notify("bid_blocked")
+        return false
+    end
     if not self:allowed() or not self:fresh() or self.active or self:reserved() > 0 then
         return false
     end
@@ -1541,6 +1623,7 @@ function C:budgetStillValid(p, ownOp)
             )
         end
     end
+    o.budget = math.min(o.budget or math.huge, o.materialBudget or math.huge, self:npcRemaining(ownOp) or math.huge)
     if o.advice then
         o.budget = math.min(o.budget or math.huge, o.advice.maxBudget)
     end

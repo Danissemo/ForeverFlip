@@ -406,8 +406,27 @@ function UI.create(c)
         self.fields[name] = e
         return e
     end
+    local function currentAllocation()
+        local a = self.allocation
+        if
+            a
+            and (
+                (a.scope and a.scope ~= c.api.scope())
+                or (a.owner and a.owner ~= c.api.owner())
+                or (a.ruleVersion and a.ruleVersion ~= c.ruleVersion)
+            )
+        then
+            self.allocation, self.replay, self.advicePage = nil, nil, 1
+            return nil
+        end
+        return a
+    end
     local function routeAdvice(line)
         if not line then
+            return
+        end
+        if not currentAllocation() then
+            c:notify("rescan")
             return
         end
         c:stop("manual")
@@ -419,10 +438,26 @@ function UI.create(c)
         self.fields.item:SetText(U.key(line.key))
         self.fields.tradeQty:SetText(tostring(c.overrides.maxQty))
         self.fields.tradeBudget:SetText(U.gold(c.overrides.budget))
-        c:search(line.key)
+        c:openDeal(line)
         self:show("trade")
     end
     local function buildAdvice(profile)
+        if #c.candidates > 4 or c.job or c.fullJob then
+            if
+                F.Planner.start(c, profile, nil, function(result)
+                    self.allocation = result
+                    self.advicePage = 1
+                    if F.Store.writable(db) then
+                        db.ui.advisorProfile = profile
+                    end
+                    self:refresh()
+                end)
+            then
+                self:show("workbench")
+            end
+            return
+        end
+        c.overrides = nil
         local result = c:recommend(profile)
         if result.error then
             c:notify(result.error == "busy" and "search_busy" or "buy_blocked")
@@ -498,11 +533,29 @@ function UI.create(c)
             if not budget or not risk or not drop or drop < 0 or drop > 95 then
                 return
             end
+            if #c.candidates > 4 or c.job or c.fullJob then
+                if
+                    F.Planner.start(
+                        c,
+                        "manual",
+                        { budget = budget, riskCap = risk, drop = drop / 100 },
+                        function(result)
+                            self.allocation = result
+                            self.advicePage = 1
+                            self:refresh()
+                        end
+                    )
+                then
+                    self:show("workbench")
+                end
+                return
+            end
             if c.job or c.fullJob or c.active then
                 c:notify("search_busy")
                 return
             end
             c.advisorProfile = nil
+            c.overrides = nil
             c:invalidate()
             self.allocation = c:allocate({ budget = budget, riskCap = risk, drop = drop / 100 })
             self.advicePage = 1
@@ -591,7 +644,7 @@ function UI.create(c)
         self.refreshers.workbench = function()
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", 0, advanced:IsShown() and -215 or -85)
-            local a = self.allocation
+            local a = currentAllocation()
             local lines = {
                 L(
                     "1. Full scan → 2. Suggest purchases → 3. Click an item to verify.",
@@ -665,7 +718,7 @@ function UI.create(c)
             self.actions.advicePrevious:SetEnabled(page > 1)
             self.actions.adviceNext:SetEnabled(a and page * 8 < #a.lines or false)
             local summary = c:summary()
-            local stats = F.Workbench.performance(summary, c.api.clock())
+            local stats = c:performance()
             local t = {
                 L(
                     "ACTUAL RESULTS: KNOWN COST",
@@ -680,7 +733,7 @@ function UI.create(c)
                 local r = stats.ranked[i]
                 local key = U.fromKey(r.key)
                 local own = F.Advisor.trades(
-                    summary.salesHistory,
+                    summary.salesByKey[r.key] or {},
                     r.key,
                     c.api.clock(),
                     summary.activity[r.key] and summary.activity[r.key].since
@@ -959,6 +1012,11 @@ function UI.create(c)
         self.bidText = text(b, 0, 728, 810, "")
         self.tradeAdvice = text(b, 0, 825, 810, "", "GameFontNormal")
         self.refreshers.trade = function()
+            self.actions.tradeMode:SetText(
+                c.mode == "material" and L("Reagents", "Reagents")
+                    or c.mode == "vendor" and "NPC"
+                    or L("Resale", "Resale")
+            )
             local p = c.plan
             if p and (p.origin == "radar" or (c.selection and U.key(p.key) ~= U.key(c.selection.key))) then
                 p = nil
@@ -1050,6 +1108,16 @@ function UI.create(c)
                             )
                         ),
                 }
+                if p.material then
+                    lines[4] = L(
+                        "Reagent procurement: price and quantity caps; no resale forecast.",
+                        "Reagent procurement: price and quantity caps; no resale forecast."
+                    )
+                    lines[5] = L(
+                        "Price capped by the calculation. Purchase requires separate confirmation.",
+                        "Price capped by the calculation. Purchase requires separate confirmation."
+                    )
+                end
                 local depth = {}
                 for i = 1, math.min(4, #p.rows) do
                     local r = p.rows[i]
@@ -1073,10 +1141,10 @@ function UI.create(c)
             end
             self.tradeText:SetText(table.concat(lines, "\n"))
             self.actions.buy:SetEnabled(
-                c.api.isOpen() and c:fresh() and p.canBuy and not c.active and c:reserved() == 0 or false
+                c.api.isOpen() and p and c:fresh() and p.canBuy and not c.active and c:reserved() == 0 or false
             )
             self.actions.confirm:SetEnabled(
-                c.api.isOpen() and c:fresh() and c.active and c.active.status == "quoted" or false
+                c.api.isOpen() and p and c:fresh() and c.active and c.active.status == "quoted" or false
             )
             self.actions.more:SetEnabled(c.api.isOpen() and p and not p.complete and c.job or false)
             self.bags = {}
@@ -1409,8 +1477,50 @@ function UI.create(c)
         action("ledgerExport", b, 0, 885, 200, L("Export ledger CSV", "Export ledger CSV"), function()
             self:exchange(F.Ledger.csv(db.ledger or {}))
         end)
+        action("portfolioPrevious", b, 0, 935, 170, L("← Previous", "← Previous"), function()
+            self.portfolioPage = math.max(1, (self.portfolioPage or 1) - 1)
+            self:refresh()
+            self.fields.pendingIndex:SetText(tostring((self.portfolioPage - 1) * 3 + 1))
+            self.fields.mailIndex:SetText(tostring((self.portfolioPage - 1) * 4 + 1))
+        end)
+        action("portfolioNext", b, 185, 935, 170, L("Next →", "Next →"), function()
+            self.portfolioPage = (self.portfolioPage or 1) + 1
+            self:refresh()
+            self.fields.pendingIndex:SetText(tostring((self.portfolioPage - 1) * 3 + 1))
+            self.fields.mailIndex:SetText(tostring((self.portfolioPage - 1) * 4 + 1))
+        end)
+        local portfolioPages = text(b, 380, 940, 400, "")
         self.refreshers.portfolio = function()
             local r = c:summary()
+            local ledgerRows, ownedUIDs, pendingCount = {}, {}, 0
+            for _, e in ipairs(db.ledger or {}) do
+                if
+                    e.owner == c.api.owner()
+                    and (e.scope == c.api.scope() or (e.kind == "void" and ownedUIDs[e.target]))
+                then
+                    ledgerRows[#ledgerRows + 1] = e
+                    if e.uid then
+                        ownedUIDs[e.uid] = true
+                    end
+                end
+            end
+            for _, op in pairs(db.pending or {}) do
+                if op.owner == c.api.owner() and (op.status == "unknown" or op.status == "bid") then
+                    pendingCount = pendingCount + 1
+                end
+            end
+            local total = math.max(
+                1,
+                math.ceil(#r.positions / 6),
+                math.ceil(#ledgerRows / 6),
+                math.ceil(pendingCount / 3),
+                math.ceil(#c.mail / 4)
+            )
+            local page = math.max(1, math.min(total, self.portfolioPage or 1))
+            self.portfolioPage = page
+            portfolioPages:SetText(string.format(L("Page %d / %d", "Page %d / %d"), page, total))
+            self.actions.portfolioPrevious:SetEnabled(page > 1)
+            self.actions.portfolioNext:SetEnabled(page < total)
             local lines = {
                 L(
                     "Positions · cost / age / action",
@@ -1427,13 +1537,17 @@ function UI.create(c)
                     end
                 end
             end
-            for i = 1, math.min(6, #r.positions) do
+            for i = (page - 1) * 6 + 1, math.min(page * 6, #r.positions) do
                 local p = r.positions[i]
                 local key = U.fromKey(p.key)
-                local price = key and c:price(key.itemID)
+                local price = key and c:price(key)
                 local age = math.max(0, math.floor((c.api.clock() - (p.at or c.api.clock())) / 86400))
+                local rule = key and c:rule(key) or settings
+                local gross = price and U.floor(price * p.qty)
+                local net = gross
+                    and (gross - F.Market.fee(gross, rule.fee, rule.minFee) - U.floor(gross * (rule.reserve or 0)))
                 local actionText = not price and L("no price", "no price")
-                    or price * p.qty * 0.93 > p.cost and L("review sale", "review sale")
+                    or net > p.cost and L("review sale", "review sale")
                     or age >= 7 and L("reduce / check NPC", "reduce / check NPC")
                     or L("watch", "watch")
                 local bags = math.min(p.qty, inBags[p.key] or 0)
@@ -1462,7 +1576,7 @@ function UI.create(c)
             end)
             lines[#lines + 1] = ""
             lines[#lines + 1] = L("Pending trades: ", "Pending trades: ") .. #self.pendingRows
-            for i = 1, math.min(3, #self.pendingRows) do
+            for i = (page - 1) * 3 + 1, math.min(page * 3, #self.pendingRows) do
                 local op = self.pendingRows[i]
                 lines[#lines + 1] = i
                     .. ". "
@@ -1476,8 +1590,8 @@ function UI.create(c)
             end
             self.portfolioText:SetText(table.concat(lines, "\n"))
             local entries = {}
-            for i = #(db.ledger or {}), math.max(1, #(db.ledger or {}) - 5), -1 do
-                local e = db.ledger[i]
+            for i = #ledgerRows - (page - 1) * 6, math.max(1, #ledgerRows - page * 6 + 1), -1 do
+                local e = ledgerRows[i]
                 entries[#entries + 1] = (e.uid or "?")
                     .. " · "
                     .. (e.kind or "?")
@@ -1488,7 +1602,7 @@ function UI.create(c)
             end
             self.ledgerText:SetText(table.concat(entries, "\n"))
             local m = {}
-            for i = 1, math.min(4, #c.mail) do
+            for i = (page - 1) * 4 + 1, math.min(page * 4, #c.mail) do
                 local e = c.mail[i]
                 m[#m + 1] = i
                     .. ". "
@@ -1714,7 +1828,7 @@ function UI.create(c)
             self.toolResult = F.Professions.calculate(m, function(id)
                 return c:price(id)
             end, tonumber(self.fields.outputQty:GetText()), U.copper(self.fields.outputPrice:GetText()), settings)
-            self.shopping = self.toolResult.shopping
+            self.materialShopping = self.toolResult.shopping
             self:renderToolResult()
         end)
         action("recipeSave", b, 195, 380, 150, L("Save", "Save"), function()
@@ -1830,7 +1944,13 @@ function UI.create(c)
                 self.fields.deCost:SetText(y.cost or "")
             end
         end)
-        self.toolText = text(b, 0, 670, 810, "")
+        self.toolScroll = CreateFrame("ScrollFrame", nil, b, "UIPanelScrollFrameTemplate")
+        F.NativeLayout.place(self.toolScroll, b, 0, 670, 780, 165)
+        self.toolContent = CreateFrame("Frame", nil, self.toolScroll)
+        self.toolContent:SetSize(750, 170)
+        F.NativeLayout.container(self.toolContent, self.toolScroll, 30)
+        self.toolScroll:SetScrollChild(self.toolContent)
+        self.toolText = text(self.toolContent, 0, 0, 810, "")
         val("materialIndex", b, 0, 855, 120, L("Material row", "Material row"), "1")
         action(
             "materialSearch",
@@ -1840,10 +1960,33 @@ function UI.create(c)
             250,
             L("Buy material: exact search", "Buy material: exact search"),
             function()
-                local m = self.shopping and self.shopping[tonumber(self.fields.materialIndex:GetText())]
-                if m then
+                local m = self.materialShopping and self.materialShopping[tonumber(self.fields.materialIndex:GetText())]
+                if m and m.qty > 0 then
+                    c:stop("manual")
+                    c.mode = "material"
+                    local requestID = c.api.owner()
+                        .. "|"
+                        .. c.api.scope()
+                        .. "|"
+                        .. self.fields.materialIndex:GetText()
+                    self.materialRequests = self.materialRequests or {}
+                    self.materialRequests[requestID] = self.materialRequests[requestID]
+                        or {
+                            itemID = m.id,
+                            qty = m.qty,
+                            price = m.price,
+                            cost = m.cost,
+                            first = #db.ledger,
+                            owner = c.api.owner(),
+                            scope = c.api.scope(),
+                        }
+                    c.materialRequest = self.materialRequests[requestID]
                     self.fields.item:SetText(tostring(m.id))
-                    c:search({ itemID = m.id })
+                    c.overrides = {
+                        maxQty = m.qty,
+                        budget = m.cost,
+                    }
+                    c:searchInput(tostring(m.id))
                     self:show("trade")
                 end
             end
@@ -2187,10 +2330,15 @@ function UI:exchange(value)
 end
 function UI:renderToolResult()
     local r = self.toolResult
+    if r ~= self.materialSource then
+        self.materialSource, self.materialRequests = r, {}
+    end
+    self.materialShopping = r and r.shopping or nil
     if not r then
         return
     end
     if not r.complete then
+        self.toolContent:SetHeight(170)
         self.toolText:SetText(
             L(
                 "Missing input prices/output. Profit unknown.",
@@ -2210,11 +2358,11 @@ function UI:renderToolResult()
             .. string.format(" · ROI %.1f%%", (r.roi or 0) * 100),
     }
     for i, m in ipairs(r.shopping or {}) do
-        if i <= 5 then
-            lines[#lines + 1] = i .. ". " .. U.name(m.id) .. " ×" .. m.qty .. " · " .. U.money(m.cost)
-        end
+        lines[#lines + 1] = i .. ". " .. U.name(m.id) .. " ×" .. m.qty .. " · " .. U.money(m.cost)
     end
     self.toolText:SetText(table.concat(lines, "\n"))
+    self.toolContent:SetHeight(math.max(170, self.toolText:GetStringHeight() + 20))
+    self.toolScroll:SetVerticalScroll(0)
     self.c:notify("calculation_done")
 end
 function UI:updateProgress(dt)
@@ -2256,6 +2404,7 @@ function UI:refresh()
     end
     self.refreshing = true
     local c = self.c
+    c.plannerVisible = self.frame:IsShown() and self.section == "workbench"
     c.dealPageVisible = self.frame:IsShown() and self.section == "deals" and not self.liveOnly
     local radar = c.radar
     self.actions.live:SetText(

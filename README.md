@@ -1,4 +1,4 @@
-# ForeverFlip 5.4
+# ForeverFlip 5.5
 
 Auction-window addon for WoW Forever 1.60.1, Interface 16001. Pre-release until
 live-client checks validate the native protected-action paths.
@@ -49,3 +49,9 @@ Ranking is incremental, four exact variants per update; no automatic buying.
 prepare between frames, prepared pages reuse a financial-input-aware cache,
 only visible rows request full item metadata and item-name sorting parses each
 key once. See docs/page-performance-review.md and tools/benchmark_ui.py.
+
+5.5 repairs tab transitions after profession calculations, pages the portfolio,
+uses exact variant prices/current fees and caps shared NPC plans by the remaining
+trial budget. Large planning is cooperative; reagent procurement has explicit
+price/quantity/cumulative-cost bounds and separate manual confirmation, with
+no invented resale profit or material bids. See docs/2026-11-10-tab-workflows-review.md.

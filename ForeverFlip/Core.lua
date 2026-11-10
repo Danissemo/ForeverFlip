@@ -35,6 +35,9 @@ function F.boot(name)
     end
     local elapsed, paint = 0, 0
     frame:SetScript("OnUpdate", function(_, dt)
+        if F.ui and F.ui.frame:IsShown() and F.ui.section == "workbench" then
+            F.Planner.tick(c)
+        end
         if F.ui and F.ui.frame:IsShown() and F.ui.section == "deals" and not F.ui.liveOnly then
             if F.DealCache.tick(c) then
                 F.ui:refresh()
