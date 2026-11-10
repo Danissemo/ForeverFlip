@@ -5,6 +5,33 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["deal"] = "угода",
+    ["Learn prices and deals from my own searches in the Buy tab"] = "Вчитися на моїх пошуках у вкладці «Купити» (ціни й угоди)",
+    ["Mark deals in the game's Buy tab"] = "Позначати угоди у вкладці гри «Купити»",
+    ["Buy or confirm the selected deal"] = "Купити або підтвердити вибрану угоду",
+    ["Post next bought (then Post all)"] = "Виставити наступне куплене (потім усе)",
+    ["Cancel the next undercut auction"] = "Зняти наступний перебитий лот",
+    ["Shopping deals"] = "Угоди зі списку покупок",
+    ["Shopping list"] = "Список покупок",
+    ["shopping list"] = "список покупок",
+    ["disenchant"] = "розпилення",
+    ["bid"] = "ставка",
+    ["Bought for your own use: it stays out of Post next bought."] = "Куплено для себе: не потрапляє у «Виставити наступне куплене».",
+    ["Buy %d for %s; your shopping list allows up to %s each (saving %s)."] = "Купіть %d шт. за %s; ваш список покупок дозволяє до %s за шт. (економія %s).",
+    ["Ignore item"] = "Ігнорувати",
+    ["Up to"] = "До",
+    ["Item (Shift-click a link or type a name)"] = "Предмет (Shift-клік по посиланню або назва)",
+    ["Up to, each"] = "До, за шт.",
+    ["Quantity (empty: any)"] = "Кількість (порожньо: будь-яка)",
+    ["Add"] = "Додати",
+    ["Remove"] = "Видалити",
+    ["any"] = "будь-яка",
+    ["ignored"] = "ігнорується",
+    ["for sale now"] = "є в продажу",
+    ["watching"] = "стежу",
+    ["Add items you want to buy and the most you pay for one. The scan, the sniper and your own searches find lots at or below that price; they appear under Shopping deals."] = "Додайте предмети, які хочете купити, і максимальну ціну за штуку. Скан, снайпер і ваші пошуки знайдуть лоти за цією ціною або дешевше; вони з'являться в «Угоди зі списку покупок».",
+    ["Ignored items (Ignore item on a deal) are listed here too: they never become deals. Select one and press Remove to stop ignoring it."] = "Тут також видно ігноровані предмети («Ігнорувати» на угоді): вони ніколи не стають угодами. Виберіть предмет і натисніть «Видалити», щоб перестати його ігнорувати.",
+    ["Unknown item. Shift-click its link, or type its exact name once the game knows it."] = "Невідомий предмет. Зробіть Shift-клік по посиланню або введіть точну назву, коли гра вже знає предмет.",
     ["Keep items in the bags when the market is below their floor"] = "Залишати предмети в сумках, коли ринок нижче їхньої мінімальної ціни",
     ["Rule: min"] = "Правило: мін.",
     ["max"] = "макс.",
@@ -257,13 +284,29 @@ T.uk = {
 
 T.current = "en"
 
+-- Names in the game's Key Bindings window (Bindings.xml).
+local BINDINGS = {
+    BINDING_HEADER_FOREVERFLIP = "ForeverFlip",
+    BINDING_NAME_FOREVERFLIP_BUY = "Buy or confirm the selected deal",
+    BINDING_NAME_FOREVERFLIP_POST = "Post next bought (then Post all)",
+    BINDING_NAME_FOREVERFLIP_CANCEL = "Cancel the next undercut auction",
+    BINDING_NAME_FOREVERFLIP_SCAN = "Full scan",
+}
+function T.bindings()
+    for global, label in pairs(BINDINGS) do
+        _G[global] = T.text(label)
+    end
+end
+
 function T.apply(language)
     if language == "en" or language == "uk" then
         T.current = language
+        T.bindings()
         return
     end
     local client = GetLocale and GetLocale() or "enUS"
     T.current = client == "ukUA" and "uk" or "en"
+    T.bindings()
 end
 
 function T.text(s)

@@ -25,6 +25,8 @@ D.DEFAULTS = {
     minPricePercent = 0, -- never post below this share of the usual price (0 = off)
     maxPricePercent = 2, -- a cheapest seller above this share of the usual price is ignored
     belowMin = "min", -- below the floor: "min" posts at the floor, "hold" keeps the item
+    learnBrowsing = true, -- the player's own searches update prices and deals
+    highlight = true, -- mark deals in the game's Buy tab
 }
 
 function D.open(saved)

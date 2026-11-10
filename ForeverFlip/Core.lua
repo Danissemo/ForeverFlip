@@ -142,7 +142,7 @@ function E.handle(event, ...)
     elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
         local key = ...
         if type(key) == "table" then
-            F.Deals.onResults(key.itemID)
+            F.Deals.onResults(key.itemID, key)
         end
     elseif event == "COMMODITY_PRICE_UPDATED" then
         F.Trade.onQuote(...)
@@ -261,6 +261,42 @@ frame:SetScript("OnUpdate", function(_, elapsed)
         report(err)
     end
 end)
+
+-- Key bindings (Bindings.xml). A key press is a hardware event like a click.
+function E.keyBuy()
+    local T, UI = F.Trade, F.UI
+    if T.op and T.op.state == "quoted" then
+        T.confirm()
+    elseif UI and UI.selected then
+        local ok, why = T.buy(UI.selected)
+        if not ok then
+            if why == "verify_first" then
+                F.Deals.verify(UI.selected)
+            end
+            E.notify(why)
+        end
+    end
+end
+
+function E.keyPost()
+    local ok, why = F.Trade.postNext()
+    if not ok and why == "nothing_to_post" then
+        ok, why = F.Trade.postAll()
+    end
+    E.notify(why)
+end
+
+function E.keyCancel()
+    local _, why = F.Trade.cancelNextUndercut()
+    E.notify(why)
+end
+
+function E.keyScan()
+    local ok, why = F.Scan.start()
+    if not ok then
+        E.notify(why)
+    end
+end
 
 SLASH_FOREVERFLIP1 = "/ff"
 SLASH_FOREVERFLIP2 = "/foreverflip"

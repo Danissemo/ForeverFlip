@@ -33,5 +33,14 @@ class LocaleTest(unittest.TestCase):
         self.assertEqual(missing, [], 'missing Ukrainian translations')
 
 
+class LocaleTableTest(unittest.TestCase):
+    def test_no_key_is_translated_twice(self):
+        import collections
+        source = (ADDON / 'Locale.lua').read_text(encoding='utf-8')
+        keys = re.findall(r'^    \["((?:[^"\\]|\\.)*)"\] =', source, re.M)
+        twice = [k for k, n in collections.Counter(keys).items() if n > 1]
+        self.assertEqual(twice, [])
+
+
 if __name__ == '__main__':
     unittest.main()

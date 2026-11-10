@@ -69,6 +69,9 @@ function D.resaleCap(market, history)
 end
 
 function D.evaluate(g, vendor, history, now)
+    if F.Shopping.blocked(g.key) then
+        return nil, "blocked"
+    end
     local room, held = itemRoom(g.key)
     local deal, reason = F.Market.evaluate(g.rows, {
         kind = g.kind,
@@ -83,6 +86,9 @@ function D.evaluate(g, vendor, history, now)
         now = now or clock(),
         settings = settings(),
     })
+    if not deal and F.Shopping.entry(g.key) then
+        deal = F.Shopping.evaluate(g.rows, g.key, D.budget())
+    end
     if deal then
         deal.key, deal.kind, deal.id, deal.link = g.key, g.kind, g.id, g.link
         deal.market, deal.vendor = g.market, vendor
@@ -344,9 +350,10 @@ local function finishSearch(rows, complete)
 end
 
 -- Search results arrived (commodity: itemID; item or gear: item key table).
-function D.onResults(itemID)
+function D.onResults(itemID, searchKey)
     local s = D.search
     if not s or s.item.id ~= itemID then
+        D.learn(itemID, searchKey)
         return
     end
     local ok, rows, complete = pcall(F.AH.rows, s.item)
@@ -364,6 +371,35 @@ function D.onResults(itemID)
         return
     end
     finishSearch(rows, complete or enough)
+end
+
+-- The player searched an item in the game's own Buy tab: its listings are a fresh check of the item,
+-- so a deal found in them can be bought at once, and a listed deal that is gone disappears.
+function D.learn(itemID, searchKey)
+    if not F.db or not F.db.settings.learnBrowsing or not D.scope or type(itemID) ~= "number" then
+        return
+    end
+    local kind = F.AH.kindOf(itemID)
+    if not kind then
+        return
+    end
+    local keys = {}
+    if kind == "gear" then
+        for key in pairs(F.Data.market(F.db, D.scope).history) do
+            local item = U.parseKey(key)
+            if item and item.id == itemID and item.kind == "gear" then
+                keys[#keys + 1] = key
+            end
+        end
+    else
+        keys[1] = U.key(kind, itemID)
+    end
+    for _, key in ipairs(keys) do
+        local ok, rows, complete = pcall(F.AH.rows, U.parseKey(key), searchKey)
+        if ok and rows and #rows > 0 then
+            D.verifyCallback(key, rows, complete or #rows >= 40)
+        end
+    end
 end
 
 function D.onDropped()

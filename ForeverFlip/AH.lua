@@ -177,7 +177,7 @@ function A.more(item)
     end
 end
 -- Listings of other players, cheapest first: {unit, qty, auctionID}. Returns rows, complete.
-function A.rows(item)
+function A.rows(item, searchKey)
     local rows, complete = {}, false
     if item.kind == "commodity" then
         complete = AH.HasFullCommoditySearchResults(item.id)
@@ -189,7 +189,7 @@ function A.rows(item)
             end
         end
     else
-        local key = plainKey(item.id)
+        local key = type(searchKey) == "table" and searchKey or plainKey(item.id)
         complete = AH.HasFullItemSearchResults(key)
         for i = 1, (AH.GetNumItemSearchResults(key) or 0) do
             local r = AH.GetItemSearchResultInfo(key, i)

@@ -15,6 +15,7 @@ local LEFT_WIDTH = 194
 local MESSAGES = {
     nothing_to_post = "Nothing bought for resale is waiting in the bags.",
     nothing_undercut = "No undercut auction worth reposting. Press Check prices first.",
+    unknown_item = "Unknown item. Shift-click its link, or type its exact name once the game knows it.",
     checking = "Reading the current price first; press again to post.",
     mail_done = "Auction mail taken.",
     mail_closed = "The mailbox was closed.",
@@ -319,6 +320,8 @@ function UI.create()
         { "deals:all", "All deals" },
         { "deals:vendor", "Sell to vendor (no risk)" },
         { "deals:flip", "Resale" },
+        { "deals:shop", "Shopping deals" },
+        { "shop", "Shopping list" },
         { "sell", "Sell my items" },
         { "auctions", "My auctions" },
         { "stats", "Statistics by item" },
@@ -346,7 +349,7 @@ function UI.create()
     right:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
     UI.right = right
     UI.pages = {}
-    for _, id in ipairs({ "deals", "sell", "auctions", "stats", "analytics", "journal", "settings" }) do
+    for _, id in ipairs({ "deals", "shop", "sell", "auctions", "stats", "analytics", "journal", "settings" }) do
         local page = CreateFrame("Frame", nil, right)
         page:SetPoint("TOPLEFT", right, "TOPLEFT", 3, -3)
         page:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", -3, 3)
@@ -354,6 +357,7 @@ function UI.create()
         UI.pages[id] = page
     end
     UI.createDeals(UI.pages.deals)
+    UI.createShop(UI.pages.shop)
     UI.createSell(UI.pages.sell)
     UI.createAuctions(UI.pages.auctions)
     UI.createStats(UI.pages.stats)
@@ -516,6 +520,15 @@ function UI.createDeals(p)
         end
     end)
     UI.checkButton:SetPoint("RIGHT", UI.buyButton, "LEFT", -4, 0)
+    UI.ignoreButton = button(bar, "Ignore item", 110, function()
+        local d = UI.selected and F.Deals.get(UI.selected)
+        if d then
+            F.Shopping.block(d.key, U.linkName(d.link) or d.key)
+            UI.selected = nil
+            UI.refresh()
+        end
+    end)
+    UI.ignoreButton:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
 end
 
 function UI.selectDeal(key)
@@ -554,6 +567,9 @@ end
 -- Return on the money and, for resale, how long the bought units take to sell at the estimate.
 local function dealOutlook(d, estimate)
     local roi = d.cost > 0 and d.profit / d.cost or 0
+    if d.mode == "shop" then
+        return L("Bought for your own use: it stays out of Post next bought.")
+    end
     if d.mode == "vendor" then
         return string.format(L("Return %d%%; sold to a vendor at once, no risk."), math.floor(roi * 100 + 0.5))
     end
@@ -571,15 +587,16 @@ local function dealOutlook(d, estimate)
 end
 
 local function saleEstimate(d, history, now)
-    if d.mode == "vendor" then
+    if d.mode ~= "flip" then
         return { known = false }
     end
     return F.Market.saleability(history[d.key], d.exit, now)
 end
 
+local MODE_LABELS = { vendor = "vendor", shop = "shopping list", disenchant = "disenchant", bid = "bid" }
 local function estimateText(d, estimate)
-    if d.mode == "vendor" then
-        return L("vendor")
+    if d.mode ~= "flip" then
+        return L(MODE_LABELS[d.mode] or d.mode)
     elseif not estimate.known then
         return "-"
     end
@@ -603,6 +620,15 @@ local function estimateSentence(estimate)
 end
 
 local function dealSentence(d)
+    if d.mode == "shop" then
+        return string.format(
+            L("Buy %d for %s; your shopping list allows up to %s each (saving %s)."),
+            d.qty,
+            U.money(d.cost),
+            U.money(d.exit),
+            U.money(d.profit)
+        )
+    end
     if d.mode == "vendor" then
         return string.format(
             L("Buy %d for %s and sell to any vendor for %s. Profit: %s."),
@@ -745,7 +771,7 @@ function UI.refreshDeals()
     local op = F.Trade.op
     if d then
         local lines = { dealSentence(d), dealOutlook(d, estimates[d.key]) }
-        if d.mode ~= "vendor" then
+        if d.mode == "flip" then
             lines[#lines + 1] = estimateSentence(estimates[d.key] or saleEstimate(d, history, now))
         end
         if d.kind ~= "commodity" then
@@ -758,6 +784,7 @@ function UI.refreshDeals()
     end
     UI.checkButton:SetEnabled(d ~= nil and not F.Deals.pending(d.key) and not F.Trade.busy() and not F.Scan.busy())
     UI.buyButton:SetEnabled(d ~= nil and F.Trade.canBuy(d) and true or false)
+    UI.ignoreButton:SetEnabled(d ~= nil)
     UI.confirmButton:SetEnabled(op ~= nil and op.state == "quoted")
     UI.cancelButton:SetEnabled(op ~= nil and (op.state == "quote" or op.state == "quoted"))
     if op and op.state == "quoted" then
@@ -765,6 +792,136 @@ function UI.refreshDeals()
     else
         UI.confirmButton:SetText(L("Confirm purchase"))
     end
+end
+
+-- Shopping list page -------------------------------------------------------------------------------
+local SHOP_ROWS = 10
+function UI.createShop(p)
+    local list = CreateFrame("Frame", nil, p)
+    list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
+    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 150)
+    UI.shopTable = table_(
+        list,
+        {
+            { "Name" },
+            { "Up to", 90 },
+            { "Qty", 50 },
+            { "Cheapest today", 100 },
+            { "Status", 110, "LEFT" },
+        },
+        SHOP_ROWS,
+        function(row)
+            UI.shopSelected = row.key
+            UI.refresh()
+        end
+    )
+    local bar = footer(p, 146)
+    UI.shopText = bar.text
+    local itemLabel = text(bar, "GameFontNormal")
+    itemLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 66)
+    itemLabel:SetText(L("Item (Shift-click a link or type a name)"))
+    UI.shopItem = editbox(bar, 220)
+    UI.shopItem:SetPoint("LEFT", itemLabel, "RIGHT", 8, 0)
+    local maxLabel = text(bar, "GameFontNormal")
+    maxLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 36)
+    maxLabel:SetText(L("Up to, each"))
+    UI.shopMax = editbox(bar, 90)
+    UI.shopMax:SetPoint("LEFT", maxLabel, "RIGHT", 8, 0)
+    local qtyLabel = text(bar, "GameFontNormal")
+    qtyLabel:SetPoint("LEFT", UI.shopMax, "RIGHT", 12, 0)
+    qtyLabel:SetText(L("Quantity (empty: any)"))
+    UI.shopQty = editbox(bar, 50)
+    UI.shopQty:SetPoint("LEFT", qtyLabel, "RIGHT", 8, 0)
+    UI.shopAdd = button(bar, "Add", 90, function()
+        local key, name = F.Shopping.resolve(UI.shopItem:GetText())
+        local max = U.parseMoney(UI.shopMax:GetText())
+        if not key then
+            F.Engine.notify("unknown_item")
+        elseif not max or max <= 0 then
+            F.Engine.notify("values")
+        else
+            F.Shopping.add(key, max, tonumber(UI.shopQty:GetText()), name)
+            UI.shopItem:SetText("")
+            F.Engine.notify("saved")
+        end
+    end)
+    UI.shopAdd:SetPoint("LEFT", UI.shopQty, "RIGHT", 10, 0)
+    UI.shopRemove = button(bar, "Remove", 100, function()
+        if UI.shopSelected then
+            if F.Shopping.entry(UI.shopSelected) then
+                F.Shopping.remove(UI.shopSelected)
+            else
+                F.Shopping.unblock(UI.shopSelected)
+            end
+            UI.shopSelected = nil
+        end
+    end)
+    UI.shopRemove:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
+    if hooksecurefunc and ChatEdit_InsertLink then
+        hooksecurefunc("ChatEdit_InsertLink", function(link)
+            if UI.shopItem and UI.shopItem.HasFocus and UI.shopItem:HasFocus() then
+                UI.shopItem:SetText(link)
+            end
+        end)
+    end
+end
+
+function UI.refreshShop()
+    local history = F.Data.market(F.db, F.Engine.scope()).history
+    local rows = {}
+    for _, key in ipairs(F.Shopping.keys()) do
+        local e = F.Shopping.entry(key)
+        rows[#rows + 1] = { key = key, name = e.name, max = e.max, qty = e.qty }
+    end
+    for _, b in ipairs(F.Shopping.blockedKeys()) do
+        rows[#rows + 1] = { key = b.key, name = b.name, blocked = true }
+    end
+    for i, r in ipairs(UI.shopTable.rows) do
+        local e = rows[i]
+        if e then
+            local item = U.parseKey(e.key)
+            local h = history[e.key]
+            local today = h and h.days and h.days[#h.days]
+            local d = F.Deals.get(e.key)
+            r.key = e.key
+            r.icon:SetTexture(icon(item and item.id))
+            r.name:SetText(e.name or nameOf(e.key))
+            r.cols[1]:SetText(e.max and U.money(e.max) or "-")
+            r.cols[2]:SetText(e.qty or (e.blocked and "" or L("any")))
+            r.cols[3]:SetText(today and today.min and U.money(today.min) or "-")
+            r.cols[4]:SetText(
+                e.blocked and "|cff999999" .. L("ignored") .. "|r"
+                    or d and d.mode == "shop" and "|cff40ff40" .. L("for sale now") .. "|r"
+                    or L("watching")
+            )
+            if e.key == UI.shopSelected then
+                r.selected:Show()
+            else
+                r.selected:Hide()
+            end
+            r:Show()
+        else
+            r.key = nil
+            r:Hide()
+        end
+    end
+    local empty = UI.shopTable.empty
+    if #rows == 0 then
+        empty:SetText(
+            L(
+                "Add items you want to buy and the most you pay for one. The scan, the sniper and your own searches find lots at or below that price; they appear under Shopping deals."
+            )
+        )
+        empty:Show()
+    else
+        empty:Hide()
+    end
+    UI.shopText:SetText(
+        L(
+            "Ignored items (Ignore item on a deal) are listed here too: they never become deals. Select one and press Remove to stop ignoring it."
+        )
+    )
+    UI.shopRemove:SetEnabled(UI.shopSelected ~= nil)
 end
 
 -- Sell page --------------------------------------------------------------------------------------
@@ -1620,8 +1777,10 @@ function UI.createSettings(p)
     UI.alertBox = toggle(118, "alerts", "Sound and screen notice when a deal can be bought")
     UI.tooltipBox = toggle(146, "tooltipPrices", "Price history from the scans in item tooltips")
     UI.holdBox = toggle(174, "belowMin", "Keep items in the bags when the market is below their floor")
+    UI.learnBox = toggle(202, "learnBrowsing", "Learn prices and deals from my own searches in the Buy tab")
+    UI.highlightBox = toggle(230, "highlight", "Mark deals in the game's Buy tab")
     local lang = text(p, "GameFontNormal")
-    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 210)
+    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 266)
     lang:SetText(L("Language (applies after /reload)"))
     local en = button(p, "English", 90, function()
         F.db.settings.language = "en"
@@ -1660,6 +1819,7 @@ local BATCH_SCOPES = {
     ["deals:all"] = "All deals",
     ["deals:vendor"] = "Vendor deals",
     ["deals:flip"] = "Resale",
+    ["deals:shop"] = "Shopping deals",
     sell = "Bags",
     auctions = "My auctions",
 }
@@ -1775,6 +1935,7 @@ function UI.refreshSummary()
 end
 
 function UI.refresh()
+    pcall(UI.highlightBrowse)
     if not UI.frame or not UI.frame:IsShown() then
         return
     end
@@ -1782,6 +1943,8 @@ function UI.refresh()
     UI.refreshSummary()
     if UI.section == "deals" then
         UI.refreshDeals()
+    elseif UI.section == "shop" then
+        UI.refreshShop()
     elseif UI.section == "sell" then
         UI.refreshSell()
     elseif UI.section == "auctions" then
@@ -1793,6 +1956,50 @@ function UI.refresh()
     elseif UI.section == "journal" then
         UI.refreshJournal()
     end
+end
+
+-- Deals in the game's Buy tab ------------------------------------------------------------------------
+-- Rows of the game's browse results get a green mark when the item has a deal now, or when its
+-- lowest price is at or below what the sniper would check. Only reads what the game shows.
+local function dealItem(id, price)
+    for _, d in ipairs(F.Deals.list) do
+        if d.id == id then
+            return true
+        end
+    end
+    local kind = id and F.AH.kindOf(id)
+    if kind and kind ~= "gear" and price then
+        local key = U.key(kind, id)
+        local limit = F.Sniper.threshold(key, id, F.Data.market(F.db, F.Engine.scope()).history)
+        return limit ~= nil and price <= limit
+    end
+    return false
+end
+
+function UI.highlightBrowse()
+    local results = AuctionHouseFrame and AuctionHouseFrame.BrowseResultsFrame
+    local list = results and results.ItemList
+    local box = list and list.ScrollBox
+    if not box or not box.ForEachFrame or not results:IsShown() then
+        return
+    end
+    local on = F.db.settings.highlight
+    box:ForEachFrame(function(row)
+        local data = row.rowData or (row.GetElementData and row:GetElementData())
+        local id = type(data) == "table" and data.itemKey and data.itemKey.itemID
+        if not row.ffMark then
+            row.ffMark = row:CreateTexture(nil, "OVERLAY")
+            row.ffMark:SetColorTexture(0.25, 1, 0.25, 0.9)
+            row.ffMark:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+            row.ffMark:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+            row.ffMark:SetWidth(4)
+        end
+        if on and id and dealItem(id, data.minPrice) then
+            row.ffMark:Show()
+        else
+            row.ffMark:Hide()
+        end
+    end)
 end
 
 -- Price history window -------------------------------------------------------------------------------
@@ -2013,6 +2220,19 @@ local function tooltipLines(tooltip)
         1,
         1
     )
+    local deal = F.Deals.get(key)
+    if deal then
+        tooltip:AddDoubleLine(
+            "ForeverFlip: " .. L("deal"),
+            string.format("%s %s", L("profit"), U.money(deal.profit)),
+            0.25,
+            1,
+            0.25,
+            0.25,
+            1,
+            0.25
+        )
+    end
     local sale = F.Market.salePrice(h)
     if sale then
         tooltip:AddDoubleLine(L("sells at (median of sales seen)"), U.money(sale), 0.6, 0.6, 0.6, 1, 1, 1)
