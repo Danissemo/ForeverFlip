@@ -31,6 +31,27 @@ local function itemRoom(key)
     return math.max(0, math.floor(F.Engine.wallet() * share) - (p and p.cost or 0)), p and p.qty or 0
 end
 
+-- How far the scan estimate of sales is trusted for an item, from own results: stock bought a
+-- day ago and not sold since halves it, three days quarter it.
+function D.trust(key, now)
+    local c = F.Data.char(F.db, F.Engine.owner())
+    local p = c.positions[key]
+    if not p or not p.since or p.qty <= 0 then
+        return 1
+    end
+    local s = c.stats[key]
+    if s and s.lastSale and s.lastSale >= p.since then
+        return 1
+    end
+    local held = (now or clock()) - p.since
+    if held > 3 * 86400 then
+        return 0.25
+    elseif held > 86400 then
+        return 0.5
+    end
+    return 1
+end
+
 function D.evaluate(g, vendor, history, now)
     local room, held = itemRoom(g.key)
     local deal, reason = F.Market.evaluate(g.rows, {
@@ -38,6 +59,7 @@ function D.evaluate(g, vendor, history, now)
         vendor = vendor,
         held = held,
         itemBudget = room,
+        trust = D.trust(g.key, now),
         budget = D.budget(),
         history = history,
         market = g.market,

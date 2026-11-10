@@ -426,6 +426,49 @@ function T.onOwned()
     end
 end
 
+-- Bought for resale, still in the bags and not yet listed: oldest purchase first.
+function T.toPost()
+    local c = char()
+    local listed = {}
+    for _, l in ipairs(c.listings) do
+        listed[l.key] = (listed[l.key] or 0) + l.open
+    end
+    local out, seen = {}, {}
+    for _, b in ipairs(F.AH.bagItems()) do
+        local p = c.positions[b.key]
+        if p and p.mode ~= "vendor" and p.qty > (listed[b.key] or 0) and not seen[b.key] then
+            seen[b.key] = true
+            b.position = p
+            out[#out + 1] = b
+        end
+    end
+    table.sort(out, function(a, b)
+        local x, y = a.position.since or 0, b.position.since or 0
+        if x ~= y then
+            return x < y
+        end
+        return a.key < b.key
+    end)
+    return out
+end
+
+-- One click posts the next bought item: one step below the cheapest other seller, never below
+-- the break-even price. Without a fresh price the click reads the listings first; the next click
+-- posts.
+function T.postNext()
+    local item = T.toPost()[1]
+    if not item then
+        return false, "nothing_to_post"
+    end
+    local price, floor = T.suggest(item)
+    if not price then
+        T.checkPrice(item.key)
+        return true, "checking"
+    end
+    local qty = math.min(item.count, item.position.qty)
+    return T.post(item, qty, math.max(price, floor or 0), F.db.settings.duration or 3)
+end
+
 -- My auctions: price checks one item after another (one search per second), and cancelling.
 function T.checksRemaining()
     local done, total, active = F.Deals.batchProgress("auctions")

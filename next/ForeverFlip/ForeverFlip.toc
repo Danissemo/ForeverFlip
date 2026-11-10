@@ -14,5 +14,6 @@ AH.lua
 Scan.lua
 Deals.lua
 Trade.lua
+Mail.lua
 Core.lua
 UI.lua

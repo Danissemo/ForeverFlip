@@ -433,3 +433,58 @@ function answer()
         fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = s.item.id })
     end
 end
+
+
+-- Mailbox -------------------------------------------------------------------------------------------
+MailFrame = CreateFrame("Frame")
+AUCTION_WON_MAIL_SUBJECT = "Auction won: %s"
+AUCTION_EXPIRED_MAIL_SUBJECT = "Auction expired: %s"
+inbox = {} -- { sender, subject, money, cod, items, invoice }
+freeBagSlots = 20
+function GetInboxNumItems()
+    return #inbox
+end
+function GetInboxHeaderInfo(i)
+    local m = inbox[i]
+    return nil, nil, m.sender, m.subject, m.money or 0, m.cod or 0, 30, (m.items or 0) > 0 and m.items or nil
+end
+function GetInboxInvoiceInfo(i)
+    return inbox[i].invoice
+end
+mailTaken = {}
+local function dropEmpty(i)
+    local m = inbox[i]
+    if (m.money or 0) == 0 and (m.items or 0) == 0 then
+        table.remove(inbox, i)
+    end
+end
+function TakeInboxMoney(i)
+    mailTaken[#mailTaken + 1] = { "money", inbox[i].subject, inbox[i].money }
+    inbox[i].money = 0
+    dropEmpty(i)
+end
+function AutoLootMailItem(i)
+    mailTaken[#mailTaken + 1] = { "item", inbox[i].subject }
+    inbox[i].items = 0
+    freeBagSlots = freeBagSlots - 1
+    dropEmpty(i)
+end
+C_Container.GetContainerNumFreeSlots = function(bag)
+    return bag == 0 and freeBagSlots or 0
+end
+
+-- Tooltips ------------------------------------------------------------------------------------------
+Enum.TooltipDataType = { Item = 0 }
+tooltipCalls = {}
+TooltipDataProcessor = {
+    AddTooltipPostCall = function(_, fn)
+        tooltipCalls[#tooltipCalls + 1] = fn
+    end,
+}
+tooltipLines = {}
+function GameTooltip:AddDoubleLine(left, right)
+    tooltipLines[#tooltipLines + 1] = left .. " = " .. right
+end
+function GameTooltip:GetItem()
+    return self.itemName, self.itemLink
+end

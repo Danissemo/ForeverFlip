@@ -200,9 +200,28 @@ local function finish(j, done)
             h = {}
             history[key] = h
         end
+        local day, low = math.floor(now / 86400), g.rows[1] and g.rows[1].unit
         if h then
             M.recordFlow(h, g.buckets, value, now)
             h.units = g.units
+            h.days = type(h.days) == "table" and h.days or {}
+            if not h.days[1] and (h.hits or 0) <= 0 and g.units < 10 then
+                h.days = nil -- a rarely traded item: no daily history kept
+            end
+        end
+        if h and h.days then
+            local last = h.days[#h.days]
+            if last and last.d == day then
+                if low and (not last.min or low < last.min) then
+                    last.min = low
+                end
+                last.m = value or last.m
+            else
+                h.days[#h.days + 1] = { d = day, min = low, m = value }
+                while #h.days > 5 do
+                    table.remove(h.days, 1)
+                end
+            end
         end
         g.market = value
         g.buckets = nil
@@ -213,8 +232,9 @@ local function finish(j, done)
             if g.rows[1] and g.rows[1].unit < vendor then
                 stats.belowVendor = stats.belowVendor + 1
             end
-        elseif g.rows[1] then
-            -- Re-evaluated when the item's data loads (F.Scan.itemLoaded).
+        elseif g.rows[1] and not F.AH.vendorKnown(g.id) then
+            -- Re-evaluated when the item's data loads (F.Scan.itemLoaded); items a vendor does
+            -- not buy (price 0) never wait.
             for n = #g.rows, 4, -1 do
                 g.rows[n] = nil
             end
@@ -235,7 +255,7 @@ local function finish(j, done)
             h.hits = (h.hits or 0) * 0.9 + (near and 1 or 0)
         end
         if near then
-            j.hot[#j.hot + 1] = { key = key, score = (h and h.hits or 1) + (deal and 5 or 0) }
+            S.hotInsert(j.hot, { key = key, score = (h and h.hits or 1) + (deal and 5 or 0) })
         end
         if done() then
             return false
@@ -332,13 +352,36 @@ end
 local POOL = 6000
 -- The sniper's list: items most often near a deal, best first.
 S.HOT = 150
-function S.setHot(list)
-    table.sort(list, function(a, b)
-        if a.score ~= b.score then
-            return a.score > b.score
+local function hotBefore(a, b)
+    if a.score ~= b.score then
+        return a.score > b.score
+    end
+    return a.key < b.key
+end
+
+-- Keeps the best HOT entries sorted while a scan is evaluated (no sort of every item at the end).
+function S.hotInsert(list, entry)
+    local n = #list
+    if n >= S.HOT and not hotBefore(entry, list[n]) then
+        return
+    end
+    local lo, hi = 1, n + 1
+    while lo < hi do
+        local mid = math.floor((lo + hi) / 2)
+        if hotBefore(entry, list[mid]) then
+            hi = mid
+        else
+            lo = mid + 1
         end
-        return a.key < b.key
-    end)
+    end
+    table.insert(list, lo, entry)
+    if #list > S.HOT then
+        list[#list] = nil
+    end
+end
+
+function S.setHot(list)
+    table.sort(list, hotBefore)
     S.hot = {}
     for i = 1, math.min(S.HOT, #list) do
         S.hot[i] = list[i].key

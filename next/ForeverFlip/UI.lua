@@ -13,6 +13,11 @@ local ROW = 20
 local LEFT_WIDTH = 194
 
 local MESSAGES = {
+    nothing_to_post = "Nothing bought for resale is waiting in the bags.",
+    checking = "Reading the current price first; press again to post.",
+    mail_done = "Auction mail taken.",
+    mail_closed = "The mailbox was closed.",
+    bags_full = "The bags are full.",
     scan_done = "Full scan processed.",
     scan_empty = "The auction house returned an empty scan. Try again later.",
     scan_timeout = "The auction house did not answer the full scan (another addon may have used the 15-minute window). Next try in a minute.",
@@ -782,6 +787,11 @@ function UI.createSell(p)
         end
     end)
     UI.postButton:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
+    UI.postNext = button(bar, "Post next bought", 180, function()
+        local _, why = F.Trade.postNext()
+        F.Engine.notify(why)
+    end)
+    UI.postNext:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
     UI.sellCheck = button(bar, "Check price", 120, function()
         if UI.sellSelected then
             F.Trade.checkPrice(UI.sellSelected.key)
@@ -893,6 +903,7 @@ function UI.refreshSell()
     if not item then
         UI.sellText:SetText(L("Select an item. Its current listings are read to suggest a price."))
         UI.postButton:Disable()
+        UI.refreshPostNext()
         UI.sellCheck:Disable()
         return
     end
@@ -928,6 +939,7 @@ function UI.refreshSell()
     end
     UI.sellText:SetText(table.concat(lines, "\n"))
     UI.postButton:SetEnabled(UI.sellPrice:GetText() ~= "")
+    UI.refreshPostNext()
     UI.postButton:SetText(F.Trade.pendingPost and L("Confirm post") or L("Post"))
 end
 
@@ -1252,8 +1264,9 @@ function UI.createSettings(p)
     end
     UI.sniperBox = toggle(90, "sniper", "Sniper: between scans, re-read the items most often near a deal")
     UI.alertBox = toggle(118, "alerts", "Sound and screen notice when a deal can be bought")
+    UI.tooltipBox = toggle(146, "tooltipPrices", "Price history from the scans in item tooltips")
     local lang = text(p, "GameFontNormal")
-    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 160)
+    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 186)
     lang:SetText(L("Language (applies after /reload)"))
     local en = button(p, "English", 90, function()
         F.db.settings.language = "en"
@@ -1467,6 +1480,113 @@ function UI.attach()
         end)
     end
     UI.tab = b
+end
+
+function UI.refreshPostNext()
+    local n = #F.Trade.toPost()
+    UI.postNext:SetText(L("Post next bought") .. " (" .. n .. ")")
+    UI.postNext:SetEnabled(n > 0 and not F.Trade.posting)
+end
+
+-- Mailbox: one button takes all auction house mail (paced).
+function UI.mail(open)
+    if not MailFrame then
+        return
+    end
+    if not UI.mailButton then
+        UI.mailButton = button(MailFrame, "Take auction mail", 190, function()
+            F.Mail.start()
+            UI.mail(true)
+        end)
+        UI.mailButton:SetPoint("TOPRIGHT", MailFrame, "TOPRIGHT", -40, -28)
+    end
+    local n = open and F.Mail.count() or 0
+    if n > 0 or F.Mail.job then
+        UI.mailButton:SetText(L("Take auction mail") .. " (" .. n .. ")")
+        UI.mailButton:SetEnabled(not F.Mail.job)
+        UI.mailButton:Show()
+    else
+        UI.mailButton:Hide()
+    end
+end
+
+-- Item tooltips: the item's prices from the full scans.
+local function tooltipLines(tooltip)
+    if not F.db or not F.db.settings.tooltipPrices or not tooltip.GetItem then
+        return
+    end
+    local _, link = tooltip:GetItem()
+    local id = link and tonumber(link:match("item:(%d+)"))
+    local key = id and F.AH.keyFor(id, link)
+    local h = key and F.Data.market(F.db, F.Engine.scope()).history[key]
+    if not h or type(h.scan) ~= "table" then
+        return
+    end
+    local today = h.days and h.days[#h.days]
+    local low
+    for _, d in ipairs(h.days or {}) do
+        if d.min and (not low or d.min < low) then
+            low = d.min
+        end
+    end
+    tooltip:AddDoubleLine(
+        "ForeverFlip " .. L("usual price"),
+        h.scan.market and U.money(h.scan.market) or "-",
+        0.43,
+        0.84,
+        0.74,
+        1,
+        1,
+        1
+    )
+    if today and today.min then
+        tooltip:AddDoubleLine(
+            L("cheapest today / 5 days"),
+            U.money(today.min) .. " / " .. U.money(low),
+            0.6,
+            0.6,
+            0.6,
+            1,
+            1,
+            1
+        )
+    end
+    local s = F.Market.saleability(h, h.scan.market, F.Engine.clock())
+    if s.known then
+        tooltip:AddDoubleLine(
+            L("gone per day near the usual price"),
+            string.format("~%.1f", s.perDay),
+            0.6,
+            0.6,
+            0.6,
+            1,
+            1,
+            1
+        )
+    end
+    tooltip:Show()
+end
+
+function UI.tooltips()
+    if UI.tooltipHooked then
+        return
+    end
+    UI.tooltipHooked = true
+    local function safe(tooltip)
+        local ok, err = pcall(tooltipLines, tooltip)
+        if not ok and F.Engine.report then
+            F.Engine.report("tooltip: " .. tostring(err))
+        end
+    end
+    if TooltipDataProcessor and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item then
+        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
+            if tooltip == GameTooltip or tooltip == ItemRefTooltip then
+                safe(tooltip)
+            end
+        end)
+    elseif GameTooltip and GameTooltip.HookScript then
+        GameTooltip:HookScript("OnTooltipSetItem", safe)
+    end
 end
 
 -- Merchant: one button sells every item bought as a vendor deal.

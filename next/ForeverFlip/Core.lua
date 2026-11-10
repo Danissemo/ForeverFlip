@@ -56,6 +56,9 @@ local events = {
     "OWNED_AUCTIONS_UPDATED",
     "ITEM_DATA_LOAD_RESULT",
     "CHAT_MSG_SYSTEM",
+    "MAIL_SHOW",
+    "MAIL_CLOSED",
+    "MAIL_INBOX_UPDATE",
     "MERCHANT_SHOW",
     "MERCHANT_CLOSED",
     "PLAYER_LOGOUT",
@@ -70,6 +73,9 @@ function E.handle(event, ...)
             ForeverFlipData = F.Data.open(ForeverFlipData)
             F.db = ForeverFlipData
             F.Locale.apply(F.db.settings.language)
+            if F.UI and F.UI.tooltips then
+                F.UI.tooltips()
+            end
         end
         return
     end
@@ -127,6 +133,16 @@ function E.handle(event, ...)
     elseif event == "PLAYER_LOGOUT" then
         -- Saves checks and vendor deals found since the scan (SavedVariables are written next).
         F.Scan.save()
+    elseif event == "MAIL_SHOW" or event == "MAIL_CLOSED" or event == "MAIL_INBOX_UPDATE" then
+        if event ~= "MAIL_INBOX_UPDATE" then
+            F.Mail.open = event == "MAIL_SHOW"
+        end
+        if event == "MAIL_CLOSED" then
+            F.Mail.stop()
+        end
+        if F.UI and F.UI.mail then
+            F.UI.mail(F.Mail.open)
+        end
     elseif event == "MERCHANT_SHOW" or event == "MERCHANT_CLOSED" then
         if F.UI and F.UI.merchant then
             F.UI.merchant(event == "MERCHANT_SHOW")
@@ -180,6 +196,7 @@ function E.update(elapsed)
     F.Trade.stepChecks()
     F.Deals.step()
     F.Trade.step()
+    F.Mail.step(GetTime and GetTime() or E.clock())
     paint = paint + (elapsed or 0)
     if E.dirty and paint >= 0.25 and F.UI and F.UI.refresh then
         paint, E.dirty = 0, false

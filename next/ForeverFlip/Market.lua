@@ -273,6 +273,8 @@ function M.evaluate(rows, ctx)
         local profit = exit > r.unit and M.net(exit, qty) - cost - M.depositRisk(kind, ctx.vendor, qty) or 0
         if profit > 0 then
             local d = M.demandAt(ctx.history, exit, ctx.now)
+            -- Own results: stock of this item that did not sell lowers the scan estimate.
+            d.perDay = d.perDay * (ctx.trust or 1)
             if d.pairs < 1 then
                 reason = "collecting"
                 break

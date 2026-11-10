@@ -376,5 +376,77 @@ class ScanAnswerTests(unittest.TestCase):
         while ForeverFlip.Scan.busy() do run(0.05) end;assert(ForeverFlip.Deals.get('c:10'))''')
 
 
+class FeatureTests(unittest.TestCase):
+    def test_auction_mail_is_taken_in_one_click_and_other_mail_is_left(self):
+        run('''inbox={
+          {sender='Auction House',subject='Auction successful: Linen Bag',money=2850,invoice='seller'},
+          {sender='Auction House',subject='Auction won: Wool Cloth',items=1,invoice='buyer'},
+          {sender='Friend',subject='hi',money=500},
+          {sender='Auction House',subject='Auction expired: Boots',items=1},
+          {sender='Shady',subject='Auction won: Fake',items=1,cod=100}}
+        fire('MAIL_SHOW');assert(ForeverFlip.Mail.count()==3 and ForeverFlip.UI.mailButton:IsShown())
+        ForeverFlip.UI.mailButton:Click();for _=1,40 do run(0.1) end
+        assert(#mailTaken==3 and not ForeverFlip.Mail.job,#mailTaken)
+        assert(#inbox==2 and inbox[1].sender=='Friend' and inbox[2].cod==100,'player mail and COD stay')
+        local said=false;for _,l in ipairs(printed) do said=said or l:find('auction mail taken') end;assert(said)''')
+
+    def test_mail_run_stops_when_bags_are_full_or_mailbox_closes(self):
+        run('''inbox={{subject='Auction won: A',items=1,invoice='buyer'},{subject='Auction won: B',items=1,invoice='buyer'}}
+        freeBagSlots=1;fire('MAIL_SHOW');ForeverFlip.Mail.start();for _=1,20 do run(0.1) end
+        assert(#mailTaken==1 and not ForeverFlip.Mail.job and #inbox==1)
+        freeBagSlots=5;ForeverFlip.Mail.start();fire('MAIL_CLOSED');run(1);assert(#mailTaken==1)''')
+
+    def test_post_next_bought_reads_the_price_then_posts_below_the_next_seller(self):
+        run(SETUP + '''local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
+        ForeverFlip.Data.addPosition(c,'i:30','Linen Bag',1,20000,'flip',29900,now-60)
+        ForeverFlip.Data.addPosition(c,'c:10','Linen Cloth',15,900,'vendor',100,now-60)
+        putBag(0,1,30,1);putBag(0,2,10,15)
+        local T=ForeverFlip.Trade;assert(#T.toPost()==1,'vendor deals are not posted')
+        local ok,why=T.postNext();assert(ok and why=='checking');answer()
+        ok,why=T.postNext();assert(ok and why=='posted' and lastCall('PostItem')[6]==29900)
+        c.positions['i:30'].cost=40000;T.prices['i:30'].at=now;postNeedsConfirm=false
+        fire('AUCTION_HOUSE_AUCTION_CREATED',9);assert(#T.toPost()==0,'listed items are not posted twice')''')
+
+    def test_post_next_never_goes_below_break_even(self):
+        run(SETUP + '''local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
+        ForeverFlip.Data.addPosition(c,'i:30','Linen Bag',1,40000,'flip',29900,now-60)
+        putBag(0,1,30,1);local T=ForeverFlip.Trade;T.postNext();answer();T.postNext()
+        assert(lastCall('PostItem')[6]==ForeverFlip.Market.breakEven(40000,1,'item'))''')
+
+    def test_unsold_stock_lowers_the_sales_estimate(self):
+        run(SETUP + '''local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
+        local D=ForeverFlip.Deals
+        assert(D.trust('c:10',now)==1)
+        ForeverFlip.Data.addPosition(c,'c:10','Linen Cloth',2,200,'flip',150,now-2*86400)
+        assert(D.trust('c:10',now)==0.5)
+        ForeverFlip.Data.addPosition(c,'c:20','X',1,1,'flip',1,now-4*86400);assert(D.trust('c:20',now)==0.25)
+        ForeverFlip.Data.sale(c,'c:10','Linen Cloth',1,140,now);assert(D.trust('c:10',now)==1)
+        local M=ForeverFlip.Market
+        local h={flow={hours=20,sold={1.5,1.5,1.5,1.5},pairs=3,at=now,market=1000}}
+        local rows={{unit=100,qty=1},{unit=1000,qty=10}}
+        local ctx={kind='commodity',budget=100000,history=h,market=1000,now=now,settings={minProfit=1,minROI=0.1}}
+        assert(M.evaluate(rows,ctx));ctx.trust=0.25;local d,why=M.evaluate(rows,ctx);assert(not d and why=='not_selling')''')
+
+    def test_item_tooltip_shows_the_price_history_of_the_scans(self):
+        run(SETUP + '''fullScan()
+        local h=ForeverFlip.Data.market(ForeverFlip.db,ForeverFlip.Engine.scope()).history['c:10']
+        assert(h.days and #h.days==1 and h.days[1].min==60)
+        assert(#tooltipCalls==1);GameTooltip.itemLink=link(10)
+        tooltipCalls[1](GameTooltip);assert(#tooltipLines>=2 and tooltipLines[1]:find('ForeverFlip'))
+        ForeverFlip.db.settings.tooltipPrices=false;tooltipLines={};tooltipCalls[1](GameTooltip);assert(#tooltipLines==0)''')
+
+
+    def test_items_a_vendor_does_not_buy_never_wait_for_a_vendor_price(self):
+        run('''ForeverFlip.Engine.autoVerify=false;ForeverFlip.db.settings.autoScan=false
+        addItem(50,'Quest Thing',0,'item');addAuction(50,100,1)
+        fullScan();assert(not ForeverFlip.Scan.last.waitVendor[50])''')
+
+    def test_sniper_list_keeps_the_best_items_in_order(self):
+        run('''local S=ForeverFlip.Scan;local list={}
+        for i=1,400 do S.hotInsert(list,{key='c:'..i,score=i%37}) end
+        assert(#list==S.HOT and list[1].score==36)
+        for i=2,#list do assert(list[i-1].score>=list[i].score) end''')
+
+
 if __name__ == '__main__':
     unittest.main()

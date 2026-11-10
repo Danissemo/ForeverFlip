@@ -20,6 +20,7 @@ D.DEFAULTS = {
     sniper = true, -- re-read hot items between full scans (one search per second)
     alerts = true, -- sound and screen notice when a deal can be bought
     alertMinProfit = 50, -- copper: smaller deals are listed without a notice
+    tooltipPrices = true, -- price history lines in item tooltips
 }
 
 function D.open(saved)

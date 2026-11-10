@@ -101,6 +101,15 @@ function A.vendorPrice(id)
     return price > 0 and price or nil
 end
 
+-- True when the vendor price is known, also when it is zero (the vendor does not buy the item).
+function A.vendorKnown(id)
+    local saved = F.db and F.db.vendor
+    if saved and saved[id] ~= nil then
+        return true
+    end
+    return U.itemInfo(id) ~= nil
+end
+
 function A.isOpen()
     return AuctionHouseFrame and AuctionHouseFrame:IsShown() or false
 end
