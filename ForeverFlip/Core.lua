@@ -107,6 +107,7 @@ function E.handle(event, ...)
             F.db = ForeverFlipData
             F.Locale.apply(F.db.settings.language)
             E.applyCut()
+            F.Mail.hook()
             if F.UI and F.UI.tooltips then
                 F.UI.tooltips()
             end
@@ -182,6 +183,8 @@ function E.handle(event, ...)
         end
         if event == "MAIL_CLOSED" then
             F.Mail.stop()
+        else
+            F.Mail.snapshot()
         end
         if F.UI and F.UI.mail then
             F.UI.mail(F.Mail.open)

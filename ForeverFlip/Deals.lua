@@ -35,6 +35,13 @@ end
 -- day ago and not sold since halves it, three days quarter it.
 function D.trust(key, now)
     local c = F.Data.char(F.db, F.Engine.owner())
+    local named = c.stats[key] and c.stats[key].name or c.positions[key] and c.positions[key].name
+    local rate = named and F.Trade.rate(named)
+    local factor = rate and math.max(0.25, math.min(1, rate / 0.5)) or 1
+    return factor * D.ownTrust(c, key, now)
+end
+
+function D.ownTrust(c, key, now)
     local p = c.positions[key]
     if not p or not p.since or p.qty <= 0 then
         return 1

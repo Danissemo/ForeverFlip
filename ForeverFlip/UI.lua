@@ -1132,7 +1132,8 @@ function UI.createStats(p)
         { "Profit", 90 },
         { "In stock", 64 },
         { "Days to sell", 80 },
-        { "Note", 110, "LEFT" },
+        { "Sell %", 50 },
+        { "Note", 80, "LEFT" },
     }, 16, function() end)
     UI.statsText = footer(p, 56).text
 end
@@ -1152,7 +1153,8 @@ function UI.refreshStats()
             r.cols[3]:SetText(U.money(s.profit))
             r.cols[4]:SetText(s.stock)
             r.cols[5]:SetText(s.avgDays and string.format("%.1f", s.avgDays) or "-")
-            r.cols[6]:SetText(s.stale and ("|cffff6060" .. L("stale") .. "|r") or "")
+            r.cols[6]:SetText(s.rate and string.format("%d%%", math.floor(s.rate * 100 + 0.5)) or "-")
+            r.cols[7]:SetText(s.stale and ("|cffff6060" .. L("stale") .. "|r") or "")
             r.selected:Hide()
             r:Show()
         else
@@ -1448,7 +1450,13 @@ function UI.refreshJournal()
         UI.unknownNo:Hide()
     end
     local lines = {}
-    local kinds = { buy = "bought", sell = "sold", vendor = "sold to vendor" }
+    local kinds = {
+        buy = "bought",
+        sell = "sold",
+        vendor = "sold to vendor",
+        expired = "came back unsold",
+        fail = "purchase failed",
+    }
     for i = #c.journal, math.max(1, #c.journal - 16), -1 do
         local e = c.journal[i]
         lines[#lines + 1] = string.format(

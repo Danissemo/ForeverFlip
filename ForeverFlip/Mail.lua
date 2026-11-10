@@ -43,6 +43,101 @@ function Mail.isAuction(i)
     return false
 end
 
+-- Accounting from auction mail --------------------------------------------------------------------
+-- A seller invoice tells the real sale price, the cut and the deposit; expired and cancelled mails
+-- tell which posts failed. A mail is read when its money or items are taken: by the Take auction
+-- mail button or by the game's own mailbox (hooked), each mail once.
+Mail.snap = {}
+
+local FAILED = { "AUCTION_EXPIRED_MAIL_SUBJECT", "AUCTION_REMOVED_MAIL_SUBJECT" }
+
+local function read(i)
+    local _, _, sender, subject, money = GetInboxHeaderInfo(i)
+    local snap = { subject = subject, money = money, sender = sender }
+    if GetInboxInvoiceInfo then
+        local kind, item, _, bid, _, deposit, consignment, _, _, count = GetInboxInvoiceInfo(i)
+        if type(kind) == "string" then
+            snap.invoice = {
+                kind = kind,
+                item = item,
+                bid = bid or 0,
+                deposit = deposit or 0,
+                cut = consignment or 0,
+                count = count or 1,
+            }
+        end
+    end
+    return snap
+end
+
+-- MAIL_INBOX_UPDATE: what each mail holds before anything is taken.
+function Mail.snapshot()
+    Mail.snap = {}
+    for i = 1, (GetInboxNumItems and GetInboxNumItems() or 0) do
+        local ok, snap = pcall(read, i)
+        if ok then
+            Mail.snap[i] = snap
+        end
+    end
+end
+
+local function failedItem(subject)
+    if type(subject) ~= "string" then
+        return nil
+    end
+    for _, name in ipairs(FAILED) do
+        local pattern = subjectPattern(_G[name])
+        if pattern then
+            local item = subject:match(pattern:gsub("%.%+", "(.+)", 1))
+            if item then
+                local plain, count = item:match("^(.-)%s*%((%d+)%)$")
+                return plain or item, tonumber(count) or 1
+            end
+        end
+    end
+end
+
+-- Books mail `i` once.
+function Mail.record(i)
+    local snap = Mail.snap[i]
+    if not snap then
+        local ok, s = pcall(read, i)
+        if not ok then
+            return
+        end
+        snap = s
+        Mail.snap[i] = snap
+    end
+    if snap.recorded or not F.db then
+        return
+    end
+    snap.recorded = true
+    local inv = snap.invoice
+    if inv and inv.kind == "seller" and type(inv.item) == "string" then
+        F.Trade.onInvoice(inv)
+        return
+    end
+    local name, count = failedItem(snap.subject)
+    if name then
+        F.Trade.onFailedPost(name, count)
+    end
+end
+
+-- The game's own mailbox buttons and other mail addons take mail through these functions.
+function Mail.hook()
+    if Mail.hooked or not hooksecurefunc then
+        return
+    end
+    Mail.hooked = true
+    for _, name in ipairs({ "TakeInboxMoney", "AutoLootMailItem", "TakeInboxItem" }) do
+        if _G[name] then
+            hooksecurefunc(name, function(i)
+                pcall(Mail.record, i)
+            end)
+        end
+    end
+end
+
 function Mail.count()
     local n = 0
     for i = 1, (GetInboxNumItems and GetInboxNumItems() or 0) do
@@ -97,6 +192,7 @@ function Mail.step(now)
         if Mail.isAuction(i) then
             local _, _, _, _, money, _, _, hasItem = GetInboxHeaderInfo(i)
             job.next = now + Mail.PACE
+            Mail.record(i)
             if (money or 0) > 0 then
                 TakeInboxMoney(i)
                 job.gold = job.gold + money

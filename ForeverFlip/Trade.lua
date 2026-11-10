@@ -426,7 +426,7 @@ function T.onOwned()
     -- Forget finished listings and old booking marks.
     for i = #c.listings, 1, -1 do
         local l = c.listings[i]
-        if l.open <= 0 or clock() - l.at > 3 * 86400 then
+        if clock() - l.at > 3 * 86400 then
             table.remove(c.listings, i)
         end
     end
@@ -439,6 +439,101 @@ function T.onOwned()
         F.Engine.notify("sold")
         F.Engine.changed()
     end
+end
+
+-- Sale invoices and failed posts -----------------------------------------------------------------
+-- Sale rate of an item: posts that sold against posts that came back (expired or cancelled).
+function T.rate(name)
+    local r = name and char().rates and char().rates[string.lower(name)]
+    if not r or r.sold + r.failed < 3 then
+        return nil, r
+    end
+    return r.sold / (r.sold + r.failed), r
+end
+
+local function rateOf(name)
+    local c = char()
+    c.rates = c.rates or {}
+    local k = string.lower(name)
+    c.rates[k] = c.rates[k] or { sold = 0, failed = 0 }
+    return c.rates[k]
+end
+
+-- The cut of each house is learned from invoices: about 5% on a faction house, 15% on a neutral one.
+local function learnCut(inv)
+    if inv.bid < 1000 or inv.cut <= 0 then
+        return
+    end
+    local ratio = inv.cut / inv.bid
+    local realm = tostring(GetRealmName and GetRealmName() or "?")
+    local scope = ratio > 0.1 and realm .. "-Neutral"
+        or realm .. "-" .. tostring(UnitFactionGroup and UnitFactionGroup("player") or "?")
+    F.db.cuts = F.db.cuts or {}
+    local old = F.db.cuts[scope]
+    F.db.cuts[scope] = U.finite(old) and old + (ratio - old) * 0.2 or ratio
+    F.Engine.applyCut()
+end
+
+-- "Auction successful": the real money of a sale. Units not booked yet from the own-auction list are
+-- booked here, with the exact amount after the cut.
+function T.onInvoice(inv)
+    local c = char()
+    local net = inv.bid - inv.cut
+    learnCut(inv)
+    local r = rateOf(inv.item)
+    r.sold = r.sold + inv.count
+    c.invoices = c.invoices or {}
+    table.insert(c.invoices, 1, { at = clock(), item = inv.item, qty = inv.count, net = net, cut = inv.cut })
+    while #c.invoices > 200 do
+        table.remove(c.invoices)
+    end
+    local name = string.lower(inv.item)
+    local listing, known
+    for _, l in ipairs(c.listings) do
+        if string.lower(l.name or "") == name then
+            known = true
+            if l.open > 0 then
+                listing = l
+                break
+            end
+        end
+    end
+    local key, qty
+    if listing then
+        key, qty = listing.key, math.min(inv.count, listing.open)
+        listing.open = listing.open - qty
+    elseif not known then
+        -- Posted outside ForeverFlip (or the listing is older than three days): book against stock.
+        for k, p in pairs(c.positions) do
+            if string.lower(p.name or "") == name and p.mode ~= "vendor" then
+                key, qty = k, math.min(inv.count, p.qty)
+                break
+            end
+        end
+    end
+    if key and qty and qty > 0 then
+        local amount = math.floor(net * qty / inv.count + 0.5)
+        local cost = F.Data.sale(c, key, inv.item, qty, amount, clock())
+        F.Data.log(c, {
+            at = clock(),
+            kind = "sell",
+            key = key,
+            name = inv.item,
+            qty = qty,
+            amount = amount,
+            profit = amount - cost,
+        })
+        F.Engine.notify("sold")
+    end
+    F.Engine.changed()
+end
+
+-- "Auction expired" / "Auction cancelled": the post did not sell.
+function T.onFailedPost(name, count)
+    local r = rateOf(name)
+    r.failed = r.failed + (count or 1)
+    F.Data.log(char(), { at = clock(), kind = "expired", name = name, qty = count or 1, amount = 0 })
+    F.Engine.changed()
 end
 
 -- Bought for resale, still in the bags and not yet listed: oldest purchase first.
@@ -581,6 +676,7 @@ function T.itemStats()
             bought = s.bought,
             sold = s.sold,
             profit = s.profit,
+            rate = (T.rate(s.name)),
             avgDays = s.sold > 0 and s.days / s.sold or nil,
             stock = p and p.qty or 0,
             stockCost = p and p.cost or 0,

@@ -5,6 +5,9 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["came back unsold"] = "повернулось непроданим",
+    ["purchase failed"] = "покупка не вдалася",
+    ["Sell %"] = "Продано %",
     ["sells at (median of sales seen)"] = "продається за (медіана помічених продажів)",
     ["%d min ago"] = "%d хв тому",
     ["%d h ago"] = "%d год тому",

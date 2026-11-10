@@ -448,9 +448,15 @@ function GetInboxHeaderInfo(i)
     local m = inbox[i]
     return nil, nil, m.sender, m.subject, m.money or 0, m.cod or 0, 30, (m.items or 0) > 0 and m.items or nil
 end
+-- invoice: a type string, or { kind, item, bid, deposit, cut, count } for a full invoice.
 function GetInboxInvoiceInfo(i)
-    return inbox[i].invoice
+    local inv = inbox[i] and inbox[i].invoice
+    if type(inv) == "table" then
+        return inv.kind, inv.item, "Buyer", inv.bid, inv.bid, inv.deposit or 0, inv.cut or 0, 0, 0, inv.count or 1
+    end
+    return inv
 end
+AUCTION_REMOVED_MAIL_SUBJECT = "Auction cancelled: %s"
 mailTaken = {}
 local function dropEmpty(i)
     local m = inbox[i]
