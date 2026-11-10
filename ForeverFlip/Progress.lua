@@ -13,6 +13,10 @@ local function waiting(label, at, now)
     )
 end
 local failures = {
+    post_no_item = true,
+    post_search = true,
+    item_unavailable = true,
+    rescan = true,
     throttled = true,
     buy_blocked = true,
     readonly = true,
@@ -49,7 +53,20 @@ local done = {
     planner_done = true,
     calculation_done = true,
 }
+function P.isFailure(message)
+    return failures[message] or (type(message) == "string" and message:find("search_error:", 1, true) == 1)
+end
 function P.state(c)
+    if P.isFailure(c.message) then
+        return result(
+            "error",
+            L(
+                "Action incomplete — see message above",
+                "Action incomplete — see message above"
+            ),
+            0
+        )
+    end
     local now = c.api.clock()
     if c.selectionRequest then
         return waiting(
@@ -189,6 +206,22 @@ function P.state(c)
             j.inputs.count
         )
     end
+    local backgroundPlan = (c.message == "plan_ready" or c.message == "plan_review")
+        and c.plan
+        and c.plan.origin == "radar"
+    if done[c.message] and not backgroundPlan and not (c.radar and c.radar.enabled and not c.radar.paused) then
+        local caption = L("Action complete", "Action complete")
+        if c.message == "replicate_done" then
+            caption = L("Full scan processed", "Full scan processed")
+        elseif c.message == "planner_done" then
+            caption = L("Plan calculated", "Plan calculated")
+        elseif c.message == "plan_ready" or c.message == "plan_review" then
+            caption = L("Search complete", "Search complete")
+        elseif c.message == "post_sent" then
+            caption = L("Posting request sent", "Posting request sent")
+        end
+        return result("done", caption, 1)
+    end
     if c.radar and c.radar.enabled then
         local r = c.radar
         if r.paused then
@@ -253,31 +286,8 @@ function P.state(c)
             1 - remain / 900
         )
     end
-    if failures[c.message] or (type(c.message) == "string" and c.message:find("search_error:", 1, true) == 1) then
-        return result(
-            "error",
-            L(
-                "Action incomplete — see message above",
-                "Action incomplete — see message above"
-            ),
-            0
-        )
-    end
     if c.message == "stopped" then
         return result("stopped", L("Stopped", "Stopped"), 0)
-    end
-    if done[c.message] then
-        local caption = L("Action complete", "Action complete")
-        if c.message == "replicate_done" then
-            caption = L("Full scan processed", "Full scan processed")
-        elseif c.message == "planner_done" then
-            caption = L("Plan calculated", "Plan calculated")
-        elseif c.message == "plan_ready" or c.message == "plan_review" then
-            caption = L("Search complete", "Search complete")
-        elseif c.message == "post_sent" then
-            caption = L("Posting request sent", "Posting request sent")
-        end
-        return result("done", caption, 1)
     end
     return result("idle", L("Ready", "Ready"), 0)
 end

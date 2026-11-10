@@ -5,10 +5,11 @@ from test_ui import ui_runtime
 class NativeLayoutTests(unittest.TestCase):
     def test_primary_navigation_is_native_horizontal_tabs_without_global_scale(self):
         ui_runtime().execute('''assert(u.nativeLayout)
+        db.ui.mode='expert';u=ForeverFlip.UI.create(c)
         AuctionHouseFrame:SetSize(800,538);u:layout()
         assert(u.canvas:GetScale()==1 and u.canvas:GetWidth()==792)
         local y
-        for _,id in ipairs({'deals','trade','portfolio','history','tools','settings','overview'})do
+        for _,id in ipairs({'overview','deals','trade','portfolio','workbench','tools','settings'})do
           local tab=u.nav[id];assert(tab.template=='PanelTopTabButtonTemplate')
           local p,a,r,x,dy=tab:GetPoint();if y then assert(y==dy)else y=dy end
         end
@@ -20,7 +21,7 @@ class NativeLayoutTests(unittest.TestCase):
         assert(u.shopping.headers.price.template=='AuctionHouseTableHeaderStringTemplate')
         local p,a,r,priceX=u.shopping.headers.price:GetPoint()
         local p2,b,r2,nameX=u.shopping.headers.itemName:GetPoint();assert(priceX<nameX)
-        assert(u.nav.workbench and u.nav.watch)''')
+        assert(u.nav.workbench and not u.nav.watch)''')
     def test_resize_changes_column_width_without_scaling_fonts(self):
         ui_runtime().execute('''AuctionHouseFrame:SetSize(800,538);u:layout()
         local small=u.shopping.right:GetWidth()
@@ -35,7 +36,7 @@ class NativeLayoutTests(unittest.TestCase):
         ui_runtime().execute('''db.groups={{name='Cloth',items={[1]=true},rule={}}}
         c.candidates={{key={itemID=1},rows=rows,at=now,scope='scope',family=false,kind='commodity'},
           {key={itemID=2},rows=rows,at=now,scope='scope',family=false,kind='commodity'}}
-        u:show('deals');u.shopping.listRows[3]:Click()
+        u:show('deals');u.shopping.listRows[5]:Click()
         assert(#u.visibleDeals==1 and u.visibleDeals[1].key.itemID==1 and spent==0)''')
     def test_history_chart_and_latest_point_fit_the_actual_native_width(self):
         ui_runtime().execute('''AuctionHouseFrame:SetSize(800,538);u:layout()

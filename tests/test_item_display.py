@@ -46,7 +46,7 @@ class ItemDisplayTests(unittest.TestCase):
         from test_domain import ROOT
         l=ui_runtime()
         l.execute((ROOT/'ForeverFlip/Core.lua').read_text(encoding='utf-8-sig'))
-        l.execute('''ForeverFlip.boot('ForeverFlip');ForeverFlip.attach();ForeverFlip.ui.frame:Show()
+        l.execute('''ForeverFlip.boot('ForeverFlip');ForeverFlip.db.settings.autoScan=false;ForeverFlip.attach();ForeverFlip.ui.frame:Show()
         local count=0;ForeverFlip.ui.refresh=function()count=count+1 end
         ForeverFlip.ItemDisplay.metadata({itemID=1})
         local f=ForeverFlip.eventFrame

@@ -38,8 +38,9 @@ function F.boot(name)
         if F.ui and F.ui.frame:IsShown() and F.ui.section == "workbench" then
             F.Planner.tick(c)
         end
-        if F.ui and F.ui.frame:IsShown() and F.ui.section == "deals" and not F.ui.liveOnly then
-            if F.DealCache.tick(c) then
+        -- Deal preparation keeps running on every tab; only the visible page is repainted.
+        if F.ui and F.ui.frame:IsShown() then
+            if F.DealCache.tick(c) and F.ui.section == "deals" and not F.ui.liveOnly then
                 F.ui:refresh()
             end
         end
@@ -55,6 +56,16 @@ function F.boot(name)
         end
         if paint >= 1 then
             paint = 0
+            if F.ui and F.ui.frame:IsShown() then
+                if c:radarShouldResume(F.ui.section) then
+                    c:radarStart()
+                elseif c:autoScanDue() then
+                    c:fullScan("auto")
+                end
+                if F.ui.section ~= "deals" then
+                    F.DealCache.poll(c)
+                end
+            end
             local dealsChanged = F.ui
                 and F.ui.frame:IsShown()
                 and F.ui.section == "deals"
@@ -195,6 +206,8 @@ for _, event in ipairs({
     "COMMODITY_PURCHASED",
     "COMMODITY_PURCHASE_FAILED",
     "ITEM_PURCHASED",
+    "AUCTION_HOUSE_PURCHASE_COMPLETED",
+    "OWNED_AUCTIONS_UPDATED",
     "REPLICATE_ITEM_LIST_UPDATE",
     "MAIL_INBOX_UPDATE",
 }) do
@@ -229,6 +242,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         return
     end
     if event == "AUCTION_HOUSE_SHOW" then
+        F.controller:restoreCandidates()
         if C_Timer then
             C_Timer.After(0, F.attach)
         else

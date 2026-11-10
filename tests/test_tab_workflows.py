@@ -37,7 +37,7 @@ class TabWorkflowTests(unittest.TestCase):
         u.actions.portfolioPrevious:Click();assert(u.portfolioPage==2)''')
 
     def test_shared_npc_plan_cannot_exceed_remaining_trial_budget(self):
-        controller_runtime().execute('''c:easyNPC();local candidates={}
+        controller_runtime().execute('''api.wallet=function()return 40000 end;c:easyNPC();local candidates={}
         for i=1,3 do candidates[i]={key={itemID=i},rows={{qty=10,unit=400,cost=4000}},
         at=now,scope='scope',family=false,kind='commodity'}end;c.candidates=candidates
         local p=c:allocate({budget=100000,riskCap=100000,drop=.2});assert(p.budget<=10000 and p.cost<=10000)''')

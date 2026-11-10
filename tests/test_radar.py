@@ -22,7 +22,7 @@ class RadarTests(unittest.TestCase):
     def test_pacing_and_ready_gate(self):
         self.run_lua('''assert(c:radarStart());api.ready=function()return false end;c:tick();assert(calls==0)
         api.ready=function()return true end;c:tick();c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
-        c:tick();now=now+2;c:tick();assert(calls==1)
+        c:tick();now=now+0.5;c:tick();assert(calls==1)
         now=now+20;c:tick();assert(calls==2)''')
 
     def test_manual_review_pauses_then_resume_and_stop(self):
@@ -42,7 +42,7 @@ class RadarTests(unittest.TestCase):
     def test_unchanged_alert_dedup_and_stale_expiry(self):
         self.run_lua('''c:radarStart();c:tick();c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
         now=now+20;c:tick();c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1);assert(alerts==1)
-        now=now+31;assert(#ForeverFlip.Radar.list(c)==0)''')
+        now=now+601;assert(#ForeverFlip.Radar.list(c)==0)''')
 
     def test_initial_replication_and_periodic_cooldown(self):
         self.run_lua('''db.lastReplicate=nil;c.candidates={};c:radarStart();c:tick()
@@ -67,12 +67,12 @@ class RadarTests(unittest.TestCase):
         self.run_lua('''c.candidates={};db.watchlist={}
         for i=1,150 do c.candidates[i]={key={itemID=i},rows=rows,kind='commodity',family=false,at=now,scope='scope'}end
         c.candidates[151]={key={itemID=999},rows=rows,family=true,at=now,scope='scope'}
-        c:radarStart();for i=1,100 do c:tick()end;assert(#c.radar.queue<=80)
+        c:radarStart();for i=1,100 do c:tick()end;assert(#c.radar.queue<=120)
         for _,k in ipairs(c.radar.queue)do assert(k.itemID~=999)end''')
 
     def test_timeout_does_not_spin(self):
         self.run_lua('''c:radarStart();c:tick();now=now+21;c:tick();assert(calls==1)
-        c:tick();assert(calls==1);now=now+30;c:tick();assert(calls==2)''')
+        c:tick();assert(calls==1);now=now+30;c:tick();assert(calls==1 and c.radar.checkedAt['1:0:0:0'])''')
 
     def test_native_live_controls_pause_resume_and_manual_navigation(self):
         from test_ui import ui_runtime
@@ -81,7 +81,7 @@ class RadarTests(unittest.TestCase):
         assert(u.actions.live);u.actions.live:Click();assert(c.radar.enabled and u.liveOnly)
         c:tick();c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1);u:refresh();assert(#u.visibleDeals==1)
         u.actions.live:Click();assert(c.radar.paused);u.actions.live:Click();assert(not c.radar.paused)
-        u:show('tools');assert(c.radar.paused)
+        u:show('tools');assert(not c.radar.paused)
         u.actions.stop:Click();assert(not c.radar.enabled)''')
 
     def test_live_progress_displays_shortlist_not_market_percent(self):
@@ -108,10 +108,11 @@ class RadarTests(unittest.TestCase):
     def test_cache_bound_and_replication_error_backoff(self):
         self.run_lua('''c:radarStart()
         for i=1,2100 do c.radar.alerts[tostring(i)]={signature='old',at=now-10000-i}
-        c.radar.opportunities[tostring(i)]={at=now-31}end
+        c.radar.opportunities[tostring(i)]={at=now-601}end
         c:tick();local n=0;for _ in pairs(c.radar.alerts)do n=n+1 end
         assert(n<=2000 and next(c.radar.opportunities)==nil)
-        c:stop();db.lastReplicate=nil;api.replicate=function()replicas=replicas+1;error('offline')end
+        -- Isolate replication backoff: with candidates, exact checks may own the request slot.
+        c:stop();c.candidates={};db.lastReplicate=nil;api.replicate=function()replicas=replicas+1;error('offline')end
         c:radarStart();c:tick();c:tick();assert(replicas==1)
         now=now+29;c:tick();assert(replicas==1);now=now+1;c:tick();assert(replicas==2)''')
 
@@ -161,7 +162,7 @@ class RadarTests(unittest.TestCase):
         c.candidates[i]={key={itemID=i},rows=rows,kind='commodity',family=false,at=now,scope='scope'}end
         c:radarStart();c:tick();assert(c.radar.build and c.radar.build.index<2000 and calls==0)
         c:radarPause();local index=c.radar.build.index;c:tick();assert(c.radar.build.index==index)
-        c:radarStart();for i=1,600 do c:tick()end;assert(not c.radar.build and #c.radar.queue<=80 and calls==1)''')
+        c:radarStart();for i=1,600 do c:tick()end;assert(not c.radar.build and #c.radar.queue<=120 and calls==1)''')
 
     def test_completed_cache_update_invalidates_live_opportunity(self):
         self.run_lua('''c:radarStart();c:tick();c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
@@ -187,6 +188,41 @@ class RadarTests(unittest.TestCase):
         c:radarStart();ForeverFlip.ui:show('deals');ForeverFlip.ui.liveOnly=false
         ForeverFlip.ui.refresh=function()error('No full-market ranking for live paint')end
         local f=ForeverFlip.eventFrame;f.scripts.OnUpdate(f,1.1)''')
+
+    def test_found_deals_stay_listed_for_ten_minutes(self):
+        self.run_lua('''db.lastReplicate=now;c.candidates={{key={itemID=1},rows=rows,kind='commodity',family=false,at=now,scope='scope'}}
+        assert(c:radarStart());for _=1,20 do c:tick()end;c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
+        assert(#ForeverFlip.Radar.list(c)==1);c:radarPause(true)
+        now=now+300;assert(#ForeverFlip.Radar.list(c)==1)
+        now=now+301;assert(#ForeverFlip.Radar.list(c)==0)''')
+
+    def test_repeated_result_events_keep_a_found_deal(self):
+        self.run_lua('''db.lastReplicate=now;c.candidates={{key={itemID=1},rows=rows,kind='commodity',family=false,at=now,scope='scope'}}
+        assert(c:radarStart());for _=1,20 do c:tick()end;c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
+        assert(#ForeverFlip.Radar.list(c)==1)
+        c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1);c:event('COMMODITY_SEARCH_RESULTS_ADDED',1)
+        assert(#ForeverFlip.Radar.list(c)==1)
+        full=false;c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1);assert(#ForeverFlip.Radar.list(c)==1)''')
+
+    def test_echo_event_keeps_the_manual_trade_plan(self):
+        self.run_lua('''c:search({itemID=1});c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1);assert(c.plan)
+        c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1);assert(c.plan)
+        rows={{qty=3,unit=90,cost=270,auctionID=9}};c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1);assert(not c.plan)''')
+
+    def test_opening_a_deal_keeps_a_scan_being_processed(self):
+        self.run_lua('''db.lastReplicate=nil;api.replicate=function()end;api.replicateCount=function()return 5000 end
+        api.replicateRow=function(i)return {id=1,key={itemID=1},qty=1,buyout=100,complete=true,family=false}end
+        assert(c:fullScan());c:event('REPLICATE_ITEM_LIST_UPDATE');c:tick();assert(c.fullJob and not c.fullJob.waiting)
+        assert(c:openDeal({key={itemID=2},mode='flip'}));assert(c.fullJob and c.job and c.job.key.itemID==2)
+        for _=1,50 do c:tick()end;assert(not c.fullJob and #c.candidates>=1)''')
+
+    def test_saved_scans_up_to_two_hours_restore_candidates(self):
+        self.run_lua('''db.markets={scope={}};c.candidates={{key={itemID=99},rows=rows,at=now,scope='scope'}}
+        for i=1,300 do db.markets.scope[i..':0:0:0']={latest={at=now-2880,rows={{qty=1,unit=100,cost=100}},family=false}}end
+        db.markets.scope['999:0:0:0']={latest={at=now-8000,rows={{qty=1,unit=100,cost=100}}}}
+        assert(c:restoreCandidates()==0);while c.restoreJob do c:advanceRestoreCandidates(25) end;assert(#c.candidates==300)
+        for _,r in ipairs(c.candidates)do assert(r.key.itemID~=999)end
+        assert(c:restoreCandidates()==0);while c.restoreJob do c:advanceRestoreCandidates(25) end;assert(#c.candidates==300)''')
 
 
 if __name__ == '__main__': unittest.main()

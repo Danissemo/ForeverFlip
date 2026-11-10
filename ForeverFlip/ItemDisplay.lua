@@ -314,10 +314,43 @@ function D.row(parent, x, y, width, onClick)
         self.itemName:SetText(m.name .. (U.finite(m.level) and m.level > 0 and (" (" .. m.level .. ")") or ""))
         self.quantity:SetText(p.qty and p.qty > 0 and p.qty or p.totalQty or 0)
         self.price:SetText(D.money(p.qty and p.qty > 0 and p.cost and p.cost / p.qty or p.minimum))
-        self.profit:SetText(D.money(p.profit))
-        self.profit:SetTextColor((p.profit or 0) < 0 and 1 or 0.4, (p.profit or 0) < 0 and 0.3 or 1, 0.4)
+        if p.canBuy == false then
+            -- An unverified estimate is not shown as money the player can earn.
+            self.profit:SetText("—")
+            self.profit:SetTextColor(0.5, 0.5, 0.5)
+            self:SetAlpha(0.55)
+        else
+            self.profit:SetText(D.money(p.profit))
+            self.profit:SetTextColor((p.profit or 0) < 0 and 1 or 0.4, (p.profit or 0) < 0 and 0.3 or 1, 0.4)
+            self:SetAlpha(1)
+        end
         self.detail:SetText((p.mode == "vendor" and "NPC" or "AH") .. " " .. (note or ""))
         self:Show()
     end
     return r
+end
+
+function D.tooltip(frame, m)
+    if not m or not GameTooltip then
+        return
+    end
+    GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
+    if m.link then
+        GameTooltip:SetHyperlink(m.link)
+    elseif m.base and GameTooltip.SetItemByID then
+        GameTooltip:SetItemByID(m.key.itemID)
+    else
+        GameTooltip:AddLine(m.name)
+        GameTooltip:AddLine(
+            L(
+                "Exact variant tooltip requires an exact search.",
+                "Exact variant tooltip requires an exact search."
+            ),
+            1,
+            0.8,
+            0.2,
+            true
+        )
+    end
+    GameTooltip:Show()
 end

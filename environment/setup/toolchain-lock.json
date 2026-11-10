@@ -1,0 +1,13 @@
+{
+  "node": "v26.13.0",
+  "luals": "3.19.2",
+  "stylua": "2.6.0",
+  "vscode": "1.145.2",
+  "extensions": {
+    "sumneko.lua": "3.19.2",
+    "JohnnyMorganz.stylua": "1.7.2",
+    "ketho.wow-api": "0.22.3",
+    "redhat.vscode-xml": "0.29.3"
+  },
+  "uiCommit": "9dc84f0d3bbae1768ac3405b3716000bd93eda06"
+}

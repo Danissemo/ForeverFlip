@@ -6,10 +6,18 @@ local function widget(kind,name,parent)
     widgets[#widgets+1]=w; return w
 end
 function methods:SetScript(k,fn) self.scripts[k]=fn end
-function methods:HookScript(k,fn) self.scripts[k]=fn end
+function methods:HookScript(k,fn)
+    local previous=self.scripts[k]
+    self.scripts[k]=function(...)if previous then previous(...)end;fn(...)end
+end
 function methods:Show() self.shown=true; if self.scripts.OnShow then self.scripts.OnShow(self) end end
 function methods:Hide() self.shown=false; if self.scripts.OnHide then self.scripts.OnHide(self) end end
 function methods:IsShown() return self.shown end
+function methods:IsVisible()
+    if not self.shown then return false end
+    local parent=rawget(self,'parent')
+    return not parent or parent:IsVisible()
+end
 function methods:SetText(v) self.text=tostring(v or '') end
 function methods:GetText() return self.text end
 function methods:GetNumber() return tonumber(self.text) or 0 end
@@ -31,6 +39,7 @@ function methods:CreateFontString() return widget('FontString',nil,self) end
 function methods:CreateTexture() return widget('Texture',nil,self) end
 function methods:CreateLine() return widget('Line',nil,self) end
 function methods:GetParent() return self.parent end
+function methods:SetParent(p) self.parent=p end
 function methods:SetPoint(...) self.points=rawget(self,'points') or {};table.insert(self.points,{...}) end
 function methods:ClearAllPoints() self.points={} end
 function methods:GetPoint(i) local p=rawget(self,'points') and self.points[i or 1];if p then return unpack(p)end;return 'TOPLEFT',nil,'TOPLEFT',0,0 end
@@ -39,7 +48,10 @@ function methods:GetScale() return rawget(self,'scale') or 1 end
 function methods:SetMovable(v) self.movable=v end
 function methods:SetResizable(v) self.resizable=v end
 function methods:SetFrameStrata(v) self.strata=v end
-function methods:Click() if self.enabled and self.scripts.OnClick then self.scripts.OnClick(self) end end
+function methods:Click()
+    if STRICT_MOCK_CLICKS and not self:IsVisible()then return end
+    if self.enabled and self.scripts.OnClick then self.scripts.OnClick(self) end
+end
 function CreateFrame(kind,name,parent,template) local w=widget(kind,name,parent);w.template=template or '';return w end
 function GetLocale() return 'enUS' end
 function GetTime() return now end

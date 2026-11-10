@@ -5,7 +5,20 @@ local R = {}
 F.Radar = R
 -- SendSearchQuery is not a whole-market scanner. ReplicateItems discovers the
 -- market; only a bounded shortlist is rechecked with throttled exact queries.
-local LIMIT, INTERVAL, SNAPSHOT = 80, 3, 900
+local LIMIT, INTERVAL, SNAPSHOT = 120, 1, 900
+-- Found deals stay listed for 10 minutes; buying always re-checks the price first.
+local KEEP = 600
+local function recordCheck(r, id, now, retryAt)
+    r.checkedAt = r.checkedAt or {}
+    r.retryAt = r.retryAt or {}
+    if not r.checkedAt[id] then
+        if (r.checkedCount or 0) >= 4000 then
+            r.checkedAt, r.retryAt, r.checkedCount = {}, {}, 0
+        end
+        r.checkedCount = (r.checkedCount or 0) + 1
+    end
+    r.checkedAt[id], r.retryAt[id] = now, retryAt
+end
 local function better(a, b)
     if a.score == b.score then
         return U.key(a.key) < U.key(b.key)
@@ -44,7 +57,7 @@ local function beginBuild(c)
     local r = c.radar
     local now, alerts = c.api.clock(), {}
     for id, v in pairs(r.opportunities) do
-        if v.at > now or now - v.at > 30 then
+        if v.at > now or now - v.at > KEEP then
             r.opportunities[id] = nil
         end
     end
@@ -64,6 +77,8 @@ local function beginBuild(c)
         queue = {},
         seen = {},
         promising = {},
+        rotating = {},
+        eligible = 0,
         candidates = c.candidates,
         summary = c:summary(),
     }
@@ -89,8 +104,12 @@ local function buildStep(c)
     end
     local b = r.build
     c.cachedSummary = b.summary
-    -- Four exact variants per frame; family resolution itself is at most64 rows.
-    for _ = 1, 4 do
+    -- Up to 32 variants per frame within ~2 ms (4 without the profiler); family resolution is at most 64 rows.
+    local started = debugprofilestop and debugprofilestop()
+    for _ = 1, started and 32 or 4 do
+        if started and debugprofilestop() - started >= 2 then
+            break
+        end
         if b.cursor > #b.pending then
             local v = b.candidates[b.index]
             if not v then
@@ -106,7 +125,7 @@ local function buildStep(c)
                         local key = row.link and F.Adapters.keyFromInput(row.link)
                         local id = key and U.key(key)
                         if id and key.itemID == v.key.itemID then
-                            groups[id] = groups[id] or { key = key, rows = {}, kind = "item" }
+                            groups[id] = groups[id] or { key = key, rows = {}, kind = "item", at = v.at }
                             table.insert(groups[id].rows, row)
                         end
                     end
@@ -114,8 +133,12 @@ local function buildStep(c)
                         b.pending[#b.pending + 1] = groups[id]
                     end
                 else
-                    b.pending[1] =
-                        { key = v.key, rows = v.rows, kind = v.kind or (v.family == false and "commodity" or "item") }
+                    b.pending[1] = {
+                        key = v.key,
+                        rows = v.rows,
+                        kind = v.kind or (v.family == false and "commodity" or "item"),
+                        at = v.at,
+                    }
                 end
             end
         end
@@ -123,7 +146,23 @@ local function buildStep(c)
         b.cursor = b.cursor + 1
         if v then
             local p = evaluate(c, v.key, v.rows, v.kind)
+            local id = U.key(v.key)
+            -- Skip listings already checked since their data last changed: new data goes first.
+            local checked = r.checkedAt and r.checkedAt[id]
+            if
+                p
+                and checked
+                and checked >= (v.at or 0)
+                and not r.opportunities[id]
+                and not (r.retryAt and r.retryAt[id] and now >= r.retryAt[id])
+            then
+                p = nil
+            end
             if p then
+                b.eligible = b.eligible + 1
+                if b.eligible > (r.discoveryOffset or 0) and #b.rotating < 20 then
+                    b.rotating[#b.rotating + 1] = U.copy(v.key)
+                end
                 b.promising[#b.promising + 1] = p
                 if #b.promising > 160 then
                     table.sort(b.promising, better)
@@ -139,6 +178,14 @@ local function buildStep(c)
         return false
     end
     table.sort(b.promising, better)
+    -- Reserve a rotating share independently of the top-ranked shortlist.
+    for _, key in ipairs(b.rotating) do
+        local id = U.key(key)
+        if not b.seen[id] and #b.queue < LIMIT then
+            b.queue[#b.queue + 1], b.seen[id] = key, true
+        end
+    end
+    r.discoveryOffset = b.eligible > 0 and ((r.discoveryOffset or 0) + 20) % b.eligible or 0
     for _, p in ipairs(b.promising) do
         local id = U.key(p.key)
         if not b.seen[id] and #b.queue < LIMIT then
@@ -189,25 +236,8 @@ function R.start(c)
         c.radar = r
     end
     r.paused = false
-    if #c.candidates == 0 then
-        for id, history in pairs(c.db.markets[r.scope] or {}) do
-            local v, key = history.latest, U.fromKey(id)
-            if key and v and v.rows and v.at <= c.api.clock() and c.api.clock() - v.at <= 1800 then
-                c.candidates[#c.candidates + 1] = {
-                    key = key,
-                    rows = U.copy(v.rows),
-                    at = v.at,
-                    scope = r.scope,
-                    family = v.family,
-                    kind = v.family == false and "commodity" or "item",
-                    complete = true,
-                }
-                if #c.candidates >= 2000 then
-                    break
-                end
-            end
-        end
-    end
+    r.userPaused = nil
+    c:restoreCandidates()
     r.nextAt = c.api.clock()
     r.queue = {}
     c.watching = false
@@ -230,22 +260,35 @@ function R.failed(c)
     local r = c.radar
     if r and r.enabled then
         if r.current then
-            r.opportunities[U.key(r.current)] = nil
+            local id = U.key(r.current)
+            r.opportunities[id] = nil
+            -- A temporary failure gets a bounded retry even if the full snapshot is unavailable.
+            recordCheck(r, id, c.api.clock(), c.api.clock() + 60)
         end
         r.current = nil
-        r.nextAt = c.api.clock() + 30
+        r.nextAt = c.api.clock() + 5
         c.radarDirty = true
     end
 end
-function R.invalidate(c, key)
+-- New search results for a listed deal (a repeated event of our own check, or another addon's
+-- search): re-evaluate the deal with the rows the client now holds instead of dropping it.
+-- It disappears only when those complete rows no longer make a deal.
+function R.invalidate(c, key, kind)
     local r = c.radar
     if not r then
         return
     end
     for id, v in pairs(r.opportunities) do
         if (type(key) == "number" and v.key.itemID == key) or (type(key) == "table" and U.key(key) == id) then
-            r.opportunities[id] = nil
-            c.radarDirty = true
+            local ok, rows, complete, resultKind = pcall(c.api.rows, v.key, kind or v.kind)
+            if ok and complete and type(rows) == "table" then
+                if evaluate(c, v.key, rows, resultKind or kind or v.kind) then
+                    v.rows = U.copy(rows)
+                else
+                    r.opportunities[id] = nil
+                end
+                c.radarDirty = true
+            end
         end
     end
 end
@@ -264,6 +307,7 @@ function R.results(c, j, rows, complete, kind)
     local id, now = U.key(j.key), c.api.clock()
     r.current = nil
     r.checked = r.checked + 1
+    recordCheck(r, id, now)
     local p = evaluate(c, j.key, rows, kind)
     r.opportunities[id] = p and { key = U.copy(j.key), rows = U.copy(rows), kind = kind, at = now } or nil
     if p then
@@ -293,7 +337,7 @@ function R.list(c)
     c.cachedSummary = c:summary()
     for id, v in pairs(r.opportunities) do
         local age = c.api.clock() - v.at
-        if age < 0 or age > 30 then
+        if age < 0 or age > KEEP then
             r.opportunities[id] = nil
         else
             local p = evaluate(c, v.key, v.rows, v.kind)
@@ -318,17 +362,25 @@ function R.tick(c)
     if InCombatLockdown and InCombatLockdown() then
         return
     end
-    if not c.job and now - (c.db.lastReplicate or 0) >= SNAPSHOT then
-        if now < (r.snapshotRetry or 0) or not c.api.ready() then
-            return
-        end
+    if c.fullJob and c.fullJob.waiting then
+        return
+    end
+    if
+        not c.job
+        and not c.fullJob
+        and now - (c.db.lastReplicate or 0) >= SNAPSHOT
+        and now >= (r.snapshotRetry or 0)
+        and c.api.ready()
+    then
         r.snapshotRetry = now + 30
         r.nextAt = r.snapshotRetry
         if c:fullScan("radar") then
             r.queue = {}
             r.nextAt = now
+            return
         end
-        return
+        -- Failed snapshots must not block the independent exact-search queue.
+        r.nextAt = now
     end
     if now < r.nextAt or not c.api.ready() then
         return
@@ -361,7 +413,7 @@ function R.tick(c)
             return
         end
         if #r.queue == 0 then
-            r.nextAt = now + (r.dataDirty and 1 or 15)
+            r.nextAt = now + (r.dataDirty and 1 or 5)
             r.dataDirty = false
             return
         end

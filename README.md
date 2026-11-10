@@ -1,4 +1,22 @@
-# ForeverFlip 5.5
+# ForeverFlip 6.4
+
+6.4 repairs 23 confirmed findings. Native acceptance remains incomplete.
+Older version sections below are historical.
+
+Current Live policy: up to120 exact keys, at least1 second apart while native
+API is ready, full snapshots at least900 seconds apart.20 queue places rotate
+among discovery candidates; temporary failures retry after60 seconds. Found
+opportunities remain visible up to600 seconds and require a fresh manual check
+before spending. This is bounded discovery, not an exhaustive real-time feed.
+
+NPC budgeting is a rolling24-hour allowance of max(1g,25% of current wallet),
+subject to all other financial caps. The separately authorized agent test budget
+remains1g; this release did not spend gold or demonstrate live income.
+
+Mail uses conservative persistent invoice multiplicity. Ambiguous market scopes,
+legacy receipts and indistinguishable replacement letters require manual review.
+No historical receipt is silently deleted. Recorded invoices are not proof that
+the gold has been withdrawn from the mailbox.
 
 Auction-window addon for WoW Forever 1.60.1, Interface 16001. Pre-release until
 live-client checks validate the native protected-action paths.

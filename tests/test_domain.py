@@ -3,7 +3,7 @@ from pathlib import Path
 from lupa.lua51 import LuaRuntime
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULES = ['Util', 'Locale', 'Expressions', 'Store', 'Ledger', 'Market', 'Professions', 'Advisor', 'Workbench', 'Progress', 'NativeLayout', 'ItemDisplay', 'NativeShopping']
+MODULES = ['Util', 'Locale', 'Expressions', 'Store', 'Ledger', 'Market', 'Professions', 'Advisor', 'Workbench', 'Progress', 'NativeLayout', 'ItemDisplay', 'NativeShopping', 'Stats']
 
 def runtime():
     lua = LuaRuntime(unpack_returned_tuples=True)
@@ -82,7 +82,7 @@ class DomainTests(unittest.TestCase):
 
     def test_ledger_correction_is_append_only(self):
         self.check_lua('''local L=ForeverFlip.Ledger; local db=ForeverFlip.Store.open(nil)
-        local e={uid='x',kind='buy',owner='o',scope='s',key='1',qty=1,total=100,at=1}
+        local e={uid='x',kind='buy',owner='o',scope='s',key='1:0:0:0',qty=1,total=100,at=1}
         assert(L.append(db,e)); assert(not L.append(db,e)); assert(L.correct(db,'x','o',2))
         assert(#db.ledger==2 and db.ledger[1].total==100)
         assert(L.summary(db.ledger,'o','s').stock==0)''')

@@ -6,7 +6,7 @@ class AdvisorUITests(unittest.TestCase):
     def test_quick_plan_uses_defaults_without_money_fields(self):
         ui_runtime().execute('''c.candidates={{key={itemID=1},rows=rows,at=now,scope='scope',family=false,kind='commodity'}}
         u.actions.easyBuild:Click();assert(u.allocation.profile=='balanced' and #u.allocation.lines==1)
-        assert(u.section=='workbench' and spent==0 and quoted==0 and not u.advancedPlan:IsShown())''')
+        assert(u.section=='workbench' and u.pages.workbench=='pick' and spent==0 and quoted==0)''')
     def test_clickable_recommendation_opens_fresh_search_without_index(self):
         ui_runtime().execute('''c.candidates={{key={itemID=1},rows=rows,at=now,scope='scope',family=false,kind='commodity'}}
         u.actions.easyBuild:Click();u.actions.adviceRow1:Click()
@@ -17,7 +17,7 @@ class AdvisorUITests(unittest.TestCase):
         u:show('workbench');u.actions.adviceNext:Click();u.actions.adviceRow1:Click()
         assert(c.key.itemID==9 and spent==0)''')
     def test_advanced_controls_optional_and_manual_mode_clears_advisor(self):
-        ui_runtime().execute('''u:show('workbench');u.actions.adviceAdvanced:Click();assert(u.advancedPlan:IsShown())
+        ui_runtime().execute('''u:show('workbench','manual');assert(u.sections.workbench.split.pages.manual:IsShown() and u.advancedPlan:GetParent()==u.sections.workbench.split.pages.manual)
         c.advisorProfile='safe';u.actions.planBuild:Click();assert(not c.advisorProfile)''')
     def test_busy_or_readonly_advice_does_not_replace_existing_plan(self):
         ui_runtime().execute('''u.allocation={marker=1};c:search({itemID=1});u.actions.easyBuild:Click()

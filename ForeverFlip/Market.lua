@@ -123,8 +123,127 @@ function M.stats(history, now)
         lower = ref and math.max(0, math.floor(ref - 1.645 * sigma / math.sqrt(math.max(1, #prices)))) or nil,
     }
 end
+-- Typical selling price from current listings, robust to both bargains and ambitious asks:
+-- skip the cheapest 10% of volume, then take the volume median of the next 40% (10%..50%).
+-- Ambitious high asks never enter the window; a few cheap bargains are trimmed away.
+function M.marketValue(rows)
+    local valid, total = {}, 0
+    for _, r in ipairs(rows or {}) do
+        if U.finite(r.unit) and r.unit > 0 and U.finite(r.qty) and r.qty > 0 then
+            valid[#valid + 1] = r
+            total = total + r.qty
+        end
+    end
+    if total == 0 then
+        return nil, 0, 0
+    end
+    table.sort(valid, function(a, b)
+        return a.unit < b.unit
+    end)
+    local from, to = total * 0.10, total * 0.50
+    local middle = (from + to) / 2
+    local seen = 0
+    for _, r in ipairs(valid) do
+        seen = seen + r.qty
+        if seen >= middle then
+            return r.unit, #valid, total
+        end
+    end
+    return valid[#valid].unit, #valid, total
+end
+-- Resale exit from the current listings alone (like a sniper). The exit is the market value, but
+-- below the first competitor left after the bargains are bought, rounded down to whole silver because
+-- the auction house only accepts silver prices. Needs a real market — at least 5 units in 3
+-- listings — and an exit of at least 1 silver, otherwise nil.
+-- Returns exit price, number of listings (liquidity) and the market value.
+function M.ladder(rows, discount)
+    local market, count, total = M.marketValue(rows)
+    if not market or count < 3 or total < 5 then
+        return nil
+    end
+    local exit = math.floor(market / 100) * 100
+    local limit = exit * (discount or 0.744)
+    local competitor
+    for _, r in ipairs(rows) do
+        if U.finite(r.unit) and r.unit > limit and (U.finite(r.qty) and r.qty > 0) then
+            competitor = math.min(competitor or r.unit, r.unit)
+        end
+    end
+    if competitor then
+        exit = math.min(exit, math.floor((competitor - 1) / 100) * 100)
+    end
+    if exit < 100 then
+        return nil
+    end
+    return exit, count, market
+end
 function M.fee(total, rate, minimum)
     return math.min(total, math.max(U.round(total * (rate or 0.05)), minimum or 0))
+end
+-- Shared integer-copper cash model. These are scenario costs, not sale guarantees.
+function M.net(gross, fee, reserve, minimum)
+    if not U.finite(gross) or gross < 0 then
+        return nil
+    end
+    return gross - M.fee(gross, fee, minimum) - U.floor(gross * (reserve or 0))
+end
+function M.breakEven(cost, qty, fee, reserve, minimum, extraCost)
+    fee, reserve, minimum, extraCost = fee or 0.05, reserve or 0, minimum or 0, extraCost or 0
+    if
+        not U.finite(cost)
+        or cost < 0
+        or not U.finite(qty)
+        or qty <= 0
+        or not U.finite(fee)
+        or fee < 0
+        or not U.finite(reserve)
+        or reserve < 0
+        or fee + reserve >= 1
+        or not U.finite(minimum)
+        or minimum < 0
+        or not U.finite(extraCost)
+        or extraCost < 0
+    then
+        return nil
+    end
+    local needed = cost + extraCost
+    if not U.finite(needed) then
+        return nil
+    end
+    -- Lower bounds allow for integer fee rounding; scan the few remaining copper exactly.
+    local gross = math.max(0, (needed + minimum - 1) / (1 - reserve), (needed - 1.5) / (1 - fee - reserve))
+    local price = math.max(0, math.floor(gross / qty))
+    if not U.finite(price * qty) or price > 9007199254740990 then
+        return nil
+    end
+    local steps = 0
+    while M.net(U.floor(price * qty), fee, reserve, minimum) < needed do
+        if price >= 9007199254740990 then
+            return nil
+        end
+        if steps >= 64 then
+            -- Near-total rates can put billions of copper inside the rounding interval.
+            -- Use a conservative upper bound instead of scanning that interval.
+            price = math.ceil(math.max((needed + minimum) / (1 - reserve), (needed + 0.5) / (1 - fee - reserve)) / qty)
+            if
+                not U.finite(price * qty)
+                or price * qty > 9007199254740990
+                or M.net(U.floor(price * qty), fee, reserve, minimum) < needed
+            then
+                return nil
+            end
+            return price
+        end
+        price = price + 1
+        steps = steps + 1
+    end
+    return price
+end
+function M.priceStep(price, undercut)
+    if not U.finite(price) or price <= 0 then
+        return nil
+    end
+    return math.max(100, (undercut and (math.ceil(price / 100) - 1) or math.floor(price / 100)) * 100)
 end
 function M.sources(stats, recent, o)
     local sources = {
@@ -244,11 +363,58 @@ function M.plan(input, history, o)
     p.reserveRate = reserve
     p.minFee = o.minFee or 0
     p.minProfit = o.minProfit or 10000
+    if o.adaptiveProfit and p.mode ~= "vendor" then
+        -- A fixed gold floor rejects every deal for small wallets. Scale it to the money that can
+        -- actually be used: 5% of the deal budget, never below 1 silver. The ROI rule still applies.
+        p.minProfit = math.min(p.minProfit, math.max(100, math.floor(p.budget * 0.05)))
+    end
+    p.avgBuy = o.avgBuy
     p.minROI = roi
     local target, limit
+    local ladderTarget, ladderListings, ladderReference
+    if p.mode ~= "vendor" and not s.credible and o.ladder ~= false then
+        ladderTarget, ladderListings, ladderReference = M.ladder(rows, (1 - fee - reserve) / (1 + roi))
+    end
     if p.mode == "vendor" then
         target = U.number(o.vendor, nil, 1)
         limit = target and math.floor(target / (1 + roi))
+    elseif ladderTarget then
+        -- No price history yet: price the exit from what other sellers ask right now.
+        local listings, reference
+        target, listings, reference = ladderTarget, ladderListings, ladderReference
+        p.listings = listings
+        p.fairPrice = reference
+        if U.finite(o.vendor) and o.vendor > target then
+            target = math.floor(o.vendor)
+        end
+        limit = math.floor(target * (1 - fee - reserve) / (1 + roi))
+        p.basis = "listings"
+        p.reference = p.fairPrice or target
+        local sources = M.sources(s, p.minimum, o)
+        sources.market = sources.market or p.fairPrice or target
+        local defaults = F.Store and F.Store.defaults or {}
+        local customSell = o.sellFormula and o.sellFormula ~= defaults.sellFormula
+        local customBuy = o.buyFormula and o.buyFormula ~= defaults.buyFormula
+        if o.sellPrice ~= nil or customSell then
+            target = o.sellPrice or F.Expr.eval(o.sellFormula, sources)
+            if not U.finite(target) or target <= 0 then
+                target = nil
+                p.reasons[#p.reasons + 1] = "formula"
+            end
+        end
+        if target and o.advice and U.finite(o.advice.priceCap) then
+            target = math.min(target, o.advice.priceCap)
+        end
+        limit = target and math.floor(target * (1 - fee - reserve) / (1 + roi)) or 0
+        if o.buyLimit ~= nil or customBuy then
+            local explicit = o.buyLimit or F.Expr.eval(o.buyFormula, sources)
+            if not U.finite(explicit) or explicit <= 0 then
+                limit = 0
+                p.reasons[#p.reasons + 1] = "formula"
+            else
+                limit = math.min(limit, explicit)
+            end
+        end
     else
         local sources = M.sources(s, p.minimum, o)
         local explicit = o.sellPrice or F.Expr.eval(o.sellFormula or "90% market", sources)
@@ -327,17 +493,27 @@ function M.plan(input, history, o)
         local riskReserve = p.mode == "vendor" and 0 or U.floor(gross * reserve)
         p.fee = cut
         p.reserve = riskReserve
-        p.profit = gross - cut - riskReserve - p.cost - (o.extraCost or 0)
+        p.profit = M.net(
+            gross,
+            p.mode == "vendor" and 0 or fee,
+            p.mode == "vendor" and 0 or reserve,
+            p.mode == "vendor" and 0 or p.minFee
+        ) - p.cost - p.extraCost
         p.roi = p.cost > 0 and p.profit / p.cost or 0
-        local factor = p.mode == "vendor" and 1 or 1 - fee - reserve
-        p.breakEven = factor > 0
-                and math.ceil(
-                    (p.cost + (o.extraCost or 0) + (p.mode == "vendor" and 0 or (o.minFee or 0))) / p.qty / factor
-                )
-            or nil
+        p.breakEven = M.breakEven(
+            p.cost,
+            p.qty,
+            p.mode == "vendor" and 0 or fee,
+            p.mode == "vendor" and 0 or reserve,
+            p.mode == "vendor" and 0 or p.minFee,
+            p.extraCost
+        )
         p.liquidation = o.vendor and math.floor(p.qty * o.vendor - p.cost) or nil
         -- Risk-adjusted capital efficiency, not a promised expected return.
-        p.confidence = p.mode == "vendor" and 1 or s.confidence
+        -- Listing-based deals rank higher on busier markets: more listings mean faster sales.
+        p.confidence = p.mode == "vendor" and 1
+            or p.basis == "listings" and (0.25 + 0.25 * math.min(1, (p.listings or 0) / 20))
+            or s.confidence
         p.downside = math.max(0, -(p.liquidation or -p.cost))
         p.score = (p.profit * p.confidence - p.downside * (1 - p.confidence)) / math.max(1, p.cost)
         if p.mode ~= "vendor" and o.velocity and o.velocity.known and o.velocity.lower > 0 then
@@ -354,9 +530,37 @@ function M.plan(input, history, o)
     if p.qty == 0 then
         p.reasons[#p.reasons + 1] = "budget/price"
     end
-    if p.profit < (o.minProfit or 10000) or p.roi < roi then
+    if p.profit < p.minProfit or p.roi < roi then
         p.reasons[#p.reasons + 1] = "margin"
     end
     p.canBuy = p.qty > 0 and p.profit > 0 and #p.reasons == 0
     return p
+end
+-- Suggested unit price for posting. The auction house accepts whole silver only, so the price
+-- undercuts the cheapest listing by one silver step (rounded down), but never goes below the price
+-- that returns the own average cost after the fee and risk reserve (rounded up). Minimum 1 silver.
+function M.salePrice(p, qty)
+    if type(p) ~= "table" then
+        return nil
+    end
+    qty = qty == nil and 1 or qty
+    if not U.finite(qty) or qty < 1 or qty ~= math.floor(qty) then
+        return nil
+    end
+    local floor = 0
+    if U.finite(p.avgBuy) and p.avgBuy >= 0 then
+        local exact = M.breakEven(p.avgBuy * qty, qty, p.feeRate, p.reserveRate, p.minFee, p.extraCost)
+        if not exact then
+            return nil
+        end
+        floor = math.max(100, math.ceil(exact / 100) * 100)
+    end
+    local price = M.priceStep(p.minimum, true) or M.priceStep(p.target)
+    if not price then
+        return floor > 0 and floor or nil, "cost"
+    end
+    if price < floor then
+        return floor, "cost"
+    end
+    return price, U.finite(p.minimum) and "undercut" or "market"
 end

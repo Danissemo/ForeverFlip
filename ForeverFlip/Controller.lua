@@ -1,6 +1,8 @@
 local F = ForeverFlip
 local U = F.Util
 local C = {}
+-- Minimum seconds between auction queries; the server throttle gate (api.ready) still applies.
+C.REQUEST_GAP = 1
 F.Controller = C
 C.__index = C
 function C.new(db, api)
@@ -61,6 +63,9 @@ function C:allowed()
     return true
 end
 function C:reserved()
+    if not F.Store.writable(self.db) then
+        return 0
+    end
     local n = 0
     for _, op in pairs(self.db.pending or {}) do
         if
@@ -79,6 +84,9 @@ function C:reserved()
     return n
 end
 function C:summary()
+    if not F.Store.writable(self.db) then
+        return F.Ledger.summary({})
+    end
     if self.cachedSummary then
         return self.cachedSummary
     end
@@ -114,6 +122,9 @@ function C:summary()
     return m.value
 end
 function C:rule(value)
+    if not F.Store.writable(self.db) then
+        return U.copy(F.Store.defaults)
+    end
     local key = type(value) == "table" and value or { itemID = value }
     local id = key.itemID
     local out = U.copy(self.db.settings or F.Store.defaults)
@@ -127,9 +138,15 @@ function C:rule(value)
             break
         end
     end
+    -- An explicit group minimum is the player's own choice and is kept as is.
+    local groupMinimum = out.groupDefinition and out.groupDefinition.rule and out.groupDefinition.rule.minProfit
+    out.adaptiveProfit = out.adaptiveProfit ~= false and not groupMinimum
     return out
 end
 function C:options(key, mode, ownOp, ignoreOverrides)
+    if not F.Store.writable(self.db) then
+        return U.copy(F.Store.defaults)
+    end
     local o = self:rule(key)
     local summary = self:summary()
     local identity = U.key(key)
@@ -239,7 +256,8 @@ function C:options(key, mode, ownOp, ignoreOverrides)
         o.minROI = math.max(o.minROI or 0, o.advice.minROI)
         o.budget = math.min(o.budget or math.huge, o.advice.maxBudget)
     end
-    if (key.itemLevel or 0) ~= 0 or (key.itemSuffix or 0) ~= 0 or (key.battlePetSpeciesID or 0) ~= 0 then
+    -- Vendor value is per item ID; only random suffixes and pets need the exact per-listing value.
+    if (key.itemSuffix or 0) ~= 0 or (key.battlePetSpeciesID or 0) ~= 0 then
         o.vendor = nil
     end
     local npcBudget = self:npcRemaining(ownOp)
@@ -260,11 +278,12 @@ function C:options(key, mode, ownOp, ignoreOverrides)
             and request.itemID == key.itemID
         then
             local used, spent = 0, 0
-            for i = request.first + 1, #self.db.ledger do
-                local entry = self.db.ledger[i]
+            local effective, indexes = F.Ledger.effective(self.db.ledger, request.owner, request.scope)
+            for _, entry in ipairs(effective) do
                 local item = U.fromKey(entry.key)
                 if
-                    entry.kind == "buy"
+                    indexes[entry] > request.first
+                    and entry.kind == "buy"
                     and entry.owner == request.owner
                     and entry.scope == request.scope
                     and item
@@ -323,6 +342,9 @@ function C:variantVendor(rows, key)
     return vendor
 end
 function C:history(key)
+    if not F.Store.writable(self.db) then
+        return nil
+    end
     local h = self.db.markets and self.db.markets[self.api.scope()]
     return h and h[U.key(key)]
 end
@@ -331,10 +353,15 @@ function C:npcRemaining(ownOp)
     if not run or run.owner ~= self.api.owner() then
         return nil
     end
+    -- Vendor resale has a known exit price, so the limit is a rolling 24-hour spend that grows with
+    -- the wallet: at least 1g, otherwise a share of current money (default 25%).
+    local now = self.api.clock()
+    local share = U.number(self.db.settings and self.db.settings.npcDailyShare, 0.25, 0, 1)
+    local limit = math.max(10000, math.floor(U.number(self.api.wallet(), 0, 0) * share))
     local spent = 0
-    for i = run.first + 1, #self.db.ledger do
-        local e = self.db.ledger[i]
-        if e.owner == run.owner and e.kind == "buy" then
+    local effective, indexes = F.Ledger.effective(self.db.ledger, run.owner)
+    for _, e in ipairs(effective) do
+        if indexes[e] > run.first and e.owner == run.owner and e.kind == "buy" and (e.at or now) > now - 86400 then
             spent = spent + e.total
         end
     end
@@ -353,7 +380,21 @@ function C:npcRemaining(ownOp)
             spent = spent + op.total
         end
     end
-    return math.max(0, 10000 - spent)
+    return math.max(0, limit - spent)
+end
+-- A full scan builds price history, which resale deals need. Start one automatically when the
+-- 15-minute server cooldown has passed, the window is open and nothing else is running.
+function C:autoScanDue()
+    local settings = self.db.settings or {}
+    return settings.autoScan ~= false
+        and self:allowed()
+        and not self.job
+        and not self.fullJob
+        and not self.active
+        and not self.reviewRequest
+        and not (self.radar and self.radar.enabled and not self.radar.paused)
+        and self.api.ready()
+        and self.api.clock() - (self.db.lastReplicate or 0) >= 905
 end
 function C:easyNPC()
     if not self:allowed() or self.active then
@@ -412,7 +453,7 @@ function C:openDeal(p)
     self.selection.key = U.copy(key)
     if
         not self.api.ready()
-        or self.api.clock() - self.lastRequest < 2
+        or self.api.clock() - self.lastRequest < C.REQUEST_GAP
         or (self.api.keyReady and not self.api.keyReady(key))
     then
         self.reviewRequest =
@@ -457,8 +498,140 @@ end
 function C:radarStart()
     return F.Radar.start(self)
 end
-function C:radarPause()
+-- Requests the player's own listings; the answer arrives as OWNED_AUCTIONS_UPDATED.
+function C:refreshOwned()
+    if not self:allowed() or not self.api.queryOwned or not self.api.ready() then
+        self:notify("throttled")
+        return false
+    end
+    local ok = pcall(self.api.queryOwned)
+    return ok
+end
+-- Compares one own listing with the latest known competitor prices for the same item.
+-- Returns "sold", "cheapest", "undercut" (with the competitor's unit price) or "unknown".
+function C:ownedStatus(a)
+    if a.sold then
+        return "sold"
+    end
+    local unit = a.qty > 0 and (a.buyout or 0) / a.qty or 0
+    if unit <= 0 then
+        return "unknown"
+    end
+    local id = U.key(a.key)
+    local rows
+    for _, candidate in ipairs(self.candidates or {}) do
+        if U.key(candidate.key) == id then
+            rows = candidate.rows
+        end
+    end
+    if not rows then
+        local h = self:history(a.key)
+        rows = h and h.latest and h.latest.rows
+    end
+    if not rows then
+        return "unknown"
+    end
+    local cheapest
+    for _, r in ipairs(rows) do
+        if r.auctionID ~= a.auctionID and U.finite(r.unit) and r.unit > 0 and r.unit < unit then
+            cheapest = math.min(cheapest or r.unit, r.unit)
+        end
+    end
+    if cheapest then
+        return "undercut", cheapest
+    end
+    return "cheapest"
+end
+-- After /reload or reopening the auction house the in-memory scan is gone. Rebuild the candidate
+-- list from saved scans up to 2 hours old so live search covers the whole market immediately;
+-- every deal is still re-checked with an exact search before buying.
+function C:restoreCandidates()
+    if not F.Store.writable(self.db) then
+        return 0
+    end
+    local scope = self.api.scope()
+    if not self.restoreJob or self.restoreJob.scope ~= scope then
+        self.restoreJob = { scope = scope, histories = self.db.markets and self.db.markets[scope] or {} }
+    end
+    return 0
+end
+function C:advanceRestoreCandidates(limit)
+    local job = self.restoreJob
+    if not job then
+        return 0
+    end
+    if job.scope ~= self.api.scope() then
+        self.restoreJob = nil
+        return 0
+    end
+    local added, now, present = 0, self.api.clock(), {}
+    for _, row in ipairs(self.candidates) do
+        present[U.key(row.key)] = true
+    end
+    for _ = 1, limit or 25 do
+        local ok, id, history = pcall(next, job.histories, job.cursor)
+        if not ok then
+            self.restoreJob = nil
+            break
+        end
+        if not id or #self.candidates >= 2000 then
+            self.restoreJob = nil
+            break
+        end
+        job.cursor = id
+        local v, key = history.latest, U.fromKey(id)
+        if key and v and v.rows and not present[id] and v.at <= now and now - v.at <= 7200 then
+            self.candidates[#self.candidates + 1] = {
+                key = key,
+                rows = U.copy(v.rows),
+                at = v.at,
+                scope = job.scope,
+                family = v.family,
+                kind = v.family == false and "commodity" or "item",
+                complete = true,
+            }
+            present[id], added = true, added + 1
+        end
+    end
+    if added > 0 then
+        self.candidateVersion = (self.candidateVersion or 0) + 1
+    end
+    return added
+end
+-- Live search for every kind of deal: leaves the vendor-only route and rebuilds the shortlist.
+function C:radarAll()
+    if self.smallNPCActive then
+        self.smallNPCActive = false
+        self.mode = "flip"
+        self:invalidate()
+    end
+    if self.radar then
+        self.radar.queue, self.radar.index, self.radar.build = {}, 1, nil
+    end
+    return self:radarStart()
+end
+function C:radarPause(byUser)
     F.Radar.pause(self)
+    if byUser and self.radar then
+        self.radar.userPaused = true
+    end
+end
+-- Live search pauses itself for an exact check or a purchase. Resume it once that is over, unless
+-- the player pressed Pause or is looking at a deal on the Trading tab.
+function C:radarShouldResume(section)
+    local r = self.radar
+    return r
+            and r.enabled
+            and r.paused
+            and not r.userPaused
+            and section ~= "trade"
+            and not self.job
+            and not self.fullJob
+            and not self.active
+            and not self.reviewRequest
+            and not self.postPending
+            and self:allowed()
+        or false
 end
 function C:search(key, origin)
     if origin ~= "radar" then
@@ -489,7 +662,7 @@ function C:search(key, origin)
         and (
             (self.job and self.job.origin == "radar")
             or (self.fullJob and self.fullJob.origin == "radar")
-            or self.api.clock() - self.lastRequest < 2
+            or self.api.clock() - self.lastRequest < C.REQUEST_GAP
         )
     then
         self.reviewRequest =
@@ -498,11 +671,12 @@ function C:search(key, origin)
         self:notify("review_wait")
         return true
     end
-    if self.job or self.fullJob then
+    -- Processing a received scan is local work; only the server request itself blocks searching.
+    if self.job or (self.fullJob and self.fullJob.waiting) then
         self:notify("search_busy")
         return false
     end
-    if not self.api.ready() or self.api.clock() - self.lastRequest < 2 then
+    if not self.api.ready() or self.api.clock() - self.lastRequest < C.REQUEST_GAP then
         self:notify("throttled")
         return false
     end
@@ -611,6 +785,19 @@ function C:results(kind, key)
             end
         end
         F.Radar.results(self, j, rows, true, resultKind or kind)
+        if #rows == 0 and (resultKind or kind) ~= "commodity" and (key.itemLevel or 0) ~= 0 and j.origin ~= "radar" then
+            -- Equipment found by the full scan may be listed under a base key without item level.
+            -- Retry once with that key instead of showing an empty deal.
+            local base = U.copy(key)
+            base.itemLevel = 0
+            if self.selection and U.key(self.selection.key) == U.key(key) then
+                self.selection.key = U.copy(base)
+            end
+            self.plan = nil
+            self.reviewRequest = { key = base, at = self.api.clock(), scope = j.scope, owner = self.api.owner() }
+            self:notify("review_wait")
+            return
+        end
         self:notify(self.plan.canBuy and "plan_ready" or "plan_review")
         if self.watching and self.plan.canBuy and self.plan.cost > 0 then
             local signature = U.key(key) .. ":" .. self.plan.cost
@@ -624,6 +811,32 @@ function C:results(kind, key)
     else
         self:notify("partial")
     end
+end
+-- A repeated result event that carries exactly the rows the current plan was built from is an
+-- echo of our own search, not new market data; anything else (partial, changed) invalidates.
+function C:echo(kind)
+    local p = self.plan
+    local ok, rows, complete = pcall(self.api.rows, p.key, p.kind or kind)
+    if not ok or not complete or type(rows) ~= "table" or #rows ~= #(p.rows or {}) then
+        return false
+    end
+    local sorted = {}
+    for i, r in ipairs(rows) do
+        sorted[i] = r
+    end
+    table.sort(sorted, function(a, b)
+        if a.unit == b.unit then
+            return (a.auctionID or 0) < (b.auctionID or 0)
+        end
+        return (a.unit or 0) < (b.unit or 0)
+    end)
+    for i, r in ipairs(sorted) do
+        local q = p.rows[i]
+        if r.unit ~= q.unit or r.qty ~= q.qty or r.auctionID ~= q.auctionID then
+            return false
+        end
+    end
+    return true
 end
 function C:fresh()
     local p = self.plan
@@ -646,6 +859,10 @@ function C:invalidate()
     self:notify("rescan")
 end
 function C:newOperation(kind, qty, total, auctionID)
+    if not F.Ledger.capacity(self.db) then
+        self:notify("ledger_full")
+        return nil
+    end
     self.db.sequence = (self.db.sequence or 0) + 1
     local id = "op:" .. self.api.owner() .. ":" .. self.db.sequence
     local op = {
@@ -681,6 +898,9 @@ function C:requestBuy()
     end
     if p.kind == "commodity" then
         local op = self:newOperation("commodity", p.qty, p.cost)
+        if not op then
+            return false
+        end
         local ok = pcall(self.api.quote, op.id, op.qty)
         if not ok then
             op.status = "cancelled"
@@ -709,6 +929,9 @@ function C:requestBuy()
         return false
     end
     local op = self:newOperation("item", lot.qty, lot.cost, lot.auctionID)
+    if not op then
+        return false
+    end
     op.status = "awaiting"
     local sent = pcall(self.api.buyItem, lot.auctionID, lot.cost)
     if not sent then
@@ -725,7 +948,7 @@ function C:confirmBuy()
     if not self:allowed() or not op or op.status ~= "quoted" or not self:fresh() then
         return false
     end
-    if not self:budgetStillValid(self.plan, op) then
+    if not F.Ledger.capacity(self.db, op) or not self:budgetStillValid(self.plan, op) then
         self:cancelQuote()
         self:invalidate()
         return false
@@ -763,12 +986,25 @@ function C:cancelQuote()
         self.active = nil
     end
 end
-function C:receipt(kind, id, qty)
+function C:receipt(kind, id, qty, auctionID)
     local op = self.active
-    if not op or op.status ~= "awaiting" or op.kind ~= kind or op.id ~= id then
+    -- The auction-ID event is exact, so it also settles an item purchase already marked unknown,
+    -- including one restored after /reload.
+    if kind == "item" and auctionID and not (op and op.kind == "item" and op.auctionID == auctionID) then
+        op = nil
+        for _, v in pairs(self.db.pending or {}) do
+            if v.kind == "item" and v.auctionID == auctionID and v.owner == self.api.owner() then
+                op = v
+            end
+        end
+    end
+    local exact = kind == "item" and auctionID and op and op.kind == "item" and op.auctionID == auctionID
+    if exact and (op.status == "awaiting" or op.status == "unknown") then
+        id, qty = op.id, op.qty
+    elseif not op or op.status ~= "awaiting" or op.kind ~= kind or op.id ~= id then
         return
     end
-    if kind == "item" then
+    if kind == "item" and not exact then
         op.status = "unknown"
         self.plan = nil
         self:notify("unknown")
@@ -795,8 +1031,11 @@ function C:receipt(kind, id, qty)
         return
     end
     op.status = "done"
-    self.active = nil
+    if self.active == op then
+        self.active = nil
+    end
     self.plan = nil
+    self.lastPurchase = { key = U.fromKey(op.key), qty = op.qty, total = op.total, at = self.api.clock() }
     self:notify("purchase_recorded")
 end
 function C:reconcile(uid, success)
@@ -836,7 +1075,12 @@ function C:stop(reason)
     end
     self.watching = false
     self.job = reason == "manual" and self.job and self.job.origin == "radar" and self.job or nil
-    self.fullJob = reason == "manual" and self.fullJob and self.fullJob.origin == "radar" and self.fullJob or nil
+    -- Opening a deal keeps a scan that is already being processed: the server cooldown is spent.
+    self.fullJob = reason == "manual"
+            and self.fullJob
+            and (self.fullJob.origin == "radar" or not self.fullJob.waiting)
+            and self.fullJob
+        or nil
     self.reviewRequest = nil
     self.selectionRequest = nil
     if reason ~= "manual" then
@@ -919,18 +1163,24 @@ function C:ingestReplica(j, r, now)
         g.depth = (g.depth or 0) + r.qty
         -- Bounded discovery ladder; exact search always replaces it before trading.
         local row = { qty = r.qty, unit = price, cost = r.buyout, link = r.link }
+        -- Keeps the 64 cheapest listings. The most expensive kept row is cached, so a scan of
+        -- 100k+ listings costs one comparison per row; a rescan happens only on replacement.
         if #g.rows < 64 then
             g.rows[#g.rows + 1] = row
+            g.worstIndex = nil
         else
-            local worst, index = 0, nil
-            for n, v in ipairs(g.rows) do
-                if v.unit > worst then
-                    worst = v.unit
-                    index = n
+            if not g.worstIndex then
+                local worst, index = -1, nil
+                for n, v in ipairs(g.rows) do
+                    if v.unit > worst then
+                        worst, index = v.unit, n
+                    end
                 end
+                g.worstIndex, g.worstUnit = index, worst
             end
-            if index and price < worst then
-                g.rows[index] = row
+            if price < g.worstUnit then
+                g.rows[g.worstIndex] = row
+                g.worstIndex = nil
             end
         end
     end
@@ -1043,6 +1293,7 @@ function C:tick()
     if not F.Store.writable(self.db) then
         return
     end
+    self:advanceRestoreCandidates(25)
     local now = self.api.clock()
     local resolved = {}
     for id, op in pairs(self.db.pending or {}) do
@@ -1128,8 +1379,14 @@ function C:tick()
             end
             return
         end
-        local stop = math.min(j.index + 220, j.total)
+        -- Up to 1500 rows per update within a ~4 ms budget; a fixed 220 when the profiler is absent.
+        local budgetStart = debugprofilestop and debugprofilestop()
+        local stop = math.min(j.index + (budgetStart and 1500 or 220), j.total)
         for i = j.index, stop - 1 do
+            if budgetStart and (i - j.index) % 50 == 49 and debugprofilestop() - budgetStart >= 4 then
+                stop = i
+                break
+            end
             local ok, r = pcall(self.api.replicateRow, i)
             if
                 ok
@@ -1202,7 +1459,7 @@ function C:tick()
             and not self.fullJob
             and not self.active
             and self.api.ready()
-            and now - self.lastRequest >= 2
+            and now - self.lastRequest >= C.REQUEST_GAP
             and (not self.api.keyReady or self.api.keyReady(review.key))
         then
             self.reviewRequest = nil
@@ -1225,6 +1482,9 @@ function C:tick()
     end
 end
 function C:event(event, ...)
+    if not F.Store.writable(self.db) then
+        return
+    end
     if event == "AUCTION_HOUSE_CLOSED" then
         self:stop()
         return
@@ -1232,22 +1492,32 @@ function C:event(event, ...)
     if event == "COMMODITY_SEARCH_RESULTS_UPDATED" or event == "COMMODITY_SEARCH_RESULTS_ADDED" then
         local id = ...
         if not self.job or self.job.key.itemID ~= id then
-            F.Radar.invalidate(self, id)
+            F.Radar.invalidate(self, id, "commodity")
         end
         if self.job and id == self.job.key.itemID then
             self:results("commodity", self.job.key)
-        elseif self.plan and self.plan.origin ~= "radar" and self.plan.key.itemID == id then
+        elseif
+            self.plan
+            and self.plan.origin ~= "radar"
+            and self.plan.key.itemID == id
+            and not self:echo("commodity")
+        then
             self:invalidate()
         end
     elseif event == "ITEM_SEARCH_RESULTS_UPDATED" or event == "ITEM_SEARCH_RESULTS_ADDED" then
         local key = ...
         if type(key) == "table" then
             if not self.job or U.key(self.job.key) ~= U.key(key) then
-                F.Radar.invalidate(self, key)
+                F.Radar.invalidate(self, key, "item")
             end
             if self.job then
                 self:results("item", key)
-            elseif self.plan and self.plan.origin ~= "radar" and U.key(self.plan.key) == U.key(key) then
+            elseif
+                self.plan
+                and self.plan.origin ~= "radar"
+                and U.key(self.plan.key) == U.key(key)
+                and not self:echo("item")
+            then
                 self:invalidate()
             end
         end
@@ -1279,6 +1549,15 @@ function C:event(event, ...)
         self:receipt("commodity", id, qty)
     elseif event == "ITEM_PURCHASED" then
         self:receipt("item", ...)
+    elseif event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
+        self:receipt("item", nil, nil, ...)
+    elseif event == "OWNED_AUCTIONS_UPDATED" then
+        if self.api.owned then
+            local ok, list = pcall(self.api.owned)
+            if ok then
+                self.owned, self.ownedAt = list, self.api.clock()
+            end
+        end
     elseif event == "COMMODITY_PURCHASE_FAILED" then
         if self.active and self.active.kind == "commodity" then
             self.active.status = "unknown"
@@ -1512,6 +1791,9 @@ function C:bid(index)
         return false
     end
     local op = self:newOperation("item", live.quantity, price, live.auctionID)
+    if not op then
+        return false
+    end
     op.status = "bid"
     local sent = pcall(self.api.buyItem, live.auctionID, price)
     if not sent then
@@ -1521,8 +1803,28 @@ function C:bid(index)
     self:notify("bid_reserved")
     return sent
 end
+-- Posting needs a recent exact search of the same item (the market price check), not a purchase plan.
+function C:postReady(item)
+    local p = self.plan
+    return p
+            and item
+            and p.origin ~= "radar"
+            and p.complete
+            and p.scope == self.api.scope()
+            and self.api.clock() - (p.at or 0) <= 300
+            and F.Adapters.sameListing(item.key, p.key)
+        or false
+end
 function C:post(item, qty, price, duration)
-    if not self:allowed() or not self:fresh() or not item or U.key(item.key) ~= U.key(self.key) or self.active then
+    if not self:allowed() or self.active then
+        return false
+    end
+    if not item then
+        self:notify("post_no_item")
+        return false
+    end
+    if not self:postReady(item) then
+        self:notify("post_search")
         return false
     end
     if
@@ -1542,7 +1844,7 @@ function C:post(item, qty, price, duration)
         return false
     end
     local p = self.plan
-    local o = self:options(self.key)
+    local o = self:options(p.key)
     local floorPrice = F.Expr.eval(o.sellFormula, F.Market.sources(p.stats, p.minimum, o))
     local quantity = p.kind == "commodity" and qty or 1
     local gross = price * quantity
@@ -1550,7 +1852,8 @@ function C:post(item, qty, price, duration)
         - F.Market.fee(gross, o.fee, o.minFee)
         - U.floor(gross * (o.reserve or 0))
         - (o.extraCost or 0)
-    if not floorPrice or price < floorPrice or (o.vendor and saleNet < quantity * o.vendor) then
+    -- Without price history the formula floor is unknown; the vendor-value check still applies.
+    if (floorPrice and price < floorPrice) or (o.vendor and saleNet < quantity * o.vendor) then
         self:notify("post_floor")
         return false
     end
@@ -1639,24 +1942,128 @@ function C:mailProposals()
         mail.suggestedKey = nil
         local matches = {}
         local n = 0
-        local key
+        local key, scope
+        mail.suggestedScope = nil
         for _, post in ipairs(self.db.listings or {}) do
             if
                 mail.kind == "seller"
                 and post.owner == self.api.owner()
-                and post.scope == self.api.scope()
                 and post.name == mail.name
                 and post.qty == mail.qty
             then
-                if not matches[post.key] then
-                    matches[post.key] = true
+                if not matches[post.scope .. "|" .. post.key] then
+                    matches[post.scope .. "|" .. post.key] = true
                     n = n + 1
-                    key = post.key
+                    key, scope = post.key, post.scope
                 end
             end
         end
         if n == 1 then
-            mail.suggestedKey = key
+            mail.suggestedKey, mail.suggestedScope = key, scope
         end
     end
+    -- Sale invoices that match exactly one own listing are recorded automatically, once each.
+    if (self.db.settings or {}).autoMail ~= false and F.Store.writable(self.db) then
+        local recorded, occurrences, cohorts = 0, {}, {}
+        for _, mail in ipairs(self.mail or {}) do
+            local content = mail.fingerprint
+            if content then
+                local bucket = mail.arrivalBucket or 0
+                local existing = self.db.mailReconciliation
+                        and self.db.mailReconciliation[self.api.owner()]
+                        and self.db.mailReconciliation[self.api.owner()][content]
+                    or {}
+                cohorts[content] = cohorts[content] or {}
+                for known in pairs(existing) do
+                    if math.abs(known - bucket) <= 1 then
+                        bucket = known
+                        break
+                    end
+                end
+                for known in pairs(cohorts[content]) do
+                    if math.abs(known - bucket) <= 1 then
+                        bucket = known
+                        break
+                    end
+                end
+                cohorts[content][bucket] = true
+                mail.normalizedBucket = bucket
+                local group = content .. "|" .. tostring(bucket)
+                occurrences[group] = (occurrences[group] or 0) + 1
+                mail.occurrence = occurrences[group]
+            end
+            if self:recordMailSale(mail) then
+                recorded = recorded + 1
+            end
+        end
+        self.mailRecorded = recorded
+    end
+end
+function C:recordMailSale(mail)
+    if
+        mail.kind ~= "seller"
+        or not mail.suggestedKey
+        or not U.finite(mail.amount)
+        or mail.amount <= 0
+        or not U.finite(mail.deposit)
+        or mail.deposit < 0
+        or mail.deposit > mail.amount
+        or not mail.fingerprint
+    then
+        return false
+    end
+    if not F.Store.writable(self.db) or not mail.suggestedScope then
+        return false
+    end
+    -- Old volatile fingerprints cannot prove identity: retain those receipts and require
+    -- manual reconciliation for matching content rather than silently booking them again.
+    for _, e in ipairs(self.db.ledger or {}) do
+        if
+            e.source == "mail"
+            and not e.mailVersion
+            and e.owner == self.api.owner()
+            and e.key == mail.suggestedKey
+            and e.qty == mail.qty
+            and e.total == mail.amount - mail.deposit
+        then
+            return false
+        end
+    end
+    self.db.mailReconciliation = self.db.mailReconciliation or {}
+    local owner = self.api.owner()
+    local groups = self.db.mailReconciliation[owner] or {}
+    self.db.mailReconciliation[owner] = groups
+    local counts = groups[mail.fingerprint] or {}
+    groups[mail.fingerprint] = counts
+    local bucket = mail.normalizedBucket or mail.arrivalBucket or 0
+    -- API expiry rounding may straddle a day boundary; ambiguous adjacent cohorts are
+    -- intentionally merged. High-water multiplicity never drops when letters disappear.
+    for known in pairs(counts) do
+        if math.abs(known - bucket) <= 1 then
+            bucket = known
+            break
+        end
+    end
+    local occurrence = mail.occurrence or 1
+    if occurrence <= (counts[bucket] or 0) then
+        return false
+    end
+    local uid = "mail:v2:" .. owner .. ":" .. mail.fingerprint .. ":" .. bucket .. ":" .. occurrence
+    local ok = F.Ledger.append(self.db, {
+        uid = uid,
+        kind = "sell",
+        owner = self.api.owner(),
+        scope = mail.suggestedScope,
+        key = mail.suggestedKey,
+        qty = mail.qty,
+        total = mail.amount - mail.deposit,
+        fee = 0,
+        at = self.api.clock(),
+        source = "mail",
+        mailVersion = 2,
+    })
+    if ok then
+        counts[bucket] = occurrence
+    end
+    return ok and true or false
 end

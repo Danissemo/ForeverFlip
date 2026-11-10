@@ -12,6 +12,67 @@ local function button(parent, title, fn)
     b:SetScript("OnClick", fn)
     return b
 end
+-- Category entry styled like the native auction filter list (no dependency on Blizzard templates).
+local function category(parent)
+    local row = CreateFrame("Button", nil, parent)
+    row:SetHeight(21)
+    local normal = row:CreateTexture(nil, "BACKGROUND")
+    normal:SetTexture("Interface\\AuctionFrame\\UI-AuctionFrame-FilterBg")
+    normal:SetTexCoord(0, 0.53125, 0, 0.625)
+    normal:SetPoint("TOPLEFT", row, "TOPLEFT", -2, 0)
+    normal:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 2, 1)
+    row.normal = normal
+    local selected = row:CreateTexture(nil, "ARTWORK")
+    selected:SetAtlas("auctionhouse-nav-button-select")
+    selected:SetBlendMode("ADD")
+    selected:SetAllPoints(normal)
+    selected:Hide()
+    row.selected = selected
+    row:SetHighlightTexture("Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight", "ADD")
+    local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("LEFT", row, "LEFT", 8, 0)
+    label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    label:SetJustifyH("LEFT")
+    F.Locale.font(label, 12)
+    row.label = label
+    return row
+end
+local function backdrop(frame, atlas)
+    local t = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    t:SetAtlas(atlas)
+    t:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3)
+    t:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
+    return t
+end
+-- One plain sentence that tells the player how this deal turns into gold.
+function S.how(p)
+    local qty = p.qty or 0
+    if qty <= 0 then
+        return L("Good to buy", "Good to buy")
+    end
+    if p.mode == "vendor" then
+        return string.format(
+            L(
+                "Buy %d for %s and sell to any vendor for %s. Net: %s.",
+                "Buy %d for %s and sell to any vendor for %s. Net: %s."
+            ),
+            qty,
+            U.money(p.cost),
+            U.money(math.floor(qty * (p.target or 0))),
+            U.money(p.profit)
+        )
+    end
+    return string.format(
+        L(
+            "Buy %d for %s and list at %s each. After the fee: +%s.",
+            "Buy %d for %s and list at %s each. After the fee: +%s."
+        ),
+        qty,
+        U.money(p.cost),
+        U.money(p.target),
+        U.money(p.profit)
+    )
+end
 function S.create(ui, warning)
     local c = ui.c
     local page = ui.sections.deals
@@ -20,6 +81,8 @@ function S.create(ui, warning)
     local left = CreateFrame("Frame", nil, host, "InsetFrameTemplate")
     local right = CreateFrame("Frame", nil, host, "InsetFrameTemplate")
     local state = { left = left, right = right, headers = {}, listRows = {} }
+    state.leftArt = backdrop(left, "auctionhouse-background-categories")
+    state.rightArt = backdrop(right, "auctionhouse-background-index")
     ui.shopping = state
     local listScroll = CreateFrame("ScrollFrame", nil, left, "UIPanelScrollFrameTemplate")
     listScroll:SetPoint("TOPLEFT", left, "TOPLEFT", 7, -9)
@@ -33,17 +96,42 @@ function S.create(ui, warning)
     local resultBody = CreateFrame("Frame", nil, resultScroll)
     resultBody:SetSize(480, PAGE_SIZE * 20)
     resultScroll:SetScrollChild(resultBody)
-    local empty = right:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    empty:SetPoint("TOP", right, "TOP", 0, -70)
-    empty:SetWidth(320)
+    local emptyIcon = right:CreateTexture(nil, "ARTWORK")
+    emptyIcon:SetTexture("Interface\\Icons\\INV_Misc_Coin_02")
+    emptyIcon:SetSize(44, 44)
+    emptyIcon:SetPoint("TOP", right, "TOP", 0, -48)
+    local emptyTitle = right:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    emptyTitle:SetPoint("TOP", emptyIcon, "BOTTOM", 0, -10)
+    emptyTitle:SetWidth(380)
+    F.Locale.font(emptyTitle, 15)
+    local empty = right:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    empty:SetPoint("TOP", emptyTitle, "BOTTOM", 0, -8)
+    empty:SetWidth(360)
     empty:SetWordWrap(true)
     F.Locale.font(empty, 12)
-    empty:SetText(
-        L(
-            "Scan the auction house or search for an item.",
-            "Scan the auction house or search for an item."
-        )
-    )
+    local emptyStart = button(right, L("Sell to vendors", "Sell to vendors"), function()
+        ui:startNPC()
+        ui:refresh()
+    end)
+    emptyStart:SetSize(150, 24)
+    emptyStart:SetPoint("TOPRIGHT", empty, "BOTTOM", -6, -16)
+    local emptyScan = button(right, L("Scan the auction house", "Scan the auction house"), function()
+        c:fullScan()
+        ui:refresh()
+    end)
+    emptyScan:SetSize(170, 24)
+    emptyScan:SetPoint("TOPLEFT", empty, "BOTTOM", 6, -16)
+    state.empty = { icon = emptyIcon, title = emptyTitle, text = empty, start = emptyStart, scan = emptyScan }
+    ui.actions.emptyStart, ui.actions.emptyScan = emptyStart, emptyScan
+    local function showEmpty(shown)
+        for _, region in pairs(state.empty) do
+            if shown then
+                region:Show()
+            else
+                region:Hide()
+            end
+        end
+    end
     for _, v in ipairs({
         { "price", L("Price", "Price") },
         { "itemName", L("Name", "Name") },
@@ -84,17 +172,22 @@ function S.create(ui, warning)
         ui.dealPage = 1
         ui:refresh()
     end)
-    ui.actions.filterMode = button(host, L("All strategies", "All strategies"), function(b)
+    local function strategyLabel()
+        return ui.filterMode == "vendor" and L("Show: sell to vendor", "Show: sell to vendor")
+            or ui.filterMode == "flip" and L("Show: resell", "Show: resell")
+            or L("Show: everything", "Show: everything")
+    end
+    local function sortLabel()
+        return ui.sort == "score" and L("Sort: safest", "Sort: safest")
+            or L("Sort: profit", "Sort: profit")
+    end
+    ui.actions.filterMode = button(host, "", function(b)
         ui.filterMode = ui.filterMode == "all" and "vendor" or ui.filterMode == "vendor" and "flip" or "all"
-        b:SetText(
-            ui.filterMode == "all" and L("All strategies", "All strategies")
-                or ui.filterMode == "vendor" and "NPC"
-                or L("Resale", "Resale")
-        )
+        b:SetText(strategyLabel())
         ui.dealPage = 1
         ui:refresh()
     end)
-    ui.actions.dealSort = button(host, L("Risk / capital", "Risk / capital"), function()
+    ui.actions.dealSort = button(host, "", function()
         ui.sort = ui.sort == "score" and "profit" or "score"
         ui.sortDescending = true
         ui:refresh()
@@ -118,7 +211,7 @@ function S.create(ui, warning)
             end
             if c:openDeal(p) then
                 ui.fields.item:SetText(U.key(c.selection.key))
-                ui:show("trade")
+                ui:show("trade", "deal")
             end
         end)
         r.background:SetAtlas("auctionhouse-rowstripe-1")
@@ -159,7 +252,7 @@ function S.create(ui, warning)
             r:LayoutColumns(rw - 31, true)
         end
         for i, b in ipairs(state.listRows) do
-            b:SetWidth(lw - 35)
+            b:SetWidth(lw - 39)
         end
         for i, b in ipairs({ lists, plan, clear }) do
             b:ClearAllPoints()
@@ -167,7 +260,7 @@ function S.create(ui, warning)
             b:SetWidth((lw - 16) / 3)
         end
         local buttons = { ui.actions.filterMode, ui.actions.dealSort, previous, nextPage }
-        local widths = { 115, 110, 25, 25 }
+        local widths = { 170, 140, 25, 25 }
         local cursor = rx
         for i, b in ipairs(buttons) do
             b:ClearAllPoints()
@@ -180,40 +273,32 @@ function S.create(ui, warning)
     end
     local function refreshLists()
         local data = {
-            { title = L("All items", "All items"), kind = "all" },
-            { title = L("Watchlist", "Watchlist"), kind = "watch" },
+            {
+                title = L("Sell to vendors (no risk)", "Sell to vendors (no risk)"),
+                kind = "starter",
+            },
+            { title = L("Live bargain hunt", "Live bargain hunt"), kind = "live" },
+            { title = L("All found deals", "All found deals"), kind = "all" },
+            { title = L("My watchlist", "My watchlist"), kind = "watch" },
         }
         for _, g in ipairs(c.db.groups or {}) do
             data[#data + 1] = { title = g.name, kind = "group" }
         end
-        data[#data + 1] = { title = L("Live opportunities", "Live opportunities"), kind = "live" }
-        data[#data + 1] = { title = L("NPC: start with 1g", "NPC: start with 1g"), kind = "starter" }
         for i, entry in ipairs(data) do
             if not state.listRows[i] then
-                local row = CreateFrame("Button", nil, listBody)
-                row:SetPoint("TOPLEFT", listBody, "TOPLEFT", 0, -(i - 1) * 25)
-                row:SetSize(listBody:GetWidth(), 24)
-                row:SetHighlightTexture("Interface/QuestFrame/UI-QuestTitleHighlight", "ADD")
-                local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-                label:SetPoint("LEFT", row, "LEFT", 7, 0)
-                label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-                label:SetJustifyH("LEFT")
-                F.Locale.font(label, 12)
-                row.label = label
+                local row = category(listBody)
+                row:SetPoint("TOPLEFT", listBody, "TOPLEFT", 2, -(i - 1) * 23)
+                row:SetWidth(listBody:GetWidth() - 4)
                 row:SetScript("OnClick", function(b)
                     if b.entry.kind == "starter" then
-                        if c:easyNPC() then
-                            ui.liveOnly = true
-                            ui.watchOnly = false
-                            ui.groupFilter = nil
-                            ui.filterMode = "vendor"
-                            ui.sort = "profit"
-                            ui.sortDescending = true
-                            ui.dealPage = 1
-                            ui.fields.dealFilter:SetText("")
-                        end
+                        ui:startNPC()
                         ui:refresh()
                         return
+                    end
+                    if b.entry.kind == "live" then
+                        c:radarAll()
+                        ui.filterMode = "all"
+                        ui.sort, ui.sortDescending = "profit", true
                     end
                     ui.groupFilter = b.entry.kind == "group" and b.entry.title or nil
                     ui.watchOnly = b.entry.kind == "watch"
@@ -228,26 +313,38 @@ function S.create(ui, warning)
             row.label:SetText(entry.title)
             local selected = (entry.kind == "group" and ui.groupFilter == entry.title)
                 or (entry.kind == "watch" and ui.watchOnly)
-                or (entry.kind == "live" and ui.liveOnly)
+                or (entry.kind == "starter" and ui.liveOnly and c.smallNPCActive)
+                or (entry.kind == "live" and ui.liveOnly and not c.smallNPCActive)
                 or (entry.kind == "all" and not ui.liveOnly and not ui.watchOnly and not ui.groupFilter)
-            row.label:SetTextColor(1, selected and 0.82 or 1, selected and 0 or 1)
+            if selected then
+                row.selected:Show()
+                row.label:SetTextColor(1, 1, 1)
+            else
+                row.selected:Hide()
+                row.label:SetTextColor(1, 0.82, 0)
+            end
             row:Show()
         end
         for i = #data + 1, #state.listRows do
             state.listRows[i]:Hide()
         end
-        listBody:SetHeight(math.max(1, #data * 25))
+        listBody:SetHeight(math.max(1, #data * 23))
     end
     ui.refreshers.deals = function()
-        ui.actions.filterMode:SetText(
-            ui.filterMode == "vendor" and "NPC"
-                or ui.filterMode == "flip" and L("Resale", "Resale")
-                or L("All strategies", "All strategies")
-        )
+        ui.actions.filterMode:SetText(strategyLabel())
+        ui.actions.dealSort:SetText(sortLabel())
+        local simple = F.NativeLayout.simple(ui)
+        for _, b in ipairs({ lists, plan }) do
+            if simple then
+                b:Hide()
+            else
+                b:Show()
+            end
+        end
         refreshLists()
         local all = ui.liveOnly and F.Radar.list(c) or F.DealCache.get(c)
         local out = {}
-        local query = ui.fields.dealFilter:GetText():lower()
+        local query = F.Locale.fold(ui.fields.dealFilter:GetText())
         local watch = {}
         for _, v in ipairs(c.db.watchlist or {}) do
             watch[tostring(v)] = true
@@ -259,7 +356,7 @@ function S.create(ui, warning)
                 (ui.filterMode == "all" or p.mode == ui.filterMode)
                 and (not ui.groupFilter or ui.groupFilter == group)
                 and (not ui.watchOnly or watch[tostring(p.key.itemID)] or watch[U.key(p.key)])
-                and (query == "" or (name .. " " .. p.key.itemID .. " " .. group):lower():find(query, 1, true))
+                and (query == "" or F.Locale.fold(name .. " " .. p.key.itemID .. " " .. group):find(query, 1, true))
             then
                 out[#out + 1] = p
             end
@@ -271,6 +368,9 @@ function S.create(ui, warning)
             end
         end
         table.sort(out, function(a, b)
+            if (a.canBuy and true or false) ~= (b.canBuy and true or false) then
+                return a.canBuy and true or false
+            end
             local x, y
             if ui.sort == "profit" then
                 x, y = a.profit, b.profit
@@ -311,29 +411,50 @@ function S.create(ui, warning)
         previous:SetEnabled(ui.dealPage > 1)
         nextPage:SetEnabled(ui.dealPage < count)
         if #out == 0 then
+            local searching = ui.liveOnly
+            emptyTitle:SetText(
+                searching and L("Looking for bargains…", "Looking for bargains…")
+                    or L("No deals yet", "No deals yet")
+            )
             empty:SetText(
-                ui.liveOnly
+                searching
                         and c.smallNPCActive
                         and L(
-                            "Looking for lots below vendor value. Data loads gradually; profitable lots may be absent.",
-                            "Looking for lots below vendor value. Data loads gradually; profitable lots may be absent."
+                            "Checking lots that a vendor buys for more than their auction price. Finds appear here. If it stays empty, there are simply no bargains right now.",
+                            "Checking lots that a vendor buys for more than their auction price. Finds appear here. If it stays empty, there are simply no bargains right now."
                         )
-                    or ui.liveOnly and L(
-                        "Live is looking for eligible deals. Resale needs price history; add items to your watchlist.",
-                        "Live is looking for eligible deals. Resale needs price history; add items to your watchlist."
+                    or searching and L(
+                        "Looking for lots below their usual price. The longer you scan the market, the better the addon knows normal prices.",
+                        "Looking for lots below their usual price. The longer you scan the market, the better the addon knows normal prices."
                     )
                     or L(
-                        "Scan the auction house or search for an item.",
-                        "Scan the auction house or search for an item."
+                        "Start with the safe vendor route or scan the whole auction house — the addon will list items cheaper than usual.",
+                        "Start with the safe vendor route or scan the whole auction house — the addon will list items cheaper than usual."
                     )
             )
-            empty:Show()
+            showEmpty(true)
+            if searching then
+                emptyStart:Hide()
+                emptyScan:Hide()
+            end
         else
-            empty:Hide()
+            showEmpty(false)
         end
         for i, row in ipairs(ui.dealRows) do
             local p = out[(ui.dealPage - 1) * PAGE_SIZE + i]
-            row:SetItem(p, p and (p.canBuy and L("Verify", "Verify") or warning(p)))
+            local note = p and (p.canBuy and S.how(p) or warning(p))
+            if p and p.source == "radar" and p.at then
+                note = note
+                    .. "\n"
+                    .. string.format(
+                        L(
+                            "Found %d min ago — the price is re-checked before buying.",
+                            "Found %d min ago — the price is re-checked before buying."
+                        ),
+                        math.floor(math.max(0, c.api.clock() - p.at) / 60)
+                    )
+            end
+            row:SetItem(p, note)
             row:SetEnabled(p ~= nil)
             if p then
                 row.quantity:SetText(p.totalQty or 0)

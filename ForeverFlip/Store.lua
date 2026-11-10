@@ -21,6 +21,200 @@ S.invalid = setmetatable({}, { __mode = "k" })
 function S.writable(db)
     return type(db) == "table" and db.schemaVersion == 5 and not S.invalid[db] and not db.migrationBlocked
 end
+local function canonical(key)
+    local normalized = type(key) == "string" and U.key(U.fromKey(key)) or nil
+    return normalized == key and normalized or nil
+end
+local function nonnegative(n)
+    return U.finite(n) and n >= 0 and n % 1 == 0
+end
+local function nestedValid(db)
+    if db.sequence ~= nil and not nonnegative(db.sequence) then
+        return false
+    end
+    for _, e in pairs(db.ledger) do
+        if type(e) ~= "table" or type(e.owner) ~= "string" or type(e.kind) ~= "string" then
+            return false
+        end
+        if e.kind == "void" then
+            if type(e.target) ~= "string" then
+                return false
+            end
+        elseif
+            not canonical(e.key)
+            or type(e.scope) ~= "string"
+            or not nonnegative(e.total)
+            or not nonnegative(e.qty)
+            or e.qty < 1
+        then
+            return false
+        end
+        if e.uid ~= nil and type(e.uid) ~= "string" then
+            return false
+        end
+        if e.at ~= nil and not nonnegative(e.at) then
+            return false
+        end
+        if e.fee ~= nil and not nonnegative(e.fee) then
+            return false
+        end
+    end
+    for _, op in pairs(db.pending) do
+        if
+            type(op) ~= "table"
+            or type(op.owner) ~= "string"
+            or type(op.status) ~= "string"
+            or not nonnegative(op.total)
+        then
+            return false
+        end
+        if
+            op.status ~= "done"
+            and op.status ~= "cancelled"
+            and op.status ~= "quote"
+            and op.status ~= "quoted"
+            and op.status ~= "awaiting"
+            and op.status ~= "unknown"
+            and op.status ~= "bid"
+        then
+            return false
+        end
+        if op.status ~= "done" and op.status ~= "cancelled" then
+            if
+                not canonical(op.key)
+                or type(op.scope) ~= "string"
+                or not nonnegative(op.qty)
+                or op.qty < 1
+                or not nonnegative(op.id)
+                or op.id < 1
+                or type(op.uid) ~= "string"
+            then
+                return false
+            end
+        end
+    end
+    for _, g in pairs(db.groups) do
+        if
+            type(g) ~= "table"
+            or type(g.items or {}) ~= "table"
+            or type(g.keys or {}) ~= "table"
+            or type(g.rule or {}) ~= "table"
+        then
+            return false
+        end
+        for key in pairs(g.keys or {}) do
+            if not canonical(key) then
+                return false
+            end
+        end
+        for name, value in pairs(g.rule or {}) do
+            if S.defaults[name] ~= nil and type(value) ~= type(S.defaults[name]) then
+                return false
+            end
+            if type(value) ~= "number" and type(value) ~= "string" and type(value) ~= "boolean" then
+                return false
+            end
+            if type(value) == "number" and not U.finite(value) then
+                return false
+            end
+        end
+    end
+    for scope, market in pairs(db.markets) do
+        if type(scope) ~= "string" or type(market) ~= "table" then
+            return false
+        end
+        for key, h in pairs(market) do
+            if
+                not canonical(key)
+                or type(h) ~= "table"
+                or type(h.samples or {}) ~= "table"
+                or type(h.days or {}) ~= "table"
+            then
+                return false
+            end
+            for _, sample in pairs(h.samples or {}) do
+                if
+                    type(sample) ~= "table"
+                    or not nonnegative(sample.at)
+                    or not U.finite(sample.price)
+                    or sample.price <= 0
+                then
+                    return false
+                end
+            end
+            for _, day in pairs(h.days or {}) do
+                if
+                    type(day) ~= "table"
+                    or not nonnegative(day.day)
+                    or not U.finite(day.price)
+                    or not nonnegative(day.n)
+                    or not U.finite(day.low)
+                    or not U.finite(day.high)
+                    or day.low <= 0
+                    or day.high < day.low
+                then
+                    return false
+                end
+            end
+            if h.latest ~= nil then
+                local v = h.latest
+                if
+                    type(v) ~= "table"
+                    or not nonnegative(v.at)
+                    or not U.finite(v.price)
+                    or v.price <= 0
+                    or (v.rows ~= nil and type(v.rows) ~= "table")
+                then
+                    return false
+                end
+                for _, row in pairs(v.rows or {}) do
+                    if
+                        type(row) ~= "table"
+                        or not nonnegative(row.qty)
+                        or row.qty < 1
+                        or (row.cost ~= nil and not nonnegative(row.cost))
+                        or (row.unit ~= nil and not nonnegative(row.unit))
+                    then
+                        return false
+                    end
+                end
+            end
+        end
+    end
+    for _, field in ipairs({ "listings", "mailReconciliation", "receipts", "vendorPrices" }) do
+        if db[field] ~= nil and type(db[field]) ~= "table" then
+            return false
+        end
+    end
+    for _, post in pairs(db.listings or {}) do
+        if
+            type(post) ~= "table"
+            or not canonical(post.key)
+            or type(post.owner) ~= "string"
+            or type(post.scope) ~= "string"
+            or not nonnegative(post.qty)
+            or post.qty < 1
+        then
+            return false
+        end
+    end
+    for owner, groups in pairs(db.mailReconciliation or {}) do
+        if type(owner) ~= "string" or type(groups) ~= "table" then
+            return false
+        end
+        for key, counts in pairs(groups) do
+            if type(key) ~= "string" or type(counts) ~= "table" then
+                return false
+            end
+            for bucket, count in pairs(counts) do
+                if type(bucket) ~= "number" or not nonnegative(count) then
+                    return false
+                end
+            end
+        end
+    end
+    return true
+end
 function S.open(old)
     if type(old) == "table" and old.schemaVersion then
         if old.schemaVersion == 5 then
@@ -52,6 +246,10 @@ function S.open(old)
                     S.invalid[old] = true
                     return old
                 end
+            end
+            if not nestedValid(old) then
+                S.invalid[old] = true
+                return old
             end
             for k, v in pairs(S.defaults) do
                 if
@@ -276,8 +474,14 @@ function S.observe(db, scope, key, o)
     return true
 end
 function S.watch(db, id)
+    if not S.writable(db) then
+        return false, "Read-only"
+    end
     if type(id) == "string" and U.fromKey(id) then
         id = U.key(U.fromKey(id))
+        if not id then
+            return false, "Exact key required"
+        end
     else
         id = tonumber(id)
         if not id or id < 1 or id ~= math.floor(id) then
@@ -309,7 +513,7 @@ function S.importGroup(text)
     for value in ids:gmatch("[^,]+") do
         if version == "FFG2" then
             local key = U.fromKey(value)
-            if not key then
+            if not key or not U.key(key) then
                 return nil, "Exact key required"
             end
             g.keys[U.key(key)] = true
@@ -428,7 +632,8 @@ function S.importPrices(db, text, scope, now)
     for line in body:gmatch("[^\r\n]+") do
         local key, price, qty = line:match("^([%d:%-]+),(%d+),(%d+)$")
         price, qty = tonumber(price), tonumber(qty)
-        if not U.fromKey(key) or not price or price <= 0 or price > 1e12 or not qty or qty < 1 or qty > 100000000 then
+        key = canonical(key)
+        if not key or not price or price <= 0 or price > 1e12 or not qty or qty < 1 or qty > 100000000 then
             return false, "Invalid price row"
         end
         count = count + 1

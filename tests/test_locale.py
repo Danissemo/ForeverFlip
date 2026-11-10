@@ -6,7 +6,7 @@ from test_controller import controller_runtime
 
 
 def translated_pairs():
-    for name in ['UI','ItemDisplay','Core','NativeLayout','NativeShopping','Progress','Radar']:
+    for name in ['UI','ItemDisplay','Core','NativeLayout','NativeShopping','Progress','Radar','Stats']:
         source=(ROOT/'ForeverFlip'/(name+'.lua')).read_text(encoding='utf-8-sig')
         for match in re.finditer(r'\bL\(\s*("(?:[^"\\]|\\.)*")\s*,\s*("(?:[^"\\]|\\.)*")\s*\)',source):
             yield json.loads(match[1]), json.loads(match[2])
@@ -43,7 +43,7 @@ class LocaleTests(unittest.TestCase):
         l.execute('''ForeverFlip.boot('ForeverFlip');AuctionHouseFrame:Hide()
         SlashCmdList.FOREVERFLIP('lang uk')
         assert(ForeverFlip.db.ui.language=='ukUA' and ForeverFlip.db.settings.fee==.05)
-        ForeverFlip.attach();assert(ForeverFlip.ui.nav.overview:GetText()=='Огляд')
+        ForeverFlip.attach();assert(ForeverFlip.ui.nav.overview:GetText()=='Старт')
         assert(ForeverFlip.ui.actions.search:GetText()=='Пошук')''')
         l.execute('''for _,section in ipairs({'overview','deals','workbench','trade','watch','portfolio','history','tools','settings'})do
             ForeverFlip.ui:show(section);ForeverFlip.ui:refresh()
@@ -59,11 +59,9 @@ class LocaleTests(unittest.TestCase):
         self.assertTrue(set('ІіЇїЄєҐґ').issubset({chr(x)for x in cmap}))
     def test_overview_layout_measures_the_translated_content_after_refresh(self):
         from test_ui import ui_runtime
-        ui_runtime().execute('''u:show('deals');u.overviewText:SetText('')
-        u.frame.Show=function(self)self.shown=true end
-        u.overviewText.GetStringHeight=function(t)return t:GetText()==''and 0 or 400 end
-        u:show('overview');local p,a,r,x,y=u.actions.toDeals:GetPoint()
-        assert(y<=-505)''')
+        ui_runtime().execute('''u:show('overview','day');local p,a,r,x,y=u.actions.toDeals:GetPoint()
+        assert(u.actions.toDeals:GetParent()==u.sections.overview.split.pages.day and y<=-200 and y>=-320)
+        assert(not u.overviewText:GetText():find('1%.'))''')
     def test_all_forwarded_errors_have_ukrainian_messages_including_dynamic_prefixes(self):
         l=self.locale_runtime()
         l.execute("GetLocale=function()return 'ukUA'end")

@@ -1,0 +1,11 @@
+{
+  "version": "6.4.0-preview",
+  "items": 2000,
+  "rows_per_item": 64,
+  "schedule_ms": 0.015,
+  "updates": 81,
+  "max_update_ms": 15.828,
+  "total_ms": 490.78,
+  "restored": 2000,
+  "native_fps_measurement": false
+}

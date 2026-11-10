@@ -2,14 +2,67 @@ local F = ForeverFlip
 local U = F.Util
 local L = {}
 F.Ledger = L
+local function active(op)
+    return op.status == "quote"
+        or op.status == "quoted"
+        or op.status == "awaiting"
+        or op.status == "unknown"
+        or op.status == "bid"
+end
+function L.capacity(db, ownOp)
+    local reserved = 0
+    for _, op in pairs(db.pending or {}) do
+        if op ~= ownOp and active(op) then
+            reserved = reserved + 1
+        end
+    end
+    return #db.ledger + reserved < 10000
+end
+function L.effective(entries, owner, scope)
+    local void, seen, out, indexes = {}, {}, {}, {}
+    for _, e in ipairs(entries or {}) do
+        if type(e) == "table" and e.kind == "void" and type(e.target) == "string" then
+            void[tostring(e.owner) .. "|" .. e.target] = true
+        end
+    end
+    for i, e in ipairs(entries or {}) do
+        if
+            type(e) == "table"
+            and e.kind ~= "void"
+            and (not owner or e.owner == owner)
+            and (not scope or e.scope == scope)
+        then
+            local uid = e.uid and (tostring(e.owner) .. "|" .. e.uid)
+            if not uid or not (seen[uid] or void[uid]) then
+                if uid then
+                    seen[uid] = true
+                end
+                out[#out + 1], indexes[e] = e, i
+            end
+        end
+    end
+    return out, indexes
+end
 function L.append(db, e)
-    if not F.Store.writable(db) or #db.ledger >= 10000 then
+    -- A previously submitted purchase must always be recoverable, even if an older version
+    -- spent with a full ledger. Only the matching unresolved receipt may exceed the soft cap.
+    local op = e.uid and db.pending and db.pending[e.uid]
+    local recovery = op
+        and active(op)
+        and e.kind == "buy"
+        and e.owner == op.owner
+        and e.scope == op.scope
+        and e.key == op.key
+        and e.qty == op.qty
+        and e.total == op.total
+    if not F.Store.writable(db) or (not recovery and not L.capacity(db)) then
         return false, "Ledger limit/read-only"
     end
     if
         not e.owner
         or not e.scope
-        or not e.key
+        or type(e.key) ~= "string"
+        or U.key(U.fromKey(e.key)) ~= e.key
         or not U.finite(e.qty)
         or e.qty < 1
         or e.qty ~= math.floor(e.qty)
@@ -22,6 +75,17 @@ function L.append(db, e)
     if e.uid then
         for _, v in ipairs(db.ledger) do
             if v.uid == e.uid then
+                if
+                    recovery
+                    and v.kind == e.kind
+                    and v.owner == e.owner
+                    and v.scope == e.scope
+                    and v.key == e.key
+                    and v.qty == e.qty
+                    and v.total == e.total
+                then
+                    return true, v.uid
+                end
                 return false, "Duplicate"
             end
         end
@@ -33,7 +97,7 @@ function L.append(db, e)
     return true, e.uid
 end
 function L.correct(db, uid, owner, at)
-    if not F.Store.writable(db) or #db.ledger >= 10000 then
+    if not F.Store.writable(db) then
         return false
     end
     for _, e in ipairs(db.ledger) do
@@ -64,23 +128,18 @@ function L.summary(entries, owner, scope)
         activity = {},
         transactions = 0,
     }
-    local void, seen, queues = {}, {}, {}
-    for _, e in ipairs(entries or {}) do
-        if e.kind == "void" and (not owner or e.owner == owner) then
-            void[e.target] = true
-        end
-    end
-    for _, e in ipairs(entries or {}) do
-        if
-            (not owner or e.owner == owner)
-            and (not scope or e.scope == scope)
-            and not (e.uid and (seen[e.uid] or void[e.uid]))
-        then
-            if e.uid then
-                seen[e.uid] = true
-            end
+    local queues = {}
+    for _, e in ipairs(L.effective(entries, owner, scope)) do
+        do
             local qty, total = e.qty, e.total
-            if U.finite(qty) and qty > 0 and qty == math.floor(qty) and U.finite(total) and total >= 0 and e.key then
+            if
+                U.finite(qty)
+                and qty > 0
+                and qty == math.floor(qty)
+                and U.finite(total)
+                and total >= 0
+                and type(e.key) == "string"
+            then
                 local identity = tostring(e.owner) .. "|" .. tostring(e.scope) .. "|" .. e.key
                 local q = queues[identity] or { lots = {}, key = e.key, scope = e.scope, owner = e.owner }
                 queues[identity] = q
@@ -98,10 +157,11 @@ function L.summary(entries, owner, scope)
                     r.realized = r.realized - total
                 elseif e.kind == "sell" or e.kind == "vendor" then
                     local fee = U.number(e.fee, 0, 0, total)
-                    local left, cost = qty, 0
+                    local left, cost, held = qty, 0, 0
                     while left > 0 and #q.lots > 0 do
                         local lot = q.lots[1]
                         local take = math.min(left, lot.qty)
+                        held = held + take * math.max(0, (e.at or 0) - (lot.at or e.at or 0))
                         local used = take == lot.qty and lot.cost or math.floor(lot.cost * take / lot.qty)
                         cost = cost + used
                         lot.cost = lot.cost - used
@@ -129,6 +189,9 @@ function L.summary(entries, owner, scope)
                         at = e.at,
                         total = total,
                         fee = fee,
+                        cost = cost,
+                        -- Average seconds the sold units were held (FIFO), for sell-speed statistics.
+                        held = known > 0 and held / known or nil,
                     }
                 end
             end

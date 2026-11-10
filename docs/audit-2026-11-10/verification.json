@@ -1,0 +1,36 @@
+{
+  "date": "2026-11-10",
+  "version": "6.3.2-preview",
+  "standard_tests": 306,
+  "standard_tests_passed": true,
+  "lua_modules": 21,
+  "luals_errors": 0,
+  "stylua_check_passed": true,
+  "mcp_stdio_passed": true,
+  "reviewed_addon_files_changed": [],
+  "installed_files_differing": [],
+  "findings": 23,
+  "audit_reproductions_observed": 10,
+  "live_game_tested": false,
+  "spent_copper": 0,
+  "build": {
+    "client": "1.60.1.70862",
+    "interface": 16001,
+    "lua": "5.1",
+    "compiled_modules": 21,
+    "tests": "passed; see tests.txt",
+    "live_client_tested": false,
+    "artifacts": [
+      {
+        "file": "ForeverFlip-6.3.2-preview-WoW-Forever.zip",
+        "bytes": 447141,
+        "sha256": "5641f8158c3e7dbbd73700830575845d0e4cd1913be7ead9a7287146381f830c"
+      },
+      {
+        "file": "ForeverFlip-6.3.2-preview-source.zip",
+        "bytes": 552945,
+        "sha256": "20fb57f85b280c00d34418686504e9edcc507ba2b4c673080af15ecc7479a7f5"
+      }
+    ]
+  }
+}

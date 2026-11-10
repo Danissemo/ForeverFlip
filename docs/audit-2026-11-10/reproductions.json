@@ -1,0 +1,96 @@
+[
+  {
+    "case": "one_mail_after_one_minute",
+    "expected": 1,
+    "actual": 2,
+    "status": "BUG_REPRODUCED"
+  },
+  {
+    "case": "explicit_buy_limit_50",
+    "expected": false,
+    "actual": true,
+    "status": "BUG_REPRODUCED",
+    "details": {
+      "cost": 100,
+      "target": 900,
+      "buyLimit": 669
+    }
+  },
+  {
+    "case": "valid_roi_1000_percent_must_not_crash",
+    "expected": null,
+    "actual": "[string \"<python>\"]:318: attempt to compare nil with number\nstack traceback:\n\t[string \"<python>\"]:1: in main chunk\n\t[string \"<python>\"]:318: in function 'plan'",
+    "status": "BUG_REPRODUCED"
+  },
+  {
+    "case": "void_buy_statistics",
+    "expected": 0,
+    "actual": 100,
+    "status": "BUG_REPRODUCED"
+  },
+  {
+    "case": "full_ledger_must_block_spend",
+    "expected": 0,
+    "actual": 1,
+    "status": "BUG_REPRODUCED",
+    "details": {
+      "ledger_entries": 10000,
+      "reconciliation_succeeded": false
+    }
+  },
+  {
+    "case": "two_identical_distinct_sale_invoices",
+    "expected": 2,
+    "actual": 1,
+    "status": "BUG_REPRODUCED"
+  },
+  {
+    "case": "invalid_group_key_0:0:0:0",
+    "expected": null,
+    "actual": "[string \"<python>\"]:315: table index is nil\nstack traceback:\n\t[string \"<python>\"]:315: in function <[string \"<python>\"]:298>",
+    "status": "BUG_REPRODUCED"
+  },
+  {
+    "case": "invalid_group_key_1:1000000001:0:0",
+    "expected": null,
+    "actual": "[string \"<python>\"]:315: table index is nil\nstack traceback:\n\t[string \"<python>\"]:315: in function <[string \"<python>\"]:298>",
+    "status": "BUG_REPRODUCED"
+  },
+  {
+    "case": "suggested_sale_protects_cost_with_minimum_fee",
+    "expected": true,
+    "actual": false,
+    "status": "BUG_REPRODUCED",
+    "details": {
+      "price": 1100,
+      "net_profit": -400
+    }
+  },
+  {
+    "case": "owned_undercut_advice_899_is_postable",
+    "expected": true,
+    "actual": false,
+    "status": "BUG_REPRODUCED",
+    "details": {
+      "advice": "Undercut: 0g 09s 00c — list at 0g 08s 99c",
+      "controller_message": "post_values"
+    }
+  },
+  {
+    "case": "synchronous_restore",
+    "restored": 2000,
+    "ms": [
+      207.954,
+      198.322,
+      227.233,
+      278.868,
+      230.618
+    ],
+    "status": "MEASURED_EXTERNAL_LUA_NOT_NATIVE_FPS"
+  },
+  {
+    "case": "register_skill_source_equals_destination",
+    "same_file": true,
+    "status": "READ_ONLY_SETUP_PRECONDITION"
+  }
+]

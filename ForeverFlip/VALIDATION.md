@@ -128,3 +128,14 @@ StyLua/LuaLS20 modules pass. Large planning start0.037ms vs498.348ms synchronous
 205 cooperative updates, median3.626ms/max11.969ms in external Lua5.1. Native FPS
 and protected-action checks remain unconfirmed; no real gold actions performed.
 Details: ../docs/2026-11-10-tab-workflows-review.md.
+# Current acceptance: 6.4.0-preview
+
+Existing historical test counts below describe earlier releases only.
+Current build runs StyLua, LuaLS, all unittest regressions, Lua5.1 compilation and
+ZIP integrity checks. A CI workflow is included but has not been run remotely.
+
+Native font/anchor/taint/protected-action acceptance remains unverified. Window
+capture failed with `FrameArrived timed out: timed out waiting on channel`; no
+blind input or spending was performed. Recorded tests are external Lua mocks.
+Real trade profit remains unproven and the previously allowed agent test ceiling
+is1g, independently of the addon's larger rolling NPC allowance.

@@ -1,0 +1,160 @@
+{
+  "date": "2026-11-10",
+  "root": "C:\\FF\\development\\foreverflip",
+  "head": "9a9b0360ef52233280713ebfd7af10ff46dce7be",
+  "version": "6.3.2-preview",
+  "files": [
+    {
+      "file": "ForeverFlip/Adapters.lua",
+      "bytes": 15066,
+      "sha256": "443139b18229d04535e97271cadd4d7134dab0adef749b1a8ee606361882046b"
+    },
+    {
+      "file": "ForeverFlip/Advisor.lua",
+      "bytes": 6806,
+      "sha256": "3dd7dc9b9893fee11467fefd051d3814688073e9105898aa297ef40b5fe5dfc5"
+    },
+    {
+      "file": "ForeverFlip/Controller.lua",
+      "bytes": 65505,
+      "sha256": "33e07a9089459a23eea60b4ad92831f2f6b00b40ac6069055a5c8f7676dc48a4"
+    },
+    {
+      "file": "ForeverFlip/Core.lua",
+      "bytes": 9902,
+      "sha256": "b4ff4aec204cce0a0da5f1115a7628bb6f41134e990fdedc538d625f20e851ff"
+    },
+    {
+      "file": "ForeverFlip/DATA_FORMATS.md",
+      "bytes": 2414,
+      "sha256": "a88b45baf2290595a089e8f68b5fb03d6856b0cc022cf9b6cb0455504005d032"
+    },
+    {
+      "file": "ForeverFlip/DealCache.lua",
+      "bytes": 4071,
+      "sha256": "86eeb474220241470270b6739d43654b5eb5bf6c2f6ce68fd963d67370f93b0c"
+    },
+    {
+      "file": "ForeverFlip/Expressions.lua",
+      "bytes": 8236,
+      "sha256": "6e52b57df229c5d816b2ba93306e023b3ca23fc412935df273358b7b4bd38cff"
+    },
+    {
+      "file": "ForeverFlip/Fonts/NotoSans-Regular.ttf",
+      "bytes": 569208,
+      "sha256": "b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5"
+    },
+    {
+      "file": "ForeverFlip/Fonts/OFL.txt",
+      "bytes": 4377,
+      "sha256": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb"
+    },
+    {
+      "file": "ForeverFlip/Fonts/SOURCES.md",
+      "bytes": 523,
+      "sha256": "aa808864daf63e5246d467e6607ad069ac9302db03bf7afb083bea83ee0596fa"
+    },
+    {
+      "file": "ForeverFlip/ForeverFlip.toc",
+      "bytes": 787,
+      "sha256": "556d77a180662710aef195c31f8972049047e0db99fe04005712f461f15937f4"
+    },
+    {
+      "file": "ForeverFlip/ItemDisplay.lua",
+      "bytes": 11528,
+      "sha256": "e6f6fee30577ee1c495ee57a4168ef30d9ec56734cb13bc11031b7923a5c0f95"
+    },
+    {
+      "file": "ForeverFlip/Ledger.lua",
+      "bytes": 6446,
+      "sha256": "185f5a8bb4788b3d78e8503d350db663dc2e775b50f1c152c39a65dbfe15446b"
+    },
+    {
+      "file": "ForeverFlip/LICENSE.txt",
+      "bytes": 1046,
+      "sha256": "f799f1dbfd816196f06b11421a89bc35f4b4d7d2c10cb2a6a8b3b98587452f3c"
+    },
+    {
+      "file": "ForeverFlip/Locale.lua",
+      "bytes": 61595,
+      "sha256": "41b475bb0ee35c148d46848ce82f78e4e955ea137fa62df816d44a05e815894d"
+    },
+    {
+      "file": "ForeverFlip/Market.lua",
+      "bytes": 17256,
+      "sha256": "5102c5926d7c383d76562bede26823669483596d9bbbbf219aaf3b82a6836eeb"
+    },
+    {
+      "file": "ForeverFlip/NativeLayout.lua",
+      "bytes": 15942,
+      "sha256": "c63cdae830a65cbede090a6041a0d1660a20f88354034dfbee682ac05ed0ce2b"
+    },
+    {
+      "file": "ForeverFlip/NativeShopping.lua",
+      "bytes": 19806,
+      "sha256": "13c37204f8194d0e8f3bb831075dea5403e088309820a4111fbed5202f0884eb"
+    },
+    {
+      "file": "ForeverFlip/Planner.lua",
+      "bytes": 2790,
+      "sha256": "17a3fdf658c2f56359164f828493f8884e5e3939693063e8ad86e99df8a341aa"
+    },
+    {
+      "file": "ForeverFlip/Professions.lua",
+      "bytes": 3262,
+      "sha256": "877ff6ddf0f42e31c8e91c344fdbba88c6e97173a733bfd25046c9f83f78cfa1"
+    },
+    {
+      "file": "ForeverFlip/Progress.lua",
+      "bytes": 11754,
+      "sha256": "908197917eddfa762a3f80ac86bf865413c36989ec5b1763c0530c27f5cd4a4f"
+    },
+    {
+      "file": "ForeverFlip/Radar.lua",
+      "bytes": 12650,
+      "sha256": "ad2a0dc06e05fdc4d849ad000e9541b5e03ad2fc06802bc50cbc23d2aa9e75d8"
+    },
+    {
+      "file": "ForeverFlip/README_UK.md",
+      "bytes": 8397,
+      "sha256": "04b1103d06cbd7b9c9209f1ec1e541b423ea341420bdea100b0e5cd7caed0cfe"
+    },
+    {
+      "file": "ForeverFlip/Stats.lua",
+      "bytes": 5622,
+      "sha256": "64ae6769f6ebb759c271e33e8f168b323e6b2809f1328198af47b525dade6f51"
+    },
+    {
+      "file": "ForeverFlip/Store.lua",
+      "bytes": 13411,
+      "sha256": "9639493c26d840c8fb1f7195a9439ecd5d1084289663d67babc2c8f4508d4827"
+    },
+    {
+      "file": "ForeverFlip/THIRD_PARTY.md",
+      "bytes": 1430,
+      "sha256": "51a232f26f2234c33bc5e1b58bf15623ad58493b64e7324581114b6978575a23"
+    },
+    {
+      "file": "ForeverFlip/UI.lua",
+      "bytes": 164494,
+      "sha256": "290b96ba9573f498f711633857efa3cc0368f4b8ca52fbee6761ebbca5e4f2b7"
+    },
+    {
+      "file": "ForeverFlip/Util.lua",
+      "bytes": 3909,
+      "sha256": "d8ca8829d8495199bba71064f0532a7cfa4663d0467baa1ebd039f58e265f69f"
+    },
+    {
+      "file": "ForeverFlip/VALIDATION.md",
+      "bytes": 8549,
+      "sha256": "e8fc1216bd62d5cab8b10c58e8dd1ae37bed55e2519b81839a8b42dd9265986d"
+    },
+    {
+      "file": "ForeverFlip/Workbench.lua",
+      "bytes": 17301,
+      "sha256": "e540dfe963ef40cf5937830fb178eafa7a7343cf56872db652d08bc50926c3b7"
+    }
+  ],
+  "installed_differences": [],
+  "notes": "Working tree, including user modifications. No production or game files changed by audit."
+}

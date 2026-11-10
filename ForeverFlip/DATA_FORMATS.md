@@ -1,5 +1,12 @@
 # Text exchange and source contracts
 
+6.4: exact stored keys must be canonical (no leading-zero aliases). Invalid inputs
+are rejected; corrupted saved records remain intact/read-only. Mail invoice v2 uses
+persistent multiplicity with conservative ambiguity handling, not immutable server IDs.
+Unknown provenance is never replaced with an invented market or sale timestamp.
+TSM's `tsm` formula slot is unavailable unless explicitly supplied by future integration;
+OptionalDeps is not a price feed. Auctionator price age has day granularity.
+
 No imported string is evaluated as Lua. All monetary values are copper unless
 explicitly described as gold. Text exchange is manual; no background app required.
 

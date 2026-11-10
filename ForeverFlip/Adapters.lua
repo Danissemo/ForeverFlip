@@ -6,6 +6,18 @@ function A.normalKey(key)
     local id = U.key(key)
     return id and U.fromKey(id) or nil
 end
+-- Search results belong to the queried key. Item level is compared only when both sides know it,
+-- because the client may report equipment under a base key with item level 0.
+function A.sameListing(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" or a.itemID ~= b.itemID then
+        return false
+    end
+    if (a.itemSuffix or 0) ~= (b.itemSuffix or 0) or (a.battlePetSpeciesID or 0) ~= (b.battlePetSpeciesID or 0) then
+        return false
+    end
+    local x, y = a.itemLevel or 0, b.itemLevel or 0
+    return x == 0 or y == 0 or x == y
+end
 local dataQueue, dataPending, nextData, dataCount = {}, {}, 0, 0
 local dataFailed, failedCount = {}, 0
 function A.requestData(id)
@@ -134,7 +146,14 @@ function A.prices(item)
     if atr and atr.GetAuctionPriceByItemID and id then
         local ok, p = pcall(atr.GetAuctionPriceByItemID, "ForeverFlip", id)
         if ok and U.finite(p) and p > 0 then
-            out[#out + 1] = { source = "Auctionator", price = p, age = nil }
+            local age
+            if atr.GetAuctionAgeByItemID then
+                local got, days = pcall(atr.GetAuctionAgeByItemID, "ForeverFlip", id)
+                if got and U.finite(days) and days >= 0 and days <= 21 then
+                    age = days * 86400
+                end
+            end
+            out[#out + 1] = { source = "Auctionator", price = p, age = age, freshnessGranularity = "day" }
         end
     end
     if AuxForeverAPI and AuxForeverAPI.GetUsualPrice then
@@ -225,7 +244,7 @@ function A.native(db)
                 local r = C.GetItemSearchResultInfo(key, i)
                 if
                     r
-                    and U.key(r.itemKey) == U.key(key)
+                    and A.sameListing(r.itemKey, key)
                     and not r.containsOwnerItem
                     and not r.containsAccountItem
                     and (r.quantity or 0) > 0
@@ -267,6 +286,28 @@ function A.native(db)
     api.vendor = U.vendor
     api.replicate = function()
         C.ReplicateItems()
+    end
+    api.queryOwned = function()
+        C.QueryOwnedAuctions({})
+    end
+    -- The player's own listings: active ones are compared with competitors, sold ones await mail.
+    api.owned = function()
+        local out = {}
+        for i = 1, (C.GetNumOwnedAuctions and C.GetNumOwnedAuctions() or 0) do
+            local a = C.GetOwnedAuctionInfo(i)
+            if a and a.itemKey and (a.quantity or 0) > 0 then
+                out[#out + 1] = {
+                    auctionID = a.auctionID,
+                    key = A.normalKey(a.itemKey),
+                    link = a.itemLink,
+                    qty = a.quantity,
+                    buyout = a.buyoutAmount,
+                    sold = a.status == 1,
+                    timeLeft = a.timeLeftSeconds,
+                }
+            end
+        end
+        return out
     end
     api.replicateCount = function()
         return C.GetNumReplicateItems()
@@ -361,7 +402,7 @@ function A.native(db)
         end
         for i = 1, (GetInboxNumItems() or 0) do
             local kind, name, player, bid, buyout, deposit, cut, delay, _, _, count = GetInboxInvoiceInfo(i)
-            local _, _, sender, subject, money = GetInboxHeaderInfo(i)
+            local _, _, sender, subject, money, _, daysLeft = GetInboxHeaderInfo(i)
             if kind == "seller" or kind == "buyer" then
                 out[#out + 1] = {
                     index = i,
@@ -374,10 +415,18 @@ function A.native(db)
                     deposit = deposit,
                     cut = cut,
                     delay = delay,
-                    fingerprint = table.concat(
-                        { kind, tostring(name), tostring(player), tostring(bid), tostring(count), tostring(subject) },
-                        "|"
-                    ),
+                    -- Expiry-derived arrival is stable as daysLeft falls. Coarse buckets are
+                    -- reconciled conservatively by the controller, never an inbox index.
+                    arrivalBucket = daysLeft and math.floor(((api.clock() + daysLeft * 86400) / 86400) + 0.5),
+                    fingerprint = table.concat({
+                        kind,
+                        tostring(name),
+                        tostring(player),
+                        tostring(bid),
+                        tostring(count),
+                        tostring(subject),
+                        tostring(money),
+                    }, "|"),
                 }
             end
         end

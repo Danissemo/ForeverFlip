@@ -41,7 +41,7 @@ class SearchReadinessTests(unittest.TestCase):
         api.ready=function()return true end;now=now+3;c:tick();assert(c.job and calls==1)''')
 
     def test_npc_starter_has_positive_margin_and_cumulative_one_gold_cap(self):
-        controller_runtime().execute('''assert(c:easyNPC());local o=c:options({itemID=1},'vendor')
+        controller_runtime().execute('''api.wallet=function()return 40000 end;assert(c:easyNPC());local o=c:options({itemID=1},'vendor')
         assert(o.minProfit==1 and o.absoluteCap<=10000)
         db.ledger[#db.ledger+1]={kind='buy',owner='owner',scope='scope',key='1:0:0:0',qty=1,total=9999,at=now}
         assert(c:npcRemaining()==1)
@@ -61,7 +61,7 @@ class SearchReadinessTests(unittest.TestCase):
         local key=ForeverFlip.Adapters.keyFromInput('1');assert(key.itemLevel==43)''')
 
     def test_one_gold_trial_quote_excludes_its_own_reservation(self):
-        controller_runtime().execute('''assert(c:easyNPC());assert(c:openDeal({key={itemID=1},mode='vendor'}))
+        controller_runtime().execute('''api.wallet=function()return 40000 end;assert(c:easyNPC());assert(c:openDeal({key={itemID=1},mode='vendor'}))
         c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1);assert(c:requestBuy())
         c:event('COMMODITY_PRICE_UPDATED',100,1000);assert(c:confirmBuy())
         c:event('COMMODITY_PURCHASED',1,10);assert(c:npcRemaining()==9000)
@@ -111,7 +111,7 @@ class SearchReadinessTests(unittest.TestCase):
         loaded=true;c:itemDataLoaded(1,true);c:tick();assert(#c.candidates==1)''')
 
     def test_changing_market_does_not_reset_trial_allowance(self):
-        controller_runtime().execute('''c:easyNPC();db.ledger[1]={kind='buy',owner='owner',scope='scope',key='1:0:0:0',qty=1,total=9999,at=now}
+        controller_runtime().execute('''api.wallet=function()return 40000 end;c:easyNPC();db.ledger[1]={kind='buy',owner='owner',scope='scope',key='1:0:0:0',qty=1,total=9999,at=now}
         c:stop();api.scope=function()return 'other'end;c:easyNPC()
         assert(c:npcRemaining()==1)
         c:stop();api.scope=function()return 'scope'end;c:easyNPC();assert(c:npcRemaining()==1)''')
