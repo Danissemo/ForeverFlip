@@ -19,5 +19,7 @@ Trade.lua
 Mail.lua
 Analytics.lua
 Merchant.lua
+Disenchant.lua
+Crafting.lua
 Core.lua
 UI.lua

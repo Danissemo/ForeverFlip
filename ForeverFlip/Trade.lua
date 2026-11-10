@@ -621,7 +621,8 @@ function T.toPost()
     local out, seen = {}, {}
     for _, b in ipairs(F.AH.bagItems()) do
         local p = c.positions[b.key]
-        if p and p.mode ~= "vendor" and p.mode ~= "shop" and p.qty > (listed[b.key] or 0) and not seen[b.key] then
+        local own = p and (p.mode == "vendor" or p.mode == "shop" or p.mode == "disenchant")
+        if p and not own and p.qty > (listed[b.key] or 0) and not seen[b.key] then
             seen[b.key] = true
             b.position = p
             out[#out + 1] = b

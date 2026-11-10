@@ -141,9 +141,10 @@ function U.itemInfo(id)
     if not get then
         return nil
     end
-    local ok, name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice = pcall(get, id)
+    local ok, name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice, classID =
+        pcall(get, id)
     if not ok then
         return nil
     end
-    return name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice
+    return name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice, classID
 end

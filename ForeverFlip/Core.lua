@@ -93,6 +93,8 @@ local events = {
     "MAIL_CLOSED",
     "MAIL_INBOX_UPDATE",
     "MERCHANT_SHOW",
+    "TRADE_SKILL_SHOW",
+    "TRADE_SKILL_LIST_UPDATE",
     "MERCHANT_CLOSED",
     "PLAYER_LOGOUT",
 }
@@ -189,6 +191,12 @@ function E.handle(event, ...)
         end
         if F.UI and F.UI.mail then
             F.UI.mail(F.Mail.open)
+        end
+    elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_LIST_UPDATE" then
+        -- Recipes are read at most every two seconds; the list event fires often.
+        if E.clock() - (E.recipesAt or 0) >= 2 then
+            E.recipesAt = E.clock()
+            F.Crafting.learn()
         end
     elseif event == "MERCHANT_SHOW" or event == "MERCHANT_CLOSED" then
         if F.UI and F.UI.merchant then

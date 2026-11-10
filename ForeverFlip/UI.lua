@@ -326,6 +326,7 @@ function UI.create()
         { "auctions", "My auctions" },
         { "stats", "Statistics by item" },
         { "analytics", "Analytics" },
+        { "crafting", "Crafting" },
         { "journal", "Journal and profit" },
         { "settings", "Settings" },
     }
@@ -349,7 +350,7 @@ function UI.create()
     right:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
     UI.right = right
     UI.pages = {}
-    for _, id in ipairs({ "deals", "shop", "sell", "auctions", "stats", "analytics", "journal", "settings" }) do
+    for _, id in ipairs({ "deals", "shop", "sell", "auctions", "stats", "analytics", "crafting", "journal", "settings" }) do
         local page = CreateFrame("Frame", nil, right)
         page:SetPoint("TOPLEFT", right, "TOPLEFT", 3, -3)
         page:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", -3, 3)
@@ -362,6 +363,7 @@ function UI.create()
     UI.createAuctions(UI.pages.auctions)
     UI.createStats(UI.pages.stats)
     UI.createAnalytics(UI.pages.analytics)
+    UI.createCrafting(UI.pages.crafting)
     UI.createJournal(UI.pages.journal)
     UI.createSettings(UI.pages.settings)
     UI.show(F.db.ui and F.db.ui.section or "deals:all")
@@ -569,6 +571,8 @@ local function dealOutlook(d, estimate)
     local roi = d.cost > 0 and d.profit / d.cost or 0
     if d.mode == "shop" then
         return L("Bought for your own use: it stays out of Post next bought.")
+    elseif d.mode == "disenchant" then
+        return L("Estimate from the Classic disenchanting table and the usual material prices.")
     end
     if d.mode == "vendor" then
         return string.format(L("Return %d%%; sold to a vendor at once, no risk."), math.floor(roi * 100 + 0.5))
@@ -620,6 +624,15 @@ local function estimateSentence(estimate)
 end
 
 local function dealSentence(d)
+    if d.mode == "disenchant" then
+        return string.format(
+            L("Buy %d for %s and disenchant: the materials fetch about %s each. Profit: %s."),
+            d.qty,
+            U.money(d.cost),
+            U.money(d.exit),
+            U.money(d.profit)
+        )
+    end
     if d.mode == "shop" then
         return string.format(
             L("Buy %d for %s; your shopping list allows up to %s each (saving %s)."),
@@ -1614,6 +1627,104 @@ function UI.refreshAnalytics()
     )
 end
 
+-- Crafting page ------------------------------------------------------------------------------------
+local CRAFT_ROWS = 15
+function UI.createCrafting(p)
+    local list = CreateFrame("Frame", nil, p)
+    list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
+    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 76)
+    UI.craftTable = table_(
+        list,
+        {
+            { "Name" },
+            { "Materials", 86 },
+            { "Product", 86 },
+            { "Profit", 86 },
+            { "Est./day", 64 },
+            { "Sell to", 70, "LEFT" },
+        },
+        CRAFT_ROWS,
+        function(row)
+            UI.craftSelected = row.recipe
+            UI.refresh()
+        end
+    )
+    local bar = footer(p, 72)
+    UI.craftText = bar.text
+    UI.craftShop = button(bar, "Shop materials", 150, function()
+        local r = UI.craftSelected
+        if r then
+            local count = math.max(1, math.floor(r.perDay or 1))
+            local n = F.Crafting.shopMaterials(r.id, count)
+            F.Engine.notify(n > 0 and "saved" or "values")
+        end
+    end)
+    UI.craftShop:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
+end
+
+function UI.refreshCrafting()
+    local rows = F.Crafting.profits()
+    for i, r in ipairs(UI.craftTable.rows) do
+        local e = rows[i]
+        if e then
+            r.recipe, r.key = e, nil
+            r.icon:SetTexture(icon(e.out))
+            r.name:SetText(e.name or ("#" .. e.id))
+            r.cols[1]:SetText(e.cost and U.money(e.cost) or "?")
+            r.cols[2]:SetText(e.value and U.money(e.value) or "?")
+            if e.profit then
+                r.cols[3]:SetText((e.profit < 0 and "|cffff6060" or "|cff40ff40") .. U.money(e.profit) .. "|r")
+            else
+                r.cols[3]:SetText("-")
+            end
+            r.cols[4]:SetText(e.perDay and string.format("~%.1f", e.perDay) or "-")
+            r.cols[5]:SetText(e.route and L(e.route == "vendor" and "vendor" or "auction") or "")
+            if UI.craftSelected and UI.craftSelected.id == e.id then
+                r.selected:Show()
+                UI.craftSelected = e
+            else
+                r.selected:Hide()
+            end
+            r:Show()
+        else
+            r.recipe = nil
+            r:Hide()
+        end
+    end
+    local empty = UI.craftTable.empty
+    if #rows == 0 then
+        empty:SetText(
+            L(
+                "Open each of your profession windows once: ForeverFlip reads the recipes and prices them here with the auction prices of the materials and the product."
+            )
+        )
+        empty:Show()
+    else
+        empty:Hide()
+    end
+    local s = UI.craftSelected
+    if s and s.missing then
+        UI.craftText:SetText(
+            L("A material of this recipe has no price yet: it needs a full scan or a merchant that sells it.")
+        )
+    elseif s then
+        UI.craftText:SetText(
+            string.format(
+                L(
+                    "Materials %s, product %s (%s): profit %s per craft. Shop materials puts one day of crafts on the shopping list."
+                ),
+                U.money(s.cost),
+                U.money(s.value or 0),
+                L(s.route == "vendor" and "vendor" or "auction"),
+                U.money(s.profit or 0)
+            )
+        )
+    else
+        UI.craftText:SetText(L("Material prices: the cheaper of the usual auction price and a merchant's price."))
+    end
+    UI.craftShop:SetEnabled(s ~= nil and not s.missing)
+end
+
 -- Journal page -------------------------------------------------------------------------------------
 function UI.createJournal(p)
     UI.journalSummary = text(p, "GameFontHighlight")
@@ -1779,8 +1890,9 @@ function UI.createSettings(p)
     UI.holdBox = toggle(174, "belowMin", "Keep items in the bags when the market is below their floor")
     UI.learnBox = toggle(202, "learnBrowsing", "Learn prices and deals from my own searches in the Buy tab")
     UI.highlightBox = toggle(230, "highlight", "Mark deals in the game's Buy tab")
+    UI.disenchantBox = toggle(258, "disenchant", "Disenchant deals (for a character who knows Disenchant)")
     local lang = text(p, "GameFontNormal")
-    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 266)
+    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 294)
     lang:SetText(L("Language (applies after /reload)"))
     local en = button(p, "English", 90, function()
         F.db.settings.language = "en"
@@ -1953,6 +2065,8 @@ function UI.refresh()
         UI.refreshStats()
     elseif UI.section == "analytics" then
         UI.refreshAnalytics()
+    elseif UI.section == "crafting" then
+        UI.refreshCrafting()
     elseif UI.section == "journal" then
         UI.refreshJournal()
     end

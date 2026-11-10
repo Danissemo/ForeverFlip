@@ -89,6 +89,12 @@ function D.evaluate(g, vendor, history, now)
     if not deal and F.Shopping.entry(g.key) then
         deal = F.Shopping.evaluate(g.rows, g.key, D.budget())
     end
+    if g.kind == "gear" and F.Disenchant.active() then
+        local de = F.Disenchant.evaluate(g.rows, g.id, D.budget())
+        if de and (not deal or de.profit > deal.profit) then
+            deal, reason = de, nil
+        end
+    end
     if deal then
         deal.key, deal.kind, deal.id, deal.link = g.key, g.kind, g.id, g.link
         deal.market, deal.vendor = g.market, vendor

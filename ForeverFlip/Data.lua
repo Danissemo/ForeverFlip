@@ -27,6 +27,7 @@ D.DEFAULTS = {
     belowMin = "min", -- below the floor: "min" posts at the floor, "hold" keeps the item
     learnBrowsing = true, -- the player's own searches update prices and deals
     highlight = true, -- mark deals in the game's Buy tab
+    disenchant = true, -- disenchant deals (only for a character who knows Disenchant)
 }
 
 function D.open(saved)

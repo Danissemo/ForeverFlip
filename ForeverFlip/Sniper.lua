@@ -72,6 +72,12 @@ function S.threshold(key, id, history)
             limit = math.max(limit or 0, math.floor(buy))
         end
     end
+    if item and item.kind == "gear" and F.Disenchant.active() then
+        local value = F.Disenchant.value(id)
+        if value then
+            limit = math.max(limit or 0, value - (s.minProfit or 100))
+        end
+    end
     local wanted = F.Shopping and F.Shopping.maxPrice(key)
     if wanted then
         limit = math.max(limit or 0, wanted)

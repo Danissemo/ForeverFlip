@@ -47,6 +47,9 @@ function V.offers(now)
         local name, price, quantity, available, purchasable, extended = merchantInfo(i)
         local link = GetMerchantItemLink and GetMerchantItemLink(i)
         local id = link and tonumber(link:match("item:(%d+)"))
+        if id and not extended and (price or 0) > 0 and (quantity or 0) > 0 then
+            F.Crafting.rememberMerchantPrice(id, price / quantity)
+        end
         if id and purchasable ~= false and not extended and (price or 0) > 0 and (quantity or 0) > 0 then
             local key, h = historyFor(id, link)
             local market = h and type(h.scan) == "table" and h.scan.market
