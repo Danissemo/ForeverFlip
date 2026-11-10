@@ -63,7 +63,7 @@ end
 
 -- Cost of one unit of a material: the cheaper of the auction house and a merchant.
 function C.materialCost(history, id)
-    local ah = usual(history, id)
+    local ah = usual(history, id) or F.Engine.auxPrice(id)
     local merchant = F.db.merchantPrices and F.db.merchantPrices[id]
     if ah and merchant then
         return math.min(ah, merchant)

@@ -97,6 +97,8 @@ local events = {
     "TRADE_SKILL_LIST_UPDATE",
     "MERCHANT_CLOSED",
     "PLAYER_LOGOUT",
+    "PLAYER_MONEY",
+    "PLAYER_ENTERING_WORLD",
 }
 for _, event in ipairs(events) do
     pcall(frame.RegisterEvent, frame, event)
@@ -178,7 +180,10 @@ function E.handle(event, ...)
         end
     elseif event == "CHAT_MSG_SYSTEM" then
         F.Trade.onChat(...)
+    elseif event == "PLAYER_MONEY" or event == "PLAYER_ENTERING_WORLD" then
+        F.Analytics.recordGold()
     elseif event == "PLAYER_LOGOUT" then
+        F.Analytics.recordGold()
         -- Saves checks and vendor deals found since the scan (SavedVariables are written next).
         F.Scan.save()
     elseif event == "MAIL_SHOW" or event == "MAIL_CLOSED" or event == "MAIL_INBOX_UPDATE" then
@@ -307,6 +312,76 @@ function E.keyScan()
     end
 end
 
+-- ForeverFlipAPI: ForeverFlip's prices for other addons. The functions keep their names and meaning;
+-- new ones raise `version`. `item` is an item link, an item string or an item ID.
+ForeverFlipAPI = {
+    version = 1,
+}
+local API = ForeverFlipAPI
+
+local function keyOf(item)
+    if not F.db then
+        return nil
+    end
+    local id, link
+    if type(item) == "number" then
+        id = item
+    elseif type(item) == "string" then
+        id = tonumber(item:match("item:(%d+)") or item:match("^%d+$"))
+        link = item:find("|H", 1, true) and item or nil
+    end
+    if not id then
+        return nil
+    end
+    return F.AH.keyFor(id, link)
+end
+
+function API.IsReady()
+    return F.db ~= nil
+end
+
+-- Prices of the player's auction house: usual asking price, cheapest today, median of sales seen,
+-- units sold per day near the usual price (nil: unknown) and the age of the usual price in seconds.
+function API.GetPrice(item)
+    local key = keyOf(item)
+    local h = key and F.Data.market(F.db, E.scope()).history[key]
+    if type(h) ~= "table" or type(h.scan) ~= "table" then
+        return nil
+    end
+    local today = h.days and h.days[#h.days]
+    local s = h.scan.market and F.Market.saleability(h, h.scan.market, E.clock()) or {}
+    return h.scan.market,
+        today and today.min or nil,
+        F.Market.salePrice(h),
+        s.known and s.perDay or nil,
+        h.scan.at and E.clock() - h.scan.at or nil
+end
+
+-- The current deal of an item: mode ("vendor", "flip", "shop", "disenchant"), profit, cost, units,
+-- and whether it was checked on the auction house in the last 45 seconds.
+function API.GetDeal(item)
+    local key = keyOf(item)
+    local d = key and F.Deals.get(key)
+    if not d then
+        return nil
+    end
+    return d.mode, d.profit, d.cost, d.qty, d.verified ~= nil and E.clock() - d.verified <= F.Deals.FRESH
+end
+
+-- aux's usual price (auxForever, if installed) for items ForeverFlip has not seen.
+function E.auxPrice(id)
+    local aux = AuxForeverAPI
+    if type(aux) == "table" and aux.IsReady and aux.GetUsualPrice then
+        local ok, ready = pcall(aux.IsReady)
+        if ok and ready then
+            local got, price = pcall(aux.GetUsualPrice, id)
+            if got and U.finite(price) and price > 0 then
+                return price
+            end
+        end
+    end
+end
+
 SLASH_FOREVERFLIP1 = "/ff"
 SLASH_FOREVERFLIP2 = "/foreverflip"
 SlashCmdList.FOREVERFLIP = function(msg)
@@ -335,6 +410,12 @@ SlashCmdList.FOREVERFLIP = function(msg)
             )
         )
         F.db.diag = { at = last.at, total = last.total, read = last.read, skipped = last.skipped, stats = U.copy(s) }
+        return
+    end
+    if msg == "export" then
+        if F.UI and F.UI.showExport then
+            F.UI.showExport()
+        end
         return
     end
     if msg == "rescan" then

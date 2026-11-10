@@ -5,6 +5,13 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["All characters of the realm (%d): gold %s (%s over the period) · stock at cost %s"] = "Усі персонажі сервера (%d): золото %s (%s за період) · склад за собівартістю %s",
+    ["Presets:"] = "Набори:",
+    ["Careful"] = "Обережно",
+    ["Balanced"] = "Збалансовано",
+    ["Aggressive"] = "Агресивно",
+    ["Export CSV"] = "Експорт CSV",
+    ["Journal as CSV: press Ctrl+A, then Ctrl+C to copy."] = "Журнал у CSV: натисніть Ctrl+A, потім Ctrl+C, щоб скопіювати.",
     ["Bids"] = "Ставки",
     ["Next bid"] = "Наступна ставка",
     ["Worth"] = "Вартість",

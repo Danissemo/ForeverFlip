@@ -1654,6 +1654,16 @@ function UI.refreshAnalytics()
             r.turnover and string.format("%d%%", math.floor(r.turnover * 100 + 0.5)) or "-"
         ),
     }
+    local realm = F.Analytics.realm(UI.analyticsDays or 7)
+    if realm.chars > 0 then
+        lines[#lines + 1] = string.format(
+            L("All characters of the realm (%d): gold %s (%s over the period) · stock at cost %s"),
+            realm.chars,
+            U.money(realm.gold),
+            (realm.gold >= realm.before and "+" or "") .. U.money(realm.gold - realm.before),
+            U.money(realm.stock)
+        )
+    end
     if #r.best > 0 then
         local names = {}
         for _, item in ipairs(r.best) do
@@ -1858,6 +1868,10 @@ function UI.createJournal(p)
         F.Trade.settle(1, false)
     end)
     UI.unknownNo:SetPoint("LEFT", UI.unknownYes, "RIGHT", 6, 0)
+    UI.exportButton = button(p, "Export CSV", 120, function()
+        UI.showExport()
+    end)
+    UI.exportButton:SetPoint("TOPRIGHT", p, "TOPRIGHT", -10, -84)
     UI.journalLines = text(p, "GameFontHighlightSmall")
     UI.journalLines:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -116)
     UI.journalLines:SetPoint("TOPRIGHT", p, "TOPRIGHT", -10, -116)
@@ -1916,6 +1930,44 @@ function UI.refreshJournal()
     UI.journalLines:SetText(#lines > 0 and table.concat(lines, "\n") or L("No trades yet."))
 end
 
+-- CSV export: the journal of the character in a text box to copy (Ctrl+A, Ctrl+C).
+function UI.showExport()
+    local w = UI.exportFrame
+    if not w then
+        w = CreateFrame("Frame", "ForeverFlipExport", UIParent)
+        w:SetSize(640, 420)
+        w:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        w:SetFrameStrata("DIALOG")
+        local bg = w:CreateTexture(nil, "BACKGROUND")
+        bg:SetColorTexture(0.05, 0.05, 0.06, 0.95)
+        bg:SetAllPoints()
+        w.title = text(w, "GameFontNormal")
+        w.title:SetPoint("TOPLEFT", w, "TOPLEFT", 12, -10)
+        w.title:SetText(L("Journal as CSV: press Ctrl+A, then Ctrl+C to copy."))
+        w.close = button(w, "X", 24, function()
+            w:Hide()
+        end)
+        w.close:SetPoint("TOPRIGHT", w, "TOPRIGHT", -6, -6)
+        local scroll = CreateFrame("ScrollFrame", nil, w, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", w, "TOPLEFT", 12, -34)
+        scroll:SetPoint("BOTTOMRIGHT", w, "BOTTOMRIGHT", -32, 12)
+        w.box = CreateFrame("EditBox", nil, scroll)
+        w.box:SetMultiLine(true)
+        w.box:SetAutoFocus(false)
+        w.box:SetFontObject(ChatFontNormal or "GameFontHighlightSmall")
+        w.box:SetWidth(580)
+        w.box:SetScript("OnEscapePressed", function()
+            w:Hide()
+        end)
+        scroll:SetScrollChild(w.box)
+        UI.exportFrame = w
+    end
+    w.box:SetText(F.Analytics.csv())
+    w:Show()
+    w.box:SetFocus()
+    w.box:HighlightText()
+end
+
 -- Settings page ------------------------------------------------------------------------------------
 function UI.createSettings(p)
     local fields = {
@@ -1958,28 +2010,46 @@ function UI.createSettings(p)
         F.Engine.notify("saved")
     end)
     UI.saveButton:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y)
+    local presetLabel = text(p, "GameFontNormal")
+    presetLabel:SetPoint("LEFT", UI.saveButton, "RIGHT", 16, 0)
+    presetLabel:SetText(L("Presets:"))
+    local last = presetLabel
+    for _, name in ipairs({ "careful", "balanced", "aggressive" }) do
+        local b = button(p, UI.PRESET_LABELS[name], 110, function()
+            UI.applyPreset(name)
+        end)
+        b:SetPoint("LEFT", last, "RIGHT", 6, 0)
+        last = b
+        UI["preset_" .. name] = b
+    end
     local auto = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-    auto:SetPoint("TOPLEFT", p, "TOPLEFT", 8, y - 34)
+    auto:SetPoint("TOPLEFT", p, "TOPLEFT", 8, y - 30)
     auto:SetScript("OnClick", function(self)
         F.Engine.autoVerify = self:GetChecked() and true or false
     end)
     auto:SetChecked(F.Engine.autoVerify)
-    local autoText = text(p, "GameFontHighlight")
-    autoText:SetPoint("LEFT", auto, "RIGHT", 4, 0)
+    local autoText = text(p, "GameFontHighlightSmall")
+    autoText:SetPoint("LEFT", auto, "RIGHT", 2, 0)
+    autoText:SetWidth(250)
     autoText:SetText(L("Check found deals on the auction house automatically (one search per second)"))
     local scan = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-    scan:SetPoint("TOPLEFT", p, "TOPLEFT", 8, y - 62)
+    scan:SetPoint("TOPLEFT", p, "TOPLEFT", 300, y - 30)
     scan:SetScript("OnClick", function(self)
         F.db.settings.autoScan = self:GetChecked() and true or false
     end)
     scan:SetChecked(F.db.settings.autoScan)
     UI.autoScanBox = scan
-    local scanText = text(p, "GameFontHighlight")
-    scanText:SetPoint("LEFT", scan, "RIGHT", 4, 0)
+    local scanText = text(p, "GameFontHighlightSmall")
+    scanText:SetPoint("LEFT", scan, "RIGHT", 2, 0)
+    scanText:SetWidth(250)
     scanText:SetText(L("Full scan every 15 minutes while the auction house is open"))
-    local function toggle(offset, setting, label)
+    -- Two columns of checkboxes, 28 pixels apart.
+    local slots = 2
+    local function toggle(_, setting, label)
         local box = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-        box:SetPoint("TOPLEFT", p, "TOPLEFT", 8, y - offset)
+        local column, row = slots % 2, math.floor(slots / 2)
+        slots = slots + 1
+        box:SetPoint("TOPLEFT", p, "TOPLEFT", column == 0 and 8 or 300, y - 30 - row * 28)
         box:SetScript("OnClick", function(self)
             if setting == "sniper" then
                 F.Deals.setSniper(self:GetChecked() and true or false)
@@ -1995,8 +2065,9 @@ function UI.createSettings(p)
         else
             box:SetChecked(F.db.settings[setting])
         end
-        local t = text(p, "GameFontHighlight")
-        t:SetPoint("LEFT", box, "RIGHT", 4, 0)
+        local t = text(p, "GameFontHighlightSmall")
+        t:SetPoint("LEFT", box, "RIGHT", 2, 0)
+        t:SetWidth(250)
         t:SetText(L(label))
         return box
     end
@@ -2007,8 +2078,16 @@ function UI.createSettings(p)
     UI.learnBox = toggle(202, "learnBrowsing", "Learn prices and deals from my own searches in the Buy tab")
     UI.highlightBox = toggle(230, "highlight", "Mark deals in the game's Buy tab")
     UI.disenchantBox = toggle(258, "disenchant", "Disenchant deals (for a character who knows Disenchant)")
+    UI.settingToggles = {
+        sniper = UI.sniperBox,
+        alerts = UI.alertBox,
+        tooltipPrices = UI.tooltipBox,
+        learnBrowsing = UI.learnBox,
+        highlight = UI.highlightBox,
+        disenchant = UI.disenchantBox,
+    }
     local lang = text(p, "GameFontNormal")
-    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 294)
+    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 30 - math.ceil(slots / 2) * 28 - 8)
     lang:SetText(L("Language (applies after /reload)"))
     local en = button(p, "English", 90, function()
         F.db.settings.language = "en"
@@ -2021,6 +2100,42 @@ function UI.createSettings(p)
     end)
     uk:SetPoint("LEFT", en, "RIGHT", 6, 0)
     UI.loadSettings()
+end
+
+-- Presets set the money and profit thresholds in one click.
+UI.PRESET_LABELS = { careful = "Careful", balanced = "Balanced", aggressive = "Aggressive" }
+UI.PRESETS = {
+    careful = {
+        minROI = 0.35,
+        minProfit = 500,
+        vendorMinProfit = 50,
+        spendShare = 0.5,
+        itemShare = 0.15,
+        alertMinProfit = 100,
+    },
+    balanced = {
+        minROI = 0.2,
+        minProfit = 100,
+        vendorMinProfit = 10,
+        spendShare = 0.8,
+        itemShare = 0.3,
+        alertMinProfit = 50,
+    },
+    aggressive = {
+        minROI = 0.1,
+        minProfit = 50,
+        vendorMinProfit = 5,
+        spendShare = 0.95,
+        itemShare = 0.5,
+        alertMinProfit = 20,
+    },
+}
+function UI.applyPreset(name)
+    for key, value in pairs(UI.PRESETS[name] or {}) do
+        F.db.settings[key] = value
+    end
+    UI.loadSettings()
+    F.Engine.notify("saved")
 end
 
 function UI.loadSettings()

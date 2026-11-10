@@ -207,6 +207,75 @@ function A.market(now)
     return cache
 end
 
+-- Journal of the character as CSV (date, kind, item, quantity, amount, profit in copper).
+function A.csv()
+    local lines = { "date,kind,item,quantity,amount_copper,profit_copper" }
+    for _, e in ipairs(char().journal) do
+        local name = tostring(e.name or e.key or ""):gsub('"', '""')
+        lines[#lines + 1] = string.format(
+            '%s,%s,"%s",%d,%d,%s',
+            date("%Y-%m-%d %H:%M", e.at or 0),
+            tostring(e.kind),
+            name,
+            e.qty or 0,
+            math.floor(e.amount or 0),
+            e.profit and tostring(math.floor(e.profit)) or ""
+        )
+    end
+    return table.concat(lines, "\n")
+end
+
+-- Gold of each character, one value per day (kept 60 days).
+function A.recordGold(now)
+    if not F.db then
+        return
+    end
+    now = now or F.Engine.clock()
+    F.db.gold = type(F.db.gold) == "table" and F.db.gold or {}
+    local owner = F.Engine.owner()
+    local days = type(F.db.gold[owner]) == "table" and F.db.gold[owner] or {}
+    F.db.gold[owner] = days
+    local day = math.floor(now / DAY)
+    days[day] = F.Engine.wallet()
+    for d in pairs(days) do
+        if d < day - 60 then
+            days[d] = nil
+        end
+    end
+end
+
+-- Characters of this realm: gold now and `back` days ago, stock at cost.
+function A.realm(back, now)
+    now = now or F.Engine.clock()
+    local realm = tostring(GetRealmName and GetRealmName() or "?")
+    local today = math.floor(now / DAY)
+    local out = { gold = 0, before = 0, stock = 0, chars = 0 }
+    for owner, days in pairs(F.db.gold or {}) do
+        if owner:sub(1, #realm + 1) == realm .. "-" then
+            local latest, latestDay, past, pastDay
+            for d, v in pairs(days) do
+                if not latestDay or d > latestDay then
+                    latest, latestDay = v, d
+                end
+                if d <= today - back and (not pastDay or d > pastDay) then
+                    past, pastDay = v, d
+                end
+            end
+            out.chars = out.chars + 1
+            out.gold = out.gold + (latest or 0)
+            out.before = out.before + (past or latest or 0)
+        end
+    end
+    for owner, c in pairs(F.db.chars or {}) do
+        if owner:sub(1, #realm + 1) == realm .. "-" and type(c.positions) == "table" then
+            for _, p in pairs(c.positions) do
+                out.stock = out.stock + (p.cost or 0)
+            end
+        end
+    end
+    return out
+end
+
 function A.invalidate()
     cache = nil
 end
