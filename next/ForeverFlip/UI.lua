@@ -313,6 +313,7 @@ function UI.create()
         { "sell", "Sell my items" },
         { "auctions", "My auctions" },
         { "stats", "Statistics by item" },
+        { "analytics", "Analytics" },
         { "journal", "Journal and profit" },
         { "settings", "Settings" },
     }
@@ -336,7 +337,7 @@ function UI.create()
     right:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
     UI.right = right
     UI.pages = {}
-    for _, id in ipairs({ "deals", "sell", "auctions", "stats", "journal", "settings" }) do
+    for _, id in ipairs({ "deals", "sell", "auctions", "stats", "analytics", "journal", "settings" }) do
         local page = CreateFrame("Frame", nil, right)
         page:SetPoint("TOPLEFT", right, "TOPLEFT", 3, -3)
         page:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", -3, 3)
@@ -347,6 +348,7 @@ function UI.create()
     UI.createSell(UI.pages.sell)
     UI.createAuctions(UI.pages.auctions)
     UI.createStats(UI.pages.stats)
+    UI.createAnalytics(UI.pages.analytics)
     UI.createJournal(UI.pages.journal)
     UI.createSettings(UI.pages.settings)
     UI.show(F.db.ui and F.db.ui.section or "deals:all")
@@ -1123,6 +1125,197 @@ function UI.refreshStats()
     )
 end
 
+-- Analytics page -----------------------------------------------------------------------------------
+local MARKET_VIEWS = {
+    { "gaps", "Below usual price" },
+    { "liquid", "Sells the most" },
+    { "falling", "Price falling" },
+    { "rising", "Price rising" },
+}
+
+function UI.createAnalytics(p)
+    UI.analyticsDays, UI.marketView = 7, "gaps"
+    local top = CreateFrame("Frame", nil, p)
+    top:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
+    top:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, 0)
+    top:SetHeight(176)
+    UI.resultsText = text(top, "GameFontHighlightSmall")
+    UI.resultsText:SetPoint("TOPLEFT", top, "TOPLEFT", 10, -8)
+    UI.resultsText:SetWidth(300)
+    UI.resultsText:SetSpacing(3)
+    UI.periodButtons = {}
+    for i, n in ipairs({ 7, 30 }) do
+        local b = button(top, n == 7 and "7 days" or "30 days", 70, function()
+            UI.analyticsDays = n
+            UI.refresh()
+        end)
+        b:SetPoint("TOPRIGHT", top, "TOPRIGHT", -8 - (2 - i) * 74, -6)
+        UI.periodButtons[n] = b
+    end
+    -- Profit per day: bars above (profit) or below (loss) a zero line.
+    local chart = CreateFrame("Frame", nil, top)
+    chart:SetPoint("TOPRIGHT", top, "TOPRIGHT", -8, -34)
+    chart:SetSize(300, 120)
+    local zero = chart:CreateTexture(nil, "ARTWORK")
+    zero:SetColorTexture(1, 1, 1, 0.25)
+    zero:SetHeight(1)
+    zero:SetPoint("LEFT", chart, "LEFT", 0, 10)
+    zero:SetPoint("RIGHT", chart, "RIGHT", 0, 10)
+    UI.chart, UI.bars = chart, {}
+    UI.chartTitle = text(top, "GameFontNormalSmall")
+    UI.chartTitle:SetPoint("BOTTOMLEFT", chart, "TOPLEFT", 0, 2)
+
+    local views = CreateFrame("Frame", nil, p)
+    views:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, 0)
+    views:SetPoint("TOPRIGHT", top, "BOTTOMRIGHT", 0, 0)
+    views:SetHeight(26)
+    UI.viewButtons = {}
+    for i, v in ipairs(MARKET_VIEWS) do
+        local b = button(views, v[2], 150, function()
+            UI.marketView = v[1]
+            UI.refresh()
+        end)
+        b:SetPoint("LEFT", views, "LEFT", 6 + (i - 1) * 154, 0)
+        UI.viewButtons[v[1]] = b
+    end
+    local list = CreateFrame("Frame", nil, p)
+    list:SetPoint("TOPLEFT", views, "BOTTOMLEFT", 0, 0)
+    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 22)
+    UI.marketTable = table_(
+        list,
+        {
+            { "Name" },
+            { "Usual price", 84 },
+            { "Cheapest today", 92 },
+            { "Change", 60 },
+            { "Est./day", 64 },
+        },
+        9,
+        function(row)
+            if row.key then
+                F.Deals.verify(row.key)
+                F.Engine.notify("verify_first")
+            end
+        end
+    )
+    UI.marketText = text(p, "GameFontHighlightSmall")
+    UI.marketText:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 8, 6)
+    UI.marketText:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -8, 6)
+end
+
+local function percent(x)
+    return x and string.format("%+d%%", math.floor(x * 100 + (x >= 0 and 0.5 or -0.5))) or "-"
+end
+
+function UI.refreshAnalytics()
+    local days = UI.analyticsDays or 7
+    for n, b in pairs(UI.periodButtons) do
+        b:SetEnabled(n ~= days)
+    end
+    local r = F.Analytics.results(days)
+    local lines = {
+        string.format(L("Profit: %s (%s a day)"), U.money(r.profit), U.money(math.floor(r.perDay))),
+        string.format(L("Auction resale: %s · vendor: %s"), U.money(r.auction), U.money(r.vendor)),
+        string.format(
+            L("Sales: %d · profitable: %s · return on cost: %s"),
+            r.sales,
+            r.hitRate and string.format("%d%%", math.floor(r.hitRate * 100 + 0.5)) or "-",
+            r.roi and string.format("%d%%", math.floor(r.roi * 100 + 0.5)) or "-"
+        ),
+        string.format(L("Bought: %d for %s"), r.buys, U.money(r.spent)),
+        string.format(
+            L("In stock: %s · stale 3+ days: %s"),
+            U.money(r.held),
+            r.stale > 0 and ("|cffff6060" .. U.money(r.stale) .. "|r") or U.money(0)
+        ),
+        string.format(
+            L("Days to sell: %s · stock turns over %s a day"),
+            r.avgDays and string.format("%.1f", r.avgDays) or "-",
+            r.turnover and string.format("%d%%", math.floor(r.turnover * 100 + 0.5)) or "-"
+        ),
+    }
+    if #r.best > 0 then
+        local names = {}
+        for _, item in ipairs(r.best) do
+            names[#names + 1] = (item.name or item.key) .. " " .. U.money(item.profit)
+        end
+        lines[#lines + 1] = "|cff40ff40" .. L("Best:") .. "|r " .. table.concat(names, ", ")
+    end
+    if #r.worst > 0 then
+        local names = {}
+        for _, item in ipairs(r.worst) do
+            names[#names + 1] = (item.name or item.key) .. " " .. U.money(item.profit)
+        end
+        lines[#lines + 1] = "|cffff6060" .. L("Worst:") .. "|r " .. table.concat(names, ", ")
+    end
+    UI.resultsText:SetText(table.concat(lines, "\n"))
+    -- Chart.
+    UI.chartTitle:SetText(string.format(L("Profit per day, last %d days"), days))
+    local maxAbs = 1
+    for _, d in ipairs(r.days) do
+        maxAbs = math.max(maxAbs, math.abs(d.profit))
+    end
+    local width = math.floor(300 / #r.days)
+    for i, d in ipairs(r.days) do
+        local bar = UI.bars[i]
+        if not bar then
+            bar = UI.chart:CreateTexture(nil, "ARTWORK")
+            UI.bars[i] = bar
+        end
+        local h = math.max(1, math.floor(math.abs(d.profit) / maxAbs * 50))
+        bar:ClearAllPoints()
+        bar:SetWidth(math.max(2, width - 2))
+        bar:SetHeight(h)
+        if d.profit >= 0 then
+            bar:SetColorTexture(0.25, 0.85, 0.35, 0.9)
+            bar:SetPoint("BOTTOMLEFT", UI.chart, "LEFT", (i - 1) * width, 10)
+        else
+            bar:SetColorTexture(0.9, 0.3, 0.3, 0.9)
+            bar:SetPoint("TOPLEFT", UI.chart, "LEFT", (i - 1) * width, 10)
+        end
+        bar:Show()
+    end
+    for i = #r.days + 1, #UI.bars do
+        UI.bars[i]:Hide()
+    end
+    -- Market lists.
+    for id, b in pairs(UI.viewButtons) do
+        b:SetEnabled(id ~= UI.marketView)
+    end
+    local m = F.Analytics.market()
+    local list = m[UI.marketView] or {}
+    for i, row in ipairs(UI.marketTable.rows) do
+        local e = list[i]
+        if e then
+            local item = U.parseKey(e.key)
+            row.key, row.link = e.key, nil
+            row.icon:SetTexture(item and icon(item.id) or 134400)
+            row.name:SetText(nameOf(e.key))
+            row.cols[1]:SetText(U.money(e.market))
+            row.cols[2]:SetText(e.cheap and U.money(e.cheap) or "-")
+            row.cols[3]:SetText(percent(e.change))
+            row.cols[4]:SetText(e.perDay and string.format("~%.1f", e.perDay) or "-")
+            row.selected:Hide()
+            row:Show()
+        else
+            row.key = nil
+            row:Hide()
+        end
+    end
+    local empty = UI.marketTable.empty
+    if #list == 0 then
+        empty:SetText(
+            L("No data yet. Market lists fill in after a few full scans; price moves need scans on two different days.")
+        )
+        empty:Show()
+    else
+        empty:Hide()
+    end
+    UI.marketText:SetText(
+        string.format(L("%d items with history · click a row to check it on the auction house now"), m.items)
+    )
+end
+
 -- Journal page -------------------------------------------------------------------------------------
 function UI.createJournal(p)
     UI.journalSummary = text(p, "GameFontHighlight")
@@ -1422,6 +1615,8 @@ function UI.refresh()
         UI.refreshAuctions()
     elseif UI.section == "stats" then
         UI.refreshStats()
+    elseif UI.section == "analytics" then
+        UI.refreshAnalytics()
     elseif UI.section == "journal" then
         UI.refreshJournal()
     end

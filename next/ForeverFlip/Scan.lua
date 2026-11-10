@@ -340,6 +340,9 @@ function S.step()
         }
         S.job = nil
         S.setHot(j.hot)
+        if F.Analytics then
+            F.Analytics.invalidate()
+        end
         F.Deals.replace(j.deals, j.scope)
         S.prune(j.scope, j.finishAt)
         S.save()

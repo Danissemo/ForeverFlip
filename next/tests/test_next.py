@@ -448,5 +448,39 @@ class FeatureTests(unittest.TestCase):
         for i=2,#list do assert(list[i-1].score>=list[i].score) end''')
 
 
+class AnalyticsTests(unittest.TestCase):
+    def test_results_per_day_return_hit_rate_and_best_items(self):
+        run('''local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner());local D=ForeverFlip.Data
+        local day=86400
+        D.log(c,{at=now-2*day,kind='buy',key='c:1',name='A',qty=2,amount=1000})
+        D.log(c,{at=now-2*day,kind='sell',key='c:1',name='A',qty=2,amount=1500,profit=500})
+        D.log(c,{at=now-day,kind='vendor',key='c:2',name='B',qty=1,amount=300,profit=100})
+        D.log(c,{at=now,kind='sell',key='c:3',name='C',qty=1,amount=200,profit=-50})
+        D.log(c,{at=now-40*day,kind='sell',key='c:4',name='Old',qty=1,amount=999,profit=999})
+        D.addPosition(c,'c:5','Stale',1,700,'flip',900,now-4*day)
+        local r=ForeverFlip.Analytics.results(7,now)
+        assert(r.profit==550 and r.sales==3 and r.wins==2 and r.vendor==100 and r.auction==450)
+        assert(math.abs(r.roi-550/1450)<1e-9 and math.abs(r.hitRate-2/3)<1e-9)
+        assert(#r.days==7 and r.days[7].profit==-50 and r.days[5].profit==500)
+        assert(r.best[1].name=='A' and r.worst[1].name=='C' and r.stale==700 and r.held==700)''')
+
+    def test_market_lists_gaps_liquid_items_and_price_moves(self):
+        run('''local h=ForeverFlip.Data.market(ForeverFlip.db,ForeverFlip.Engine.scope()).history
+        local day=math.floor(now/86400)
+        h['c:1']={scan={at=now,market=1000},flow={hours=20,sold={24,24,24,24},pairs=3,at=now,market=1000},
+          days={{d=day-2,m=1500,min=1400},{d=day-1,m=1500,min=1300},{d=day,m=1000,min=500}},units=40}
+        h['c:2']={scan={at=now,market=500},flow={hours=20,sold={2,2,2,2},pairs=3,at=now,market=500},
+          days={{d=day-1,m=400,min=400},{d=day,m=500,min=480}},units=10}
+        local m=ForeverFlip.Analytics.market(now)
+        assert(m.items==2 and m.liquid[1].key=='c:1' and m.gaps[1].key=='c:1' and m.gaps[1].gap==450)
+        assert(m.falling[1].key=='c:1' and m.rising[1].key=='c:2' and math.abs(m.rising[1].change-0.25)<1e-9)''')
+
+    def test_analytics_page_renders(self):
+        run(SETUP + '''fullScan();local UI=ForeverFlip.UI;UI.show('analytics')
+        assert(UI.resultsText:GetText():find('Profit') and #UI.bars==7)
+        UI.periodButtons[30]:Click();assert(#UI.bars==30 and UI.analyticsDays==30)
+        UI.viewButtons.liquid:Click();assert(UI.marketView=='liquid')''')
+
+
 if __name__ == '__main__':
     unittest.main()
