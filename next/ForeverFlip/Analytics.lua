@@ -133,7 +133,9 @@ function A.market(now)
                 end
             end
             local avg = n > 0 and sum / n or nil
+            local timing = F.Market.timing(h, now)
             local r = {
+                timing = timing.ready and timing or nil,
                 key = key,
                 market = market,
                 cheap = cheap,
@@ -189,6 +191,17 @@ function A.market(now)
             return r.change and r.change > 0.05
         end, function(r)
             return r.change
+        end),
+        -- Time of the week: usually cheap right now (buy), usually dear right now (sell stock).
+        cheapNow = top(function(r)
+            return r.timing and r.timing.now <= 0.93 and (r.perDay or 0) >= 0.5
+        end, function(r)
+            return -r.timing.now
+        end),
+        sellNow = top(function(r)
+            return r.timing and r.timing.now >= 1.07 and F.Data.char(F.db, F.Engine.owner()).positions[r.key] ~= nil
+        end, function(r)
+            return r.timing.now
         end),
     }
     return cache

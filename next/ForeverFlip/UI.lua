@@ -969,6 +969,15 @@ function UI.refreshSell()
     else
         lines[#lines + 1] = L("Press Check price to read the current listings.")
     end
+    local h = F.Data.market(F.db, F.Engine.scope()).history[item.key]
+    local timing = h and F.Market.timing(h, F.Engine.clock())
+    if timing and timing.ready and timing.now <= 0.95 and timing.spread >= 0.08 then
+        lines[#lines + 1] = string.format(
+            L("Prices for it are usually %d%% higher on %s: posting then may pay more."),
+            math.floor((timing.high.f / timing.now - 1) * 100 + 0.5),
+            slotName(timing.high)
+        )
+    end
     if floor then
         lines[#lines + 1] = string.format(L("Break-even after the 5%% cut: %s each."), U.money(floor))
         if price and price < floor then
@@ -1163,11 +1172,20 @@ end
 
 -- Analytics page -----------------------------------------------------------------------------------
 local MARKET_VIEWS = {
-    { "gaps", "Below usual price" },
-    { "liquid", "Sells the most" },
-    { "falling", "Price falling" },
-    { "rising", "Price rising" },
+    { "gaps", "Below usual" },
+    { "liquid", "Sells most" },
+    { "falling", "Falling" },
+    { "rising", "Rising" },
+    { "cheapNow", "Cheap now" },
+    { "sellNow", "Sell now" },
 }
+
+local DAYS = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
+local PARTS = { "night", "morning", "day", "evening" }
+local function slotName(s)
+    return L(DAYS[s.w]) .. " " .. L(PARTS[s.p])
+end
+UI.slotName = slotName
 
 function UI.createAnalytics(p)
     UI.analyticsDays, UI.marketView = 7, "gaps"
@@ -1207,11 +1225,11 @@ function UI.createAnalytics(p)
     views:SetHeight(26)
     UI.viewButtons = {}
     for i, v in ipairs(MARKET_VIEWS) do
-        local b = button(views, v[2], 150, function()
+        local b = button(views, v[2], 92, function()
             UI.marketView = v[1]
             UI.refresh()
         end)
-        b:SetPoint("LEFT", views, "LEFT", 6 + (i - 1) * 154, 0)
+        b:SetPoint("LEFT", views, "LEFT", 6 + (i - 1) * 95, 0)
         UI.viewButtons[v[1]] = b
     end
     local list = CreateFrame("Frame", nil, p)
@@ -1240,7 +1258,12 @@ function UI.createAnalytics(p)
 end
 
 local function percent(x)
-    return x and string.format("%+d%%", math.floor(x * 100 + (x >= 0 and 0.5 or -0.5))) or "-"
+    if not x then
+        return "-"
+    end
+    local v = x * 100
+    v = v >= 0 and math.floor(v + 0.5) or -math.floor(-v + 0.5)
+    return string.format("%+d%%", v)
 end
 
 function UI.refreshAnalytics()
@@ -1328,8 +1351,15 @@ function UI.refreshAnalytics()
             row.icon:SetTexture(item and icon(item.id) or 134400)
             row.name:SetText(nameOf(e.key))
             row.cols[1]:SetText(U.money(e.market))
-            row.cols[2]:SetText(e.cheap and U.money(e.cheap) or "-")
-            row.cols[3]:SetText(percent(e.change))
+            if (UI.marketView == "cheapNow" or UI.marketView == "sellNow") and e.timing then
+                -- Timing views: when it is cheapest/dearest and how now compares.
+                local s = UI.marketView == "cheapNow" and e.timing.high or e.timing.low
+                row.cols[2]:SetText((UI.marketView == "cheapNow" and L("sell: ") or L("buy: ")) .. slotName(s))
+                row.cols[3]:SetText(percent(e.timing.now - 1))
+            else
+                row.cols[2]:SetText(e.cheap and U.money(e.cheap) or "-")
+                row.cols[3]:SetText(percent(e.change))
+            end
             row.cols[4]:SetText(e.perDay and string.format("~%.1f", e.perDay) or "-")
             row.selected:Hide()
             row:Show()
@@ -1770,6 +1800,22 @@ local function tooltipLines(tooltip)
         1,
         1
     )
+    local timing = F.Market.timing(h, F.Engine.clock())
+    if timing.ready and timing.spread >= 0.05 then
+        tooltip:AddDoubleLine(
+            L("cheapest / dearest time"),
+            slotName(timing.low)
+                .. " / "
+                .. slotName(timing.high)
+                .. string.format(" (+%d%%)", math.floor(timing.spread * 100 + 0.5)),
+            0.6,
+            0.6,
+            0.6,
+            1,
+            1,
+            1
+        )
+    end
     if today and today.min then
         tooltip:AddDoubleLine(
             L("cheapest today / 5 days"),

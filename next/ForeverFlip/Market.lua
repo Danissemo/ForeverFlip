@@ -121,6 +121,84 @@ function M.demandAt(h, price, now)
     return { pairs = f.pairs or 0, perDay = sold / (f.hours + M.PRIOR_HOURS) * 24, sold = sold, hours = f.hours }
 end
 
+-- Time of the week. Each scan's usual price is compared with the item's long-run baseline; the
+-- ratio is averaged per weekday (7) and per part of the day (4: night, morning, day, evening)
+-- as two separate factors, so a few weeks of scans are enough. price ~ base x day[w] x part[p].
+-- Stored compactly in h.t = { b = baseline, w = {7}, wn = {7}, p = {4}, pn = {4} }.
+local function slot(now)
+    local t = date("*t", now)
+    return t.wday, math.floor(t.hour / 6) + 1
+end
+M.slot = slot
+
+function M.recordTiming(h, market, now)
+    if not U.finite(market) or market <= 0 then
+        return
+    end
+    local t = type(h.t) == "table" and h.t or { w = {}, wn = {}, p = {}, pn = {} }
+    h.t = t
+    if not U.finite(t.b) or t.b <= 0 then
+        t.b = market
+        return
+    end
+    local ratio = math.max(0.2, math.min(5, market / t.b))
+    local w, p = slot(now)
+    local function add(values, counts, i)
+        local n = math.min((counts[i] or 0) + 1, 20)
+        values[i] = (values[i] or 1) + (ratio - (values[i] or 1)) / n
+        counts[i] = n
+    end
+    add(t.w, t.wn, w)
+    add(t.p, t.pn, p)
+    t.b = t.b + (market - t.b) * 0.05
+end
+
+-- Pattern of an item: ready when four weekdays and three parts of the day have data. Returns the
+-- factor now, the cheapest and dearest slot and the spread between them.
+function M.timing(h, now)
+    local t = type(h) == "table" and h.t
+    if type(t) ~= "table" or type(t.w) ~= "table" or type(t.p) ~= "table" then
+        return { ready = false }
+    end
+    local days, parts = 0, 0
+    for i = 1, 7 do
+        if (t.wn[i] or 0) >= 1 then
+            days = days + 1
+        end
+    end
+    for i = 1, 4 do
+        if (t.pn[i] or 0) >= 2 then
+            parts = parts + 1
+        end
+    end
+    if days < 4 or parts < 3 then
+        return { ready = false, days = days, parts = parts }
+    end
+    local low, high
+    for w = 1, 7 do
+        for p = 1, 4 do
+            if (t.wn[w] or 0) >= 1 and (t.pn[p] or 0) >= 2 then
+                local f = (t.w[w] or 1) * (t.p[p] or 1)
+                if not low or f < low.f then
+                    low = { f = f, w = w, p = p }
+                end
+                if not high or f > high.f then
+                    high = { f = f, w = w, p = p }
+                end
+            end
+        end
+    end
+    local w, p = slot(now)
+    local current = (t.w[w] or 1) * (t.p[p] or 1)
+    return {
+        ready = true,
+        now = current,
+        low = low,
+        high = high,
+        spread = high.f / low.f - 1,
+    }
+end
+
 -- Display metadata for the existing demand model. Unknown is not an observed zero; old
 -- estimates stay numeric but carry the age of the last usable full-scan pair.
 function M.saleability(h, price, now)

@@ -514,5 +514,40 @@ class DealTabTests(unittest.TestCase):
         assert(c.positions['c:60'].qty==48 and c.positions['c:60'].cost==4800 and c.positions['c:60'].mode=='flip')''')
 
 
+class TimingTests(unittest.TestCase):
+    def test_weekly_pattern_finds_the_cheap_and_the_dear_time(self):
+        run('''local M=ForeverFlip.Market;local h={}
+        -- Four weeks of scans every 6 hours; Friday evening is 30% dearer, Tuesday morning 20% cheaper.
+        local start=1800000000;local fridayEvening,tuesdayMorning
+        for k=0,4*7*4 do
+          local t=start+k*6*3600;local w,p=M.slot(t);local price=1000
+          if w==6 and p==4 then price=1300;fridayEvening={w=w,p=p} end
+          if w==3 and p==2 then price=800;tuesdayMorning={w=w,p=p} end
+          M.recordTiming(h,price,t)
+        end
+        local r=M.timing(h,start)
+        assert(r.ready and r.high.w==6 and r.high.p==4 and r.low.w==3 and r.low.p==2)
+        -- Day and time are separate factors: a spike only on one evening is spread out.
+        assert(r.spread>0.15,r.spread)''')
+
+    def test_pattern_needs_enough_days_and_parts(self):
+        run('''local M=ForeverFlip.Market;local h={}
+        for k=0,5 do M.recordTiming(h,1000,1800000000+k*3600) end
+        assert(not M.timing(h,1800000000).ready)''')
+
+    def test_cheap_now_list_and_tooltip_use_the_pattern(self):
+        run(SETUP + '''local M=ForeverFlip.Market;local h=ForeverFlip.Data.market(ForeverFlip.db,ForeverFlip.Engine.scope()).history
+        local w,p=M.slot(now)
+        local t={b=1000,w={1,1,1,1,1,1,1},wn={3,3,3,3,3,3,3},p={1,1,1,1},pn={3,3,3,3}}
+        t.w[w]=0.8;t.w[(w%7)+1]=1.3
+        h['c:10']={scan={at=now,market=1000},flow={hours=20,sold={24,24,24,24},pairs=3,at=now,market=1000},t=t,units=40}
+        ForeverFlip.Analytics.invalidate();local m=ForeverFlip.Analytics.market(now)
+        assert(m.cheapNow[1] and m.cheapNow[1].key=='c:10')
+        local UI=ForeverFlip.UI;UI.show('analytics');UI.viewButtons.cheapNow:Click()
+        assert(UI.marketTable.rows[1].cols[3]:GetText()=='-20%')
+        GameTooltip.itemLink=link(10);tooltipLines={};tooltipCalls[1](GameTooltip)
+        local found=false;for _,l in ipairs(tooltipLines) do found=found or l:find('dearest') end;assert(found)''')
+
+
 if __name__ == '__main__':
     unittest.main()

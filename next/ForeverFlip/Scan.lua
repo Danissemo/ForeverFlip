@@ -204,6 +204,10 @@ local function finish(j, done)
         if h then
             M.recordFlow(h, g.buckets, value, now)
             h.units = g.units
+            -- Weekly pattern only for items traded often enough to have one.
+            if g.units >= 10 or h.t then
+                M.recordTiming(h, value, now)
+            end
             h.days = type(h.days) == "table" and h.days or {}
             if not h.days[1] and (h.hits or 0) <= 0 and g.units < 10 then
                 h.days = nil -- a rarely traded item: no daily history kept
