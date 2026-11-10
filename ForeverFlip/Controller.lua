@@ -1,8 +1,16 @@
 local F = ForeverFlip
 local U = F.Util
 local C = {}
+-- Scan data used to pick candidates for exact checks. Buying always uses a fresh exact search,
+-- so discovery may use data up to 2 hours old (matches candidate restore after /reload).
+C.DISCOVERY_AGE = 7200
 -- Minimum seconds between auction queries; the server throttle gate (api.ready) still applies.
 C.REQUEST_GAP = 1
+-- A full scan reads every item (memory bound only); the best CANDIDATES items by scan potential
+-- go to live search and saved history. Items without a known vendor price wait in a pool and are
+-- added when their item data loads and shows a vendor deal.
+C.SCAN_GROUPS = 60000
+C.CANDIDATES = 2000
 F.Controller = C
 C.__index = C
 function C.new(db, api)
@@ -256,9 +264,13 @@ function C:options(key, mode, ownOp, ignoreOverrides)
         o.minROI = math.max(o.minROI or 0, o.advice.minROI)
         o.budget = math.min(o.budget or math.huge, o.advice.maxBudget)
     end
-    -- Vendor value is per item ID; only random suffixes and pets need the exact per-listing value.
-    if (key.itemSuffix or 0) ~= 0 or (key.battlePetSpeciesID or 0) ~= 0 then
+    -- Vendor value is per item ID, also for random-suffix gear ("of the Bear"); pets have none.
+    if (key.battlePetSpeciesID or 0) ~= 0 then
         o.vendor = nil
+    end
+    -- A vendor sale has no market risk, fee or waiting: 5% return is enough.
+    if o.mode == "vendor" then
+        o.minROI = math.min(U.number(o.minROI, 0.25, 0, 10), 0.05)
     end
     local npcBudget = self:npcRemaining(ownOp)
     if npcBudget then
@@ -322,6 +334,10 @@ function C:options(key, mode, ownOp, ignoreOverrides)
             o[k] = v
         end
     end
+    local history = self:history(key)
+    o.demand = F.Market.demand(history, self.api.clock())
+    o.demandHistory = history
+    o.requireDemand = mode ~= "vendor" and mode ~= "material" and self.db.settings.requireDemand ~= false
     return o
 end
 function C:variantVendor(rows, key)
@@ -353,10 +369,10 @@ function C:npcRemaining(ownOp)
     if not run or run.owner ~= self.api.owner() then
         return nil
     end
-    -- Vendor resale has a known exit price, so the limit is a rolling 24-hour spend that grows with
-    -- the wallet: at least 1g, otherwise a share of current money (default 25%).
+    -- Vendor resale returns the money at once, so by default the whole wallet may be used within
+    -- 24 hours (free cash still limits each deal). A smaller share can be set (npcDailyShare).
     local now = self.api.clock()
-    local share = U.number(self.db.settings and self.db.settings.npcDailyShare, 0.25, 0, 1)
+    local share = U.number(self.db.settings and self.db.settings.npcDailyShare, 1, 0, 1)
     local limit = math.max(10000, math.floor(U.number(self.api.wallet(), 0, 0) * share))
     local spent = 0
     local effective, indexes = F.Ledger.effective(self.db.ledger, run.owner)
@@ -423,6 +439,10 @@ function C:openDeal(p)
         return false
     end
     self:stop("manual")
+    if p.source == "radar" then
+        -- Live search ignores per-item caps from the Trading card; open the deal on the same terms.
+        self.overrides = nil
+    end
     self.mode = p.mode or self.mode
     if self.mode ~= "material" then
         self.materialRequest = nil
@@ -551,7 +571,14 @@ function C:restoreCandidates()
     end
     local scope = self.api.scope()
     if not self.restoreJob or self.restoreJob.scope ~= scope then
-        self.restoreJob = { scope = scope, histories = self.db.markets and self.db.markets[scope] or {} }
+        -- Iterate a snapshot of the keys: live searches add market entries while restoring,
+        -- which would break next() on the live table.
+        local histories = self.db.markets and self.db.markets[scope] or {}
+        local ids = {}
+        for id in pairs(histories) do
+            ids[#ids + 1] = id
+        end
+        self.restoreJob = { scope = scope, histories = histories, ids = ids, index = 1 }
     end
     return 0
 end
@@ -569,18 +596,15 @@ function C:advanceRestoreCandidates(limit)
         present[U.key(row.key)] = true
     end
     for _ = 1, limit or 25 do
-        local ok, id, history = pcall(next, job.histories, job.cursor)
-        if not ok then
-            self.restoreJob = nil
-            break
-        end
+        local id = job.ids[job.index]
         if not id or #self.candidates >= 2000 then
             self.restoreJob = nil
             break
         end
-        job.cursor = id
-        local v, key = history.latest, U.fromKey(id)
-        if key and v and v.rows and not present[id] and v.at <= now and now - v.at <= 7200 then
+        job.index = job.index + 1
+        local history = job.histories[id]
+        local v, key = history and history.latest, U.fromKey(id)
+        if key and v and v.rows and not present[id] and v.at <= now and now - v.at <= C.DISCOVERY_AGE then
             self.candidates[#self.candidates + 1] = {
                 key = key,
                 rows = U.copy(v.rows),
@@ -589,6 +613,7 @@ function C:advanceRestoreCandidates(limit)
                 family = v.family,
                 kind = v.family == false and "commodity" or "item",
                 complete = true,
+                market = v.market,
             }
             present[id], added = true, added + 1
         end
@@ -1013,6 +1038,49 @@ function C:receipt(kind, id, qty, auctionID)
     if not U.finite(qty) or qty ~= op.qty then
         return
     end
+    self:settle(op)
+end
+-- The system message "You won an auction for X" is printed for every won auction. Some clients
+-- never send the auction-ID event for a buyout, so the message settles the waiting purchase of that
+-- item (quantity checked when the message carries it).
+function C:chatReceipt(msg)
+    local template = ERR_AUCTION_WON_S
+    if type(msg) ~= "string" or type(template) ~= "string" or not template:find("%s", 1, true) then
+        return false
+    end
+    local a, b = template:find("%s", 1, true)
+    local pattern = "^"
+        .. template:sub(1, a - 1):gsub("%p", "%%%0")
+        .. "(.+)"
+        .. template:sub(b + 1):gsub("%p", "%%%0")
+        .. "$"
+    local name = msg:match(pattern)
+    if not name then
+        return false
+    end
+    local count = tonumber(name:match("%s*%(x(%d+)%)$"))
+    name = name:gsub("%s*%(x%d+%)$", ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h%[?(.-)%]?|h", "%1")
+    local best
+    for _, op in pairs(self.db.pending or {}) do
+        if
+            (op.status == "awaiting" or op.status == "unknown")
+            and op.owner == self.api.owner()
+            and self.api.clock() - (op.at or 0) <= 600
+            and (not count or count == op.qty)
+            and U.name(op.id) == name
+            and (not best or (self.active == op) or (best ~= self.active and op.at > best.at))
+        then
+            best = op
+        end
+    end
+    if not best then
+        return false
+    end
+    self:settle(best)
+    return true
+end
+function C:settle(op)
+    local kind = op.kind
     local ok = F.Ledger.append(self.db, {
         uid = op.uid,
         kind = "buy",
@@ -1036,6 +1104,13 @@ function C:receipt(kind, id, qty, auctionID)
     end
     self.plan = nil
     self.lastPurchase = { key = U.fromKey(op.key), qty = op.qty, total = op.total, at = self.api.clock() }
+    if kind == "item" and op.scope == self.api.scope() then
+        -- Equipment is bought one auction at a time: look up the next cheapest lot right away.
+        local key = U.fromKey(op.key)
+        if key then
+            self.reviewRequest = { key = key, at = self.api.clock(), scope = op.scope, owner = op.owner }
+        end
+    end
     self:notify("purchase_recorded")
 end
 function C:reconcile(uid, success)
@@ -1147,20 +1222,299 @@ function C:fullScan(origin)
     self:notify("replicate_wait")
     return true
 end
+-- Rough profit of a scan ladder from scan data alone (up to 20 units). Vendor: every unit below
+-- the vendor price. Resale: the best prefix of cheap listings resold just below the next listing
+-- left (capped by the full-depth market value), after the 5% fee. It only orders items for live
+-- search; the plan decides.
+function C:scanPotential(g, vendor)
+    local market = g.market or 0
+    local rows = g.rows
+    local vendorGain, flipBest, spent, units, left = 0, 0, 0, 0, 20
+    for i, r in ipairs(rows) do
+        if left <= 0 then
+            break
+        end
+        local q = math.min(r.qty, left)
+        if vendor and r.unit < vendor then
+            vendorGain = vendorGain + (vendor - r.unit) * q
+        end
+        spent, units, left = spent + r.unit * q, units + q, left - q
+        local nextUnit = q < r.qty and r.unit or (rows[i + 1] and rows[i + 1].unit) or market
+        local exit = math.min(market, nextUnit) * 0.95
+        flipBest = math.max(flipBest, exit * units - spent)
+    end
+    return math.max(vendorGain, flipBest)
+end
+function C:saveScanGroup(g, k, scope, token, now, buckets, partial)
+    local price = F.Market.snapshot(g.rows).price
+    if not price then
+        return
+    end
+    local qty = 0
+    for _, r in ipairs(g.rows) do
+        qty = qty + r.qty
+    end
+    F.Store.observe(self.db, scope, k, {
+        at = now,
+        price = price,
+        qty = g.depth or qty,
+        complete = true,
+        source = "replicate",
+        token = token,
+        rows = U.copy(g.rows),
+        family = g.family,
+    })
+    local h = self.db.markets and self.db.markets[scope] and self.db.markets[scope][k]
+    if h and buckets and g.market and not partial then
+        F.Market.recordDemand(h, buckets, g.market, now)
+    end
+    if h and h.latest and h.latest.at == now then
+        h.latest.market = g.market
+    end
+end
+local function betterGroup(a, b)
+    if a.potential ~= b.potential then
+        return a.potential > b.potential
+    end
+    if a.ratio ~= b.ratio then
+        return a.ratio < b.ratio
+    end
+    return a.id < b.id
+end
+-- Bounded heap with the weakest kept item on top: picks the best CANDIDATES of any scan size
+-- without sorting every item.
+local function heapPush(h, v, limit)
+    local n = #h
+    if n < limit then
+        n = n + 1
+        h[n] = v
+        local i = n
+        while i > 1 do
+            local parent = math.floor(i / 2)
+            if not betterGroup(h[parent], h[i]) then
+                break
+            end
+            h[parent], h[i] = h[i], h[parent]
+            i = parent
+        end
+    elseif betterGroup(v, h[1]) then
+        h[1] = v
+        local i = 1
+        while true do
+            local l, worst = 2 * i, i
+            if l <= n and betterGroup(h[worst], h[l]) then
+                worst = l
+            end
+            if l + 1 <= n and betterGroup(h[worst], h[l + 1]) then
+                worst = l + 1
+            end
+            if worst == i then
+                break
+            end
+            h[worst], h[i] = h[i], h[worst]
+            i = worst
+        end
+    end
+end
+-- Turns processed scan groups into candidates and saved market history, in steps spread over
+-- frames (a 160k-listing scan would otherwise freeze the game for half a second). With no budget
+-- it runs to the end: tests, and logout or /reload with the part processed so far.
+function C:finishStep(j, now, partial, budget)
+    local f = j.finish
+    if not f then
+        local watched = {}
+        for _, w in ipairs(self.db.watchlist or {}) do
+            local key = type(w) == "string" and U.fromKey(w) or { itemID = w }
+            if key and key.itemID then
+                watched[key.itemID] = true
+            end
+        end
+        if not j.order then
+            j.order = {}
+            for k in pairs(j.groups) do
+                j.order[#j.order + 1] = k
+            end
+        end
+        f = {
+            stage = "measure",
+            index = 1,
+            heap = {},
+            watched = watched,
+            now = now,
+            partial = partial,
+            pool = { scope = j.scope, at = now, token = "replicate:" .. j.at, byItem = {}, count = 0 },
+        }
+        j.finish = f
+    end
+    now, partial = f.now, f.partial
+    local started = budget and debugprofilestop and debugprofilestop()
+    local work = 0
+    local function spent()
+        work = work + 1
+        if not budget then
+            return false
+        end
+        if started then
+            return work % 25 == 0 and debugprofilestop() - started >= budget
+        end
+        return work >= 400
+    end
+    if f.stage == "measure" then
+        while f.index <= #j.order do
+            local k = j.order[f.index]
+            f.index = f.index + 1
+            local g = j.groups[k]
+            table.sort(g.rows, function(x, y)
+                return x.unit < y.unit
+            end)
+            g.scope = j.scope
+            g.market = g.buckets and F.Market.bucketValue(g.buckets)
+            local vendor = self.api.vendor and self.api.vendor(g.key.itemID, true)
+            local cheap = g.rows[1] and g.rows[1].unit
+            g.vendorKnown = vendor ~= nil
+            heapPush(f.heap, {
+                id = k,
+                g = g,
+                potential = f.watched[g.key.itemID] and math.huge or self:scanPotential(g, vendor),
+                ratio = cheap and g.market and g.market > 0 and cheap / g.market or 1,
+            }, C.CANDIDATES)
+            if spent() then
+                return false
+            end
+        end
+        table.sort(f.heap, betterGroup)
+        for _, v in ipairs(f.heap) do
+            v.g.candidate = true
+        end
+        f.stage, f.index = "save", 1
+    end
+    if f.stage == "save" then
+        while f.index <= #f.heap do
+            local v = f.heap[f.index]
+            f.index = f.index + 1
+            self:saveScanGroup(v.g, v.id, j.scope, f.pool.token, now, v.g.buckets, partial)
+            if spent() then
+                return false
+            end
+        end
+        f.stage, f.index = "pool", 1
+    end
+    if f.stage == "pool" then
+        local pool = f.pool
+        while f.index <= #j.order do
+            local k = j.order[f.index]
+            f.index = f.index + 1
+            local g = j.groups[k]
+            g.buckets, g.worstIndex, g.worstUnit = nil, nil, nil
+            if not g.candidate and not g.vendorKnown and g.rows[1] then
+                -- Trimmed copy: only the cheapest listings matter for a vendor deal.
+                for n = #g.rows, 9, -1 do
+                    g.rows[n] = nil
+                end
+                g.id = k
+                local list = pool.byItem[g.key.itemID]
+                if not list then
+                    list = {}
+                    pool.byItem[g.key.itemID] = list
+                    F.Adapters.requestData(g.key.itemID)
+                end
+                list[#list + 1] = g
+                pool.count = pool.count + 1
+            end
+            g.vendorKnown = nil
+            if spent() then
+                return false
+            end
+        end
+    end
+    self.candidates = {}
+    for i, v in ipairs(f.heap) do
+        self.candidates[i] = v.g
+    end
+    self.scanPool = f.pool.count > 0 and f.pool or nil
+    j.finish = nil
+    self.db.lastScan = {
+        at = now,
+        total = j.total,
+        skipped = j.skipped,
+        scope = j.scope,
+        partial = partial,
+        items = #j.order,
+    }
+    self.candidateVersion = (self.candidateVersion or 0) + 1
+    if not partial and (j.deferredCount or 0) > 0 then
+        self.replicaRecovery = j
+    end
+    self.fullJob = nil
+    self:notify("replicate_done")
+    return true
+end
+function C:finishScan(j, now, partial)
+    return self:finishStep(j, now, partial)
+end
+-- Item data arrived for an item of the last scan that had no vendor price: add its listings to
+-- live search when the cheapest one is below the vendor price.
+function C:promoteScanItem(id, success)
+    local pool = self.scanPool
+    local list = pool and pool.byItem[id]
+    if not list then
+        return false
+    end
+    pool.byItem[id] = nil
+    local now = self.api.clock()
+    if success == false or pool.scope ~= self.api.scope() or now - pool.at > C.DISCOVERY_AGE then
+        return false
+    end
+    local vendor = self.api.vendor and self.api.vendor(id, true)
+    local added = false
+    for _, g in ipairs(list) do
+        if vendor and not g.candidate and g.rows[1].unit < vendor and #self.candidates < C.CANDIDATES + 1000 then
+            g.candidate = true
+            self.candidates[#self.candidates + 1] = g
+            self:saveScanGroup(g, g.id, pool.scope, pool.token, g.at)
+            added = true
+        end
+    end
+    if added then
+        self.candidateVersion = (self.candidateVersion or 0) + 1
+        local r = self.radar
+        if r and r.enabled then
+            r.dataDirty = true
+        end
+    end
+    return added
+end
+-- Saves a scan that is still being processed (logout, /reload): keeps what is already read.
+function C:saveScanProgress()
+    local j = self.fullJob
+    if j and j.finish and F.Store.writable(self.db) then
+        self:finishStep(j)
+        return true
+    end
+    if j and not j.waiting and j.groups and (j.groupsCount or 0) > 0 and F.Store.writable(self.db) then
+        self:finishScan(j, self.api.clock(), true)
+        return true
+    end
+    return false
+end
 function C:ingestReplica(j, r, now)
     local k = U.key(r.key)
     local g = j.groups[k]
     if g and g.exactAt and g.exactAt >= j.at then
         return nil
     end
-    if not g and j.groupsCount < 2000 then
+    if not g and j.groupsCount < C.SCAN_GROUPS then
         g = { key = r.key, rows = {}, at = now, family = r.family, complete = true }
         j.groups[k] = g
         j.groupsCount = j.groupsCount + 1
+        j.order = j.order or {}
+        j.order[#j.order + 1] = k
     end
     if g then
         local price = r.buyout / r.qty
         g.depth = (g.depth or 0) + r.qty
+        g.buckets = g.buckets or {}
+        F.Market.bucketAdd(g.buckets, price, r.qty)
         -- Bounded discovery ladder; exact search always replaces it before trading.
         local row = { qty = r.qty, unit = price, cost = r.buyout, link = r.link }
         -- Keeps the 64 cheapest listings. The most expensive kept row is cached, so a scan of
@@ -1187,6 +1541,7 @@ function C:ingestReplica(j, r, now)
     return g, k
 end
 function C:itemDataLoaded(id, success)
+    self:promoteScanItem(id, success)
     local j = self.fullJob or self.replicaRecovery
     if not j or not j.deferred or j.scope ~= self.api.scope() or j.owner ~= self.api.owner() then
         return
@@ -1207,7 +1562,7 @@ function C:recoverReplica(now)
     if not j or self.fullJob then
         return
     end
-    if j.scope ~= self.api.scope() or j.owner ~= self.api.owner() or now - j.at > 180 then
+    if j.scope ~= self.api.scope() or j.owner ~= self.api.owner() or now - j.at > 300 then
         self.replicaRecovery = nil
         return
     end
@@ -1235,28 +1590,27 @@ function C:recoverReplica(now)
             then
                 local g, key = self:ingestReplica(j, r, now)
                 if g then
-                    if not g.scope then
-                        if #self.candidates >= 2000 then
-                            table.remove(self.candidates, 1)
-                        end
-                        self.candidates[#self.candidates + 1] = g
-                    end
                     g.scope, g.at = j.scope, now
                     table.sort(g.rows, function(a, b)
                         return a.unit < b.unit
                     end)
-                    local price = F.Market.snapshot(g.rows).price
-                    F.Store.observe(self.db, j.scope, key, {
-                        at = now,
-                        price = price,
-                        qty = g.depth,
-                        complete = true,
-                        source = "replicate",
-                        token = "replicate:" .. j.at,
-                        rows = g.rows,
-                        family = g.family,
-                    })
-                    changed = true
+                    -- A group made only of recovered rows has no scan market value yet.
+                    g.market = g.market or (g.buckets and F.Market.bucketValue(g.buckets))
+                    local vendor = self.api.vendor and self.api.vendor(g.key.itemID, true)
+                    -- Recovered items join live search only with scan potential; the best
+                    -- candidates from the scan are never pushed out.
+                    if
+                        not g.candidate
+                        and self:scanPotential(g, vendor) > 0
+                        and #self.candidates < C.CANDIDATES + 1000
+                    then
+                        g.candidate = true
+                        self.candidates[#self.candidates + 1] = g
+                    end
+                    if g.candidate then
+                        self:saveScanGroup(g, key, j.scope, "replicate:" .. j.at, now)
+                        changed = true
+                    end
                 end
                 entry.tries = 3
                 j.skipped = math.max(0, j.skipped - 1)
@@ -1379,9 +1733,13 @@ function C:tick()
             end
             return
         end
-        -- Up to 1500 rows per update within a ~4 ms budget; a fixed 220 when the profiler is absent.
+        if j.finish then
+            self:finishStep(j, now, false, 6)
+            return
+        end
+        -- Up to 3000 rows per frame within a ~4 ms budget; a fixed 220 when the profiler is absent.
         local budgetStart = debugprofilestop and debugprofilestop()
-        local stop = math.min(j.index + (budgetStart and 1500 or 220), j.total)
+        local stop = math.min(j.index + (budgetStart and 3000 or 220), j.total)
         for i = j.index, stop - 1 do
             if budgetStart and (i - j.index) % 50 == 49 and debugprofilestop() - budgetStart >= 4 then
                 stop = i
@@ -1401,7 +1759,7 @@ function C:tick()
                 self:ingestReplica(j, r, now)
             else
                 j.skipped = j.skipped + 1
-                if ok and r and r.id and not r.complete and (j.deferredCount or 0) < 4096 then
+                if ok and r and r.id and not r.complete and (j.deferredCount or 0) < 20000 then
                     j.deferred = j.deferred or {}
                     j.readyData = j.readyData or {}
                     j.owner = j.owner or self.api.owner()
@@ -1414,38 +1772,7 @@ function C:tick()
         end
         j.index = stop
         if stop >= j.total then
-            self.candidates = {}
-            for k, g in pairs(j.groups) do
-                table.sort(g.rows, function(a, b)
-                    return a.unit < b.unit
-                end)
-                g.scope = j.scope
-                self.candidates[#self.candidates + 1] = g
-                local qty = 0
-                for _, r in ipairs(g.rows) do
-                    qty = qty + r.qty
-                end
-                local price = F.Market.snapshot(g.rows).price
-                if price then
-                    F.Store.observe(self.db, j.scope, k, {
-                        at = now,
-                        price = price,
-                        qty = g.depth or qty,
-                        complete = true,
-                        source = "replicate",
-                        token = "replicate:" .. j.at,
-                        rows = U.copy(g.rows),
-                        family = g.family,
-                    })
-                end
-            end
-            self.db.lastScan = { at = now, total = j.total, skipped = j.skipped, scope = j.scope }
-            self.candidateVersion = (self.candidateVersion or 0) + 1
-            if (j.deferredCount or 0) > 0 then
-                self.replicaRecovery = j
-            end
-            self.fullJob = nil
-            self:notify("replicate_done")
+            self:finishStep(j, now, false, 6)
         end
         return
     end
@@ -1506,6 +1833,9 @@ function C:event(event, ...)
         end
     elseif event == "ITEM_SEARCH_RESULTS_UPDATED" or event == "ITEM_SEARCH_RESULTS_ADDED" then
         local key = ...
+        if self.api.resultKey then
+            key = self.api.resultKey(key)
+        end
         if type(key) == "table" then
             if not self.job or U.key(self.job.key) ~= U.key(key) then
                 F.Radar.invalidate(self, key, "item")
@@ -1551,6 +1881,27 @@ function C:event(event, ...)
         self:receipt("item", ...)
     elseif event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
         self:receipt("item", nil, nil, ...)
+    elseif event == "CHAT_MSG_SYSTEM" then
+        self:chatReceipt(...)
+    elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
+        -- The server discarded the last query: retry it shortly instead of waiting for the timeout.
+        local j = self.job
+        if j and self.api.clock() - (self.lastRequest or 0) <= 5 then
+            self.job, self.plan = nil, nil
+            if j.origin == "radar" and self.radar and self.radar.enabled then
+                local r = self.radar
+                r.current = nil
+                if r.index > 1 and r.queue[r.index - 1] then
+                    r.index = r.index - 1
+                end
+                r.nextAt = self.api.clock() + 2
+            else
+                self.reviewRequest =
+                    { key = U.copy(j.key), at = self.api.clock(), scope = j.scope, owner = self.api.owner() }
+            end
+            self.lastRequest = self.api.clock()
+            self:notify("throttled")
+        end
     elseif event == "OWNED_AUCTIONS_UPDATED" then
         if self.api.owned then
             local ok, list = pcall(self.api.owned)
@@ -1607,6 +1958,7 @@ function C:rankCandidate(r)
     local best
     for _, mode in ipairs({ "vendor", "flip" }) do
         local o = self:options(r.key, mode)
+        o.marketHint = r.market
         o.commodity = r.kind == "commodity" or (r.kind == nil and r.family == false)
         o.complete = true
         local p = F.Market.plan(r.rows, F.Market.evidence(history), o)
@@ -1627,7 +1979,7 @@ function C:rankCandidate(r)
     best.at = r.at
     best.family = r.family
     best.source = "discovery"
-    if self.api.clock() - r.at > 1800 then
+    if self.api.clock() - r.at > C.DISCOVERY_AGE then
         best.canBuy = false
         best.reasons[#best.reasons + 1] = "stale"
     end
@@ -1725,11 +2077,16 @@ function C:performance()
     end
     return cached.value
 end
-function C:price(id)
+function C:price(id, side)
     local key = type(id) == "table" and id or { itemID = id }
     local h = self:history(key)
     local latest = h and h.latest
     if latest and not latest.family and latest.at <= self.api.clock() and self.api.clock() - latest.at < 86400 then
+        -- Selling: the snapshot price is an ask; a quick sale undercuts the cheapest listing.
+        local cheapest = side == "sell" and latest.rows and latest.rows[1] and latest.rows[1].unit
+        if U.finite(cheapest) and cheapest > 0 then
+            return math.min(latest.price, F.Market.priceStep(cheapest, true)), "local"
+        end
         return latest.price, "local"
     end
     if (key.itemLevel or 0) ~= 0 or (key.itemSuffix or 0) ~= 0 or (key.battlePetSpeciesID or 0) ~= 0 then
@@ -1755,7 +2112,7 @@ function C:bid(index)
     if not r or not r.auctionID then
         return false
     end
-    local ok, _, complete, _, bids = pcall(self.api.rows, self.key, "item")
+    local ok, buyouts, complete, _, bids = pcall(self.api.rows, self.key, "item")
     local live
     if ok and complete then
         for _, v in ipairs(bids or {}) do
@@ -1780,13 +2137,24 @@ function C:bid(index)
     local rule = self:options(self.key, "flip")
     rule.commodity = false
     rule.complete = true
+    rule.maxQty = math.min(rule.maxQty or live.quantity, live.quantity)
     local h = self:history(self.key)
-    local check = F.Market.plan(
-        { { qty = live.quantity, unit = price / live.quantity, cost = price, auctionID = live.auctionID } },
-        F.Market.evidence(h),
-        rule
-    )
-    if not check.canBuy or check.qty ~= live.quantity or check.cost ~= price then
+    -- Buyouts stay in the plan: a cheaper buyout is bought instead (the check then fails), and the
+    -- resale price must undercut the buyouts left on the market.
+    local rows = { { qty = live.quantity, unit = price / live.quantity, cost = price, auctionID = live.auctionID } }
+    for _, v in ipairs(type(buyouts) == "table" and buyouts or {}) do
+        if v.auctionID ~= live.auctionID then
+            rows[#rows + 1] = v
+        end
+    end
+    local check = F.Market.plan(rows, F.Market.evidence(h), rule)
+    if
+        not check.canBuy
+        or check.qty ~= live.quantity
+        or check.cost ~= price
+        or not check.lots[1]
+        or check.lots[1].auctionID ~= live.auctionID
+    then
         self:notify("bid_blocked")
         return false
     end

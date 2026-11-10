@@ -13,5 +13,15 @@ class NativeContractTests(unittest.TestCase):
         GetItemKeyInfo=function()return {isCommodity=true}end}
         local a=ForeverFlip.Adapters.native(ForeverFlip.Store.open(nil));local r=a.replicateRow(0)
         assert(r.complete and r.family==false and r.key.itemID==2589)''')
+    def test_replicated_gear_is_keyed_by_its_full_name(self):
+        l=runtime();l.execute((ROOT/'ForeverFlip/Adapters.lua').read_text(encoding='utf-8-sig'))
+        l.execute('''local name='Northern Shortsword of Healing'
+        C_AuctionHouse={GetReplicateItemInfo=function()return name,1,1,2,true,1,'',0,0,800,0,nil,nil,'s','s',0,2078,true end,
+        GetReplicateItemLink=function()return '|cnIQ2:|Hitem:2078::::::::22:1484::1:1:12920:1:28:5240:::::|h['..name..']|h|r' end,
+        GetItemKeyInfo=function()return {isCommodity=false,isEquipment=true}end}
+        local a=ForeverFlip.Adapters.native(ForeverFlip.Store.open(nil));local U=ForeverFlip.Util
+        local healing=a.replicateRow(0).key;name='Northern Shortsword of Nature Protection'
+        local nature=a.replicateRow(1).key
+        assert(healing.itemSuffix<0 and U.key(healing)~=U.key(nature) and r==nil)''')
 
 if __name__=='__main__':unittest.main()

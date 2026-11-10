@@ -2,6 +2,12 @@ local F = ForeverFlip
 local T = {}
 F.Locale = T
 T.uk = {
+    ["Live: %d items · vendor price known %d · below vendor %d · resale %d · collecting data %d · deals %d · recheck in %d s"] = "Live: %d предм. · ціна торговця відома %d · дешевше торговця %d · перепродаж %d · збір даних %d · угод %d · перевірка через %d с",
+    ["Live: nothing to check yet — waiting for the next scan or sales data"] = "Live: поки нічого перевіряти — чекаю новий скан або дані про продажі",
+    ["collecting data"] = "збір даних",
+    ["not selling"] = "не продається",
+    ["no margin"] = "немає вигоди",
+    ["stale"] = "застаріло",
     ["Snapshot %d s ago · recheck before trading"] = "Знімок %d с тому · перевірте перед торгівлею",
     ["No exact price snapshot yet"] = "Точного знімка ціни ще немає",
     ["Suggests a legal silver step below the snapshot minimum, respecting cost, fee, reserve and extra costs."] = "Підказує допустиму ціну на крок срібла нижче мінімуму знімка, враховуючи закупівлю, комісію, резерв і додаткові витрати.",
@@ -599,6 +605,8 @@ T.uk = {
     ["The price is set 1 silver below the cheapest listing, but not below your cost plus the fee."] = "Ціна ставиться на 1 срібну нижче за найдешевший лот, але не нижче вашої закупівлі з комісією.",
     ["A vendor pays more (%s each) — sell this item to a vendor."] = "Торговець заплатить більше (%s за шт.) — продайте цей товар торговцю.",
     ["Found %d min ago — the price is re-checked before buying."] = "Знайдено %d хв тому — ціну буде перевірено перед покупкою.",
+    ["Does not sell at this price: listings near the resale price stay between scans"] = "Не продається за цією ціною: лоти біля ціни продажу не зникають між скануваннями",
+    ["No sales data yet: needs 1–2 more full scans (Live runs them)"] = "Ще немає даних про продажі: потрібно ще 1–2 повні скани (Live робить їх сам)",
 }
 for key, value in pairs(T.uk) do
     T.uk[key] = value:gsub("→", "->"):gsub("←", "<-")

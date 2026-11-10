@@ -10,10 +10,10 @@ class SpeedTests(unittest.TestCase):
         api.replicateRow=function(i)seen[i]=(seen[i] or 0)+1;clockms=clockms+0.001
           return {id=1,key={itemID=1},qty=1,buyout=100,complete=true,family=false}end
         assert(c:fullScan());c:event('REPLICATE_ITEM_LIST_UPDATE');c:tick()
-        assert(c.fullJob.index==1500)
+        assert(c.fullJob.index==3000)
         clockms=0;api.replicateRow=function(i)seen[i]=(seen[i] or 0)+1;clockms=clockms+1
           return {id=1,key={itemID=1},qty=1,buyout=100,complete=true,family=false}end
-        c:tick();assert(c.fullJob.index==1549)
+        c:tick();assert(c.fullJob.index==3049)
         for _=1,200 do if c.fullJob then clockms=0;c:tick()end end
         for i=0,4999 do assert(seen[i]==1,'row '..i)end''')
 

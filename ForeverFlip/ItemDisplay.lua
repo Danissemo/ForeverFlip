@@ -315,8 +315,9 @@ function D.row(parent, x, y, width, onClick)
         self.quantity:SetText(p.qty and p.qty > 0 and p.qty or p.totalQty or 0)
         self.price:SetText(D.money(p.qty and p.qty > 0 and p.cost and p.cost / p.qty or p.minimum))
         if p.canBuy == false then
-            -- An unverified estimate is not shown as money the player can earn.
-            self.profit:SetText("—")
+            -- An unverified estimate is not shown as money the player can earn; the column names
+            -- the main reason instead.
+            self.profit:SetText(D.shortReason(p))
             self.profit:SetTextColor(0.5, 0.5, 0.5)
             self:SetAlpha(0.55)
         else
@@ -330,6 +331,22 @@ function D.row(parent, x, y, width, onClick)
     return r
 end
 
+-- Short label for the profit column of a deal that cannot be bought.
+function D.shortReason(p)
+    local labels = {
+        demand_unknown = L("collecting data", "collecting data"),
+        no_demand = L("not selling", "not selling"),
+        margin = L("no margin", "no margin"),
+        stale = L("stale", "stale"),
+        ["budget/price"] = L("no margin", "no margin"),
+    }
+    for _, reason in ipairs(p and p.reasons or {}) do
+        if labels[reason] then
+            return labels[reason]
+        end
+    end
+    return "—"
+end
 function D.tooltip(frame, m)
     if not m or not GameTooltip then
         return

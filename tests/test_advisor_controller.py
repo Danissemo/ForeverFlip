@@ -11,16 +11,17 @@ class AdvisorControllerTests(unittest.TestCase):
         local s=c:summary();assert(s.activity['1:0:0:0'].since==now-864000 and s.salesHistory[1].kind=='vendor')
         L.correct(db,'a','owner',now);assert(not c:summary().activity['1:0:0:0'])''')
     def test_cold_probe_is_one_and_survives_exact_search(self):
-        controller_runtime().execute('''c.advisorProfile='balanced';c.mode='flip'
+        # One cheap unit: buying it clears every lot below the exit price.
+        controller_runtime().execute('''c.advisorProfile='balanced';c.mode='flip';rows={{qty=1,unit=100,cost=100}}
         local h={};for i=1,12 do h[i]={at=now-i*15000,price=1000,token=i,complete=true}end
-        db.markets.scope={['1:0:0:0']={samples=h,days={}}}
+        db.markets.scope={['1:0:0:0']={samples=h,days={},flow={hours=10,sold={50,50,50,50},pairs=5,at=now,market=1000}}}
         assert(c:search({itemID=1}));c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
         assert(c.plan.advice and c.plan.qty==1 and c.plan.target<=1000)''')
     def test_valid_probe_quote_can_still_confirm(self):
         controller_runtime().execute('''c.advisorProfile='balanced';c.mode='flip'
         rows={{qty=1,unit=100,cost=100}}
         local h={};for i=1,12 do h[i]={at=now-i*15000,price=1000,token=i,complete=true}end
-        db.markets.scope={['1:0:0:0']={samples=h,days={}}}
+        db.markets.scope={['1:0:0:0']={samples=h,days={},flow={hours=10,sold={50,50,50,50},pairs=5,at=now,market=1000}}}
         c:search({itemID=1});c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
         assert(c.plan.qty==1 and c:requestBuy());c:event('COMMODITY_PRICE_UPDATED',100,100)
         assert(c:confirmBuy() and spent==1)''')
@@ -52,7 +53,7 @@ class AdvisorControllerTests(unittest.TestCase):
         controller_runtime().execute('''c.advisorProfile='balanced';c.mode='flip'
         db.groups={{name='g',items={[1]=true},rule={budget=100000}}}
         local h={};for i=1,12 do h[i]={at=now-i*15000,price=10000,token=i,complete=true}end
-        db.markets.scope={['1:0:0:0']={samples=h,days={}}}
+        db.markets.scope={['1:0:0:0']={samples=h,days={},flow={hours=10,sold={50,50,50,50},pairs=5,at=now,market=10000}}}
         rows={{qty=1,unit=2900,cost=2900}};c:search({itemID=1});c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
         assert(c:requestBuy());c:event('COMMODITY_PRICE_UPDATED',2900,2900)
         api.wallet=function()return 90000 end

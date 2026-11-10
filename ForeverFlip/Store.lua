@@ -18,6 +18,7 @@ S.defaults = {
     safe = true,
 }
 S.invalid = setmetatable({}, { __mode = "k" })
+S.marketCounts = setmetatable({}, { __mode = "k" })
 function S.writable(db)
     return type(db) == "table" and db.schemaVersion == 5 and not S.invalid[db] and not db.migrationBlocked
 end
@@ -377,32 +378,41 @@ function S.observe(db, scope, key, o)
     local m = db.markets[scope]
     local h = m[key]
     if not h then
-        local count = 0
-        for _ in pairs(m) do
-            count = count + 1
+        -- Entry count is cached per market table, so a scan with 2000 new items stays linear.
+        local count = S.marketCounts[m]
+        if not count then
+            count = 0
+            for _ in pairs(m) do
+                count = count + 1
+            end
         end
         if count >= 2000 then
-            local oldest, stamp
+            local watched = {}
+            for _, w in ipairs(db.watchlist or {}) do
+                watched[w] = true
+            end
+            -- Evict the oldest 10% at once, so the next inserts do not rescan the whole table.
+            local old = {}
             for k, v in pairs(m) do
                 local id = tonumber(k:match("^(%d+)"))
-                local watched = false
-                for _, w in ipairs(db.watchlist) do
-                    if w == id then
-                        watched = true
-                    end
-                end
-                if not watched and (not stamp or (v.at or 0) < stamp) then
-                    oldest = k
-                    stamp = v.at or 0
+                if not watched[id] and not watched[k] then
+                    old[#old + 1] = { k = k, at = v.at or 0 }
                 end
             end
-            if not oldest then
+            if #old == 0 then
                 return false
             end
-            m[oldest] = nil
+            table.sort(old, function(x, y)
+                return x.at < y.at
+            end)
+            for i = 1, math.max(1, math.min(#old, math.floor(count / 10))) do
+                m[old[i].k] = nil
+                count = count - 1
+            end
         end
         h = { samples = {}, days = {} }
         m[key] = h
+        S.marketCounts[m] = count + 1
     end
     for _, s in ipairs(h.samples) do
         if (o.token and s.token == o.token) or math.abs(s.at - o.at) < 600 then

@@ -13,7 +13,7 @@ local function recordCheck(r, id, now, retryAt)
     r.retryAt = r.retryAt or {}
     if not r.checkedAt[id] then
         if (r.checkedCount or 0) >= 4000 then
-            r.checkedAt, r.retryAt, r.checkedCount = {}, {}, 0
+            r.checkedAt, r.retryAt, r.checkedCount, r.fails = {}, {}, 0, {}
         end
         r.checkedCount = (r.checkedCount or 0) + 1
     end
@@ -25,10 +25,12 @@ local function better(a, b)
     end
     return (a.score or 0) > (b.score or 0)
 end
-local function evaluate(c, key, rows, kind)
+-- `hint` is the full-depth market value from a scan; exact search rows are complete and need none.
+local function evaluate(c, key, rows, kind, hint)
     local best
     for _, mode in ipairs(c.smallNPCActive and { "vendor" } or { "vendor", "flip" }) do
         local o = c:options(key, mode, nil, true)
+        o.marketHint = hint
         o.complete = true
         o.commodity = kind == "commodity"
         if not o.commodity then
@@ -52,6 +54,44 @@ local function evaluate(c, key, rows, kind)
         best.family = false
     end
     return best
+end
+-- Cheap check from scan data, before the full plan: a lot below the vendor price, or (resale) a
+-- gap below the next listing on an item with measured sales near the exit price. Only items that
+-- pass get the full plan, so a selection over thousands of items takes a few frames.
+local function quick(c, v, stats, now)
+    local rows = v.rows
+    local cheap = rows and rows[1] and rows[1].unit
+    if not U.finite(cheap) then
+        return false
+    end
+    stats.items = stats.items + 1
+    local vendor = c.api.vendor and c.api.vendor(v.key.itemID, true)
+    if vendor then
+        stats.vendorKnown = stats.vendorKnown + 1
+        if cheap < vendor then
+            stats.vendor = stats.vendor + 1
+            return true
+        end
+    else
+        F.Adapters.requestData(v.key.itemID)
+    end
+    if c.smallNPCActive then
+        return false
+    end
+    local market = v.market or F.Market.marketValue(rows)
+    if not U.finite(market) or c:scanPotential({ rows = rows, market = market }) <= 0 then
+        return false
+    end
+    local d = F.Market.demandAt(c:history(v.key), market * 0.9, now)
+    if d.pairs < 2 then
+        stats.collecting = stats.collecting + 1
+        return false
+    end
+    if d.perDay < 0.5 then
+        return false
+    end
+    stats.resale = stats.resale + 1
+    return true
 end
 local function beginBuild(c)
     local r = c.radar
@@ -79,6 +119,7 @@ local function beginBuild(c)
         promising = {},
         rotating = {},
         eligible = 0,
+        stats = { items = 0, vendorKnown = 0, vendor = 0, resale = 0, collecting = 0 },
         candidates = c.candidates,
         summary = c:summary(),
     }
@@ -96,6 +137,20 @@ local function beginBuild(c)
         end
     end
     r.watchOffset = #watch > 0 and ((r.watchOffset or 0) + 40) % #watch or 0
+    -- Listed deals older than a minute are re-checked first, so the list does not show stale lots.
+    local old = {}
+    for id, v in pairs(r.opportunities) do
+        if now - v.at >= 60 and not b.seen[id] then
+            old[#old + 1] = v
+        end
+    end
+    table.sort(old, function(x, y)
+        return x.at < y.at
+    end)
+    for i = 1, math.min(20, #old) do
+        local id = U.key(old[i].key)
+        b.queue[#b.queue + 1], b.seen[id] = U.copy(old[i].key), true
+    end
 end
 local function buildStep(c)
     local r, now = c.radar, c.api.clock()
@@ -104,10 +159,10 @@ local function buildStep(c)
     end
     local b = r.build
     c.cachedSummary = b.summary
-    -- Up to 32 variants per frame within ~2 ms (4 without the profiler); family resolution is at most 64 rows.
+    -- Up to 400 variants per frame within ~3 ms (40 without the profiler); most stop at the quick check.
     local started = debugprofilestop and debugprofilestop()
-    for _ = 1, started and 32 or 4 do
-        if started and debugprofilestop() - started >= 2 then
+    for _ = 1, started and 400 or 40 do
+        if started and debugprofilestop() - started >= 3 then
             break
         end
         if b.cursor > #b.pending then
@@ -117,7 +172,7 @@ local function buildStep(c)
             end
             b.index = b.index + 1
             b.pending, b.cursor = {}, 1
-            if v.scope == r.scope and v.at <= now and now - v.at <= 1800 then
+            if v.scope == r.scope and v.at <= now and now - v.at <= F.Controller.DISCOVERY_AGE then
                 if v.family then
                     local groups = {}
                     for i = 1, math.min(64, #v.rows) do
@@ -125,7 +180,8 @@ local function buildStep(c)
                         local key = row.link and F.Adapters.keyFromInput(row.link)
                         local id = key and U.key(key)
                         if id and key.itemID == v.key.itemID then
-                            groups[id] = groups[id] or { key = key, rows = {}, kind = "item", at = v.at }
+                            groups[id] = groups[id]
+                                or { key = key, rows = {}, kind = "item", at = v.at, market = v.market }
                             table.insert(groups[id].rows, row)
                         end
                     end
@@ -138,6 +194,7 @@ local function buildStep(c)
                         rows = v.rows,
                         kind = v.kind or (v.family == false and "commodity" or "item"),
                         at = v.at,
+                        market = v.market,
                     }
                 end
             end
@@ -145,15 +202,16 @@ local function buildStep(c)
         local v = b.pending[b.cursor]
         b.cursor = b.cursor + 1
         if v then
-            local p = evaluate(c, v.key, v.rows, v.kind)
+            local p = quick(c, v, b.stats, now) and evaluate(c, v.key, v.rows, v.kind, v.market)
             local id = U.key(v.key)
             -- Skip listings already checked since their data last changed: new data goes first.
+            -- Listed deals are re-checked once a minute, not on every selection.
             local checked = r.checkedAt and r.checkedAt[id]
             if
                 p
                 and checked
                 and checked >= (v.at or 0)
-                and not r.opportunities[id]
+                and (not r.opportunities[id] or now - checked < 60)
                 and not (r.retryAt and r.retryAt[id] and now >= r.retryAt[id])
             then
                 p = nil
@@ -194,6 +252,7 @@ local function buildStep(c)
         end
     end
     r.queue, r.index, r.checked = b.queue, 1, 0
+    r.stats = b.stats
     r.build = nil
     r.cycle = r.cycle + 1
     c.radarDirty = true
@@ -262,8 +321,12 @@ function R.failed(c)
         if r.current then
             local id = U.key(r.current)
             r.opportunities[id] = nil
-            -- A temporary failure gets a bounded retry even if the full snapshot is unavailable.
-            recordCheck(r, id, c.api.clock(), c.api.clock() + 60)
+            -- Retries back off: 1, 2, 4 minutes; after three failures the item waits for new scan
+            -- data instead of costing a request every minute.
+            r.fails = r.fails or {}
+            local fails = (r.fails[id] or 0) + 1
+            r.fails[id] = fails
+            recordCheck(r, id, c.api.clock(), fails <= 3 and c.api.clock() + 60 * 2 ^ (fails - 1) or nil)
         end
         r.current = nil
         r.nextAt = c.api.clock() + 5
@@ -308,6 +371,9 @@ function R.results(c, j, rows, complete, kind)
     r.current = nil
     r.checked = r.checked + 1
     recordCheck(r, id, now)
+    if r.fails then
+        r.fails[id] = nil
+    end
     local p = evaluate(c, j.key, rows, kind)
     r.opportunities[id] = p and { key = U.copy(j.key), rows = U.copy(rows), kind = kind, at = now } or nil
     if p then
@@ -409,12 +475,21 @@ function R.tick(c)
         return
     end
     if #r.queue == 0 or r.index > #r.queue then
+        -- A new selection starts only when its inputs change (new scan data, loaded item data,
+        -- a new candidate, other rules), or after a minute to re-check listed deals and watches.
+        local inputs =
+            table.concat({ c.candidateVersion or 0, c.itemDataEpoch or 0, #c.candidates, c.ruleVersion or 0 }, ":")
+        if not r.build and r.idleInputs == inputs and now < (r.idleUntil or 0) then
+            r.nextAt = now + 1
+            return
+        end
         if not buildStep(c) then
             return
         end
+        r.idleInputs, r.idleUntil = inputs, now + (#r.queue == 0 and 120 or 60)
+        r.dataDirty = false
         if #r.queue == 0 then
-            r.nextAt = now + (r.dataDirty and 1 or 5)
-            r.dataDirty = false
+            r.nextAt = now + 1
             return
         end
     end

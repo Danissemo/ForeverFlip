@@ -12,11 +12,11 @@ class DealFlowTests(unittest.TestCase):
         assert(not A.sameListing({itemID=1,itemSuffix=7},{itemID=1}))
         assert(not A.sameListing({itemID=2},{itemID=1}))''')
 
-    def test_leveled_gear_keeps_vendor_value_but_suffix_does_not(self):
+    def test_leveled_and_random_suffix_gear_keep_vendor_value(self):
         controller_runtime().execute('''GetItemInfo=function()return 'Dagger',nil,1,14,1,nil,nil,1,nil,nil,500 end
         local base=c:options({itemID=2632},'vendor').vendor
         assert(c:options({itemID=2632,itemLevel=14},'vendor').vendor==base)
-        assert(c:options({itemID=2632,itemSuffix=7},'vendor').vendor==nil)''')
+        assert(c:options({itemID=2632,itemSuffix=7},'vendor').vendor==base)''')
 
     def test_empty_leveled_item_search_retries_with_base_key(self):
         controller_runtime().execute('''api.rows=function()return {},true,'item' end

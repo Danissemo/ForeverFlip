@@ -97,12 +97,13 @@ class PerformanceTests(unittest.TestCase):
         local seen={};for _,p in ipairs(D.get(c))do seen[p.key.itemID]=true end
         assert(not seen[1]and seen[5]and seen[7])''')
 
-    def test_expired_rows_are_hidden_when_reopening_a_paused_pass(self):
+    def test_previous_rows_stay_visible_while_a_new_pass_runs(self):
         controller_runtime().execute('''local D=ForeverFlip.DealCache;c.candidates={}
         for i=1,6 do c.candidates[i]={key={itemID=i},rows=rows,kind='commodity',scope='scope',at=now}end
         D.get(c);for i=1,3 do D.tick(c)end;assert(#D.get(c)==6)
         c.candidateVersion=1;D.get(c);assert(c.dealCache.job)
-        now=now+100;assert(#D.get(c)==0)''')
+        now=now+100;assert(#D.get(c)==6 and c.dealCache.job)
+        for i=1,10 do D.tick(c)end;assert(not c.dealCache.job and #D.get(c)==6)''')
 
     def test_cold_commodity_filter_uses_auction_name_without_bulk_loads(self):
         ui_runtime().execute('''C_Item={IsItemDataCachedByID=function()return false end,

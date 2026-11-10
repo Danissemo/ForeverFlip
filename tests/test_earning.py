@@ -42,7 +42,7 @@ class EarningTests(unittest.TestCase):
         assert(u.fields.postPrice:GetText()=='')''')
 
     def test_vendor_budget_grows_with_wallet_and_resets_daily(self):
-        controller_runtime().execute('''api.wallet=function()return 1000000 end;assert(c:easyNPC())
+        controller_runtime().execute('''db.settings.npcDailyShare=0.25;api.wallet=function()return 1000000 end;assert(c:easyNPC())
         assert(c:npcRemaining()==250000)
         db.ledger[1]={kind='buy',owner='owner',scope='scope',key='1:0:0:0',qty=1,total=200000,at=now}
         assert(c:npcRemaining()==50000)

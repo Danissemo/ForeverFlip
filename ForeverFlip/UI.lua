@@ -33,6 +33,14 @@ local function reasons()
             "Unfavorable profit history"
         ),
         stale = L("Stale snapshot", "Stale snapshot"),
+        no_demand = L(
+            "Does not sell at this price: listings near the resale price stay between scans",
+            "Does not sell at this price: listings near the resale price stay between scans"
+        ),
+        demand_unknown = L(
+            "No sales data yet: needs 1–2 more full scans (Live runs them)",
+            "No sales data yet: needs 1–2 more full scans (Live runs them)"
+        ),
     }
 end
 local function messages()
@@ -2135,7 +2143,7 @@ function UI.create(c)
                     return
                 end
                 self.toolResult = F.Professions.disenchant(y, function(id)
-                    return c:price(id)
+                    return c:price(id, "sell")
                 end, U.copper(self.fields.deCost:GetText()), settings)
                 self:renderToolResult()
             end

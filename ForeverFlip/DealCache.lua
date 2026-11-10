@@ -19,6 +19,7 @@ local function inputs(c)
         scope = c.api.scope(),
         owner = c.api.owner(),
         npcBudget = c:npcRemaining(),
+        itemData = c.itemDataEpoch,
     }
 end
 local function same(a, b, quotesMayAdvance)
@@ -95,19 +96,13 @@ function D.get(c)
     end
     -- Quote updates must not restart a long market pass every3 seconds. Each
     -- discovery row retains its own timestamp; trading always runs a new search.
+    -- Previous results stay visible while a new pass runs; every deal is re-checked with an
+    -- exact search before buying, and the list is replaced when the pass completes.
     if cache.job and same(cache.inputs, state, true) then
-        if #cache.rows > 0 and c.api.clock() - (cache.at or 0) > 30 then
-            cache.rows = {}
-            cache.generation = cache.generation + 1
-        end
         return cache.rows
     end
     if not same(cache.inputs, state) or (not cache.job and c.api.clock() - (cache.at or 0) > 30) then
-        local reusable = same(cache.inputs, state, true) and c.api.clock() - (cache.at or 0) <= 30
         cache.inputs = state
-        if not reusable then
-            cache.rows = {}
-        end
         local candidates = {}
         for i, row in ipairs(c.candidates) do
             candidates[i] = row

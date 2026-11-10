@@ -46,7 +46,9 @@ function F.boot(name)
         end
         elapsed = elapsed + dt
         paint = paint + dt
-        if elapsed >= 0.05 then
+        -- A received full scan is processed every frame (each step has its own time budget).
+        local scanning = c.fullJob and not c.fullJob.waiting
+        if elapsed >= 0.05 or scanning then
             local progressElapsed = elapsed
             elapsed = 0
             c:tick()
@@ -56,6 +58,12 @@ function F.boot(name)
         end
         if paint >= 1 then
             paint = 0
+            -- Newly loaded item data (vendor prices) re-ranks deals at most every 15 seconds.
+            local clock = c.api.clock()
+            if c.itemDataPending and clock - (c.itemDataEpochAt or 0) >= 15 then
+                c.itemDataPending = false
+                c.itemDataEpoch, c.itemDataEpochAt = (c.itemDataEpoch or 0) + 1, clock
+            end
             if F.ui and F.ui.frame:IsShown() then
                 if c:radarShouldResume(F.ui.section) then
                     c:radarStart()
@@ -208,8 +216,11 @@ for _, event in ipairs({
     "ITEM_PURCHASED",
     "AUCTION_HOUSE_PURCHASE_COMPLETED",
     "OWNED_AUCTIONS_UPDATED",
+    "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED",
+    "PLAYER_LOGOUT",
     "REPLICATE_ITEM_LIST_UPDATE",
     "MAIL_INBOX_UPDATE",
+    "CHAT_MSG_SYSTEM",
 }) do
     frame:RegisterEvent(event)
 end
@@ -221,10 +232,18 @@ frame:SetScript("OnEvent", function(_, event, ...)
     if not F.controller then
         return
     end
+    if event == "PLAYER_LOGOUT" then
+        -- /reload and logout write SavedVariables right after this event.
+        F.controller:saveScanProgress()
+        return
+    end
     if event == "GET_ITEM_INFO_RECEIVED" or event == "ITEM_DATA_LOAD_RESULT" then
         local id, success = ...
         if event == "ITEM_DATA_LOAD_RESULT" then
             F.controller:itemDataLoaded(id, success)
+        end
+        if event == "ITEM_DATA_LOAD_RESULT" and success then
+            F.controller.itemDataPending = true
         end
         if event == "ITEM_DATA_LOAD_RESULT" and F.Adapters.dataLoaded(id, success) then
             local r = F.controller.radar

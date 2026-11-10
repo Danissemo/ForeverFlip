@@ -41,7 +41,7 @@ class SearchReadinessTests(unittest.TestCase):
         api.ready=function()return true end;now=now+3;c:tick();assert(c.job and calls==1)''')
 
     def test_npc_starter_has_positive_margin_and_cumulative_one_gold_cap(self):
-        controller_runtime().execute('''api.wallet=function()return 40000 end;assert(c:easyNPC());local o=c:options({itemID=1},'vendor')
+        controller_runtime().execute('''db.settings.npcDailyShare=0.25;api.wallet=function()return 40000 end;assert(c:easyNPC());local o=c:options({itemID=1},'vendor')
         assert(o.minProfit==1 and o.absoluteCap<=10000)
         db.ledger[#db.ledger+1]={kind='buy',owner='owner',scope='scope',key='1:0:0:0',qty=1,total=9999,at=now}
         assert(c:npcRemaining()==1)
@@ -52,16 +52,37 @@ class SearchReadinessTests(unittest.TestCase):
         controller_runtime().execute('''local A=ForeverFlip.Adapters;loaded=0
         C_Item={IsItemDataCachedByID=function()return false end,RequestLoadItemDataByID=function()loaded=loaded+1 end}
         for i=1,100 do A.requestData(i)end
-        A.pumpData(now);assert(loaded<=2 and loaded>0);A.pumpData(now);assert(loaded<=2)''')
+        A.pumpData(now);assert(loaded<=4 and loaded>0);A.pumpData(now);assert(loaded<=4)''')
 
-    def test_numeric_equipment_search_uses_cached_link_level(self):
-        controller_runtime().execute('''C_AuctionHouse={GetItemKeyInfo=function()return {isEquipment=true}end}
-        GetItemInfo=function()return 'Gloves','|Hitem:1:0:0:0:0:0:0:0|h[Gloves]|h'end
-        C_Item={GetDetailedItemLevelInfo=function()return 43 end}
-        local key=ForeverFlip.Adapters.keyFromInput('1');assert(key.itemLevel==43)''')
+    def test_numeric_equipment_input_searches_every_ending(self):
+        # Forever splits gear endings over item-key versions; an ID alone asks for all of them.
+        controller_runtime().execute('''C_AuctionHouse={GetItemKeyInfo=function()return {isEquipment=true}end,SendSellSearchQuery=function()end}
+        local key=ForeverFlip.Adapters.keyFromInput('1');assert(key.itemLevel==0 and key.itemSuffix==0)
+        key=ForeverFlip.Adapters.keyFromInput('|cnIQ2:|Hitem:1::::::::22:1484::1:1:12743:1:28:7000:::::|h[Gloves of the Wolf]|h|r')
+        assert(key.itemSuffix<0 and key.itemLevel==0)
+        assert(ForeverFlip.Util.key(key)==ForeverFlip.Util.key(ForeverFlip.Util.nameKey(1,'Gloves of the Wolf')))''')
+
+    def test_gear_search_reads_every_version_and_keeps_only_the_same_name(self):
+        controller_runtime().execute('''local sell,exact=0,0;local base={itemID=2078,itemLevel=0,itemSuffix=0,battlePetSpeciesID=0}
+        local function link(n)return '|cnIQ2:|Hitem:2078::::::::22:1484::1:1:1:1:28:7000:::::|h['..n..']|h|r' end
+        local rows={{itemKey={itemID=2078,itemLevel=18,itemSuffix=14320},itemLink=link('Northern Shortsword of Nature Protection'),quantity=1,buyoutAmount=800,auctionID=1},
+          {itemKey={itemID=2078,itemLevel=18,itemSuffix=14321},itemLink=link('Northern Shortsword of Nature Protection'),quantity=1,buyoutAmount=900,auctionID=2},
+          {itemKey={itemID=2078,itemLevel=18,itemSuffix=14400},itemLink=link('Northern Shortsword of Healing'),quantity=1,buyoutAmount=300,auctionID=3}}
+        C_AuctionHouse={GetItemKeyInfo=function()return {isEquipment=true,isCommodity=false}end,
+          SendSellSearchQuery=function(k)assert(k.itemSuffix==0 and k.itemLevel==0);sell=sell+1 end,
+          SendSearchQuery=function()exact=exact+1 end,HasFullItemSearchResults=function()return true end,
+          GetNumItemSearchResults=function(k)assert(k.itemSuffix==0);return #rows end,
+          GetItemSearchResultInfo=function(k,i)return rows[i]end}
+        Enum={AuctionHouseSortOrder={Price=0}}
+        local U=ForeverFlip.Util;local a=ForeverFlip.Adapters.native(db)
+        local key=U.nameKey(2078,'Northern Shortsword of Nature Protection')
+        a.search(key);assert(sell==1 and exact==0)
+        assert(U.key(a.resultKey(base))==U.key(key))
+        local got=a.rows(key,'item');assert(#got==2 and got[1].auctionID==1 and got[2].auctionID==2)
+        assert(#a.rows(base,'item')==3)''')
 
     def test_one_gold_trial_quote_excludes_its_own_reservation(self):
-        controller_runtime().execute('''api.wallet=function()return 40000 end;assert(c:easyNPC());assert(c:openDeal({key={itemID=1},mode='vendor'}))
+        controller_runtime().execute('''db.settings.npcDailyShare=0.25;api.wallet=function()return 40000 end;assert(c:easyNPC());assert(c:openDeal({key={itemID=1},mode='vendor'}))
         c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1);assert(c:requestBuy())
         c:event('COMMODITY_PRICE_UPDATED',100,1000);assert(c:confirmBuy())
         c:event('COMMODITY_PURCHASED',1,10);assert(c:npcRemaining()==9000)
@@ -69,7 +90,7 @@ class SearchReadinessTests(unittest.TestCase):
 
     def test_item_load_request_memory_stays_bounded_without_callbacks(self):
         controller_runtime().execute('''local A=ForeverFlip.Adapters;C_Item={RequestLoadItemDataByID=function()end}
-        for i=1,2000 do A.requestData(i)end
+        for i=1,4000 do A.requestData(i)end
         for i=1,1000 do A.pumpData(now+i)end
         assert(not A.requestData(99999))''')
 
@@ -92,10 +113,10 @@ class SearchReadinessTests(unittest.TestCase):
         l=ui_runtime();l.execute((ROOT/'ForeverFlip/Core.lua').read_text(encoding='utf-8-sig'))
         l.execute('''ForeverFlip.boot('ForeverFlip');local A=ForeverFlip.Adapters
         C_Item={RequestLoadItemDataByID=function()error('offline')end}
-        for i=1,2000 do A.requestData(i)end;A.pumpData(now)
-        assert(A.requestData(2001))
+        for i=1,4000 do A.requestData(i)end;A.pumpData(now)
+        assert(A.requestData(4001))
         local f=ForeverFlip.eventFrame;f.scripts.OnEvent(f,'ITEM_DATA_LOAD_RESULT',100,true)
-        assert(A.requestData(2002))''')
+        assert(A.requestData(4002))''')
 
     def test_late_background_plan_cannot_replace_selected_trade_preview(self):
         ui_runtime().execute('''db.lastReplicate=now;c.candidates={{key={itemID=1},rows=rows,family=false,kind='commodity',at=now,scope='scope'}}
@@ -111,7 +132,7 @@ class SearchReadinessTests(unittest.TestCase):
         loaded=true;c:itemDataLoaded(1,true);c:tick();assert(#c.candidates==1)''')
 
     def test_changing_market_does_not_reset_trial_allowance(self):
-        controller_runtime().execute('''api.wallet=function()return 40000 end;c:easyNPC();db.ledger[1]={kind='buy',owner='owner',scope='scope',key='1:0:0:0',qty=1,total=9999,at=now}
+        controller_runtime().execute('''db.settings.npcDailyShare=0.25;api.wallet=function()return 40000 end;c:easyNPC();db.ledger[1]={kind='buy',owner='owner',scope='scope',key='1:0:0:0',qty=1,total=9999,at=now}
         c:stop();api.scope=function()return 'other'end;c:easyNPC()
         assert(c:npcRemaining()==1)
         c:stop();api.scope=function()return 'scope'end;c:easyNPC();assert(c:npcRemaining()==1)''')
@@ -120,8 +141,8 @@ class SearchReadinessTests(unittest.TestCase):
         controller_runtime().execute('''api.replicate=function()end;api.replicateCount=function()return 1 end
         local loaded=false;api.replicateRow=function()return loaded and {id=9999,key={itemID=9999},qty=1,buyout=100,complete=true}or{id=9999,complete=false}end
         c:fullScan();c:event('REPLICATE_ITEM_LIST_UPDATE');c:tick()
-        for i=1,2000 do c.candidates[i]={key={itemID=i},rows=rows,at=now,scope='scope'}end
-        loaded=true;c:itemDataLoaded(9999,true);c:tick();assert(#c.candidates<=2000)''')
+        for i=1,3000 do c.candidates[i]={key={itemID=i},rows=rows,at=now,scope='scope'}end
+        loaded=true;c:itemDataLoaded(9999,true);c:tick();assert(#c.candidates==3000 and c.candidates[1].key.itemID==1)''')
 
     def test_starter_ui_prefers_profit_and_never_buys_automatically(self):
         ui_runtime().execute('''db.lastReplicate=now;u:show('deals')

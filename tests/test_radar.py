@@ -23,7 +23,7 @@ class RadarTests(unittest.TestCase):
         self.run_lua('''assert(c:radarStart());api.ready=function()return false end;c:tick();assert(calls==0)
         api.ready=function()return true end;c:tick();c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
         c:tick();now=now+0.5;c:tick();assert(calls==1)
-        now=now+20;c:tick();assert(calls==2)''')
+        now=now+61;c:tick();assert(calls==2)''')
 
     def test_manual_review_pauses_then_resume_and_stop(self):
         self.run_lua('''c:radarStart();c:tick();now=now+3
@@ -35,7 +35,7 @@ class RadarTests(unittest.TestCase):
 
     def test_empty_results_remove_opportunity_and_discovery(self):
         self.run_lua('''c:radarStart();c:tick();c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
-        assert(#ForeverFlip.Radar.list(c)==1);now=now+20;c:tick();rows={}
+        assert(#ForeverFlip.Radar.list(c)==1);now=now+61;c:tick();rows={}
         c:event('COMMODITY_SEARCH_RESULTS_UPDATED',1)
         assert(#ForeverFlip.Radar.list(c)==0 and #c.candidates==0)''')
 
@@ -176,7 +176,7 @@ class RadarTests(unittest.TestCase):
     def test_incremental_ranking_retains_only_bounded_best_plans(self):
         self.run_lua('''c.candidates={};for i=1,2000 do
         c.candidates[i]={key={itemID=i},rows=rows,kind='commodity',family=false,at=now,scope='scope'}end
-        c:radarStart();for i=1,100 do c:tick()end
+        c:radarStart();for i=1,30 do c:tick()end
         assert(c.radar.build and #c.radar.build.promising<=160)''')
 
     def test_live_updates_do_not_rerank_entire_all_items_view_every_second(self):

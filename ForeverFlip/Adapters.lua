@@ -12,6 +12,11 @@ function A.sameListing(a, b)
     if type(a) ~= "table" or type(b) ~= "table" or a.itemID ~= b.itemID then
         return false
     end
+    -- A gear name key matches the same name; the plain item key (suffix 0) stands for all endings.
+    if U.isNameKey(a) or U.isNameKey(b) then
+        local x, y = a.itemSuffix or 0, b.itemSuffix or 0
+        return x == y or x == 0 or y == 0
+    end
     if (a.itemSuffix or 0) ~= (b.itemSuffix or 0) or (a.battlePetSpeciesID or 0) ~= (b.battlePetSpeciesID or 0) then
         return false
     end
@@ -27,7 +32,7 @@ function A.requestData(id)
     if C_Item.IsItemDataCachedByID and C_Item.IsItemDataCachedByID(id) then
         return false
     end
-    if dataCount >= 2000 then
+    if dataCount >= 4000 then
         return false
     end
     dataPending[id] = true
@@ -39,8 +44,9 @@ function A.pumpData(now)
     if now < nextData then
         return
     end
+    -- 40 item-data requests per second: the client batches them; uncached scan items need it.
     nextData = now + 0.1
-    for _ = 1, 2 do
+    for _ = 1, 4 do
         local id = table.remove(dataQueue, 1)
         if not id then
             break
@@ -108,6 +114,12 @@ function A.keyFromInput(s)
         if info and (info.isCommodity or info.isEquipment == false) then
             level = 0
         end
+        if info and info.isEquipment and not info.isCommodity then
+            local named = U.nameKey(id, U.linkName(s))
+            if named then
+                return named
+            end
+        end
         if not level then
             A.requestData(id)
             return nil, "Item link data not loaded; use an exact key or bag item"
@@ -122,6 +134,9 @@ function A.keyFromInput(s)
     if id and U.key(id) then
         if C_AuctionHouse and C_AuctionHouse.GetItemKeyInfo then
             local ok, info = pcall(C_AuctionHouse.GetItemKeyInfo, A.normalKey({ itemID = id }))
+            if ok and info and info.isEquipment and C_AuctionHouse.SendSellSearchQuery then
+                return A.normalKey({ itemID = id })
+            end
             if not ok or not info or info.isEquipment then
                 local get = C_Item and C_Item.GetItemInfo or GetItemInfo
                 local got, _, link
@@ -164,10 +179,57 @@ function A.prices(item)
     end
     return out
 end
+-- Vendor sell price per item ID. The client only knows it for cached items, which after a full
+-- scan is a small part of the market, so known prices are saved and missing ones are requested.
+-- Sell price does not depend on item level or random suffix.
+function A.vendorPrice(db, x, noRequest)
+    local id = type(x) == "number" and x or tonumber(tostring(x or ""):match("item:(%d+)"))
+    local cache = type(db) == "table" and type(db.ui) == "table" and db.ui.vendorPrices
+    -- GetItemInfo on an uncached item sends a server query of its own: bulk lookups (a whole
+    -- scan) read only cached items and the saved prices; the paced queue loads the rest.
+    local cold = noRequest and id and C_Item and C_Item.IsItemDataCachedByID and not C_Item.IsItemDataCachedByID(id)
+    local price = not cold and U.vendor(id or x)
+    if price then
+        if id and type(db) == "table" and type(db.ui) == "table" and F.Store.writable(db) then
+            cache = cache or {}
+            db.ui.vendorPrices = cache
+            if cache[id] ~= price then
+                if not cache[id] then
+                    db.ui.vendorCount = (db.ui.vendorCount or 0) + 1
+                    if db.ui.vendorCount > 20000 then
+                        db.ui.vendorPrices, db.ui.vendorCount = { [id] = price }, 1
+                        return price
+                    end
+                end
+                cache[id] = price
+            end
+        end
+        return price
+    end
+    local saved = cache and id and cache[id]
+    if U.finite(saved) and saved > 0 then
+        return saved
+    end
+    if id and not noRequest then
+        A.requestData(id)
+    end
+end
+-- The key an item is traded under: gear by its full name (see U.nameKey), everything else as is.
+function A.gearKey(key, link)
+    key = A.normalKey(key)
+    if not key or (key.itemSuffix or 0) < 0 or not C_AuctionHouse or not C_AuctionHouse.GetItemKeyInfo then
+        return key
+    end
+    local ok, info = pcall(C_AuctionHouse.GetItemKeyInfo, A.normalKey({ itemID = key.itemID }))
+    if ok and info and info.isEquipment and not info.isCommodity then
+        return U.nameKey(key.itemID, U.linkName(link)) or key
+    end
+    return key
+end
 function A.native(db)
     local C = C_AuctionHouse or {}
     local api = {}
-    local commodityCache = {}
+    local commodityCache, equipmentCache = {}, {}
     api.clock = function()
         return time()
     end
@@ -191,18 +253,41 @@ function A.native(db)
     api.ready = function()
         return not C.IsThrottledMessageSystemReady or C.IsThrottledMessageSystemReady()
     end
+    -- Gear name keys and plain gear keys are asked as Blizzard's Sell window asks: the item without
+    -- level and suffix (SendSellSearchQuery), which returns every version; rows are then filtered by
+    -- name. The result event carries that plain key; resultKey maps it back to the asked key.
+    local gearSearch = {}
+    local function plain(key)
+        return A.normalKey({ itemID = key.itemID })
+    end
+    local function isGear(key)
+        if U.isNameKey(key) then
+            return true
+        end
+        if (key.itemSuffix or 0) ~= 0 or (key.itemLevel or 0) ~= 0 or not C.SendSellSearchQuery then
+            return false
+        end
+        local ok, info = pcall(C.GetItemKeyInfo, plain(key))
+        return ok and info and info.isEquipment and not info.isCommodity or false
+    end
     api.search = function(key)
-        C.SendSearchQuery(
-            A.normalKey(key),
-            { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } },
-            true
-        )
+        local sorts = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
+        if isGear(key) and C.SendSellSearchQuery then
+            gearSearch[U.key(plain(key))] = A.normalKey(key)
+            C.SendSellSearchQuery(plain(key), sorts, true)
+            return
+        end
+        C.SendSearchQuery(A.normalKey(key), sorts, true)
+    end
+    api.resultKey = function(key)
+        local asked = type(key) == "table" and gearSearch[U.key(A.normalKey(key))]
+        return asked and U.copy(asked) or key
     end
     api.keyReady = function(key)
         if not C.GetItemKeyInfo then
             return true
         end
-        local info = C.GetItemKeyInfo(A.normalKey(key))
+        local info = C.GetItemKeyInfo(U.isNameKey(key) and plain(key) or A.normalKey(key))
         if not info then
             A.requestData(key.itemID)
         end
@@ -212,7 +297,7 @@ function A.native(db)
         if kind == "commodity" then
             C.RequestMoreCommoditySearchResults(key.itemID)
         else
-            C.RequestMoreItemSearchResults(A.normalKey(key))
+            C.RequestMoreItemSearchResults(isGear(key) and plain(key) or A.normalKey(key))
         end
     end
     api.rows = function(key, kind)
@@ -238,13 +323,16 @@ function A.native(db)
                 end
             end
         else
-            key = A.normalKey(key)
+            local gear = isGear(key)
+            local hash = U.isNameKey(key) and -key.itemSuffix
+            key = gear and plain(key) or A.normalKey(key)
             complete = C.HasFullItemSearchResults(key)
             for i = 1, (C.GetNumItemSearchResults(key) or 0) do
                 local r = C.GetItemSearchResultInfo(key, i)
                 if
                     r
-                    and A.sameListing(r.itemKey, key)
+                    and (gear or A.sameListing(r.itemKey, key))
+                    and (not hash or U.nameHash(U.linkName(r.itemLink)) == hash)
                     and not r.containsOwnerItem
                     and not r.containsAccountItem
                     and (r.quantity or 0) > 0
@@ -283,7 +371,9 @@ function A.native(db)
     api.buyItem = function(auctionID, cost)
         C.PlaceBid(auctionID, cost)
     end
-    api.vendor = U.vendor
+    api.vendor = function(x, noRequest)
+        return A.vendorPrice(db, x, noRequest)
+    end
     api.replicate = function()
         C.ReplicateItems()
     end
@@ -298,7 +388,7 @@ function A.native(db)
             if a and a.itemKey and (a.quantity or 0) > 0 then
                 out[#out + 1] = {
                     auctionID = a.auctionID,
-                    key = A.normalKey(a.itemKey),
+                    key = A.gearKey(a.itemKey, a.itemLink),
                     link = a.itemLink,
                     qty = a.quantity,
                     buyout = a.buyoutAmount,
@@ -340,14 +430,19 @@ function A.native(db)
             if ok and info then
                 commodity = info.isCommodity
                 commodityCache[id] = commodity
+                equipmentCache[id] = info.isEquipment and not info.isCommodity
             end
+        end
+        local key = { itemID = id, itemSuffix = commodity and 0 or suffix }
+        if equipmentCache[id] and suffix == 0 then
+            key = U.nameKey(id, U.linkName(link)) or key
         end
         return {
             id = id,
             qty = qty,
             buyout = buyout,
             bid = bid,
-            key = { itemID = id, itemSuffix = commodity and 0 or suffix },
+            key = key,
             link = link,
             complete = complete,
             owner = owner,
@@ -368,7 +463,7 @@ function A.native(db)
                     if ok and key then
                         out[#out + 1] = {
                             id = r.itemID,
-                            key = key,
+                            key = A.gearKey(key, r.hyperlink),
                             qty = r.stackCount,
                             loc = loc,
                             link = r.hyperlink,

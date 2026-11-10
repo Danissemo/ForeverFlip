@@ -245,6 +245,29 @@ function P.state(c)
                 total
             )
         end
+        if r.idleInputs and r.index > #r.queue and not c.job then
+            local s = r.stats or { items = 0, vendorKnown = 0, vendor = 0, resale = 0, collecting = 0 }
+            local deals = 0
+            for _ in pairs(r.opportunities) do
+                deals = deals + 1
+            end
+            return result(
+                "live",
+                string.format(
+                    L(
+                        "Live: %d items · vendor price known %d · below vendor %d · resale %d · collecting data %d · deals %d · recheck in %d s",
+                        "Live: %d items · vendor price known %d · below vendor %d · resale %d · collecting data %d · deals %d · recheck in %d s"
+                    ),
+                    s.items,
+                    s.vendorKnown,
+                    s.vendor,
+                    s.resale,
+                    s.collecting,
+                    deals,
+                    math.max(0, (r.idleUntil or now) - now)
+                )
+            )
+        end
         local found = 0
         for _, v in pairs(r.opportunities) do
             if now >= v.at and now - v.at <= 30 then

@@ -31,7 +31,7 @@ class AuditRadarRecovery(unittest.TestCase):
         c:radarStart();local all={}
         for cycle=1,12 do
           now=now+1
-          c.radar.queue={};c.radar.index=1;c.radar.build=nil;c.job=nil;c.radar.nextAt=now
+          c.radar.queue={};c.radar.index=1;c.radar.build=nil;c.job=nil;c.radar.nextAt=now;c.radar.idleInputs=nil
           for _=1,100 do c:tick();if not c.radar.build and #c.radar.queue>0 then break end end
           for _,k in ipairs(c.radar.queue)do all[k.itemID]=true end
         end

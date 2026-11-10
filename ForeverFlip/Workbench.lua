@@ -86,7 +86,22 @@ local function prefixes(p, o)
         end
         if qty > 0 and qty <= p.qty and cost > 0 and not seen[qty] then
             seen[qty] = true
-            local s = W.stress(p, qty, cost, o.drop)
+            local exit = p
+            if p.mode ~= "vendor" and qty < p.qty then
+                local left, competitor = qty, nil
+                for _, lot in ipairs(p.lots or {}) do
+                    if left < lot.qty then
+                        competitor = lot.unit
+                        break
+                    end
+                    left = left - lot.qty
+                end
+                local cap = competitor and M.priceStep(competitor, true)
+                if cap and cap < p.target then
+                    exit = setmetatable({ target = cap }, { __index = p })
+                end
+            end
+            local s = W.stress(exit, qty, cost, o.drop)
             local confidence = U.number(p.confidence, p.mode == "vendor" and 1 or 0, 0, 1)
             local carry = math.floor(cost * (o.carryRate or 0) * math.max(1, p.daysToExit or o.holdDays or 3))
             local utility = s and s.base * confidence - s.loss * (1 - confidence) - carry or 0
@@ -116,7 +131,7 @@ local function prefixes(p, o)
                     group = p.group,
                     groupRemaining = p.groupRemaining,
                     at = p.at,
-                    target = p.target,
+                    target = exit.target,
                     advice = p.advice and U.copy(p.advice),
                     daysToExit = p.daysToExit,
                 }

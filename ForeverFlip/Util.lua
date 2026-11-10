@@ -1,6 +1,6 @@
 ForeverFlip = ForeverFlip or {}
 local F = ForeverFlip
-F.version = "6.4.0-preview"
+F.version = "6.10.0-preview"
 local U = {}
 F.Util = U
 function U.finite(n)
@@ -73,6 +73,30 @@ function U.key(k)
         end
     end
     return table.concat({ id, k.itemLevel or 0, k.itemSuffix or 0, k.battlePetSpeciesID or 0 }, ":")
+end
+-- Gear on Forever: a link's suffix field is empty and the auction house splits one ending ("of
+-- Nature Protection") over several item-key versions, while different endings share the item ID.
+-- Gear is therefore told apart by its full name: a name key carries a stable hash of the name as a
+-- negative itemSuffix. Itemsuffix 0 on gear means every ending of the item.
+function U.linkName(link)
+    return type(link) == "string" and link:match("|h%[(.-)%]|h") or nil
+end
+function U.nameHash(name)
+    if type(name) ~= "string" or name == "" then
+        return nil
+    end
+    local h = 5381
+    for i = 1, #name do
+        h = (h * 33 + name:lower():byte(i)) % 16777213
+    end
+    return h + 1
+end
+function U.nameKey(itemID, name)
+    local h = U.nameHash(name)
+    return h and { itemID = itemID, itemLevel = 0, itemSuffix = -h, battlePetSpeciesID = 0 } or nil
+end
+function U.isNameKey(key)
+    return type(key) == "table" and (key.itemSuffix or 0) < 0
 end
 function U.fromKey(key)
     local a, b, c, d = tostring(key):match("^(%d+):(%d+):(%-?%d+):(%d+)$")

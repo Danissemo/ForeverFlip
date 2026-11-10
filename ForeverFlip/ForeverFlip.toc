@@ -1,8 +1,8 @@
 ## Interface: 16001
-## Title: ForeverFlip |cff6dd7bd6.4|r
+## Title: ForeverFlip |cff6dd7bd6.10|r
 ## Notes: Auction-window trade workbench, scoped FIFO, rules, risk-adjusted deal discovery and NPC arbitrage.
 ## Author: ForeverFlip contributors
-## Version: 6.4.0-preview
+## Version: 6.10.0-preview
 ## OptionalDeps: Auctionator, LibAHTab, auxForever, TradeSkillMaster
 ## SavedVariables: ForeverFlipDB, ForeverFlipLegacyDB
 
