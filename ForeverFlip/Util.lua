@@ -1,175 +1,149 @@
 ForeverFlip = ForeverFlip or {}
 local F = ForeverFlip
-F.version = "6.10.0-preview"
+F.version = "1.0.0"
 local U = {}
 F.Util = U
+
 function U.finite(n)
     return type(n) == "number" and n == n and n ~= math.huge and n ~= -math.huge
 end
-function U.number(n, fallback, lo, hi)
-    n = tonumber(n)
-    if not U.finite(n) then
-        return fallback
+
+function U.clamp(n, lo, hi)
+    return math.max(lo, math.min(hi, n))
+end
+
+-- Item keys are strings:
+--   "c:<itemID>"          commodity (stackable goods, bought by quantity)
+--   "i:<itemID>"          plain item (bags, recipes, ...), one auction per purchase
+--   "g:<itemID>:<name>"   gear: on WoW Forever one item ID has several endings ("of the Wolf")
+--                         that only the full name tells apart; the name is stored in lower case.
+function U.key(kind, id, name)
+    if kind == "commodity" then
+        return "c:" .. id
+    elseif kind == "gear" then
+        return "g:" .. id .. ":" .. string.lower(name or "")
     end
-    if lo then
-        n = math.max(lo, n)
-    end
-    if hi then
-        n = math.min(hi, n)
-    end
-    return n
+    return "i:" .. id
 end
--- Snap only within a few binary rounding units, not a monetary tolerance.
-local function integerBoundary(n)
-    local nearest = math.floor(n + 0.5)
-    if math.abs(n - nearest) <= math.max(1, math.abs(n)) * 4.440892098500626e-16 then
-        return nearest
-    end
-    return n
-end
-function U.round(n)
-    return math.floor(n + 0.5 + math.abs(n) * 4.440892098500626e-16)
-end
-function U.floor(n)
-    return math.floor(integerBoundary(n))
-end
-function U.ceil(n)
-    return math.ceil(integerBoundary(n))
-end
-function U.copper(s)
-    s = tostring(s or ""):gsub(",", "."):gsub("%s", "")
-    if not s:match("^%d+%.?%d*$") then
+
+function U.parseKey(key)
+    if type(key) ~= "string" then
         return nil
     end
-    local n = tonumber(s)
-    if not U.finite(n) or n < 0 or n > 100000000 then
+    local tag, id, rest = key:match("^(%a):(%d+):?(.*)$")
+    id = tonumber(id)
+    if not id then
         return nil
     end
-    return U.round(n * 10000)
-end
-function U.money(n)
-    n = U.round(U.number(n, 0))
-    local sign = n < 0 and "-" or ""
-    n = math.abs(n)
-    return string.format("%s%dg %02ds %02dc", sign, math.floor(n / 10000), math.floor(n % 10000 / 100), n % 100)
-end
-function U.gold(n)
-    return string.format("%.4f", (n or 0) / 10000)
-end
-function U.key(k)
-    if type(k) == "number" then
-        k = { itemID = k }
-    end
-    if type(k) ~= "table" then
+    local kind = tag == "c" and "commodity" or tag == "g" and "gear" or tag == "i" and "item" or nil
+    if not kind then
         return nil
     end
-    local id = tonumber(k.itemID)
-    if not U.finite(id) or id < 1 or id ~= math.floor(id) then
-        return nil
-    end
-    for _, v in ipairs({ k.itemLevel or 0, k.itemSuffix or 0, k.battlePetSpeciesID or 0 }) do
-        if not U.finite(v) or v ~= math.floor(v) or math.abs(v) > 1e9 then
-            return nil
-        end
-    end
-    return table.concat({ id, k.itemLevel or 0, k.itemSuffix or 0, k.battlePetSpeciesID or 0 }, ":")
+    return { kind = kind, id = id, name = kind == "gear" and rest or nil }
 end
--- Gear on Forever: a link's suffix field is empty and the auction house splits one ending ("of
--- Nature Protection") over several item-key versions, while different endings share the item ID.
--- Gear is therefore told apart by its full name: a name key carries a stable hash of the name as a
--- negative itemSuffix. Itemsuffix 0 on gear means every ending of the item.
+
 function U.linkName(link)
     return type(link) == "string" and link:match("|h%[(.-)%]|h") or nil
 end
-function U.nameHash(name)
-    if type(name) ~= "string" or name == "" then
+
+-- Gear and plain items are listed in whole silver only; commodities may use copper.
+function U.stepDown(price, kind)
+    if not U.finite(price) or price <= 0 then
+        return 0
+    end
+    if kind == "commodity" then
+        return math.floor(price)
+    end
+    return math.floor(price / 100) * 100
+end
+
+function U.stepUp(price, kind)
+    if not U.finite(price) or price <= 0 then
+        return 0
+    end
+    if kind == "commodity" then
+        return math.ceil(price)
+    end
+    return math.ceil(price / 100) * 100
+end
+
+-- The highest legal price strictly below `price`.
+function U.below(price, kind)
+    if kind == "commodity" then
+        return math.max(0, math.ceil(price) - 1)
+    end
+    return math.max(0, (math.ceil(price / 100) - 1) * 100)
+end
+
+function U.money(copper)
+    if not U.finite(copper) then
+        return "?"
+    end
+    local sign = copper < 0 and "-" or ""
+    copper = math.floor(math.abs(copper) + 0.5)
+    local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
+    local parts = {}
+    if g > 0 then
+        parts[#parts + 1] = "|cffffd100" .. g .. "g|r"
+    end
+    if s > 0 or g > 0 then
+        parts[#parts + 1] = "|cffc7c7cf" .. s .. "s|r"
+    end
+    parts[#parts + 1] = "|cffeda55f" .. c .. "c|r"
+    return sign .. table.concat(parts, " ")
+end
+
+-- Money without colour codes, for edit boxes ("1g 20s 5c").
+function U.plainMoney(copper)
+    local s = U.money(copper):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    return s
+end
+
+-- Parses "1g 20s 5c", "20s", "1.5g" or a bare number of silver.
+function U.parseMoney(text)
+    if type(text) ~= "string" then
         return nil
     end
-    local h = 5381
-    for i = 1, #name do
-        h = (h * 33 + name:lower():byte(i)) % 16777213
+    text = text:lower():gsub(",", ".")
+    local total, found = 0, false
+    for amount, unit in text:gmatch("([%d%.]+)%s*([gsc])") do
+        local n = tonumber(amount)
+        if not n then
+            return nil
+        end
+        total = total + n * (unit == "g" and 10000 or unit == "s" and 100 or 1)
+        found = true
     end
-    return h + 1
-end
-function U.nameKey(itemID, name)
-    local h = U.nameHash(name)
-    return h and { itemID = itemID, itemLevel = 0, itemSuffix = -h, battlePetSpeciesID = 0 } or nil
-end
-function U.isNameKey(key)
-    return type(key) == "table" and (key.itemSuffix or 0) < 0
-end
-function U.fromKey(key)
-    local a, b, c, d = tostring(key):match("^(%d+):(%d+):(%-?%d+):(%d+)$")
-    if a then
-        return {
-            itemID = tonumber(a),
-            itemLevel = tonumber(b),
-            itemSuffix = tonumber(c),
-            battlePetSpeciesID = tonumber(d),
-        }
+    if not found then
+        local n = tonumber(text:match("^%s*([%d%.]+)%s*$") or "")
+        if not n then
+            return nil
+        end
+        total = n * 100
     end
+    return math.floor(total + 0.5)
 end
-function U.copy(t, seen, depth)
+
+function U.copy(t)
     if type(t) ~= "table" then
         return t
     end
-    seen = seen or {}
-    depth = depth or 0
-    if seen[t] then
-        return seen[t]
-    end
-    if depth > 48 then
-        return {}
-    end
     local out = {}
-    seen[t] = out
     for k, v in pairs(t) do
-        if type(k) == "string" or type(k) == "number" then
-            out[k] = U.copy(v, seen, depth + 1)
-        end
+        out[k] = U.copy(v)
     end
     return out
 end
-function U.median(values)
-    local a = {}
-    for _, v in ipairs(values or {}) do
-        if U.finite(v) then
-            a[#a + 1] = v
-        end
-    end
-    table.sort(a)
-    local n = #a
-    if n == 0 then
+
+-- GetItemInfo moved to C_Item on the WoW Forever client; the global may be missing.
+function U.itemInfo(id)
+    local get = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+    if not get then
         return nil
     end
-    return n % 2 == 1 and a[(n + 1) / 2] or (a[n / 2] + a[n / 2 + 1]) / 2
-end
-function U.sortedKeys(t)
-    local a = {}
-    for k in pairs(t or {}) do
-        a[#a + 1] = k
+    local ok, name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice = pcall(get, id)
+    if not ok then
+        return nil
     end
-    table.sort(a, function(x, y)
-        return tostring(x) < tostring(y)
-    end)
-    return a
-end
-function U.name(id)
-    local get = GetItemInfo or (C_Item and C_Item.GetItemInfo)
-    if get then
-        local ok, n = pcall(get, id)
-        if ok and n then
-            return n
-        end
-    end
-    return "item:" .. tostring(id)
-end
-function U.vendor(id)
-    local get = GetItemInfo or (C_Item and C_Item.GetItemInfo)
-    if get then
-        local ok, _, _, _, _, _, _, _, _, _, _, price = pcall(get, id)
-        if ok and U.finite(price) and price > 0 then
-            return price
-        end
-    end
+    return name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice
 end

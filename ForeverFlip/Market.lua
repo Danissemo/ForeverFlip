@@ -2,165 +2,17 @@ local F = ForeverFlip
 local U = F.Util
 local M = {}
 F.Market = M
-function M.evidence(h)
-    local out = {}
-    local earliest = math.huge
-    for _, s in ipairs(h and h.samples or {}) do
-        out[#out + 1] = s
-        if U.finite(s.at) then
-            earliest = math.min(earliest, s.at)
-        end
-    end
-    for _, d in ipairs(h and h.days or {}) do
-        if U.finite(d.firstAt) and d.firstAt < earliest - 600 and U.finite(d.firstPrice) then
-            out[#out + 1] = {
-                at = d.firstAt,
-                price = d.firstPrice,
-                token = d.firstToken or ("anchor:" .. d.day),
-                complete = true,
-                family = d.firstFamily,
-                source = "daily-anchor",
-            }
-        end
-    end
-    return out
-end
-function M.snapshot(rows)
-    local a, total = {}, 0
-    for _, r in ipairs(rows or {}) do
-        if U.finite(r.unit) and r.unit > 0 and U.finite(r.qty) and r.qty > 0 then
-            a[#a + 1] = r
-            total = total + r.qty
-        end
-    end
-    table.sort(a, function(x, y)
-        return x.unit < y.unit
-    end)
-    local function quantile(f)
-        local n = 0
-        for _, r in ipairs(a) do
-            n = n + r.qty
-            if n >= total * f then
-                return r.unit
-            end
-        end
-    end
-    return { price = quantile(0.20), median = quantile(0.5), minimum = a[1] and a[1].unit, qty = total }
-end
-function M.velocity(sales, key, now)
-    local units, first, days = 0, nil, {}
-    for _, s in ipairs(sales or {}) do
-        if
-            (s.kind == nil or s.kind == "sell")
-            and s.key == key
-            and U.finite(s.at)
-            and s.at <= now
-            and s.at >= now - 14 * 86400
-            and (s.known or 0) > 0
-        then
-            units = units + s.known
-            first = math.min(first or s.at, s.at)
-            days[math.floor(s.at / 86400)] = true
-        end
-    end
-    local count = 0
-    for _ in pairs(days) do
-        count = count + 1
-    end
-    local span = first and math.max(1, (now - first) / 86400) or 1
-    return {
-        known = units >= 5 and count >= 2,
-        units = units,
-        days = count,
-        daily = units / span,
-        lower = math.max(0, (units - 1.645 * math.sqrt(units)) / span),
-    }
-end
-function M.stats(history, now)
-    local prices, days, tokens, first, last = {}, {}, {}, nil, nil
-    for _, h in ipairs(history or {}) do
-        if
-            not h.family
-            and U.finite(h.price)
-            and h.price > 0
-            and U.finite(h.at)
-            and h.at <= now
-            and h.at >= now - 14 * 86400
-            and h.complete ~= false
-        then
-            local token = tostring(h.token or math.floor(h.at / 600))
-            if not tokens[token] then
-                tokens[token] = true
-                prices[#prices + 1] = h.price
-                days[math.floor(h.at / 86400)] = true
-                first = math.min(first or h.at, h.at)
-                last = math.max(last or h.at, h.at)
-            end
-        end
-    end
-    local nDays = 0
-    for _ in pairs(days) do
-        nDays = nDays + 1
-    end
-    local ref = U.median(prices)
-    local deviations = {}
-    for _, p in ipairs(prices) do
-        deviations[#deviations + 1] = math.abs(p - (ref or 0))
-    end
-    local sigma = (U.median(deviations) or 0) * 1.4826
-    local age = last and now - last or math.huge
-    local credible = #prices >= 5 and nDays >= 2 and last - first >= 86400 and age <= 2 * 86400
-    local confidence = math.min(1, #prices / 12) * math.min(1, nDays / 3) * math.exp(-age / (2 * 86400))
-    return {
-        reference = ref,
-        sigma = sigma,
-        volatility = ref and sigma / ref or 1,
-        n = #prices,
-        days = nDays,
-        age = age,
-        credible = not not credible,
-        confidence = confidence,
-        lower = ref and math.max(0, math.floor(ref - 1.645 * sigma / math.sqrt(math.max(1, #prices)))) or nil,
-    }
-end
--- Typical selling price from current listings, robust to both bargains and ambitious asks:
--- skip the cheapest 10% of volume, then take the volume median of the next 40% (10%..50%).
--- Ambitious high asks never enter the window; a few cheap bargains are trimmed away.
-function M.marketValue(rows)
-    local valid, total = {}, 0
-    for _, r in ipairs(rows or {}) do
-        if U.finite(r.unit) and r.unit > 0 and U.finite(r.qty) and r.qty > 0 then
-            valid[#valid + 1] = r
-            total = total + r.qty
-        end
-    end
-    if total == 0 then
-        return nil, 0, 0
-    end
-    table.sort(valid, function(a, b)
-        return a.unit < b.unit
-    end)
-    local from, to = total * 0.10, total * 0.50
-    local middle = (from + to) / 2
-    local seen = 0
-    for _, r in ipairs(valid) do
-        seen = seen + r.qty
-        if seen >= middle then
-            return r.unit, #valid, total
-        end
-    end
-    return valid[#valid].unit, #valid, total
-end
--- Resale exit from the current listings alone (like a sniper). The exit is the market value, but
--- below the first competitor left after the bargains are bought, rounded down to whole silver because
--- the auction house only accepts silver prices. Needs a real market — at least 5 units in 3
--- listings — and an exit of at least 1 silver, otherwise nil.
--- Returns exit price, number of listings (liquidity) and the market value.
--- Price histogram over every listing of a full scan: 2% wide buckets with quantity and the
--- lowest exact price in each. Lets discovery see the whole market depth while only the 64
--- cheapest listings are kept as rows.
+
+M.CUT = 0.05 -- auction house cut on a sale (faction house)
 M.BUCKET = math.log(1.02)
--- Stored flat, without a table per bucket: [2b] = quantity, [2b + 1] = cheapest unit of bucket b.
+-- Sale levels relative to the scan market value (see recordFlow).
+M.LEVELS = { 0.6, 0.75, 0.9, 1.05 }
+-- Units per day are smoothed as if PRIOR_HOURS more hours had been watched with no sale: one unit
+-- gone in a 15-minute pair is ~5.6 a day, not 96. The prior fades as hours of data add up.
+M.PRIOR_HOURS = 4
+
+-- Price histogram of every listing of an item in a full scan, stored flat without a table per
+-- bucket: [2b] = units, [2b + 1] = cheapest unit price of bucket b (2% wide buckets).
 function M.bucketAdd(buckets, unit, qty)
     local b = 2 * math.floor(math.log(unit) / M.BUCKET)
     local q = buckets[b]
@@ -173,40 +25,30 @@ function M.bucketAdd(buckets, unit, qty)
         buckets[b], buckets[b + 1] = qty, unit
     end
 end
--- Same window as marketValue (volume 10%..50%, midpoint), computed from the histogram.
+
+-- Typical asking price: the price at 30% of the listed volume. Skips the few cheapest units
+-- (bargains) and never reaches the expensive tail.
 function M.bucketValue(buckets)
     local keys, total = {}, 0
-    for b, q in pairs(buckets or {}) do
+    for b, q in pairs(buckets) do
         if b % 2 == 0 then
             keys[#keys + 1] = b
             total = total + q
         end
     end
     if total == 0 then
-        return nil
+        return nil, 0
     end
     table.sort(keys)
-    local middle, seen = total * 0.30, 0
+    local seen = 0
     for _, b in ipairs(keys) do
         seen = seen + buckets[b]
-        if seen >= middle then
+        if seen >= total * 0.3 then
             return math.floor(buckets[b + 1]), total
         end
     end
 end
--- Demand between two full scans. Units listed at or below the previous market value that are gone
--- in the next scan were bought (or expired/cancelled, so this is an upper bound). New cheap
--- listings hide sales, so it is also noisy. Only pairs of scans up to 3 hours apart are used.
-local function cheapQty(buckets, limit)
-    local qty = 0
-    for b, q in pairs(buckets) do
-        if b % 2 == 0 and buckets[b + 1] <= limit then
-            qty = qty + q
-        end
-    end
-    return qty
-end
--- Units listed at or above `price` (by the cheapest unit of each bucket).
+
 local function qtyAbove(buckets, price)
     local qty = 0
     for b, q in pairs(buckets) do
@@ -216,58 +58,59 @@ local function qtyAbove(buckets, price)
     end
     return qty
 end
--- Sale levels relative to the scan market value. Flow at level i counts units priced at or above
--- LEVELS[i] x market that left the auction house between two scans: sales at a price a reseller
--- can actually ask. Cheap lots bought out by other flippers do not count. Expired or cancelled
--- auctions also count, new listings hide sales; it is an estimate, decayed with a 2-day half-life.
-M.LEVELS = { 0.6, 0.75, 0.9, 1.05 }
-function M.recordDemand(h, buckets, market, now)
+
+-- Sales between two full scans, per price level. Units priced at or above LEVELS[i] x market that
+-- left the auction house between two scans (up to 3 hours apart) count as sold at that level.
+-- Cheap lots bought by other resellers do not raise the higher levels; expired or cancelled
+-- auctions count too (an upper bound) and new listings hide sales (a lower bound). Decays with a
+-- 2-day half-life. `h` is the item's saved history table and is updated in place.
+function M.recordFlow(h, buckets, market, now)
     local prev = h.scan
-    if prev and U.finite(prev.at) and prev.at < now and now - prev.at <= 3 * 3600 and U.finite(prev.market) then
+    if
+        type(prev) == "table"
+        and U.finite(prev.at)
+        and prev.at < now
+        and now - prev.at <= 3 * 3600
+        and U.finite(prev.market)
+        and type(prev.above) == "table"
+    then
         local hours = (now - prev.at) / 3600
-        local sold = math.max(0, (prev.cheap or 0) - cheapQty(buckets, prev.market))
-        h.demand = h.demand or {}
-        h.demand[#h.demand + 1] = { at = now, hours = hours, sold = sold }
-        while #h.demand > 48 do
-            table.remove(h.demand, 1)
+        local f = h.flow
+        if type(f) ~= "table" or type(f.sold) ~= "table" then
+            f = { hours = 0, sold = { 0, 0, 0, 0 }, pairs = 0, at = now }
         end
-        if type(prev.above) == "table" then
-            local f = h.flow
-            if type(f) ~= "table" or type(f.sold) ~= "table" or not U.finite(f.at) then
-                f = { hours = 0, sold = { 0, 0, 0, 0 }, pairs = 0, at = now }
-            end
-            local decay = 0.5 ^ (math.max(0, now - f.at) / (48 * 3600))
-            f.hours = f.hours * decay + hours
-            for i, level in ipairs(M.LEVELS) do
-                local gone = math.max(0, (prev.above[i] or 0) - qtyAbove(buckets, level * prev.market))
-                f.sold[i] = (f.sold[i] or 0) * decay + gone
-            end
-            f.pairs, f.at, f.market = math.min(99, f.pairs + 1), now, market
-            h.flow = f
+        local decay = 0.5 ^ (math.max(0, now - (f.at or now)) / (48 * 3600))
+        f.hours = f.hours * decay + hours
+        for i, level in ipairs(M.LEVELS) do
+            local gone = math.max(0, (prev.above[i] or 0) - qtyAbove(buckets, level * prev.market))
+            f.sold[i] = (f.sold[i] or 0) * decay + gone
         end
+        f.pairs, f.at, f.market = math.min(99, (f.pairs or 0) + 1), now, market
+        h.flow = f
     end
     local above = {}
     for i, level in ipairs(M.LEVELS) do
         above[i] = U.finite(market) and qtyAbove(buckets, level * market) or 0
     end
-    h.scan = { at = now, market = market, cheap = cheapQty(buckets, market), above = above }
+    h.scan = { at = now, market = market, above = above }
 end
--- Estimated units per day sold at or near `target` (85% of it and above, rounded to the closest
--- level that does not overcount). pairs < 2 means there is not enough data yet.
-function M.demandAt(h, target, now)
+
+-- Estimated units per day sold at or above 85% of `price`, rounded to the level that does not
+-- overcount. pairs = 0 means not enough scans yet (two scans make one pair).
+function M.demandAt(h, price, now)
     local f = h and h.flow
     if
         type(f) ~= "table"
         or type(f.sold) ~= "table"
         or not U.finite(f.market)
         or f.market <= 0
-        or not U.finite(target)
+        or not U.finite(price)
         or not U.finite(f.hours)
         or f.hours <= 0
     then
-        return { pairs = 0 }
+        return { pairs = 0, perDay = 0 }
     end
-    local want, level = 0.85 * target / f.market, #M.LEVELS
+    local want, level = 0.85 * price / f.market, #M.LEVELS
     for i, x in ipairs(M.LEVELS) do
         if x >= want then
             level = i
@@ -275,475 +118,279 @@ function M.demandAt(h, target, now)
         end
     end
     local sold = f.sold[level] or 0
+    return { pairs = f.pairs or 0, perDay = sold / (f.hours + M.PRIOR_HOURS) * 24, sold = sold, hours = f.hours }
+end
+
+-- Time of the week. Each scan's usual price is compared with the item's long-run baseline; the
+-- ratio is averaged per weekday (7) and per part of the day (4: night, morning, day, evening)
+-- as two separate factors, so a few weeks of scans are enough. price ~ base x day[w] x part[p].
+-- Stored compactly in h.t = { b = baseline, w = {7}, wn = {7}, p = {4}, pn = {4} }.
+local function slot(now)
+    local t = date("*t", now)
+    return t.wday, math.floor(t.hour / 6) + 1
+end
+M.slot = slot
+
+function M.recordTiming(h, market, now)
+    if not U.finite(market) or market <= 0 then
+        return
+    end
+    local t = type(h.t) == "table" and h.t or { w = {}, wn = {}, p = {}, pn = {} }
+    h.t = t
+    if not U.finite(t.b) or t.b <= 0 then
+        t.b = market
+        return
+    end
+    local ratio = math.max(0.2, math.min(5, market / t.b))
+    local w, p = slot(now)
+    local function add(values, counts, i)
+        local n = math.min((counts[i] or 0) + 1, 20)
+        values[i] = (values[i] or 1) + (ratio - (values[i] or 1)) / n
+        counts[i] = n
+    end
+    add(t.w, t.wn, w)
+    add(t.p, t.pn, p)
+    t.b = t.b + (market - t.b) * 0.05
+end
+
+-- Pattern of an item: ready when four weekdays and three parts of the day have data. Returns the
+-- factor now, the cheapest and dearest slot and the spread between them.
+function M.timing(h, now)
+    local t = type(h) == "table" and h.t
+    if type(t) ~= "table" or type(t.w) ~= "table" or type(t.p) ~= "table" then
+        return { ready = false }
+    end
+    local days, parts = 0, 0
+    for i = 1, 7 do
+        if (t.wn[i] or 0) >= 1 then
+            days = days + 1
+        end
+    end
+    for i = 1, 4 do
+        if (t.pn[i] or 0) >= 2 then
+            parts = parts + 1
+        end
+    end
+    if days < 4 or parts < 3 then
+        return { ready = false, days = days, parts = parts }
+    end
+    local low, high
+    for w = 1, 7 do
+        for p = 1, 4 do
+            if (t.wn[w] or 0) >= 1 and (t.pn[p] or 0) >= 2 then
+                local f = (t.w[w] or 1) * (t.p[p] or 1)
+                if not low or f < low.f then
+                    low = { f = f, w = w, p = p }
+                end
+                if not high or f > high.f then
+                    high = { f = f, w = w, p = p }
+                end
+            end
+        end
+    end
+    local w, p = slot(now)
+    local current = (t.w[w] or 1) * (t.p[p] or 1)
     return {
-        pairs = f.pairs or 0,
-        hours = f.hours,
-        sold = sold,
-        perDay = sold / f.hours * 24,
-        level = M.LEVELS[level],
-        age = now and f.at and now - f.at or 0,
+        ready = true,
+        now = current,
+        low = low,
+        high = high,
+        spread = high.f / low.f - 1,
     }
 end
--- Estimated units sold per day over the last 7 days of scan pairs.
-function M.demand(h, now)
-    local pairs_, hours, sold = 0, 0, 0
-    for _, d in ipairs(h and h.demand or {}) do
-        if U.finite(d.at) and d.at <= now and now - d.at <= 7 * 86400 and U.finite(d.hours) and d.hours > 0 then
-            pairs_, hours, sold = pairs_ + 1, hours + d.hours, sold + (d.sold or 0)
-        end
+
+-- Display metadata for the existing demand model. Unknown is not an observed zero; old
+-- estimates stay numeric but carry the age of the last usable full-scan pair.
+function M.saleability(h, price, now)
+    local out = { known = false, pairs = 0, stale = false }
+    local f = type(h) == "table" and h.flow
+    if type(f) ~= "table" then
+        return out
     end
-    return { pairs = pairs_, hours = hours, sold = sold, perDay = hours > 0 and sold / hours * 24 or nil }
-end
--- `hint` is the full-depth market value from a scan; it replaces the value from truncated rows.
-function M.ladder(rows, discount, hint)
-    local market, count, total = M.marketValue(rows)
-    if not market or count < 3 or total < 5 then
-        return nil
+    out.pairs = U.finite(f.pairs) and math.max(0, f.pairs) or 0
+    out.at = U.finite(f.at) and f.at or nil
+    out.hours = U.finite(f.hours) and f.hours > 0 and f.hours or nil
+    if out.at and U.finite(now) then
+        out.age = math.max(0, now - out.at)
+        out.stale = out.age > 3 * 3600
     end
-    if U.finite(hint) and hint > market then
-        market = hint
-    end
-    local exit = math.floor(market / 100) * 100
-    local limit = exit * (discount or 0.744)
-    local competitor
-    for _, r in ipairs(rows) do
-        if U.finite(r.unit) and r.unit > limit and (U.finite(r.qty) and r.qty > 0) then
-            competitor = math.min(competitor or r.unit, r.unit)
-        end
-    end
-    if competitor then
-        exit = math.min(exit, math.floor((competitor - 1) / 100) * 100)
-    end
-    if exit < 100 then
-        return nil
-    end
-    return exit, count, market
-end
-function M.fee(total, rate, minimum)
-    return math.min(total, math.max(U.round(total * (rate or 0.05)), minimum or 0))
-end
--- Shared integer-copper cash model. These are scenario costs, not sale guarantees.
-function M.net(gross, fee, reserve, minimum)
-    if not U.finite(gross) or gross < 0 then
-        return nil
-    end
-    return gross - M.fee(gross, fee, minimum) - U.floor(gross * (reserve or 0))
-end
-function M.breakEven(cost, qty, fee, reserve, minimum, extraCost)
-    fee, reserve, minimum, extraCost = fee or 0.05, reserve or 0, minimum or 0, extraCost or 0
     if
-        not U.finite(cost)
-        or cost < 0
-        or not U.finite(qty)
-        or qty <= 0
-        or not U.finite(fee)
-        or fee < 0
-        or not U.finite(reserve)
-        or reserve < 0
-        or fee + reserve >= 1
-        or not U.finite(minimum)
-        or minimum < 0
-        or not U.finite(extraCost)
-        or extraCost < 0
+        out.pairs < 1
+        or not out.hours
+        or type(f.sold) ~= "table"
+        or not U.finite(f.market)
+        or f.market <= 0
+        or not U.finite(price)
+        or price <= 0
+        or 0.85 * price / f.market > M.LEVELS[#M.LEVELS]
     then
-        return nil
+        return out
     end
-    local needed = cost + extraCost
-    if not U.finite(needed) then
-        return nil
-    end
-    -- Lower bounds allow for integer fee rounding; scan the few remaining copper exactly.
-    local gross = math.max(0, (needed + minimum - 1) / (1 - reserve), (needed - 1.5) / (1 - fee - reserve))
-    local price = math.max(0, math.floor(gross / qty))
-    if not U.finite(price * qty) or price > 9007199254740990 then
-        return nil
-    end
-    local steps = 0
-    while M.net(U.floor(price * qty), fee, reserve, minimum) < needed do
-        if price >= 9007199254740990 then
-            return nil
+    for i = 1, #M.LEVELS do
+        if not U.finite(f.sold[i]) or f.sold[i] < 0 then
+            return out
         end
-        if steps >= 64 then
-            -- Near-total rates can put billions of copper inside the rounding interval.
-            -- Use a conservative upper bound instead of scanning that interval.
-            price = math.ceil(math.max((needed + minimum) / (1 - reserve), (needed + 0.5) / (1 - fee - reserve)) / qty)
-            if
-                not U.finite(price * qty)
-                or price * qty > 9007199254740990
-                or M.net(U.floor(price * qty), fee, reserve, minimum) < needed
-            then
-                return nil
-            end
-            return price
-        end
-        price = price + 1
-        steps = steps + 1
+    end
+    local demand = M.demandAt(h, price, now)
+    if U.finite(demand.perDay) and demand.perDay >= 0 then
+        out.known, out.perDay = true, demand.perDay
+    end
+    return out
+end
+
+-- Deposit of one auction: the game charges at least 1 silver (seen on WoW Forever); it is returned
+-- on a sale and lost when the auction expires. Estimated from the vendor price (Classic rule).
+function M.deposit(vendor, units)
+    return math.max(100, math.floor((vendor or 0) * 0.15 * (units or 1)))
+end
+
+-- Deposits a resale of `qty` units puts at risk: one auction for a commodity stack, one per item.
+function M.depositRisk(kind, vendor, qty)
+    if kind == "commodity" then
+        return M.deposit(vendor, qty)
+    end
+    return qty * M.deposit(vendor, 1)
+end
+
+-- Money left after selling `qty` units at `price` each on the auction house.
+function M.net(price, qty)
+    local gross = price * qty
+    return gross - math.floor(gross * M.CUT + 0.5)
+end
+
+-- Lowest legal listing price that returns `cost` for `qty` units after the cut.
+function M.breakEven(cost, qty, kind)
+    local price = U.stepUp(cost / qty / (1 - M.CUT), kind)
+    while M.net(price, qty) < cost do
+        price = price + (kind == "commodity" and 1 or 100)
     end
     return price
 end
-function M.priceStep(price, undercut)
-    if not U.finite(price) or price <= 0 then
-        return nil
-    end
-    return math.max(100, (undercut and (math.ceil(price / 100) - 1) or math.floor(price / 100)) * 100)
-end
-function M.sources(stats, recent, o)
-    local sources = {
-        market = stats and stats.lower,
-        recent = recent,
-        vendorsell = o.vendor,
-        avgbuy = o.avgBuy,
-        tsm = o.tsm,
-        aux = o.aux,
-    }
-    if o.advice then
-        sources.ewma = o.advice.prices.known and o.advice.prices.ewma or nil
-        sources.pricefloor = o.advice.priceCap
-        sources.winlower = o.advice.trades.winLower
-        sources.profitfactor = o.advice.trades.profitFactor
-        sources.salesperday = o.advice.rateKnown and o.advice.trades.rateLower or nil
-    end
-    return sources
-end
-function M.plan(input, history, o)
-    o = o or {}
-    local now = o.now or time()
-    local s = M.stats(history, now)
-    local p = {
-        qty = 0,
-        cost = 0,
-        lots = {},
-        reasons = {},
-        stats = s,
-        canBuy = false,
-        profit = 0,
-        roi = 0,
-        mode = o.mode or "flip",
-        complete = o.complete ~= false,
-        advice = o.advice,
-    }
-    local rows = {}
-    local totalQty = 0
-    for _, v in ipairs(input or {}) do
-        if
-            U.finite(v.qty)
-            and v.qty > 0
-            and v.qty == math.floor(v.qty)
-            and U.finite(v.unit)
-            and v.unit > 0
-            and U.finite(v.cost)
-            and v.cost > 0
-            and v.cost == math.floor(v.cost)
-        then
-            rows[#rows + 1] = v
-            totalQty = totalQty + v.qty
-        end
-    end
-    table.sort(rows, function(a, b)
-        if a.unit == b.unit then
-            return (a.auctionID or 0) < (b.auctionID or 0)
-        end
-        return a.unit < b.unit
-    end)
-    p.rows = rows
-    p.totalQty = totalQty
-    p.minimum = rows[1] and rows[1].unit
-    local wallet = U.number(o.wallet, 0, 0)
-    local free = math.max(0, wallet - U.number(o.reserved, 0, 0) - math.floor(wallet * (o.cashFloor or 0.20)))
-    if p.mode == "vendor" then
-        -- Sold to an NPC right after buying: the money comes back at once, so only free cash,
-        -- explicit budgets and the absolute cap limit it (no wallet share or stock exposure cap).
-        p.budget = math.max(0, math.floor(math.min(o.budget or free, free, o.absoluteCap or math.huge)))
-    else
-        p.budget = math.max(
-            0,
-            math.floor(
-                math.min(
-                    o.budget or free,
-                    free,
-                    wallet * (o.maxWallet or 0.10),
-                    o.absoluteCap or math.huge,
-                    math.max(0, (wallet + (o.stock or 0)) * (o.maxItem or 0.20) - (o.exposure or 0))
-                )
-            )
-        )
-    end
-    if p.mode == "material" then
-        -- Explicit procurement limits, without inventing resale income.
-        local limit = U.finite(o.materialPrice) and o.materialPrice > 0 and o.materialPrice or 0
-        local cap = math.max(0, math.floor(math.min(o.materialQty or 0, o.maxQty or 0)))
-        p.buyLimit, p.material = limit, true
-        for index, row in ipairs(rows) do
-            if row.unit > limit or p.qty >= cap then
+
+-- Evaluates one item's listings (sorted cheapest first: {unit, qty, ...}).
+-- ctx: kind, vendor (vendor sell price or nil), budget (copper), history (saved table or nil),
+-- market (typical asking price or nil), now, settings {vendorMinProfit, minProfit, minROI}.
+-- Returns the best deal or nil and a short reason.
+--
+-- Vendor deal: every unit priced below the vendor price, sold to any vendor right away. No cut,
+-- no waiting, no market risk.
+--
+-- Resale: buy every unit below the exit price; the exit is one legal step below the cheapest unit
+-- left after buying (a resale above it would not sell before that cheaper lot), never above the
+-- typical asking price, and it needs measured sales near the exit price. At most one day of those
+-- sales is bought.
+function M.evaluate(rows, ctx)
+    local s = ctx.settings or {}
+    local kind = ctx.kind
+    local budget = ctx.budget or 0
+    local best, reason = nil, "no_gap"
+
+    if U.finite(ctx.vendor) and ctx.vendor > 0 then
+        local qty, cost, used = 0, 0, {}
+        for _, r in ipairs(rows) do
+            if r.unit >= ctx.vendor then
                 break
             end
-            local qty, cost = row.qty, row.cost
-            if o.commodity ~= false then
-                qty = math.min(qty, cap - p.qty, math.floor((p.budget - p.cost) / row.unit))
-                cost = qty * row.unit
-            elseif qty > cap - p.qty or p.cost + cost > p.budget then
+            local take = r.qty
+            if kind == "commodity" then
+                take = math.min(take, math.floor((budget - cost) / r.unit))
+            elseif cost + r.unit * take > budget then
+                take = math.floor((budget - cost) / r.unit)
+            end
+            if take < 1 then
+                reason = "budget"
                 break
             end
-            if qty < 1 or cost % 1 ~= 0 then
-                break
-            end
-            p.qty, p.cost, p.maxUnit = p.qty + qty, p.cost + cost, row.unit
-            p.lots[#p.lots + 1] = { qty = qty, cost = cost, unit = row.unit, auctionID = row.auctionID, index = index }
+            qty, cost = qty + take, cost + take * r.unit
+            used[#used + 1] = { unit = r.unit, qty = take, auctionID = r.auctionID }
         end
-        p.avg = p.qty > 0 and p.cost / p.qty or 0
-        if not p.complete then
-            p.reasons[#p.reasons + 1] = "partial"
-        end
-        if p.qty == 0 then
-            p.reasons[#p.reasons + 1] = "budget/price"
-        end
-        if o.legacyUnresolved then
-            p.reasons[#p.reasons + 1] = "legacy"
-        end
-        p.canBuy = p.qty > 0 and #p.reasons == 0
-        return p
-    end
-    local roi = U.number(o.minROI, 0.25, 0, 10)
-    local fee = U.number(o.fee, 0.05, 0, 0.5)
-    local reserve = U.number(o.reserve, 0.02, 0, 0.5)
-    p.extraCost = o.extraCost or 0
-    p.feeRate = fee
-    p.reserveRate = reserve
-    p.minFee = o.minFee or 0
-    p.minProfit = o.minProfit or 10000
-    if o.adaptiveProfit then
-        -- A fixed gold floor rejects every deal for small wallets. Scale it to the money that can
-        -- actually be used: 5% of the deal budget, never below 1 silver. The ROI rule still applies.
-        p.minProfit = math.min(p.minProfit, math.max(100, math.floor(p.budget * 0.05)))
-    end
-    p.avgBuy = o.avgBuy
-    p.minROI = roi
-    local target, limit
-    local ladderTarget, ladderListings, ladderReference
-    if p.mode ~= "vendor" and not s.credible and o.ladder ~= false then
-        ladderTarget, ladderListings, ladderReference = M.ladder(rows, (1 - fee - reserve) / (1 + roi), o.marketHint)
-    end
-    if p.mode == "vendor" then
-        target = U.number(o.vendor, nil, 1)
-        limit = target and math.floor(target / (1 + roi))
-    elseif ladderTarget then
-        -- No price history yet: price the exit from what other sellers ask right now.
-        local listings, reference
-        target, listings, reference = ladderTarget, ladderListings, ladderReference
-        p.listings = listings
-        p.fairPrice = reference
-        if U.finite(o.vendor) and o.vendor > target then
-            target = math.floor(o.vendor)
-        end
-        limit = math.floor(target * (1 - fee - reserve) / (1 + roi))
-        p.basis = "listings"
-        p.reference = p.fairPrice or target
-        local sources = M.sources(s, p.minimum, o)
-        sources.market = sources.market or p.fairPrice or target
-        local defaults = F.Store and F.Store.defaults or {}
-        local customSell = o.sellFormula and o.sellFormula ~= defaults.sellFormula
-        local customBuy = o.buyFormula and o.buyFormula ~= defaults.buyFormula
-        if o.sellPrice ~= nil or customSell then
-            target = o.sellPrice or F.Expr.eval(o.sellFormula, sources)
-            if not U.finite(target) or target <= 0 then
-                target = nil
-                p.reasons[#p.reasons + 1] = "formula"
-            end
-        end
-        if target and o.advice and U.finite(o.advice.priceCap) then
-            target = math.min(target, o.advice.priceCap)
-        end
-        limit = target and math.floor(target * (1 - fee - reserve) / (1 + roi)) or 0
-        if o.buyLimit ~= nil or customBuy then
-            local explicit = o.buyLimit or F.Expr.eval(o.buyFormula, sources)
-            if not U.finite(explicit) or explicit <= 0 then
-                limit = 0
-                p.reasons[#p.reasons + 1] = "formula"
-            else
-                limit = math.min(limit, explicit)
-            end
-        end
-    else
-        local sources = M.sources(s, p.minimum, o)
-        local explicit = o.sellPrice or F.Expr.eval(o.sellFormula or "90% market", sources)
-        target = explicit and math.floor(explicit)
-        if target and o.advice and o.advice.priceCap then
-            target = math.min(target, o.advice.priceCap)
-        end
-        limit = o.buyLimit or F.Expr.eval(o.buyFormula or "70% market", sources)
-        if not U.finite(limit) or limit <= 0 then
-            limit = 0
-            p.reasons[#p.reasons + 1] = "formula"
-        end
-        if target then
-            limit = math.min(limit, target * (1 - fee - reserve) / (1 + roi))
-        end
-        if not s.credible then
-            p.reasons[#p.reasons + 1] = "history"
-        end
-        if s.volatility > 0.30 then
-            p.reasons[#p.reasons + 1] = "volatility"
-        end
-        if s.reference and p.minimum and p.minimum < s.reference * 0.6 and totalQty > 8 then
-            p.reasons[#p.reasons + 1] = "crash"
+        local profit = qty * ctx.vendor - cost
+        if qty > 0 and profit >= (s.vendorMinProfit or 10) then
+            best = {
+                mode = "vendor",
+                qty = qty,
+                cost = cost,
+                exit = ctx.vendor,
+                profit = profit,
+                roi = profit / cost,
+                maxUnit = used[#used].unit,
+                lots = used,
+            }
+        elseif qty > 0 then
+            reason = "small"
         end
     end
-    -- Resale needs proof that the item sells near the exit price: units priced there must leave
-    -- the auction house between full scans. Asks alone are not sales (a wall of 78s listings can sit
-    -- unsold while the item trades at 10s). Buy at most one day of those sales.
-    if p.mode ~= "vendor" and o.requireDemand and target then
-        local d = M.demandAt(o.demandHistory, target, now)
-        p.demand = d
-        if d.pairs < 2 then
-            p.reasons[#p.reasons + 1] = "demand_unknown"
-        elseif d.perDay < 0.5 then
-            p.reasons[#p.reasons + 1] = "no_demand"
-        else
-            p.demandCap = math.max(1, math.floor(d.perDay))
+
+    if ctx.vendorOnly then
+        return best, best and nil or reason
+    end
+
+    -- Resale: try every prefix of the cheapest listings. Each prefix has its own exit price and
+    -- needs measured sales at that price; at most one day of those sales is held (units already in
+    -- stock count). The deposits are counted as a cost: they are lost if the lots do not sell.
+    local market = ctx.market
+    local held = ctx.held or 0
+    local flipBudget = math.min(budget, ctx.itemBudget or budget)
+    local flip
+    local qty, cost, used = 0, 0, {}
+    for i, r in ipairs(rows) do
+        local take = r.qty
+        if cost + r.unit * take > flipBudget then
+            take = math.floor((flipBudget - cost) / r.unit)
         end
-    end
-    p.target = target
-    p.buyLimit = limit or 0
-    local maxQty = math.floor(U.number(o.maxQty, 100, 1, 100000))
-    if p.demandCap then
-        maxQty = math.min(maxQty, p.demandCap)
-    end
-    if o.advice and p.mode ~= "vendor" then
-        maxQty = math.min(maxQty, o.advice.maxQty)
-        if maxQty <= 0 then
-            p.reasons[#p.reasons + 1] = "advisor:" .. o.advice.reason
-        end
-    end
-    if p.mode ~= "vendor" then
-        maxQty = math.min(maxQty, math.max(1, math.floor(totalQty * (o.maxShare or 0.15))))
-    end
-    if p.mode ~= "vendor" and o.velocity and o.velocity.known then
-        maxQty = math.min(maxQty, math.max(0, math.floor(o.velocity.lower * 3 - (o.ownedQty or 0))))
-    end
-    if o.legacyUnresolved then
-        p.reasons[#p.reasons + 1] = "legacy"
-    end
-    if not target or target <= 0 or not limit or limit <= 0 then
-        p.reasons[#p.reasons + 1] = "exit"
-    end
-    local function buy()
-        p.qty, p.cost, p.lots, p.maxUnit, p.nextPrice = 0, 0, {}, nil, rows[1] and rows[1].unit
-        for index, row in ipairs(rows) do
-            if not limit or row.unit > limit or p.qty >= maxQty then
-                break
-            end
-            local n = row.qty
-            local cost = row.cost
-            if o.commodity ~= false then
-                n = math.min(n, maxQty - p.qty, math.floor((p.budget - p.cost) / row.unit))
-                cost = n * row.unit
-            elseif n > maxQty - p.qty or cost > p.budget - p.cost then
-                break
-            end
-            if n < 1 or cost <= 0 or cost ~= math.floor(cost) then
-                break
-            end
-            p.qty = p.qty + n
-            p.cost = p.cost + cost
-            p.maxUnit = row.unit
-            p.lots[#p.lots + 1] = { qty = n, cost = cost, unit = row.unit, auctionID = row.auctionID, index = index }
-            if n < row.qty then
-                p.nextPrice = row.unit
-                break
-            end
-            p.nextPrice = rows[index + 1] and rows[index + 1].unit
-        end
-    end
-    buy()
-    -- The purchase must clear every cheaper listing: the resale is listed one silver below the
-    -- cheapest unit left after buying, never at a market value other sellers undercut.
-    for _ = 1, 4 do
-        local competitor = p.mode ~= "vendor" and p.qty > 0 and p.nextPrice
-        local cap = competitor and M.priceStep(competitor, true)
-        if not cap or not target or cap >= target then
+        if take < 1 then
             break
         end
-        target = cap
-        p.target, p.competitor = target, competitor
-        limit = math.min(limit, math.floor(target * (1 - fee - reserve) / (1 + roi)))
-        p.buyLimit = limit
-        buy()
-    end
-    p.avg = p.qty > 0 and p.cost / p.qty or 0
-    if p.qty > 0 and target then
-        local gross = math.floor(p.qty * target)
-        local cut = p.mode == "vendor" and 0 or M.fee(gross, fee, o.minFee)
-        local riskReserve = p.mode == "vendor" and 0 or U.floor(gross * reserve)
-        p.fee = cut
-        p.reserve = riskReserve
-        p.profit = M.net(
-            gross,
-            p.mode == "vendor" and 0 or fee,
-            p.mode == "vendor" and 0 or reserve,
-            p.mode == "vendor" and 0 or p.minFee
-        ) - p.cost - p.extraCost
-        p.roi = p.cost > 0 and p.profit / p.cost or 0
-        p.breakEven = M.breakEven(
-            p.cost,
-            p.qty,
-            p.mode == "vendor" and 0 or fee,
-            p.mode == "vendor" and 0 or reserve,
-            p.mode == "vendor" and 0 or p.minFee,
-            p.extraCost
-        )
-        p.liquidation = o.vendor and math.floor(p.qty * o.vendor - p.cost) or nil
-        -- Risk-adjusted capital efficiency, not a promised expected return.
-        -- Listing-based deals rank higher on busier markets: more listings mean faster sales.
-        p.confidence = p.mode == "vendor" and 1
-            or p.basis == "listings" and (0.25 + 0.25 * math.min(1, (p.listings or 0) / 20))
-            or s.confidence
-        p.downside = math.max(0, -(p.liquidation or -p.cost))
-        p.score = (p.profit * p.confidence - p.downside * (1 - p.confidence)) / math.max(1, p.cost)
-        if p.mode ~= "vendor" and o.velocity and o.velocity.known and o.velocity.lower > 0 then
-            p.daysToExit = ((o.ownedQty or 0) + p.qty) / o.velocity.lower
-            p.score = p.score / math.max(1, p.daysToExit)
+        qty, cost = qty + take, cost + take * r.unit
+        used[#used + 1] = { unit = r.unit, qty = take, auctionID = r.auctionID }
+        local nextUnit = take < r.qty and r.unit or (rows[i + 1] and rows[i + 1].unit)
+        local exit = nextUnit and U.below(nextUnit, kind) or U.stepDown(market or 0, kind)
+        if U.finite(market) and market > 0 then
+            exit = math.min(exit, U.stepDown(market, kind))
         end
-        if o.advice and o.advice.rateKnown and o.advice.trades.rateLower > 0 then
-            p.daysToExit = ((o.ownedQty or 0) + p.qty) / o.advice.trades.rateLower
+        local profit = exit > r.unit and M.net(exit, qty) - cost - M.depositRisk(kind, ctx.vendor, qty) or 0
+        if profit > 0 then
+            local d = M.demandAt(ctx.history, exit, ctx.now)
+            -- Own results: stock of this item that did not sell lowers the scan estimate.
+            d.perDay = d.perDay * (ctx.trust or 1)
+            if d.pairs < 1 then
+                reason = "collecting"
+                break
+            end
+            local roi = profit / cost
+            -- One pair of scans (15 minutes) is a thin sample: at most 2 units until a second.
+            local cap = math.max(1, math.floor(d.perDay))
+            if d.pairs < 2 then
+                cap = math.min(cap, 2)
+            end
+            if d.perDay < 0.5 or qty + held > cap then
+                if reason ~= "small" then
+                    reason = held > 0 and d.perDay >= 0.5 and "enough_stock" or "not_selling"
+                end
+            elseif profit >= (s.minProfit or 100) and roi >= (s.minROI or 0.2) then
+                if not flip or profit > flip.profit then
+                    flip = {
+                        mode = "flip",
+                        qty = qty,
+                        cost = cost,
+                        exit = exit,
+                        profit = profit,
+                        roi = roi,
+                        maxUnit = r.unit,
+                        lots = U.copy(used),
+                        perDay = d.perDay,
+                    }
+                end
+            else
+                reason = "small"
+            end
+        end
+        if take < r.qty or i >= 40 then
+            break
         end
     end
-    if not p.complete then
-        p.reasons[#p.reasons + 1] = "partial"
+    if flip and (not best or flip.profit > best.profit) then
+        best = flip
     end
-    if p.qty == 0 then
-        p.reasons[#p.reasons + 1] = "budget/price"
-    end
-    if p.profit < p.minProfit or p.roi < roi then
-        p.reasons[#p.reasons + 1] = "margin"
-    end
-    p.canBuy = p.qty > 0 and p.profit > 0 and #p.reasons == 0
-    return p
-end
--- Suggested unit price for posting. The auction house accepts whole silver only, so the price
--- undercuts the cheapest listing by one silver step (rounded down), but never goes below the price
--- that returns the own average cost after the fee and risk reserve (rounded up). Minimum 1 silver.
-function M.salePrice(p, qty)
-    if type(p) ~= "table" then
-        return nil
-    end
-    qty = qty == nil and 1 or qty
-    if not U.finite(qty) or qty < 1 or qty ~= math.floor(qty) then
-        return nil
-    end
-    local floor = 0
-    if U.finite(p.avgBuy) and p.avgBuy >= 0 then
-        local exact = M.breakEven(p.avgBuy * qty, qty, p.feeRate, p.reserveRate, p.minFee, p.extraCost)
-        if not exact then
-            return nil
-        end
-        floor = math.max(100, math.ceil(exact / 100) * 100)
-    end
-    local price = M.priceStep(p.minimum, true) or M.priceStep(p.target)
-    if not price then
-        return floor > 0 and floor or nil, "cost"
-    end
-    if price < floor then
-        return floor, "cost"
-    end
-    return price, U.finite(p.minimum) and "undercut" or "market"
+    return best, best and nil or reason
 end

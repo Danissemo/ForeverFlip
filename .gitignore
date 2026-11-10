@@ -1,4 +1,14 @@
+# Build output
+dist/
+
+# Python
 __pycache__/
 *.pyc
-test-output.txt
-dist/
+.venv/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

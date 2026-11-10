@@ -1,0 +1,49 @@
+name: Release
+
+# Push a tag such as v1.0.0 to publish a GitHub release with the packaged addon.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Check that the tag matches the addon version
+        run: |
+          version=$(sed -n 's/^## Version: *//p' ForeverFlip/ForeverFlip.toc | tr -d '\r')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the TOC version $version" >&2
+            exit 1
+          fi
+
+      - name: Run tests and package
+        run: python tools/build.py --output dist
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          awk -v v="$version" '
+            /^## \[/ { if (found) exit; if (index($0, "[" v "]")) { found = 1; next } }
+            found && !/^\[[^]]*\]: / { print }
+          ' CHANGELOG.md > release-notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 \
+            --title "ForeverFlip ${GITHUB_REF_NAME#v}" \
+            --notes-file release-notes.md

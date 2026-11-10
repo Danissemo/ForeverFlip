@@ -1,315 +1,262 @@
-local ADDON = ... or "ForeverFlip"
 local F = ForeverFlip
-local L = F.Locale.text
+local U = F.Util
+local E = {}
+F.Engine = E
+
+E.autoVerify = true
+E.message = nil
+
+function E.clock()
+    return time()
+end
+
+function E.wallet()
+    return GetMoney() or 0
+end
+
+-- One auction house per realm and faction.
+function E.scope()
+    return tostring(GetRealmName and GetRealmName() or "?")
+        .. "-"
+        .. tostring(UnitFactionGroup and UnitFactionGroup("player") or "?")
+end
+
+function E.owner()
+    return tostring(GetRealmName and GetRealmName() or "?") .. "-" .. tostring(UnitName and UnitName("player") or "?")
+end
+
+function E.notify(message)
+    E.message, E.messageAt = message, E.clock()
+    E.changed()
+end
+
+function E.changed()
+    E.dirty = true
+end
+
 local frame = CreateFrame("Frame")
-F.eventFrame = frame
-function F.boot(name)
-    if name ~= ADDON or F.controller then
-        return
-    end
-    local db, backup = F.Store.open(ForeverFlipDB)
-    if F.Store.writable(db) then
-        if backup and not ForeverFlipLegacyDB then
-            ForeverFlipLegacyDB = backup
-        end
-        ForeverFlipDB = db
-    end
-    F.db = db
-    F.controller = F.Controller.new(db, F.Adapters.native(db))
-    F.controller.alert = function(message)
-        print("|cff6dd7bdForeverFlip|r · " .. message)
-        if PlaySound and SOUNDKIT then
-            PlaySound(SOUNDKIT.READY_CHECK or 8960, "Master")
-        end
-    end
-    local c = F.controller
-    c.changed = function()
-        if F.ui and F.ui.frame:IsShown() then
-            if c.radar and c.radar.enabled and not c.radar.paused and F.ui.section == "deals" then
-                c.radarDirty = true
-                F.ui:updateProgress(0)
-            else
-                F.ui:refresh()
-            end
-        end
-    end
-    local elapsed, paint = 0, 0
-    frame:SetScript("OnUpdate", function(_, dt)
-        if F.ui and F.ui.frame:IsShown() and F.ui.section == "workbench" then
-            F.Planner.tick(c)
-        end
-        -- Deal preparation keeps running on every tab; only the visible page is repainted.
-        if F.ui and F.ui.frame:IsShown() then
-            if F.DealCache.tick(c) and F.ui.section == "deals" and not F.ui.liveOnly then
-                F.ui:refresh()
-            end
-        end
-        elapsed = elapsed + dt
-        paint = paint + dt
-        -- A received full scan is processed every frame (each step has its own time budget).
-        local scanning = c.fullJob and not c.fullJob.waiting
-        if elapsed >= 0.05 or scanning then
-            local progressElapsed = elapsed
-            elapsed = 0
-            c:tick()
-            if F.ui and F.ui.frame:IsShown() then
-                F.ui:updateProgress(progressElapsed)
-            end
-        end
-        if paint >= 1 then
-            paint = 0
-            -- Newly loaded item data (vendor prices) re-ranks deals at most every 15 seconds.
-            local clock = c.api.clock()
-            if c.itemDataPending and clock - (c.itemDataEpochAt or 0) >= 15 then
-                c.itemDataPending = false
-                c.itemDataEpoch, c.itemDataEpochAt = (c.itemDataEpoch or 0) + 1, clock
-            end
-            if F.ui and F.ui.frame:IsShown() then
-                if c:radarShouldResume(F.ui.section) then
-                    c:radarStart()
-                elseif c:autoScanDue() then
-                    c:fullScan("auto")
-                end
-                if F.ui.section ~= "deals" then
-                    F.DealCache.poll(c)
-                end
-            end
-            local dealsChanged = F.ui
-                and F.ui.frame:IsShown()
-                and F.ui.section == "deals"
-                and not F.ui.liveOnly
-                and F.DealCache.poll(c)
-            if
-                F.ui
-                and F.ui.frame:IsShown()
-                and (
-                    F.ui.section == "trade"
-                    or dealsChanged
-                    or F.itemDataDirty
-                    or (c.radar and c.radar.enabled and F.ui.section == "deals" and F.ui.liveOnly)
-                )
-            then
-                F.itemDataDirty = false
-                c.radarDirty = false
-                F.ui:refresh()
-            end
-        end
-    end)
-    print(
-        "|cff6dd7bdForeverFlip "
-            .. F.version
-            .. "|r · /ff · PREVIEW · "
-            .. L(
-                "Open from the auction window. Legacy data retained.",
-                "Open from the auction window. Legacy data retained."
-            )
-    )
-end
-function F.attach()
-    if not F.controller or not AuctionHouseFrame then
-        return
-    end
-    if not F.ui then
-        -- Unsupported future data stays untouched; only a read-only message is shown.
-        if not F.Store.writable(F.db) then
-            print(
-                "ForeverFlip: "
-                    .. L(
-                        "Unsupported SavedVariables schema; restore a supported backup.",
-                        "Unsupported SavedVariables schema; restore a supported backup."
-                    )
-            )
-            return
-        end
-        F.ui = F.UI.create(F.controller)
-    end
-    if not F.entry then
-        local attached = false
-        if LibStub then
-            local ok, lib = pcall(function()
-                return LibStub("LibAHTab-1-0", true) or LibStub("LibAHTab", true)
-            end)
-            if ok and lib and lib.CreateTab then
-                local made = pcall(function()
-                    if not lib:DoesIDExist("ForeverFlip") then
-                        lib:CreateTab("ForeverFlip", F.ui.frame, "ForeverFlip", "ForeverFlip")
-                    end
-                end)
-                if made then
-                    F.tabLibrary = lib
-                    F.entry = lib
-                    attached = true
-                end
-            end
-        end
-        if not attached then
-            local b = CreateFrame("Button", nil, AuctionHouseFrame, "AuctionHouseFrameDisplayModeTabTemplate")
-            b:SetText("ForeverFlip")
-            if PanelTemplates_TabResize then
-                PanelTemplates_TabResize(b, 20, nil, 70)
-            end
-            local tabs = AuctionHouseFrame.Tabs
-            if tabs and #tabs > 0 then
-                b:SetPoint("TOPLEFT", tabs[#tabs], "TOPRIGHT", 3, 0)
-            else
-                b:SetPoint("TOPLEFT", AuctionHouseFrame, "BOTTOMLEFT", 20, 0)
-            end
-            b:SetScript("OnClick", function()
-                F.open(F.db.ui.section or "overview")
-            end)
-            if hooksecurefunc then
-                hooksecurefunc(AuctionHouseFrame, "SetDisplayMode", function(_, mode)
-                    if type(mode) == "table" and #mode > 0 then
-                        F.ui.frame:Hide()
-                        if PanelTemplates_DeselectTab then
-                            PanelTemplates_DeselectTab(b)
-                        end
-                    end
-                end)
-            end
-            F.entry = b
-        end
-    end
-end
-function F.open(section)
-    F.attach()
-    if not F.ui then
-        return
-    end
-    if F.tabLibrary then
-        local ok = pcall(function()
-            F.tabLibrary:SetSelected("ForeverFlip")
-        end)
-        if not ok then
-            F.controller:notify("tab_error")
-            return
-        end
-    else
-        AuctionHouseFrame:SetDisplayMode({})
-        AuctionHouseFrame.displayMode = nil
-        if PanelTemplates_DeselectTab then
-            for _, tab in ipairs(AuctionHouseFrame.Tabs or {}) do
-                PanelTemplates_DeselectTab(tab)
-            end
-        end
-        if PanelTemplates_SelectTab then
-            PanelTemplates_SelectTab(F.entry)
-        end
-        AuctionHouseFrame:SetTitle("ForeverFlip")
-    end
-    F.ui:show(section or F.db.ui.section or "overview")
-end
-frame:RegisterEvent("ADDON_LOADED")
-for _, event in ipairs({
-    "GET_ITEM_INFO_RECEIVED",
-    "ITEM_DATA_LOAD_RESULT",
+F.frame = frame
+
+local events = {
+    "ADDON_LOADED",
     "AUCTION_HOUSE_SHOW",
     "AUCTION_HOUSE_CLOSED",
+    "REPLICATE_ITEM_LIST_UPDATE",
     "COMMODITY_SEARCH_RESULTS_UPDATED",
-    "COMMODITY_SEARCH_RESULTS_ADDED",
     "ITEM_SEARCH_RESULTS_UPDATED",
-    "ITEM_SEARCH_RESULTS_ADDED",
     "COMMODITY_PRICE_UPDATED",
     "COMMODITY_PRICE_UNAVAILABLE",
-    "COMMODITY_PURCHASED",
+    "COMMODITY_PURCHASE_SUCCEEDED",
     "COMMODITY_PURCHASE_FAILED",
-    "ITEM_PURCHASED",
     "AUCTION_HOUSE_PURCHASE_COMPLETED",
-    "OWNED_AUCTIONS_UPDATED",
+    "AUCTION_HOUSE_SHOW_ERROR",
     "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED",
-    "PLAYER_LOGOUT",
-    "REPLICATE_ITEM_LIST_UPDATE",
-    "MAIL_INBOX_UPDATE",
+    "AUCTION_HOUSE_AUCTION_CREATED",
+    "AUCTION_HOUSE_POST_WARNING",
+    "OWNED_AUCTIONS_UPDATED",
+    "ITEM_DATA_LOAD_RESULT",
     "CHAT_MSG_SYSTEM",
-}) do
-    frame:RegisterEvent(event)
+    "MAIL_SHOW",
+    "MAIL_CLOSED",
+    "MAIL_INBOX_UPDATE",
+    "MERCHANT_SHOW",
+    "MERCHANT_CLOSED",
+    "PLAYER_LOGOUT",
+}
+for _, event in ipairs(events) do
+    pcall(frame.RegisterEvent, frame, event)
 end
-frame:SetScript("OnEvent", function(_, event, ...)
+
+function E.handle(event, ...)
     if event == "ADDON_LOADED" then
-        F.boot(...)
-        return
-    end
-    if not F.controller then
-        return
-    end
-    if event == "PLAYER_LOGOUT" then
-        -- /reload and logout write SavedVariables right after this event.
-        F.controller:saveScanProgress()
-        return
-    end
-    if event == "GET_ITEM_INFO_RECEIVED" or event == "ITEM_DATA_LOAD_RESULT" then
-        local id, success = ...
-        if event == "ITEM_DATA_LOAD_RESULT" then
-            F.controller:itemDataLoaded(id, success)
-        end
-        if event == "ITEM_DATA_LOAD_RESULT" and success then
-            F.controller.itemDataPending = true
-        end
-        if event == "ITEM_DATA_LOAD_RESULT" and F.Adapters.dataLoaded(id, success) then
-            local r = F.controller.radar
-            if r and r.enabled then
-                r.dataDirty = true
-                if not r.build then
-                    r.nextAt = math.min(r.nextAt, F.controller.api.clock())
-                end
+        if ... == "ForeverFlip" then
+            ForeverFlipData = F.Data.open(ForeverFlipData)
+            F.db = ForeverFlipData
+            F.Locale.apply(F.db.settings.language)
+            if F.UI and F.UI.tooltips then
+                F.UI.tooltips()
             end
-            F.itemDataDirty = true
         end
-        if F.ItemDisplay.invalidate(id) then
-            F.itemDataDirty = true
-        end
+        return
+    end
+    if not F.db then
         return
     end
     if event == "AUCTION_HOUSE_SHOW" then
-        F.controller:restoreCandidates()
-        if C_Timer then
-            C_Timer.After(0, F.attach)
-        else
-            F.attach()
+        F.Scan.restore(E.scope())
+        if F.UI then
+            F.UI.attach()
         end
-    else
-        F.controller:event(event, ...)
+        F.Trade.ownedDue = 0
+    elseif event == "AUCTION_HOUSE_CLOSED" then
+        F.Scan.stop()
+        F.Trade.checkQueue = nil
+        F.Trade.checkingOwned = nil
+        F.Deals.clear()
+        F.Trade.cancel()
+    elseif event == "REPLICATE_ITEM_LIST_UPDATE" then
+        F.Scan.onReplicate()
+    elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
+        F.Deals.onResults(...)
+    elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
+        local key = ...
+        if type(key) == "table" then
+            F.Deals.onResults(key.itemID)
+        end
+    elseif event == "COMMODITY_PRICE_UPDATED" then
+        F.Trade.onQuote(...)
+    elseif event == "COMMODITY_PRICE_UNAVAILABLE" then
+        F.Trade.onQuoteFailed()
+    elseif event == "COMMODITY_PURCHASE_SUCCEEDED" then
+        F.Trade.onCommodityBought()
+    elseif event == "COMMODITY_PURCHASE_FAILED" then
+        F.Trade.onCommodityFailed()
+    elseif event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
+        F.Trade.onItemBought(...)
+    elseif event == "AUCTION_HOUSE_SHOW_ERROR" then
+        F.Trade.onError()
+    elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
+        F.Deals.onDropped()
+    elseif event == "AUCTION_HOUSE_AUCTION_CREATED" then
+        F.Trade.onAuctionCreated(...)
+    elseif event == "AUCTION_HOUSE_POST_WARNING" then
+        F.Trade.onPostWarning()
+    elseif event == "OWNED_AUCTIONS_UPDATED" then
+        F.Trade.onOwned()
+    elseif event == "ITEM_DATA_LOAD_RESULT" then
+        local id, ok = ...
+        if ok then
+            F.Scan.itemLoaded(id)
+        end
+    elseif event == "CHAT_MSG_SYSTEM" then
+        F.Trade.onChat(...)
+    elseif event == "PLAYER_LOGOUT" then
+        -- Saves checks and vendor deals found since the scan (SavedVariables are written next).
+        F.Scan.save()
+    elseif event == "MAIL_SHOW" or event == "MAIL_CLOSED" or event == "MAIL_INBOX_UPDATE" then
+        if event ~= "MAIL_INBOX_UPDATE" then
+            F.Mail.open = event == "MAIL_SHOW"
+        end
+        if event == "MAIL_CLOSED" then
+            F.Mail.stop()
+        end
+        if F.UI and F.UI.mail then
+            F.UI.mail(F.Mail.open)
+        end
+    elseif event == "MERCHANT_SHOW" or event == "MERCHANT_CLOSED" then
+        if F.UI and F.UI.merchant then
+            F.UI.merchant(event == "MERCHANT_SHOW")
+            F.UI.merchantOffers(event == "MERCHANT_SHOW")
+        end
     end
-    if event == "AUCTION_HOUSE_CLOSED" and F.ui then
-        F.ui.frame:Hide()
+    E.changed()
+end
+
+-- Errors are reported once per message (chat and saved data), never once per frame.
+local reported = {}
+local function report(err)
+    err = tostring(err)
+    if reported[err] then
+        return
+    end
+    reported[err] = true
+    print("|cffff4040ForeverFlip error:|r " .. err)
+    if F.db then
+        F.db.errors = F.db.errors or {}
+        table.insert(F.db.errors, 1, { at = E.clock(), version = F.version, message = err })
+        while #F.db.errors > 20 do
+            table.remove(F.db.errors)
+        end
+    end
+end
+E.report = report
+local function trace(err)
+    return tostring(err) .. (debugstack and (" | " .. debugstack(2, 6, 0)) or "")
+end
+
+frame:SetScript("OnEvent", function(_, event, ...)
+    local args = { ... }
+    local ok, err = xpcall(function()
+        E.handle(event, unpack(args))
+    end, trace)
+    if not ok then
+        report(event .. ": " .. err)
     end
 end)
+
+local paint = 0
+function E.update(elapsed)
+    if not F.db then
+        return
+    end
+    F.AH.pump(GetTime and GetTime() or E.clock())
+    if not F.Deals.pending() then
+        F.Scan.auto()
+    end
+    F.Scan.step()
+    F.Trade.stepChecks()
+    F.Deals.step()
+    F.Trade.step()
+    F.Mail.step(GetTime and GetTime() or E.clock())
+    paint = paint + (elapsed or 0)
+    if E.dirty and paint >= 0.25 and F.UI and F.UI.refresh then
+        paint, E.dirty = 0, false
+        F.UI.refresh()
+    end
+end
+
+frame:SetScript("OnUpdate", function(_, elapsed)
+    local ok, err = xpcall(function()
+        E.update(elapsed)
+    end, trace)
+    if not ok then
+        report(err)
+    end
+end)
+
 SLASH_FOREVERFLIP1 = "/ff"
 SLASH_FOREVERFLIP2 = "/foreverflip"
-SlashCmdList.FOREVERFLIP = function(message)
-    if not F.controller then
-        return
-    end
-    local language = message and message:match("^lang%s+(%S+)%s*$")
-    if language or message == "lang" then
+SlashCmdList.FOREVERFLIP = function(msg)
+    msg = string.lower(msg or "")
+    local L = F.Locale.text
+    if msg == "diag" then
+        local last = F.Scan.last
+        if not last then
+            print("ForeverFlip: " .. L("No full scan yet."))
+            return
+        end
+        local s = last.stats
         print(
-            "ForeverFlip: "
-                .. (
-                    language
-                        and F.Locale.choose(language)
-                        and L(
-                            "Language saved. Use /reload to apply.",
-                            "Language saved. Use /reload to apply."
-                        )
-                    or L("Language: /ff lang uk | en | auto", "Language: /ff lang uk | en | auto")
-                )
+            string.format(
+                "ForeverFlip %s: %d auctions, %d read, %d skipped, %d own; %d items, vendor price known %d, below vendor %d, collecting sales data %d; deals %d",
+                F.version,
+                last.total,
+                last.read,
+                last.skipped,
+                last.own,
+                s.items,
+                s.vendorKnown,
+                s.belowVendor,
+                s.collecting,
+                #F.Deals.list
+            )
         )
+        F.db.diag = { at = last.at, total = last.total, read = last.read, skipped = last.skipped, stats = U.copy(s) }
         return
     end
-    if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
-        print(
-            "ForeverFlip: "
-                .. L("Open an auction house first.", "Open an auction house first.")
-        )
+    if msg == "rescan" then
+        -- After a scan the server never answered: allow the next request now.
+        F.db.lastScan = 0
+        print("ForeverFlip: " .. L("the full scan can be requested again."))
         return
     end
-    F.attach()
-    if not F.ui then
+    local lang = msg:match("^lang%s+(%a+)$")
+    if lang == "en" or lang == "uk" then
+        F.db.settings.language = lang
+        print("ForeverFlip: /reload")
         return
     end
-    local id = tonumber(message)
-    if id then
-        F.ui.fields.item:SetText(tostring(id))
-    end
-    F.open(id and "trade" or F.db.ui.section or "overview")
+    print(
+        "ForeverFlip " .. F.version .. ": " .. L("open the auction house and use the ForeverFlip tab.") .. " /ff diag"
+    )
 end

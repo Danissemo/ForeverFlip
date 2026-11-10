@@ -1,29 +1,21 @@
 ## Interface: 16001
-## Title: ForeverFlip |cff6dd7bd6.10|r
-## Notes: Auction-window trade workbench, scoped FIFO, rules, risk-adjusted deal discovery and NPC arbitrage.
+## Title: ForeverFlip
+## Notes: Auction house trading assistant: finds lots below vendor price or far below the next seller, verifies them live and helps buy, post and track profit.
 ## Author: ForeverFlip contributors
-## Version: 6.10.0-preview
-## OptionalDeps: Auctionator, LibAHTab, auxForever, TradeSkillMaster
-## SavedVariables: ForeverFlipDB, ForeverFlipLegacyDB
+## Version: 1.0.0
+## OptionalDeps: LibAHTab
+## SavedVariables: ForeverFlipData
 
 Util.lua
 Locale.lua
-Expressions.lua
-Store.lua
-Ledger.lua
 Market.lua
-Advisor.lua
-Professions.lua
-Workbench.lua
-Adapters.lua
-Controller.lua
-DealCache.lua
-Planner.lua
-Radar.lua
-Progress.lua
-NativeLayout.lua
-ItemDisplay.lua
-NativeShopping.lua
-Stats.lua
-UI.lua
+Data.lua
+AH.lua
+Scan.lua
+Deals.lua
+Trade.lua
+Mail.lua
+Analytics.lua
+Merchant.lua
 Core.lua
+UI.lua
