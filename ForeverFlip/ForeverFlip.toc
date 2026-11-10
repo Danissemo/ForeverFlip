@@ -21,5 +21,6 @@ Analytics.lua
 Merchant.lua
 Disenchant.lua
 Crafting.lua
+Bids.lua
 Core.lua
 UI.lua

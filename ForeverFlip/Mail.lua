@@ -81,11 +81,11 @@ function Mail.snapshot()
     end
 end
 
-local function failedItem(subject)
+local function subjectItem(subject, names)
     if type(subject) ~= "string" then
         return nil
     end
-    for _, name in ipairs(FAILED) do
+    for _, name in ipairs(names) do
         local pattern = subjectPattern(_G[name])
         if pattern then
             local item = subject:match(pattern:gsub("%.%+", "(.+)", 1))
@@ -117,9 +117,19 @@ function Mail.record(i)
         F.Trade.onInvoice(inv)
         return
     end
-    local name, count = failedItem(snap.subject)
+    local name, count = subjectItem(snap.subject, FAILED)
     if name then
         F.Trade.onFailedPost(name, count)
+        return
+    end
+    name = subjectItem(snap.subject, { "AUCTION_WON_MAIL_SUBJECT" })
+    if name then
+        F.Bids.won(name)
+        return
+    end
+    name = subjectItem(snap.subject, { "AUCTION_OUTBID_MAIL_SUBJECT" })
+    if name then
+        F.Bids.outbid(name)
     end
 end
 

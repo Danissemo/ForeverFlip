@@ -128,7 +128,8 @@ function A.replicateCount()
 end
 -- One auction of the full scan: buyout is for the whole stack.
 function A.replicateRow(i)
-    local _, _, count, _, _, _, _, _, _, buyout, _, _, _, owner, _, _, id, complete = AH.GetReplicateItemInfo(i)
+    local _, _, count, _, _, _, _, minBid, increment, buyout, bidAmount, _, _, owner, _, _, id, complete =
+        AH.GetReplicateItemInfo(i)
     if not id then
         return nil
     end
@@ -146,6 +147,7 @@ function A.replicateRow(i)
         buyout = buyout or 0,
         owner = owner,
         band = band,
+        minBid = (bidAmount or 0) > 0 and bidAmount + (increment or 0) or minBid,
         link = AH.GetReplicateItemLink and AH.GetReplicateItemLink(i) or nil,
         complete = true,
     }
@@ -242,6 +244,31 @@ function A.browseResults()
         end
     end
     return out
+end
+
+-- Auctions of an exact item search that take a bid: { auctionID, bid = next bid, qty }.
+function A.bidRows(item)
+    local out = {}
+    if item.kind == "commodity" then
+        return out
+    end
+    local key = plainKey(item.id)
+    for i = 1, (AH.GetNumItemSearchResults(key) or 0) do
+        local r = AH.GetItemSearchResultInfo(key, i)
+        if
+            r
+            and (r.minBid or 0) > 0
+            and not r.containsOwnerItem
+            and (item.kind ~= "gear" or string.lower(U.linkName(r.itemLink) or "") == item.name)
+        then
+            out[#out + 1] = { auctionID = r.auctionID, bid = r.minBid, qty = 1 }
+        end
+    end
+    return out
+end
+
+function A.bid(auctionID, amount)
+    AH.PlaceBid(auctionID, amount)
 end
 
 -- Buying (each call comes from a click) -------------------------------------------------------------

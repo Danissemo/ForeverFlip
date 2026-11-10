@@ -15,6 +15,8 @@ local LEFT_WIDTH = 194
 local MESSAGES = {
     nothing_to_post = "Nothing bought for resale is waiting in the bags.",
     nothing_undercut = "No undercut auction worth reposting. Press Check prices first.",
+    bid_placed = "Bid placed. If nobody bids more, the item arrives by mail when the auction ends.",
+    bid_won = "Auction won: the item is booked as stock.",
     unknown_item = "Unknown item. Shift-click its link, or type its exact name once the game knows it.",
     checking = "Reading the current price first; press again to post.",
     mail_done = "Auction mail taken.",
@@ -321,6 +323,7 @@ function UI.create()
         { "deals:vendor", "Sell to vendor (no risk)" },
         { "deals:flip", "Resale" },
         { "deals:shop", "Shopping deals" },
+        { "bids", "Bids" },
         { "shop", "Shopping list" },
         { "sell", "Sell my items" },
         { "auctions", "My auctions" },
@@ -350,7 +353,18 @@ function UI.create()
     right:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
     UI.right = right
     UI.pages = {}
-    for _, id in ipairs({ "deals", "shop", "sell", "auctions", "stats", "analytics", "crafting", "journal", "settings" }) do
+    for _, id in ipairs({
+        "deals",
+        "shop",
+        "bids",
+        "sell",
+        "auctions",
+        "stats",
+        "analytics",
+        "crafting",
+        "journal",
+        "settings",
+    }) do
         local page = CreateFrame("Frame", nil, right)
         page:SetPoint("TOPLEFT", right, "TOPLEFT", 3, -3)
         page:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", -3, 3)
@@ -359,6 +373,7 @@ function UI.create()
     end
     UI.createDeals(UI.pages.deals)
     UI.createShop(UI.pages.shop)
+    UI.createBids(UI.pages.bids)
     UI.createSell(UI.pages.sell)
     UI.createAuctions(UI.pages.auctions)
     UI.createStats(UI.pages.stats)
@@ -935,6 +950,107 @@ function UI.refreshShop()
         )
     )
     UI.shopRemove:SetEnabled(UI.shopSelected ~= nil)
+end
+
+-- Bids page ----------------------------------------------------------------------------------------
+local BID_ROWS = 13
+function UI.createBids(p)
+    local list = CreateFrame("Frame", nil, p)
+    list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
+    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 96)
+    UI.bidTable = table_(
+        list,
+        {
+            { "Name" },
+            { "Next bid", 86 },
+            { "Worth", 86 },
+            { "Profit", 86 },
+            { "Status", 110, "LEFT" },
+        },
+        BID_ROWS,
+        function(row)
+            UI.bidSelected = row.key
+            if row.key and not F.Bids.offer(row.key) then
+                F.Bids.check(row.key)
+            end
+            UI.refresh()
+        end
+    )
+    local bar = footer(p, 92, "GameFontHighlightSmall")
+    UI.bidText = bar.text
+    UI.bidButton = button(bar, "Place bid", 130, function()
+        if UI.bidSelected then
+            local ok, why = F.Bids.place(UI.bidSelected)
+            if not ok then
+                if why == "verify_first" then
+                    F.Bids.check(UI.bidSelected)
+                end
+                F.Engine.notify(why)
+            end
+        end
+    end)
+    UI.bidButton:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
+    UI.bidCheck = button(bar, "Check price", 120, function()
+        if UI.bidSelected then
+            F.Bids.check(UI.bidSelected)
+        end
+    end)
+    UI.bidCheck:SetPoint("RIGHT", UI.bidButton, "LEFT", -4, 0)
+end
+
+function UI.refreshBids()
+    local list = F.Bids.candidates
+    for i, r in ipairs(UI.bidTable.rows) do
+        local c = list[i]
+        if c then
+            local o = F.Bids.offer(c.key)
+            r.key = c.key
+            r.icon:SetTexture(icon(c.id))
+            r.name:SetText(nameOf(c.key))
+            r.cols[1]:SetText(U.money(o and o.bid or c.bid))
+            r.cols[2]:SetText(U.money(c.value))
+            r.cols[3]:SetText(U.money(o and o.profit or c.profit))
+            r.cols[4]:SetText(
+                o and "|cff40ff40" .. L("ready") .. "|r"
+                    or F.Deals.pending(c.key) and "|cffffd100" .. L("checking...") .. "|r"
+                    or L("from scan")
+            )
+            if c.key == UI.bidSelected then
+                r.selected:Show()
+            else
+                r.selected:Hide()
+            end
+            r:Show()
+        else
+            r.key = nil
+            r:Hide()
+        end
+    end
+    local empty = UI.bidTable.empty
+    if #list == 0 then
+        empty:SetText(
+            L(
+                "Auctions with a bid that end within 30 minutes and whose next bid is well below the item's worth appear here after a full scan."
+            )
+        )
+        empty:Show()
+    else
+        empty:Hide()
+    end
+    local open = F.Bids.open()
+    local lines = {
+        L(
+            "Worth: the vendor price, or the usual auction price after the cut for an item that sells. Another player can still outbid you; the money then comes back by mail."
+        ),
+    }
+    if #open > 0 then
+        lines[#lines + 1] =
+            string.format(L("Your open bids: %d (latest: %s, %s)."), #open, open[1].name, U.money(open[1].amount))
+    end
+    UI.bidText:SetText(table.concat(lines, "\n"))
+    local selected = UI.bidSelected
+    UI.bidButton:SetEnabled(selected ~= nil and F.Bids.offer(selected) ~= nil)
+    UI.bidCheck:SetEnabled(selected ~= nil and not F.Deals.pending(selected))
 end
 
 -- Sell page --------------------------------------------------------------------------------------
@@ -2057,6 +2173,8 @@ function UI.refresh()
         UI.refreshDeals()
     elseif UI.section == "shop" then
         UI.refreshShop()
+    elseif UI.section == "bids" then
+        UI.refreshBids()
     elseif UI.section == "sell" then
         UI.refreshSell()
     elseif UI.section == "auctions" then

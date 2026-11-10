@@ -140,6 +140,12 @@ local function ingest(j, i)
         F.AH.requestItem(r.id)
         return false
     end
+    if (r.minBid or 0) > 0 and r.band == 0 and not (r.owner and r.owner == j.player) then
+        local key, kind = F.AH.keyFor(r.id, r.link)
+        if key then
+            F.Bids.consider(j, key, kind, r)
+        end
+    end
     if r.buyout <= 0 or r.count <= 0 then
         return true -- bid only
     end
@@ -395,6 +401,7 @@ function S.step()
             F.Analytics.invalidate()
         end
         F.Deals.replace(j.deals, j.scope)
+        F.Bids.finish(j, F.Data.market(F.db, j.scope).history)
         S.prune(j.scope, j.finishAt)
         S.save()
         F.Engine.notify("scan_done")

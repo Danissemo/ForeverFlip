@@ -5,6 +5,15 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["Bids"] = "Ставки",
+    ["Next bid"] = "Наступна ставка",
+    ["Worth"] = "Вартість",
+    ["Place bid"] = "Зробити ставку",
+    ["Auctions with a bid that end within 30 minutes and whose next bid is well below the item's worth appear here after a full scan."] = "Тут після повного скану з'являються лоти зі ставкою, які закінчуються протягом 30 хвилин і наступна ставка яких значно нижча за вартість предмета.",
+    ["Worth: the vendor price, or the usual auction price after the cut for an item that sells. Another player can still outbid you; the money then comes back by mail."] = "Вартість: ціна торговця або звичайна ціна аукціону після комісії для предмета, що продається. Інший гравець може перебити ставку; тоді гроші повернуться поштою.",
+    ["Your open bids: %d (latest: %s, %s)."] = "Ваші активні ставки: %d (остання: %s, %s).",
+    ["Bid placed. If nobody bids more, the item arrives by mail when the auction ends."] = "Ставку зроблено. Якщо ніхто не поставить більше, предмет прийде поштою після завершення аукціону.",
+    ["Auction won: the item is booked as stock."] = "Аукціон виграно: предмет записано на склад.",
     ["Crafting"] = "Крафт",
     ["Materials"] = "Матеріали",
     ["Product"] = "Виріб",

@@ -188,6 +188,9 @@ function T.onChat(msg)
         local pattern = "^" .. won:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"):gsub("\1", "(.+)") .. "$"
         local name = msg:match(pattern)
         local op = T.op
+        if name and not (op and op.state == "awaiting") then
+            F.Bids.won((name:gsub("%s*%(x%d+%)%s*$", "")))
+        end
         if name and op and op.state == "awaiting" then
             local count = tonumber(name:match("%(x(%d+)%)%s*$"))
             name = name:gsub("%s*%(x%d+%)%s*$", "")

@@ -110,6 +110,7 @@ function E.handle(event, ...)
             F.Locale.apply(F.db.settings.language)
             E.applyCut()
             F.Mail.hook()
+            F.Bids.prune()
             if F.UI and F.UI.tooltips then
                 F.UI.tooltips()
             end

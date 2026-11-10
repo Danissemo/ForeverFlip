@@ -247,7 +247,7 @@ C_AuctionHouse = {
             return nil
         end
         local cached = items[a.item].cached
-        return a.name, 1, a.count, 2, true, 20, "", 0, 0, a.buyout, 0, nil, nil, a.owner, a.owner, 0, a.item, cached
+        return a.name, 1, a.count, 2, true, 20, "", a.minBid or 0, a.increment or 0, a.buyout, a.bid or 0, nil, nil, a.owner, a.owner, 0, a.item, cached
     end,
     GetReplicateItemLink = function(i)
         local a = replicated[i]
@@ -353,7 +353,7 @@ function itemRows(id)
     local buckets, out = {}, {}
     for _, a in ipairs(auctions) do
         if a.item == id then
-            local k = a.name .. "|" .. a.buyout .. "|" .. a.owner
+            local k = a.name .. "|" .. a.buyout .. "|" .. a.owner .. "|" .. tostring(a.minBid)
             local b = buckets[k]
             if not b then
                 b = {
@@ -363,6 +363,7 @@ function itemRows(id)
                     buyoutAmount = a.buyout,
                     auctionID = a.id,
                     containsOwnerItem = a.owner == "Me",
+                    minBid = a.minBid,
                 }
                 buckets[k] = b
                 out[#out + 1] = b
