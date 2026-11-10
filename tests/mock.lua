@@ -516,3 +516,70 @@ end
 function BuyMerchantItem(i, qty)
     merchantBought[#merchantBought + 1] = { i, qty }
 end
+
+-- Browse and key queries (fast sniper) --------------------------------------------------------------
+-- enableBrowse(pageSize) installs the browse API. Queries are answered by browseAnswer(), one page
+-- per call, like the server: the lowest price and total quantity of each item, cheapest first.
+browseShown = {}
+local browseRows, browseFull, browsePending, browseQuery = {}, true, false, nil
+local function browseAll(ids)
+    local byItem, out = {}, {}
+    for _, a in ipairs(auctions) do
+        if not ids or ids[a.item] then
+            local unit = a.buyout / a.count
+            local r = byItem[a.item]
+            if not r then
+                r = { itemKey = { itemID = a.item, itemLevel = 0, itemSuffix = 0 }, minPrice = unit, totalQuantity = 0 }
+                byItem[a.item] = r
+                out[#out + 1] = r
+            end
+            r.minPrice = math.min(r.minPrice, unit)
+            r.totalQuantity = r.totalQuantity + a.count
+        end
+    end
+    table.sort(out, function(x, y)
+        return x.minPrice < y.minPrice
+    end)
+    return out
+end
+function enableBrowse(pageSize)
+    pageSize = pageSize or 1000
+    C_AuctionHouse.SendBrowseQuery = function(query)
+        call("SendBrowseQuery", query)
+        browseQuery, browseShown, browsePending = browseAll(nil), {}, true
+    end
+    C_AuctionHouse.SearchForItemKeys = function(keys)
+        local ids = {}
+        for _, k in ipairs(keys) do
+            ids[k.itemID] = true
+        end
+        call("SearchForItemKeys", #keys)
+        browseQuery, browseShown, browsePending = browseAll(ids), {}, true
+    end
+    C_AuctionHouse.RequestMoreBrowseResults = function()
+        call("RequestMoreBrowseResults")
+        browsePending = true
+    end
+    C_AuctionHouse.GetBrowseResults = function()
+        return browseShown
+    end
+    C_AuctionHouse.HasFullBrowseResults = function()
+        return #browseShown >= #(browseQuery or {})
+    end
+    function browseAnswer()
+        assert(browsePending, "no browse request pending")
+        browsePending = false
+        local first = #browseShown == 0
+        for _ = 1, pageSize do
+            local r = browseQuery[#browseShown + 1]
+            if not r then
+                break
+            end
+            browseShown[#browseShown + 1] = r
+        end
+        fire(first and "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or "AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
+    end
+    function browsePendingNow()
+        return browsePending
+    end
+end

@@ -5,6 +5,7 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["Deals: %d · checked: %d · sniper: %d rounds, %d prices read, %d checks"] = "Угод: %d · перевірено: %d · снайпер: кіл %d, прочитано цін %d, перевірок %d",
     ["The price offer was about to expire; a new one was asked. Press Confirm when it arrives."] = "Пропозиція ціни майже минула; запитано нову. Натисніть «Підтвердити», коли вона прийде.",
     ["Below usual"] = "Нижче звичайної",
     ["Sells most"] = "Продається",

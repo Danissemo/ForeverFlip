@@ -81,6 +81,9 @@ local events = {
     "AUCTION_HOUSE_PURCHASE_COMPLETED",
     "AUCTION_HOUSE_SHOW_ERROR",
     "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED",
+    "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED",
+    "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
+    "AUCTION_HOUSE_BROWSE_FAILURE",
     "AUCTION_HOUSE_AUCTION_CREATED",
     "AUCTION_HOUSE_POST_WARNING",
     "OWNED_AUCTIONS_UPDATED",
@@ -126,6 +129,7 @@ function E.handle(event, ...)
         F.Trade.checkQueue = nil
         F.Trade.checkingOwned = nil
         F.Deals.clear()
+        F.Sniper.reset()
         F.Trade.cancel()
         E.house = nil
         E.applyCut()
@@ -152,6 +156,10 @@ function E.handle(event, ...)
         F.Trade.onError()
     elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
         F.Deals.onDropped()
+    elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or event == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then
+        F.Sniper.onResults()
+    elseif event == "AUCTION_HOUSE_BROWSE_FAILURE" then
+        F.Sniper.onFailure()
     elseif event == "AUCTION_HOUSE_AUCTION_CREATED" then
         F.Trade.onAuctionCreated(...)
     elseif event == "AUCTION_HOUSE_POST_WARNING" then
@@ -231,6 +239,7 @@ function E.update(elapsed)
     F.Scan.step()
     F.Trade.stepChecks()
     F.Deals.step()
+    F.Sniper.step()
     F.Trade.step()
     F.Mail.step(GetTime and GetTime() or E.clock())
     paint = paint + (elapsed or 0)

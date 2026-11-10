@@ -1625,6 +1625,17 @@ function UI.refreshStatus()
     local hot = F.Scan.hot and #F.Scan.hot or 0
     if UI.selected and F.Deals.pending(UI.selected) then
         UI.status:SetText(L(F.Deals.search and F.Deals.search.key == UI.selected and "checking..." or "queued"))
+    elseif F.Sniper.active() and F.Sniper.rounds > 0 then
+        UI.status:SetText(
+            string.format(
+                L("Deals: %d · checked: %d · sniper: %d rounds, %d prices read, %d checks"),
+                all,
+                done,
+                F.Sniper.rounds,
+                F.Sniper.items,
+                F.Deals.snipes or 0
+            )
+        )
     elseif F.Scan.last and F.db.settings.sniper and hot > 0 then
         UI.status:SetText(
             string.format(

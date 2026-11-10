@@ -13,6 +13,7 @@ Data.lua
 AH.lua
 Scan.lua
 Deals.lua
+Sniper.lua
 Trade.lua
 Mail.lua
 Analytics.lua

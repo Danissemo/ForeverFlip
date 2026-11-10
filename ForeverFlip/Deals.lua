@@ -372,6 +372,9 @@ end
 
 function D.setSniper(enabled)
     settings().sniper = enabled and true or false
+    if not enabled then
+        F.Sniper.reset()
+    end
     local r = D.backgroundRetry
     if not enabled and r and r.source == "sniper" then
         D.backgroundRetry = nil
@@ -565,7 +568,22 @@ end
 -- search per second), so a cheap lot is seen seconds after it is listed, not up to 15 minutes later.
 function D.snipe()
     local hot = F.Scan.hot
-    if not F.db.settings.sniper or not hot or #hot == 0 or not D.scope then
+    if not F.db.settings.sniper or not D.scope then
+        return false
+    end
+    if F.Sniper.active() then
+        -- Fast sniper: exact checks of the candidates its browse rounds found.
+        if precise() - (D.lastRequest or -10) < 0.4 or not F.AH.ready() then
+            return false
+        end
+        local key = F.Sniper.next()
+        if key and D.request(key, D.verifyCallback, "sniper", true) then
+            D.snipes = (D.snipes or 0) + 1
+            return true
+        end
+        return false
+    end
+    if not hot or #hot == 0 then
         return false
     end
     if precise() - (D.lastRequest or -10) < 1 or not F.AH.ready() then

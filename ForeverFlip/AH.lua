@@ -201,6 +201,38 @@ function A.rows(item)
     return rows, complete
 end
 
+-- Browse and key queries: the lowest price of many items at once (fast sniper) --------------------
+function A.canBrowse()
+    return AH.SendBrowseQuery ~= nil and AH.GetBrowseResults ~= nil and AH.HasFullBrowseResults ~= nil
+end
+function A.browse()
+    AH.SendBrowseQuery({ searchString = "", sorts = sorts(), filters = {}, itemClassFilters = {} })
+end
+function A.browseMore()
+    AH.RequestMoreBrowseResults()
+end
+function A.browseFull()
+    return AH.HasFullBrowseResults()
+end
+function A.searchKeys(ids)
+    local keys = {}
+    for i, id in ipairs(ids) do
+        keys[i] = plainKey(id)
+    end
+    AH.SearchForItemKeys(keys, sorts())
+end
+-- Every result row so far: { id, minPrice, qty }. The lowest price of an item may be a bid.
+function A.browseResults()
+    local out = {}
+    local ok, results = pcall(AH.GetBrowseResults)
+    for _, r in ipairs(ok and results or {}) do
+        if r.itemKey and (r.minPrice or 0) > 0 and (r.totalQuantity or 0) > 0 then
+            out[#out + 1] = { id = r.itemKey.itemID, minPrice = r.minPrice, qty = r.totalQuantity }
+        end
+    end
+    return out
+end
+
 -- Buying (each call comes from a click) -------------------------------------------------------------
 function A.quote(id, qty)
     AH.StartCommoditiesPurchase(id, qty)

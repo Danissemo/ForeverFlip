@@ -238,6 +238,11 @@ function M.saleability(h, price, now)
     return out
 end
 
+-- Typical price of the units seen sold (median of recent sales), or nil without enough sales.
+function M.salePrice(h)
+    return nil
+end
+
 -- Deposit of one auction: the game charges at least 1 silver (seen on WoW Forever); it is returned
 -- on a sale and lost when the auction expires. Estimated from the vendor price (Classic rule).
 function M.deposit(vendor, units)
