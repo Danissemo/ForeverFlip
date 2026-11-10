@@ -17,9 +17,16 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `settings` | table | User settings, see below. |
 | `vendor` | table | `vendor[itemID]` = vendor sell price; `0` means vendors do not buy the item. Shared by all characters. |
 | `lastScan` | number | Time of the last full-scan request (the 15-minute cooldown is per account). |
-| `markets` | table | `markets[scope]`, one per auction house, where scope = `<realm>-<faction>`. |
+| `markets` | table | `markets[scope]`, one per auction house, where scope = `<realm>-<faction>` or `<realm>-Neutral`. |
 | `chars` | table | `chars[owner]`, one per character, where owner = `<realm>-<character>`. |
 | `ui` | table | `ui.section`: the last opened page. |
+| `cuts` | table | `cuts[scope]` = the auction cut learned from invoices (for example `0.05` or `0.15`). |
+| `deposits` | table | `deposits[itemID][duration]` = deposit per unit the game charged for the last post of an item. |
+| `rules` | table | `rules[key]` = posting rule `{ min, normal, max, keep }` (all optional; money in copper). |
+| `shopping` | table | `shopping[key]` = shopping list entry `{ max, qty, name }`. |
+| `blocked` | table | `blocked[key]` = name of an ignored item. |
+| `merchantPrices` | table | `merchantPrices[itemID]` = price per unit a merchant asked. |
+| `gold` | table | `gold[owner][day]` = the character's money on that day (day = Unix time / 86400), kept 60 days. |
 | `errors` | array | The latest 20 addon errors, newest first: `{ at, version, message }`. |
 | `diag` | table | The last `/ff diag` result. |
 
@@ -33,12 +40,19 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `minROI` | `0.2` | Minimum resale return (profit / cost). |
 | `spendShare` | `0.8` | Share of the gold on hand one deal may use. |
 | `itemShare` | `0.3` | Share of the gold one item may hold (stock plus the new resale). |
-| `duration` | `3` | Posting duration: `1` = 2 h, `2` = 8 h, `3` = 24 h. |
+| `duration` | `3` | Posting duration: `1` = 2 h, `2` = 8 h, `3` = 24 h, `0` = automatic. |
 | `autoScan` | `true` | Automatic full scan every 15 minutes. |
 | `sniper` | `true` | Sniper on. |
 | `alerts` | `true` | Sound and screen alerts. |
 | `alertMinProfit` | `50` | Smallest profit that raises an alert. |
 | `tooltipPrices` | `true` | Price lines in item tooltips. |
+| `undercutPercent` | `0` | Undercut below the cheapest other seller; `0` = one legal price step. |
+| `minPricePercent` | `0` | Floor as a share of the usual price; `0` = off. |
+| `maxPricePercent` | `2` | A cheapest seller above this share of the usual price is ignored. |
+| `belowMin` | `"min"` | Below the floor: `"min"` posts at the floor, `"hold"` keeps the item. |
+| `learnBrowsing` | `true` | The player's own searches update prices and deals. |
+| `highlight` | `true` | Marks in the game's Buy tab. |
+| `disenchant` | `true` | Disenchant deals (only for a character who knows Disenchant). |
 
 Missing settings are filled in with these defaults at load.
 
@@ -59,19 +73,26 @@ Missing settings are filled in with these defaults at load.
 | `flow` | Sales between scans: `{ hours, sold = {4}, pairs, at, market }`. These are decayed sums with a 2-day half-life. `pairs` is capped at 99. |
 | `units` | Units listed in the last scan. |
 | `hits` | Decaying count of scans in which the item was near a deal (sniper score). |
-| `days` | Up to 5 daily records `{ d = day number, min = cheapest unit price, m = usual price }`. Present only for items traded often enough. |
+| `days` | Up to 14 daily records `{ d = day number, min = cheapest unit price, m = usual price, n = units listed, s = units sold }`. Present only for items traded often enough. |
+| `lots` | The item's lots of the last scan as text, `"price:count:band,..."` in scan order (up to 300), for lot-by-lot sales tracking. |
+| `lotsAt` | Time of the scan `lots` comes from. |
+| `sales` | Lot-tracked sales: `{ hours, pairs, at, b = price histogram of sold units }`, decayed with a 3-day half-life. The histogram is flat: `b[2k]` = units, `b[2k+1]` = cheapest price of 2% bucket k. |
 | `t` | Time-of-week pattern: `{ b = baseline, w = {7}, wn = {7}, p = {4}, pn = {4} }`, with factors and observation counts per weekday (`w`, Sunday first) and per part of the day (`p`). |
 
 ## `chars[owner]`
 
 | Field | Meaning |
 |---|---|
-| `positions[key]` | Stock bought and not sold: `{ qty, cost, name, since, mode = "vendor" \| "flip", exit }`. `cost` is the total cost of the remaining units. |
-| `journal` | Up to 500 entries, oldest first: `{ at, kind = "buy" \| "sell" \| "vendor" \| "fail", key, name, qty, amount, profit }`. |
+| `positions[key]` | Stock bought and not sold: `{ qty, cost, name, since, mode = "vendor" \| "flip" \| "shop" \| "disenchant", exit }`. `cost` is the total cost of the remaining units. |
+| `journal` | Up to 500 entries, oldest first: `{ at, kind = "buy" \| "sell" \| "vendor" \| "expired" \| "fail", key, name, qty, amount, profit }`. |
 | `stats[key]` | Item totals: `{ name, bought, spent, sold, earned, profit, days, lastSale }`. `days` is the sum of days held per unit sold. |
 | `listings` | Auctions posted through ForeverFlip: price, quantity and auction IDs, used to book sales. |
 | `booked[auctionID]` | Sold auctions already booked, so a sale is never counted twice. |
 | `unknown` | Purchases without an answer from the server, waiting to be settled on the Journal page. |
+| `invoices` | The latest 200 sale invoices `{ at, item, qty, net, cut }`. |
+| `rates` | `rates[lower-case item name]` = `{ sold, failed }` posts, from auction mail. |
+| `recipes` | `recipes[recipeID]` = `{ name, out = itemID, n = units made, r = { { itemID, count }, ... } }`, read from profession windows. |
+| `bids` | `bids[auctionID]` = open bid `{ key, name, qty, amount, value, at }`. |
 
 ## Compatibility
 

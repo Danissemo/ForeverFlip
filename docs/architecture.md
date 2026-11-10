@@ -8,6 +8,7 @@ rules that keep the addon testable.
 ```
 ForeverFlip/            the addon, exactly as it is installed in Interface/AddOns
   ForeverFlip.toc       metadata and load order
+  Bindings.xml          key bindings (loaded by the game automatically)
   *.lua                 modules (see below)
 tests/                  automated tests (Python + lupa running Lua 5.1)
   mock.lua              simulated WoW client and WoW Forever auction house
@@ -28,15 +29,20 @@ namespace, here written as `F`.
 | `Locale.lua` | `F.Locale` | English is the code text; Ukrainian translation table; language selection. |
 | `Market.lua` | `F.Market` | **Pure maths:** price histogram, usual price, sales between scans, demand, time-of-week pattern, deposit, cut, break-even, deal evaluation. Calls no game API. |
 | `Data.lua` | `F.Data` | SavedVariables layout and defaults; per-market and per-character tables; positions, journal, item statistics. |
-| `AH.lua` | `F.AH` | **The only file that calls the auction house API** (`C_AuctionHouse`, bags, item data). Everything else goes through it. |
-| `Scan.lua` | `F.Scan` | Full scan job: request, paced reading, grouping, evaluation, history update, save and restore, sniper list. |
-| `Deals.lua` | `F.Deals` | The deal list, the exact-search queue, live verification, automatic checks, sniper, alerts, batch checks. |
-| `Trade.lua` | `F.Trade` | Buying (quotes, confirmations, outcomes), posting, own auctions, undercut checks, cancelling, vendor selling, journal summary. |
-| `Mail.lua` | `F.Mail` | Paced looting of auction house mail. |
-| `Analytics.lua` | `F.Analytics` | Own results and market lists, cached per scan. |
+| `Shopping.lua` | `F.Shopping` | Shopping list, ignored items, shopping deals. |
+| `AH.lua` | `F.AH` | **The only file that calls the auction house API** (`C_AuctionHouse`: full scan, browse and key queries, exact searches, buying, bidding, posting, deposits, own auctions; bags; item data). Everything else goes through it. |
+| `Scan.lua` | `F.Scan` | Full scan job: request, paced reading, grouping, lot sequences, evaluation, sales tracking, history update, save and restore, hot list. |
+| `Deals.lua` | `F.Deals` | The deal list, the exact-search queue, live verification, automatic checks, learning from the player's searches, trust factor, alerts, batch checks. |
+| `Sniper.lua` | `F.Sniper` | Fast sniper: browse rounds, key batches, candidate thresholds and queue. |
+| `Trade.lua` | `F.Trade` | Buying (quotes, confirmations, outcomes), posting rules and queues, durations, own auctions, undercut checks and cancelling, invoices and sale rate, vendor selling, journal summary. |
+| `Mail.lua` | `F.Mail` | Paced looting of auction house mail; reading every auction mail once for the books. |
+| `Analytics.lua` | `F.Analytics` | Own results, market lists (cached per scan), realm gold and stock, CSV export. |
 | `Merchant.lua` | `F.Merchant` | Merchant → auction house offers and buying from a merchant. |
-| `Core.lua` | `F.Engine` | Event frame, event dispatch, the per-frame update loop, error reporting, slash commands. |
-| `UI.lua` | `F.UI` | Auction house tab and pages, mailbox and merchant buttons, merchant panel, item tooltips. |
+| `Disenchant.lua` | `F.Disenchant` | Disenchanting table, material value, disenchant deals. |
+| `Crafting.lua` | `F.Crafting` | Recipes from profession windows, merchant prices, recipe profits, materials to the shopping list. |
+| `Bids.lua` | `F.Bids` | Bid candidates, checks, placing bids, won and outbid bids. |
+| `Core.lua` | `F.Engine` | Event frame, event dispatch, the per-frame update loop, scope and cut, error reporting, key binding actions, `ForeverFlipAPI`, slash commands. |
+| `UI.lua` | `F.UI` | Auction house tab and pages, history and export windows, mailbox and merchant buttons, merchant panel, item tooltips, Buy tab marks. |
 
 `Core.lua` and `UI.lua` load last, because they wire the other modules together.
 
@@ -51,7 +57,8 @@ OnUpdate (every frame, Engine.update)
   Scan.auto          start a full scan when allowed
   Scan.step          read / recover / evaluate a portion of the scan
   Trade.stepChecks   own-auction price checks
-  Deals.step         search timeouts, queued requests, automatic checks, sniper
+  Deals.step         search timeouts, queued requests, automatic checks, sniper candidates
+  Sniper.step        browse rounds and key batches when nothing else waits
   Trade.step         purchase timeouts
   Mail.step          paced mail looting
   UI.refresh         at most 4 times a second, only when something changed
@@ -78,9 +85,11 @@ in this order:
    a FIFO queue (`D.requests`). A repeated key shares the running query, and every distinct callback
    is completed exactly once.
 2. **A background retry slot** (`D.backgroundRetry`), used after a throttled or dropped request.
-3. **Automatic checks and the sniper,** started only when nothing else is waiting.
+3. **Automatic checks and the sniper's candidates,** started only when nothing else is waiting.
 
-No search runs while a full scan or a purchase is in progress.
+No search runs while a full scan or a purchase is in progress. Browse and key queries of the sniper
+(`F.Sniper.query`) are separate from exact searches. They are sent only when no exact search is in
+flight or queued and no candidate is waiting.
 
 ## Design rules
 
@@ -95,8 +104,21 @@ No search runs while a full scan or a purchase is in progress.
 5. **Fail soft.** Every event and frame handler runs under `xpcall`. API calls that may be missing
    on WoW Forever are guarded (`C_Item.GetItemInfo` vs `GetItemInfo`,
    `C_MerchantFrame.GetItemInfo` vs `GetMerchantItemInfo`, `SendSellSearchQuery`).
-6. **Bounded storage.** Journal 500 entries, errors 20, scan history pruned after 14 days, daily
-   history 5 days, waiting pool 6000 items, cheapest rows 40 per item.
+6. **Bounded storage.** Every saved collection has a cap or an expiry:
+
+   | Data | Limit |
+   |---|---|
+   | Journal | 500 entries |
+   | Errors | 20 |
+   | Invoices | 200 |
+   | Scan history | pruned after 14 days without the item |
+   | Daily records | 14 days |
+   | Lots per item | 300 |
+   | Waiting pool | 6000 items |
+   | Cheapest rows per item | 40 |
+   | Bid candidates | 100 |
+   | Gold records | 60 days |
+   | Bids | 2 days |
 
 ## Adding a feature
 

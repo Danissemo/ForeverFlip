@@ -6,6 +6,7 @@ them, so you can check them in the code.
 
 - [Item keys](#item-keys)
 - [Full scan](#full-scan)
+- [Auction houses and the cut](#auction-houses-and-the-cut)
 - [Usual price](#usual-price)
 - [Sales estimate](#sales-estimate)
 - [Deal evaluation](#deal-evaluation)
@@ -17,6 +18,8 @@ them, so you can check them in the code.
 - [Time-of-week pattern](#time-of-week-pattern)
 - [Market analytics](#market-analytics)
 - [Merchant offers](#merchant-offers)
+- [Crafting](#crafting)
+- [Bids](#bids)
 - [Safety rules](#safety-rules)
 - [Known facts about WoW Forever](#known-facts-about-wow-forever)
 
@@ -52,12 +55,18 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    own auctions are skipped. Rows whose item is not in the game cache are deferred; the item data is
    requested at most 40 items per second (`AH.lua`), and the deferred rows are retried for up to
    30 seconds (`S.RECOVER`).
-3. **Grouping.** Rows are grouped per item key. For each item ForeverFlip keeps the **40 cheapest
-   auctions** (`S.ROWS`) and a **price histogram** of every listed unit.
+3. **Grouping.** Rows are grouped per item key. For each item ForeverFlip keeps:
+   - the **40 cheapest auctions** (`S.ROWS`);
+   - a **price histogram** of every listed unit;
+   - when the client reports each auction's time left (`GetReplicateItemTimeLeft`), the **lot
+     sequence** in scan order (up to 300 lots, `M.LOTS`) for [lot-by-lot sales](#sales-tracked-lot-by-lot).
+
+   Auctions with a bid that end within 30 minutes become [bid candidates](#bids).
 4. **Evaluation.** Each item is evaluated in portions per frame: usual price, sales between scans,
-   daily lows, time-of-week pattern, then a vendor deal and a resale ([Deal evaluation](#deal-evaluation)).
-   Items with an unknown vendor price are kept aside (up to 6000) and evaluated again when their data
-   loads.
+   daily records, time-of-week pattern. Then come the deals ([Deal evaluation](#deal-evaluation)):
+   vendor, resale, shopping list and disenchant. Items with an unknown vendor price are kept aside
+   (up to 6000) and evaluated again when their data loads. Items that vanished from the house since
+   the last scan have all their lots compared too: a sold-out item counts its sales.
 5. **Saving.** The scan statistics, the deals, the items still waiting for a vendor price and the
    sniper list are saved, so they survive a `/reload`.
 
@@ -65,6 +74,17 @@ Items that have not appeared in a full scan for 14 days are removed from the sav
 
 If another addon requests a full scan, ForeverFlip reads the same result and treats the 15-minute
 window as used.
+
+## Auction houses and the cut
+
+`Core.lua`. Each auction house has its own history and deals, keyed by its scope:
+
+- `<realm>-<faction>`: the faction house;
+- `<realm>-Neutral`: the neutral house, recognised by the town the player stands in. The towns are
+  Booty Bay, Gadgetzan and Everlook.
+
+The auction cut (`M.CUT`) is set when the auction house opens: 5% for a faction house, 15% for a
+neutral one, unless a cut was [learned from invoices](#accounting).
 
 ## Usual price
 
@@ -75,7 +95,9 @@ item is the cheapest price of the bucket that reaches **30% of the listed volume
 - the few cheapest units (bargains) do not set it;
 - the expensive tail never reaches it.
 
-Resale prices never go above the usual price.
+Resale prices never go above the usual price, nor above the **sale cap**: the price that a quarter of
+the [sales seen](#sales-tracked-lot-by-lot) reached (`M.saleCap`, once 3 units were seen sold). The
+median of the sales seen (`M.salePrice`) is shown as "sells at" in tooltips.
 
 ## Sales estimate
 
@@ -95,9 +117,33 @@ hours decay with a **2-day half-life**, so recent behaviour counts most.
   (`M.PRIOR_HOURS`). One unit gone in a single 15-minute pair is about 5.6 a day, not 96. The prior
   fades as data accumulates.
 
-`demandAt(h, price)` returns the units per day sold at or above 85% of `price`, rounded to the level
-that does not overcount, plus the number of scan pairs. With 0 pairs there is no estimate yet:
-the item is still *collecting*.
+`demandAt(h, price)` returns the units per day sold at or above 85% of `price`, plus the number of
+scan pairs. With 0 pairs there is no estimate yet: the item is still *collecting*. When lot-by-lot
+data exists (below), it is used instead of the level method.
+
+### Sales tracked lot by lot
+
+`Market.trackSales`, `Market.recordSales`, `Scan.trackLots`. A full scan lists an item's auctions in
+the order they were created, each with a time-left band: under 30 minutes, up to 2 hours, up to 12
+hours, longer. Two scans 5 minutes to 3 hours apart are compared lot by lot:
+
+1. **Matching.** The old lots are walked in order, and each is matched to the next new lot with the
+   same price, no more units and no more time left. New auctions are appended at the end, so they do
+   not disturb the order. A second pass matches the remaining lots by price.
+2. **Partial purchases.** A matched lot that got smaller was partly bought; the difference is a sale.
+   An auction can only be cancelled as a whole.
+3. **Vanished lots** count as sold only if both hold:
+   - the lot could not have expired: its band guaranteed more time left than had passed;
+   - no cheaper lot of the item survived, because buyers take the cheapest units first. A vanished
+     lot above a surviving cheaper one was cancelled or reposted.
+
+The sold units go into a price histogram per item (`h.sales`), decayed with a **3-day half-life**,
+together with the observed hours. Units per day at or above 85% of a price use the same smoothing
+prior of 4 hours. This removes the main error of the level method: expired and cancelled auctions no
+longer count as sales.
+
+ForeverFlip's [learning from searches](#learning-from-the-players-searches) also lowers today's
+cheapest price of an item between scans.
 
 ## Deal evaluation
 
@@ -117,10 +163,15 @@ Try every prefix of the cheapest listings, up to 40 auctions. For a prefix that 
 
 1. **Exit price** is one legal step below the cheapest unit left after buying. A resale above that
    lot would not sell before it does. The exit is also capped at the usual price.
-2. **Profit** = `net(exit, qty) − cost − deposit risk`, where `net` removes the **5% auction cut**
-   and the deposit risk counts the deposits lost if the lots do not sell: one per auction for items
-   and gear, one per stack for commodities. The deposit is estimated as
-   `max(1 silver, 15% of the vendor price × units)`.
+2. **Profit** = `net(exit, qty) − cost − deposit risk`.
+   - `net` removes the [auction cut](#auction-houses-and-the-cut).
+   - The deposit risk counts the deposits lost if the lots do not sell: one per auction for items and
+     gear, one per stack for commodities.
+   - **Deposit amounts** (`AH.depositFn`):
+     - commodities: the game's own value from `CalculateCommodityDeposit`, read for 1 and 20 units
+       once per session;
+     - items: the deposit per unit learned from their last post (`CalculateItemDeposit`);
+     - otherwise: the estimate `max(1 silver, 15% of the vendor price × units)`.
 3. **Demand.** The sales estimate at the exit price, multiplied by the item's
    [trust factor](#accounting).
    - With no scan pair yet, the item is still collecting data and gets no resale.
@@ -134,7 +185,36 @@ The prefix with the highest profit wins. If both a vendor deal and a resale exis
 higher profit is shown.
 
 When there is no deal, the reason is one of: no price gap, budget, profit too small, still
-collecting sales data, not selling, or enough stock already held.
+collecting sales data, not selling, enough stock already held, or an ignored item.
+
+### Shopping deal
+
+`Shopping.lua`. If the item has no vendor deal or resale and is on the shopping list: take every unit
+at or below the wanted price, up to the wanted quantity and the budget (one auction for items and
+gear). Its "profit" is the saving against the wanted price. Bought units are booked with mode
+`shop` and are kept out of Post next bought.
+
+### Disenchant deal
+
+`Disenchant.lua`, for gear, when the character knows Disenchant (`IsPlayerSpell(13262)`) and the
+setting is on.
+
+1. **Expected materials.** The item's quality (green or blue), item level and class (weapon or
+   armor) select a row of the **Classic Era disenchanting table**:
+   - green armor gives dust 75% (80% below level 16), essence 20% and sometimes a shard;
+   - weapons swap dust and essence;
+   - blue items give one shard (and a 0.5% Nexus Crystal from level 56).
+2. **Value.** Each material is priced at its usual auction price after the cut. A material that
+   makes up 10% or more of the outcome must have a price.
+3. **Deal.** Every gear lot below `value − minimum profit` is bought, within the budget.
+
+The table has not been checked on WoW Forever item by item, so the values are estimates. Bought units
+are booked with mode `disenchant` and are kept out of Post next bought.
+
+### Ignored items
+
+An ignored item (Ignore item, kept in `F.db.blocked`) never becomes a deal, a sniper candidate, a bid
+candidate or part of Post all.
 
 ## Money limits
 
@@ -172,30 +252,94 @@ When a check confirms a deal, it is re-added with the live numbers and may raise
 
 ## Sniper
 
-`Scan.lua` (`S.HOT = 150`), `Deals.snipe`. While evaluating a scan, ForeverFlip scores every item that
-is *near* a deal:
+`Sniper.lua`, `Deals.snipe`.
+
+### Fast sniper (browse rounds)
+
+A browse query with an empty search (`C_AuctionHouse.SendBrowseQuery`) returns every item of the
+house with its lowest price and total quantity, page by page; 7718 items took 8.5 seconds over 16
+requests on WoW Forever. A key query (`SearchForItemKeys`) returns the same for up to 100 chosen items
+in one request.
+
+1. **Round.** A browse round reads every page (`RequestMoreBrowseResults`) and then waits 2.5 seconds
+   (`S.PAUSE`).
+2. **Pause.** During the pause, the hot items of the last scan (below) and the shopping list are read
+   with key queries, 100 per request, one request per second.
+3. **Candidates.** Each lowest price is compared with a **threshold**: the highest lowest-price at
+   which the item can still hold a deal (`S.threshold`). The threshold is the highest of:
+   - the vendor price − the minimum vendor profit;
+   - for an item selling 0.5+ units a day at its exit price (usual price, sale cap):
+     `(net(exit) − deposit) / (1 + minimum return)`;
+   - the shopping list price;
+   - for gear, when disenchant deals are on: the disenchant value − the minimum profit.
+
+   A price at or below the threshold is a candidate, scored by how far below it is. An unchanged
+   price is not judged again for 2 minutes (`S.REJUDGE`), and a deal checked in the last minute at
+   the same price is skipped.
+4. **Exact check.** Candidates are checked one by one with an exact search at the faster pace (0.4
+   seconds) and evaluated with the full deal rules. No new browse page is asked for while
+   candidates wait, and no browse request is sent while your own requests, a scan or a purchase are
+   running.
+
+Gear keys are told apart only by the exact search, so a cheap gear item ID makes every known ending
+of that ID a candidate.
+
+Browse results that come while the sniper has no query of its own, such as the player browsing the
+game's Buy tab, are judged the same way.
+
+### Fallback: the hot list
+
+Without browse queries, the sniper re-reads the hot list one item per second. While evaluating a
+scan, ForeverFlip scores every item that is *near* a deal (`S.HOT = 150`):
 
 - it has a deal;
 - its cheapest lot is below 125% of the vendor price;
 - its cheapest lot is below 70% of the usual price, with at least 3 units listed.
 
 The score is a decaying count of how often the item was near a deal (×0.9 per scan), plus a bonus of
-5 for a current deal. The 150 best items form the sniper list. The sniper cycles through that list,
-one search per second, and skips items checked less than a minute ago.
+5 for a current deal. The 150 best items form the hot list. Items checked less than a minute ago are
+skipped.
+
+### Learning from the player's searches
+
+`Deals.learn`. When the player searches an item in the game's Buy tab (`COMMODITY_SEARCH_RESULTS_UPDATED`,
+`ITEM_SEARCH_RESULTS_UPDATED` for an item ForeverFlip is not searching itself), the listings are
+evaluated like an exact check: a deal is added as freshly checked, or a listed deal that no longer
+holds is removed. Gear is evaluated for every known ending of the item ID.
 
 ## Selling
 
 `Trade.lua`.
 
-- **Price suggestion:** one legal step below the cheapest listing of another seller, read by an exact
-  search that stays fresh for 5 minutes. With no other seller, the usual price is used. The minimum
-  is 1 silver for items and 1 copper for commodities.
-- **Break-even floor:** for items in stock, **Post next bought** never posts below the price that
-  returns the average unit cost after the 5% cut (`Market.breakEven`).
-- **Posting** uses `PostCommodity` or `PostItem`. If the game asks for a confirmation
-  (`AUCTION_HOUSE_POST_WARNING`), the next click confirms.
+- **Price suggestion** (`T.suggest`), from an exact search that stays fresh for 5 minutes:
+  - **undercut:** one legal step below the cheapest listing of another seller, or `undercutPercent`
+    below it (never less than one step);
+  - **normal price:** the rule's `normal`, else the usual price. It is used when nobody else sells,
+    or when the cheapest other seller asks more than the maximum (the rule's `max`, else
+    `maxPricePercent` × the normal price, 200% by default);
+  - **minimum:** 1 silver for items and 1 copper for commodities.
+- **Floor** (`T.floorFor`), the highest of:
+  - the break-even price of the stock: the price that returns the average unit cost after the cut
+    (`Market.breakEven`);
+  - the rule's `min`;
+  - `minPricePercent` × the usual price.
+- **Posting queues** (`postFirst`):
+  - **Post next bought:** positions bought for resale, oldest first.
+  - **Post all:** every sellable bag item except vendor-deal, shopping and disenchant stock, ignored
+    items and the units of a `keep` rule.
+  - Each click either reads a missing price or posts one item. Below the floor, an item is posted at
+    the floor (`belowMin = "min"`) or skipped for the session (`"hold"`).
+- **Duration** (`T.durationFor`): 2, 8 or 24 hours from the setting. With **Auto**, it is the
+  shortest duration that the measured sales fill: the units sell within 2 hours → 2 h; within 8
+  hours → 8 h; else 24 h. Shorter posts cost smaller deposits.
+- **Posting** uses `PostCommodity` or `PostItem`. Before an item is posted, its deposit per unit is
+  read from the game (`CalculateItemDeposit`) and kept for deal evaluation. If the game asks for a
+  confirmation (`AUCTION_HOUSE_POST_WARNING`), the next click confirms.
 - **Undercut detection:** **Check prices** on My auctions reads each listed item, one search per
   second, and compares your price with the cheapest other seller.
+- **Cancel undercut** (`T.undercutList`, `T.cancelNextUndercut`): an undercut auction is offered for
+  cancelling only if its repost price (the undercut of the cheapest other seller) still reaches the
+  item's floor. Each click cancels one.
 - **Sales:** when `OWNED_AUCTIONS_UPDATED` marks an auction as sold, the sale is booked once (per
   auction ID) with its real quantity and price. The chat line *A buyer has been found for your
   auction* triggers a refresh.
@@ -209,9 +353,27 @@ one search per second, and skips items checked less than a minute ago.
 - **Sales** take units out of the position at average cost. Profit = money received after the cut
   − cost of those units.
 - **Item statistics:** bought, spent, sold, earned, profit, unit-days held, last sale.
-- **Journal:** buy, sell, vendor and fail entries, the latest 500.
-- **Trust factor** (`Deals.trust`): if you hold stock of an item and nothing has sold since it was
-  bought, the item's sales estimate is multiplied by **0.5 after 1 day** and **0.25 after 3 days**.
+- **Journal:** buy, sell, vendor, expired and fail entries, the latest 500.
+- **Invoices** (`Mail.record`, `Trade.onInvoice`). Every auction mail is read once, when its money or
+  items are taken. That happens through the Take auction mail button, or through the game's
+  `TakeInboxMoney`, `AutoLootMailItem` and `TakeInboxItem`, which are hooked. The content is
+  snapshotted at `MAIL_INBOX_UPDATE`, so a mail is never read twice.
+  - **Seller invoice** (`GetInboxInvoiceInfo`): the sale price, the cut and the units.
+    - The units are booked against an open listing of the item if one exists.
+    - If no listing of the item was posted through ForeverFlip in the last 3 days, the units are
+      booked against the stock.
+    - Units already booked from the own-auction list are not booked again: both paths reduce the
+      same open quantity of the listing.
+  - **Expired and cancelled mails** count as failed posts.
+  - **Sale rate** per item = sold / (sold + failed), shown after 3 posts.
+  - **Cut learning:** cut / sale price above 10% belongs to the neutral house, otherwise to the
+    faction house. Each invoice of 10 silver or more moves the scope's learned cut 20% of the way
+    towards its ratio.
+- **Trust factor** (`Deals.trust`) multiplies the item's sales estimate:
+  - if you hold stock of an item and nothing has sold since it was bought: **0.5 after 1 day** and
+    **0.25 after 3 days**;
+  - with a sale rate below 50%: rate / 0.5, at least 0.25.
+
   Your own results thus correct the scan estimate.
 - **Unknown purchases:** an item purchase with no answer for 30 seconds is recorded as unknown, and
   you settle it on the Journal page. The chat line *You won an auction for X* confirms a pending
@@ -245,8 +407,19 @@ dearest slot, and the spread between them.
 
 Each list shows at most 50 items.
 
-Daily records (the lowest price of the day and the usual price) are kept only for items that are
-traded often enough: 10 or more units listed, or items that were near a deal.
+Daily records are kept for **14 days** (`S.DAYS`), only for items that are traded often enough: 10 or
+more units listed, or items that were near a deal. Each record holds:
+
+- the lowest price of the day;
+- the usual price;
+- the units listed;
+- the units sold, from lot-by-lot tracking.
+
+The records feed the price history window and the analytics.
+
+**Realm summary** (`A.realm`): the gold of each character is recorded once per day (kept 60 days) on
+login, logout and money changes. The Analytics page adds up the characters of the realm, their gold
+change over the period and their stock at cost.
 
 ## Merchant offers
 
@@ -260,16 +433,64 @@ currency) is compared with its auction history:
 
 Only items with measured sales and a positive profit are listed, highest total profit first.
 
+Every merchant price seen is remembered (`F.db.merchantPrices`) as a material price for crafting.
+
+## Crafting
+
+`Crafting.lua`.
+
+1. **Learning.** When a profession window opens (`TRADE_SKILL_SHOW`, `TRADE_SKILL_LIST_UPDATE`, at
+   most every 2 seconds), every recipe is read through `C_TradeSkillUI.GetRecipeSchematic`: the
+   product, units made and required materials. The recipes are saved per character.
+2. **Material cost.** Each material costs the cheaper of:
+   - its usual auction price (for a material ForeverFlip has not seen, the usual price from
+     `AuxForeverAPI` if auxForever is installed);
+   - the price a merchant asked.
+3. **Product value.** The higher of:
+   - `net(usual price, units) − deposit` on the auction house;
+   - the vendor price × units.
+4. **Profit** = value − materials, with the product's measured sales per day.
+
+**Shop materials** adds each material to the shopping list at its current price, for one day of
+crafts.
+
+## Bids
+
+`Bids.lua`.
+
+1. **Candidates.** During a full scan, auctions of items and gear (not commodities) with a bid, in the
+   shortest time band (under 30 minutes), are collected. Each candidate's next bid is the current
+   bid plus the increment, or the minimum bid.
+2. **Worth** of a unit: the vendor price, or `net(usual price) − deposit` for an item that sells 0.5+
+   units a day, whichever is higher.
+3. **Selection.** Candidates whose worth exceeds the next bid by at least the minimum resale profit
+   are kept, the best 100.
+4. **Check.** An exact search reads the item's auctions with a bid (`minBid`) and keeps the most
+   profitable one for 60 seconds.
+5. **Place bid** calls `PlaceBid(auctionID, minBid)` from a click and records the bid.
+6. **Result.**
+   - The chat line *You won an auction for X* or the "Auction won" mail books the item as stock: mode
+     `vendor` if the vendor pays at least its worth, else `flip`.
+   - The "Outbid" mail closes the bid.
+   - Bids older than two days are forgotten.
+
 ## Safety rules
 
-- **No automatic trading.** Every purchase, post, cancel, vendor sale and mail action starts with a
-  click. Background activity is limited to read-only searches.
+- **No automatic trading.** Every purchase, bid, post, cancel, vendor sale and mail action starts with
+  a click or a key binding. Background activity is limited to read-only queries.
 - **Buy only on a fresh check.** The Buy button is enabled only for a deal checked in the last 45
   seconds, and the purchase uses the lots from that check.
 - **Commodity quotes are compared.** If the server's quote is higher than the checked cost, the
   purchase is cancelled.
-- **Server limits are respected:** one full scan per 15 minutes, one exact search at a time with
-  pacing, item data at 40 per second, mail actions every 0.4 seconds.
+- **Stale quotes are refreshed.** A quote older than 25 seconds, or with less than 2 seconds left
+  (`GetQuoteDurationRemaining`), is cancelled and asked again in the same click instead of being
+  confirmed.
+- **Server limits are respected:**
+  - one full scan per 15 minutes;
+  - one exact search at a time with pacing, at most 100 per minute;
+  - browse queries only when nothing else waits and the game's throttle is ready;
+  - item data at 40 per second;
+  - mail actions every 0.4 seconds.
 - **Errors are isolated.** Event and frame handlers run under `xpcall`. An error is reported once
   per distinct message and saved (latest 20), and never repeats every frame.
 
@@ -285,3 +506,13 @@ These facts were seen in game and the code depends on them:
 - `REPLICATE_ITEM_LIST_UPDATE` is not always sent after a full scan request.
 - The minimum deposit is 1 silver.
 - A full scan on a busy realm returns more than 200 000 auctions.
+- A browse of the whole house takes about 8.5 seconds over 16 requests.
+- A purchase on a stale commodity quote ends with "Internal auction error".
+- Posting durations are 2, 8 and 24 hours.
+
+These are assumptions that have not been confirmed on Forever. The code is built so that it does
+not depend on them strictly:
+
+- the 15% cut of a neutral house; the actual cut is learned from invoices;
+- the auction order of a full scan being creation order; lot matching has a second pass by price;
+- the Classic disenchanting table.

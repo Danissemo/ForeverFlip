@@ -20,7 +20,16 @@ python -m unittest discover -s tests -p "test_*.py"
 | `test_scheduler.py` | The exact-search queue: FIFO order, sharing, background retry, timeouts. |
 | `test_batch_progress.py`, `test_status_batch.py` | Check all statuses: capture, progress and completion. |
 | `test_status_ui.py`, `test_tables.py` | Status line, tables, sorting, paging, localisation of the UI. |
-| `test_locale.py` | Every `L("...")` string has a Ukrainian translation. |
+| `test_accuracy.py` | Game deposits, neutral auction houses, stale quotes. |
+| `test_fast_sniper.py` | Browse rounds, paging, candidates, key batches, the player's browsing. |
+| `test_lot_sales.py` | Lot-by-lot sales tracking, sale prices, 14-day history, price age, history window. |
+| `test_invoices.py` | Invoices, double-booking protection, failed posts, sale rate, trust, learned cut. |
+| `test_selling_rules.py` | Undercut percent, rules, maximum, hold, Post all, Cancel undercut, automatic duration. |
+| `test_shopping.py` | Shopping deals, ignored items, the shopping page, learning from searches, key bindings. |
+| `test_crafting.py` | Recipes, material and product prices, Shop materials, disenchant table and deals. |
+| `test_bids.py` | Bid candidates, checks, placing, won and outbid bids, the Bids page. |
+| `test_extras.py` | `ForeverFlipAPI`, aux fallback, CSV export, realm gold, presets. |
+| `test_locale.py` | Every `L("...")` string has a Ukrainian translation, and no key is translated twice. |
 
 The CI workflow runs the same tests, checks formatting with StyLua, and builds the archive on every
 push and pull request.
@@ -77,3 +86,27 @@ list on a live realm. Each step takes 1–3 minutes. If something goes wrong, no
     *from scan*.
 16. **Language.** `/ff lang uk`, `/reload`. The interface is in Ukrainian. Switch back with
     `/ff lang en`.
+17. **Fast sniper.** With the sniper on, the status line shows rounds and prices read growing, a
+    round takes seconds, and no "too many requests" errors appear. A cheap item listed by a friend
+    is found within a round.
+18. **Lot sales.** After two scans 15 minutes apart, an item tooltip shows "sells at" for a busy item,
+    and right-clicking it in a table opens the history with green sold bars.
+19. **Invoices.** Post an item with the game's own Sell tab. When it sells, take the mail: the
+    journal shows the sale with the exact amount, and Statistics shows Sell %.
+20. **Neutral house.** At Booty Bay, Gadgetzan or Everlook the deal sentences mention a 15% cut and the
+    history is separate. After a sale there, check `cuts` in the SavedVariables file.
+21. **Stale quote.** Buy a commodity deal, wait 25 seconds before Confirm: a new quote is asked, and
+    the next Confirm buys without an error.
+22. **Posting rules.** Set a rule (min, max, keep) on the Sell page, use Post all: kept units stay,
+    nothing is posted below the minimum.
+23. **Cancel undercut.** After Check prices, Cancel undercut cancels one auction per click; the item
+    returns by mail.
+24. **Shopping list.** Add an item with a high price: it shows as a Shopping deal and can be bought.
+25. **Buy tab.** Search an item with a deal in the game's Buy tab: the deal turns ready in the
+    ForeverFlip tab, and browse results show the green stripe.
+26. **Key bindings.** Bind Buy in the Key Bindings window and buy a deal with the key.
+27. **Crafting.** Open a profession window, then the Crafting page at the auction house: recipes are
+    listed with costs.
+28. **Disenchant.** On an enchanter, a cheap green weapon or armor piece shows as a disenchant deal.
+29. **Bids.** On the Bids page, check and bid on an auction ending soon; after winning, the item is
+    in the journal as bought.
