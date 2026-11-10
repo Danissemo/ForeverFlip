@@ -1,0 +1,7 @@
+{
+  "runtime.version": "Lua 5.1",
+  "workspace.checkThirdParty": false,
+  "workspace.library": ["C:/FF/.tools/vscode/data/extensions/ketho.wow-api-0.22.3/Annotations"],
+  "diagnostics.globals": ["ForeverFlip", "ForeverFlipData", "LibStub", "ERR_AUCTION_WON_S", "ERR_AUCTION_SOLD_S", "SOUNDKIT", "UIErrorsFrame"],
+  "workspace.ignoreDir": [".git", "tests", "dist"]
+}
