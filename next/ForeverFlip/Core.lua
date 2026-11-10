@@ -146,6 +146,7 @@ function E.handle(event, ...)
     elseif event == "MERCHANT_SHOW" or event == "MERCHANT_CLOSED" then
         if F.UI and F.UI.merchant then
             F.UI.merchant(event == "MERCHANT_SHOW")
+            F.UI.merchantOffers(event == "MERCHANT_SHOW")
         end
     end
     E.changed()

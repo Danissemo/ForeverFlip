@@ -488,3 +488,21 @@ end
 function GameTooltip:GetItem()
     return self.itemName, self.itemLink
 end
+
+
+-- Merchant -----------------------------------------------------------------------------------------
+merchantItems = {} -- { id, price, quantity, available, extended }
+merchantBought = {}
+function GetMerchantNumItems()
+    return #merchantItems
+end
+function GetMerchantItemInfo(i)
+    local m = merchantItems[i]
+    return items[m.id].name, 1, m.price, m.quantity or 1, m.available or -1, true, true, m.extended
+end
+function GetMerchantItemLink(i)
+    return link(merchantItems[i].id)
+end
+function BuyMerchantItem(i, qty)
+    merchantBought[#merchantBought + 1] = { i, qty }
+end

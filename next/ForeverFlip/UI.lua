@@ -521,6 +521,9 @@ end
 
 local function dealStatus(d)
     local now = F.Engine.clock()
+    if d.cost > F.Engine.wallet() then
+        return "|cffff6060" .. L("not enough money") .. "|r"
+    end
     if F.Deals.search and F.Deals.search.key == d.key then
         return "|cffffd100" .. L("checking...") .. "|r"
     end
@@ -533,7 +536,29 @@ local function dealStatus(d)
     if d.verified then
         return "|cff999999" .. L("check again") .. "|r"
     end
+    if now - (d.found or now) > 1200 then
+        return "|cff777777" .. L("old scan") .. "|r"
+    end
     return "|cff999999" .. L("from scan") .. "|r"
+end
+
+-- Return on the money and, for resale, how long the bought units take to sell at the estimate.
+local function dealOutlook(d, estimate)
+    local roi = d.cost > 0 and d.profit / d.cost or 0
+    if d.mode == "vendor" then
+        return string.format(L("Return %d%%; sold to a vendor at once, no risk."), math.floor(roi * 100 + 0.5))
+    end
+    local perDay = estimate and estimate.known and estimate.perDay or d.perDay
+    if perDay and perDay > 0 then
+        return string.format(
+            L("Return %d%%; at ~%.1f a day the %d units sell in about %.1f days."),
+            math.floor(roi * 100 + 0.5),
+            perDay,
+            d.qty,
+            d.qty / perDay
+        )
+    end
+    return string.format(L("Return %d%%."), math.floor(roi * 100 + 0.5))
 end
 
 local function saleEstimate(d, history, now)
@@ -667,7 +692,18 @@ function UI.refreshDeals()
     end
     UI.prev:SetEnabled(UI.dealPage > 1)
     UI.next:SetEnabled(UI.dealPage < pages)
-    UI.pageText:SetText(string.format(L("Page %d / %d · deals: %d"), UI.dealPage, pages, #list))
+    local cost, profit = 0, 0
+    for _, d in ipairs(list) do
+        cost, profit = cost + d.cost, profit + d.profit
+    end
+    UI.pageText:SetText(
+        string.format(L("Page %d / %d · deals: %d"), UI.dealPage, pages, #list)
+            .. (
+                #list > 0
+                    and ("  ·  " .. string.format(L("all: cost %s, profit %s"), U.money(cost), U.money(profit)))
+                or ""
+            )
+    )
     local empty = UI.dealTable.empty
     if #list == 0 then
         if F.Scan.busy() then
@@ -698,7 +734,7 @@ function UI.refreshDeals()
     local d = UI.selected and F.Deals.get(UI.selected)
     local op = F.Trade.op
     if d then
-        local lines = { dealSentence(d) }
+        local lines = { dealSentence(d), dealOutlook(d, estimates[d.key]) }
         if d.mode ~= "vendor" then
             lines[#lines + 1] = estimateSentence(estimates[d.key] or saleEstimate(d, history, now))
         end
@@ -1781,6 +1817,71 @@ function UI.tooltips()
         end)
     elseif GameTooltip and GameTooltip.HookScript then
         GameTooltip:HookScript("OnTooltipSetItem", safe)
+    end
+end
+
+-- Merchant panel: items this vendor sells below their auction house value (vendor -> AH).
+function UI.merchantOffers(open)
+    if not MerchantFrame then
+        return
+    end
+    local panel = UI.offerPanel
+    if not panel then
+        panel = CreateFrame("Frame", nil, MerchantFrame)
+        panel:SetSize(320, 250)
+        panel:SetPoint("TOPLEFT", MerchantFrame, "TOPRIGHT", 4, -30)
+        local bg = panel:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0.05, 0.05, 0.06, 0.92)
+        panel.title = text(panel, "GameFontNormal")
+        panel.title:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -8)
+        panel.title:SetText(L("ForeverFlip: buy here, sell on the auction house"))
+        panel.rows = {}
+        for i = 1, 7 do
+            local row = CreateFrame("Frame", nil, panel)
+            row:SetSize(304, 30)
+            row:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -28 - (i - 1) * 31)
+            row.text = text(row, "GameFontHighlightSmall")
+            row.text:SetPoint("LEFT", row, "LEFT", 0, 0)
+            row.text:SetWidth(220)
+            row.text:SetWordWrap(true)
+            row.buy = button(row, "Buy", 80, function(self)
+                local ok, why = F.Merchant.buy(self.offer)
+                if not ok and why then
+                    F.Engine.notify(why)
+                end
+                UI.merchantOffers(true)
+            end)
+            row.buy:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+            panel.rows[i] = row
+        end
+        UI.offerPanel = panel
+    end
+    local offers = open and F.Merchant.offers() or {}
+    for i, row in ipairs(panel.rows) do
+        local o = offers[i]
+        if o then
+            row.text:SetText(
+                string.format(
+                    L("%s: %s here, %s on AH, +%s each, ~%.1f/day"),
+                    o.link or o.name,
+                    U.money(o.unit),
+                    U.money(o.exit),
+                    U.money(math.floor(o.each)),
+                    o.perDay
+                )
+            )
+            row.buy.offer = o
+            row.buy:SetText(L("Buy") .. " " .. o.qty)
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+    if #offers > 0 then
+        panel:Show()
+    else
+        panel:Hide()
     end
 end
 

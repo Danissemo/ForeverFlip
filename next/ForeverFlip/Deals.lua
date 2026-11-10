@@ -258,11 +258,11 @@ local function startRequest(r)
 end
 
 -- Immediate API, retained for background work and callers that need a started/not-started answer.
-function D.request(key, callback, source)
+function D.request(key, callback, source, fast)
     if D.pending() then
         return false
     end
-    local r = newRequest(key, callback, source)
+    local r = newRequest(key, callback, source, nil, fast)
     return r and startRequest(r) or false
 end
 
@@ -461,7 +461,8 @@ function D.verify(key, callback, source)
         D.verifyCallback(k, rows, complete, callback)
     end
     if source == "auto" then
-        return D.request(key, done, source)
+        -- Found deals are checked at the faster pace; the sniper keeps one search per second.
+        return D.request(key, done, source, true)
     end
     return D.enqueue(key, done, callback or D.verifyCallback)
 end

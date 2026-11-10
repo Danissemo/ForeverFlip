@@ -16,5 +16,6 @@ Deals.lua
 Trade.lua
 Mail.lua
 Analytics.lua
+Merchant.lua
 Core.lua
 UI.lua

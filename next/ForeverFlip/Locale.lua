@@ -5,6 +5,14 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["not enough money"] = "не вистачає грошей",
+    ["old scan"] = "старий скан",
+    ["Return %d%%; sold to a vendor at once, no risk."] = "Дохідність %d%%; продаж торговцю одразу, без ризику.",
+    ["Return %d%%; at ~%.1f a day the %d units sell in about %.1f days."] = "Дохідність %d%%; при ~%.1f на день %d шт. продадуться приблизно за %.1f дн.",
+    ["Return %d%%."] = "Дохідність %d%%.",
+    ["all: cost %s, profit %s"] = "разом: ціна %s, прибуток %s",
+    ["ForeverFlip: buy here, sell on the auction house"] = "ForeverFlip: купити тут, продати на аукціоні",
+    ["%s: %s here, %s on AH, +%s each, ~%.1f/day"] = "%s: %s тут, %s на аукціоні, +%s за шт., ~%.1f/день",
     ["Analytics"] = "Аналітика",
     ["Below usual price"] = "Нижче звичайної ціни",
     ["Sells the most"] = "Продається найбільше",

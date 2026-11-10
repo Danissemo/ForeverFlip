@@ -168,10 +168,11 @@ class TradeTests(unittest.TestCase):
         for i=#auctions,1,-1 do if auctions[i].item==10 and auctions[i].buyout<500 then table.remove(auctions,i) end end
         D.verify('c:10');answer();assert(not D.get('c:10'))''')
 
-    def test_automatic_verification_runs_one_search_per_second(self):
+    def test_automatic_verification_keeps_the_04_second_pace(self):
         run(SETUP + '''ForeverFlip.Engine.autoVerify=true;fullScan()
-        local before=#calls;run(0.5);local s=ForeverFlip.Deals.search;assert(s);answer()
-        run(0.5);assert(not ForeverFlip.Deals.search,'one per second');run(0.6);assert(ForeverFlip.Deals.search)''')
+        run(0.5);local D=ForeverFlip.Deals;assert(D.search);local t1=D.lastRequest;answer()
+        while not D.search do run(0.05) end;local gap=D.lastRequest-t1
+        assert(gap>=0.4-1e-9 and gap<0.9,gap)''')
 
     def test_post_and_sale_are_booked_with_profit(self):
         run(SETUP + '''local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
@@ -480,6 +481,37 @@ class AnalyticsTests(unittest.TestCase):
         assert(UI.resultsText:GetText():find('Profit') and #UI.bars==7)
         UI.periodButtons[30]:Click();assert(#UI.bars==30 and UI.analyticsDays==30)
         UI.viewButtons.liquid:Click();assert(UI.marketView=='liquid')''')
+
+
+class DealTabTests(unittest.TestCase):
+    def test_found_deals_are_checked_at_the_faster_pace(self):
+        run(SETUP + '''addItem(11,'A',100,'commodity');addItem(12,'B',100,'commodity');addAuction(11,50,5);addAuction(12,50,5)
+        fullScan();ForeverFlip.Engine.autoVerify=true;local seen={}
+        for _=1,30 do run(0.1);local s=ForeverFlip.Deals.search;if s and not seen[s.key] then seen[s.key]=true;answer() end end
+        local n=0;for _ in pairs(seen) do n=n+1 end;assert(n>=3,n)''')
+
+    def test_status_shows_money_and_old_scan_and_detail_shows_return(self):
+        run(SETUP + '''fullScan();local UI=ForeverFlip.UI;local D=ForeverFlip.Deals
+        local d=D.get('c:10');d.found=now-1300;UI.refresh()
+        local function status(key) for _,r in ipairs(UI.dealTable.rows) do if r.key==key then return r.cols[5]:GetText() end end end
+        assert(status('c:10'):find('old scan'))
+        money=100;UI.refresh();assert(status('c:10'):find('not enough money'))
+        money=1000000;UI.selectDeal('c:10');answer();UI.refresh()
+        assert(UI.dealText:GetText():find('Return') and UI.pageText:GetText():find('profit'))''')
+
+    def test_merchant_items_worth_reselling_are_listed_and_bought_by_click(self):
+        run('''addItem(60,'Fine Thread',5,'commodity');addItem(61,'Cheap Thing',5,'commodity')
+        local h=ForeverFlip.Data.market(ForeverFlip.db,ForeverFlip.Engine.scope()).history
+        h['c:60']={scan={at=now,market=500},flow={hours=20,sold={48,48,48,48},pairs=3,at=now,market=500}}
+        h['c:61']={scan={at=now,market=60},flow={hours=20,sold={48,48,48,48},pairs=3,at=now,market=60}}
+        merchantItems={{id=60,price=100},{id=61,price=100},{id=60,price=50,extended=true}}
+        local offers=ForeverFlip.Merchant.offers(now)
+        assert(#offers==1 and offers[1].key=='c:60' and offers[1].exit==499 and offers[1].qty==48)
+        fire('MERCHANT_SHOW');assert(ForeverFlip.UI.offerPanel:IsShown())
+        ForeverFlip.UI.offerPanel.rows[1].buy:Click()
+        assert(merchantBought[1][1]==1 and merchantBought[1][2]==48)
+        local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
+        assert(c.positions['c:60'].qty==48 and c.positions['c:60'].cost==4800 and c.positions['c:60'].mode=='flip')''')
 
 
 if __name__ == '__main__':
