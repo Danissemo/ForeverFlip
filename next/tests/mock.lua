@@ -496,10 +496,20 @@ merchantBought = {}
 function GetMerchantNumItems()
     return #merchantItems
 end
-function GetMerchantItemInfo(i)
-    local m = merchantItems[i]
-    return items[m.id].name, 1, m.price, m.quantity or 1, m.available or -1, true, true, m.extended
-end
+C_MerchantFrame = {
+    GetItemInfo = function(i)
+        local m = merchantItems[i]
+        return m
+            and {
+                name = items[m.id].name,
+                price = m.price,
+                stackCount = m.quantity or 1,
+                numAvailable = m.available or -1,
+                isPurchasable = true,
+                hasExtendedCost = m.extended or false,
+            }
+    end,
+}
 function GetMerchantItemLink(i)
     return link(merchantItems[i].id)
 end

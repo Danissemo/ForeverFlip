@@ -20,13 +20,29 @@ local function historyFor(id, link)
     end
 end
 
+-- Merchant item info: C_MerchantFrame on modern clients (the global may be missing, as GetItemInfo
+-- is on WoW Forever), the old global otherwise.
+local function merchantInfo(i)
+    if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
+        local info = C_MerchantFrame.GetItemInfo(i)
+        if not info then
+            return nil
+        end
+        return info.name, info.price, info.stackCount, info.numAvailable, info.isPurchasable, info.hasExtendedCost
+    end
+    if GetMerchantItemInfo then
+        local name, _, price, quantity, available, purchasable, _, extended = GetMerchantItemInfo(i)
+        return name, price, quantity, available, purchasable, extended
+    end
+end
+
 -- Profitable merchant items, best profit per day first.
 function V.offers(now)
     now = now or F.Engine.clock()
     local out = {}
     local budget = F.Deals.budget()
     for i = 1, (GetMerchantNumItems and GetMerchantNumItems() or 0) do
-        local name, _, price, quantity, available, purchasable, _, extended = GetMerchantItemInfo(i)
+        local name, price, quantity, available, purchasable, extended = merchantInfo(i)
         local link = GetMerchantItemLink and GetMerchantItemLink(i)
         local id = link and tonumber(link:match("item:(%d+)"))
         if id and purchasable ~= false and not extended and (price or 0) > 0 and (quantity or 0) > 0 then
@@ -35,7 +51,8 @@ function V.offers(now)
             if key and U.finite(market) then
                 local item = U.parseKey(key)
                 local today = type(h.days) == "table" and h.days[#h.days]
-                local reference = math.min(market, today and today.min or market)
+                local low = today and today.min
+                local reference = U.finite(low) and math.min(market, low) or market
                 local exit = U.below(reference, item.kind)
                 local unit = price / quantity
                 local deposit = M.deposit(F.AH.vendorPrice(id), item.kind == "commodity" and quantity or 1)
