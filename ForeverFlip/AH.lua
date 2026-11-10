@@ -264,6 +264,64 @@ function A.post(item, qty, price, duration, confirm)
     return fn(item.loc, duration, qty, nil, price)
 end
 
+-- Deposit of a stack of n units as the game charges it, for deal evaluation. Commodities ask the
+-- game directly (twice per item and session); items need a bag location, so the deposit per unit
+-- learned from the last post of the item is used. nil: estimate from the vendor price.
+local depositRates = {}
+function A.depositFn(id, kind, vendor, duration)
+    if kind == "commodity" and AH.CalculateCommodityDeposit then
+        local cacheKey = id .. ":" .. duration
+        local rate = depositRates[cacheKey]
+        if rate == nil then
+            local ok1, one = pcall(AH.CalculateCommodityDeposit, id, duration, 1)
+            local ok20, twenty = pcall(AH.CalculateCommodityDeposit, id, duration, 20)
+            if ok1 and ok20 and U.finite(one) and U.finite(twenty) and one > 0 then
+                rate = { one = one, unit = twenty / 20 }
+            else
+                rate = false
+            end
+            depositRates[cacheKey] = rate
+        end
+        if rate then
+            return function(qty)
+                return math.max(rate.one, math.floor(rate.unit * qty + 0.5))
+            end
+        end
+        return nil
+    end
+    local learned = F.db and F.db.deposits and F.db.deposits[id]
+    local unit = type(learned) == "table" and learned[duration]
+    if U.finite(unit) and unit > 0 then
+        return function(qty)
+            return unit * qty
+        end
+    end
+    return nil
+end
+
+-- Remembers the deposit per unit of an item about to be posted (the game knows it for a bag item).
+function A.learnDeposit(item, duration)
+    if not F.db or item.kind == "commodity" or not AH.CalculateItemDeposit or not item.loc then
+        return
+    end
+    local ok, unit = pcall(AH.CalculateItemDeposit, item.loc, duration, 1)
+    if ok and U.finite(unit) and unit > 0 then
+        F.db.deposits = F.db.deposits or {}
+        F.db.deposits[item.id] = F.db.deposits[item.id] or {}
+        F.db.deposits[item.id][duration] = unit
+    end
+end
+
+-- Seconds left on the current commodity quote, or nil when the game does not tell.
+function A.quoteRemaining()
+    if AH.GetQuoteDurationRemaining then
+        local ok, s = pcall(AH.GetQuoteDurationRemaining)
+        if ok and U.finite(s) then
+            return s
+        end
+    end
+end
+
 -- Own auctions -------------------------------------------------------------------------------------
 function A.queryOwned()
     if AH.QueryOwnedAuctions then

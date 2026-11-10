@@ -101,10 +101,18 @@ function T.confirm()
     if not op or op.state ~= "quoted" then
         return false
     end
-    if clock() - op.at > 25 then
+    -- A purchase on a stale quote ends in "Internal auction error" on WoW Forever: ask for a new
+    -- quote in the same click instead; the next click confirms it.
+    local left = F.AH.quoteRemaining()
+    if clock() - op.at > 25 or (left and left < 2) then
         pcall(F.AH.cancelQuote)
-        T.op = nil
-        F.Engine.notify("quote_expired")
+        op.state, op.at = "quote", clock()
+        if not pcall(F.AH.quote, op.id, op.qty) then
+            T.op = nil
+            F.Engine.notify("quote_expired")
+        else
+            F.Engine.notify("requote")
+        end
         F.Engine.changed()
         return false
     end
@@ -296,6 +304,12 @@ function T.suggest(item)
     return price, floor, cheapest
 end
 
+-- Posting duration (1 = 2 h, 2 = 8 h, 3 = 24 h) from the setting.
+function T.durationFor()
+    local d = F.db and F.db.settings.duration
+    return (d == 1 or d == 2 or d == 3) and d or 3
+end
+
 function T.post(item, qty, price, duration)
     if T.posting or not F.AH.isOpen() then
         return false, "busy"
@@ -315,6 +329,7 @@ function T.post(item, qty, price, duration)
         and T.pendingPost.price == price
         and T.pendingPost.qty == qty
     T.lastItem = { bag = item.bag, slot = item.slot, price = price, qty = qty }
+    F.AH.learnDeposit(item, duration)
     local ok, needs = pcall(F.AH.post, item, qty, price, duration, confirm)
     if not ok then
         T.pendingPost = nil

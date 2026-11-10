@@ -61,6 +61,7 @@ function D.evaluate(g, vendor, history, now)
         itemBudget = room,
         trust = D.trust(g.key, now),
         budget = D.budget(),
+        deposit = F.AH.depositFn(g.id, g.kind, vendor, F.Trade.durationFor and F.Trade.durationFor() or 3),
         history = history,
         market = g.market,
         now = now or clock(),

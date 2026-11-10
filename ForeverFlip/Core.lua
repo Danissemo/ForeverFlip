@@ -14,11 +14,41 @@ function E.wallet()
     return GetMoney() or 0
 end
 
--- One auction house per realm and faction.
+-- Neutral auction houses (goblin towns) have their own listings and a 15% cut.
+local NEUTRAL_TOWNS = {
+    ["booty bay"] = true,
+    ["gadgetzan"] = true,
+    ["everlook"] = true,
+}
+function E.detectHouse()
+    for _, get in ipairs({ GetSubZoneText, GetMinimapZoneText, GetRealZoneText, GetZoneText }) do
+        local ok, zone = pcall(get)
+        if ok and type(zone) == "string" and (NEUTRAL_TOWNS[zone] or NEUTRAL_TOWNS[string.lower(zone)]) then
+            return "Neutral"
+        end
+    end
+    return nil
+end
+
+-- One auction house per realm and faction, plus the neutral house of the realm.
+E.house = nil -- "Neutral" while a neutral auction house is open
 function E.scope()
     return tostring(GetRealmName and GetRealmName() or "?")
         .. "-"
-        .. tostring(UnitFactionGroup and UnitFactionGroup("player") or "?")
+        .. tostring(E.house or UnitFactionGroup and UnitFactionGroup("player") or "?")
+end
+
+-- The cut of an auction house: learned from sale invoices, else 5% (15% on a neutral house).
+function E.cutFor(scope)
+    local learned = F.db and F.db.cuts and F.db.cuts[scope]
+    if U.finite(learned) and learned > 0 and learned < 0.5 then
+        return learned
+    end
+    return scope:match("%-Neutral$") and 0.15 or 0.05
+end
+
+function E.applyCut()
+    F.Market.CUT = E.cutFor(E.scope())
 end
 
 function E.owner()
@@ -73,6 +103,7 @@ function E.handle(event, ...)
             ForeverFlipData = F.Data.open(ForeverFlipData)
             F.db = ForeverFlipData
             F.Locale.apply(F.db.settings.language)
+            E.applyCut()
             if F.UI and F.UI.tooltips then
                 F.UI.tooltips()
             end
@@ -83,6 +114,8 @@ function E.handle(event, ...)
         return
     end
     if event == "AUCTION_HOUSE_SHOW" then
+        E.house = E.detectHouse()
+        E.applyCut()
         F.Scan.restore(E.scope())
         if F.UI then
             F.UI.attach()
@@ -94,6 +127,8 @@ function E.handle(event, ...)
         F.Trade.checkingOwned = nil
         F.Deals.clear()
         F.Trade.cancel()
+        E.house = nil
+        E.applyCut()
     elseif event == "REPLICATE_ITEM_LIST_UPDATE" then
         F.Scan.onReplicate()
     elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then

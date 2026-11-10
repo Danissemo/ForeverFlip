@@ -3,7 +3,7 @@ local U = F.Util
 local M = {}
 F.Market = M
 
-M.CUT = 0.05 -- auction house cut on a sale (faction house)
+M.CUT = 0.05 -- auction house cut on a sale; set per auction house by F.Engine (15% on a neutral house)
 M.BUCKET = math.log(1.02)
 -- Sale levels relative to the scan market value (see recordFlow).
 M.LEVELS = { 0.6, 0.75, 0.9, 1.05 }
@@ -245,11 +245,12 @@ function M.deposit(vendor, units)
 end
 
 -- Deposits a resale of `qty` units puts at risk: one auction for a commodity stack, one per item.
-function M.depositRisk(kind, vendor, qty)
+-- `deposit` (optional) is the game's deposit for a stack of n units (see F.AH.depositFn).
+function M.depositRisk(kind, vendor, qty, deposit)
     if kind == "commodity" then
-        return M.deposit(vendor, qty)
+        return deposit and deposit(qty) or M.deposit(vendor, qty)
     end
-    return qty * M.deposit(vendor, 1)
+    return qty * (deposit and deposit(1) or M.deposit(vendor, 1))
 end
 
 -- Money left after selling `qty` units at `price` each on the auction house.
@@ -348,7 +349,8 @@ function M.evaluate(rows, ctx)
         if U.finite(market) and market > 0 then
             exit = math.min(exit, U.stepDown(market, kind))
         end
-        local profit = exit > r.unit and M.net(exit, qty) - cost - M.depositRisk(kind, ctx.vendor, qty) or 0
+        local profit = exit > r.unit and M.net(exit, qty) - cost - M.depositRisk(kind, ctx.vendor, qty, ctx.deposit)
+            or 0
         if profit > 0 then
             local d = M.demandAt(ctx.history, exit, ctx.now)
             -- Own results: stock of this item that did not sell lowers the scan estimate.

@@ -25,6 +25,7 @@ local MESSAGES = {
     quote_ready = "Price confirmed. Press Confirm purchase.",
     price_changed = "The price changed. The deal is checked again.",
     quote_expired = "The price offer expired. Press Buy again.",
+    requote = "The price offer was about to expire; a new one was asked. Press Confirm when it arrives.",
     bought = "Purchase recorded.",
     buy_failed = "The purchase failed (someone was faster). The deal is checked again.",
     buy_unknown = "No answer from the auction house. Settle the purchase in the Journal.",
@@ -604,10 +605,11 @@ local function dealSentence(d)
         )
     end
     return string.format(
-        L("Buy %d for %s; list at %s each. Profit after the 5%% cut: +%s."),
+        L("Buy %d for %s; list at %s each. Profit after the %d%% cut: +%s."),
         d.qty,
         U.money(d.cost),
         U.money(d.exit),
+        math.floor(F.Market.CUT * 100 + 0.5),
         U.money(d.profit)
     )
 end
@@ -979,7 +981,11 @@ function UI.refreshSell()
         )
     end
     if floor then
-        lines[#lines + 1] = string.format(L("Break-even after the 5%% cut: %s each."), U.money(floor))
+        lines[#lines + 1] = string.format(
+            L("Break-even after the %d%% cut: %s each."),
+            math.floor(F.Market.CUT * 100 + 0.5),
+            U.money(floor)
+        )
         if price and price < floor then
             lines[#lines + 1] = "|cffff6060" .. L("The market is below your cost: wait or sell at a loss.") .. "|r"
         end
