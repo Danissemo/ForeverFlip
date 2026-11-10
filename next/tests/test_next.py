@@ -549,5 +549,13 @@ class TimingTests(unittest.TestCase):
         local found=false;for _,l in ipairs(tooltipLines) do found=found or l:find('dearest') end;assert(found)''')
 
 
+    def test_sell_page_hints_a_dearer_time(self):
+        run(SETUP + '''local M=ForeverFlip.Market;local h=ForeverFlip.Data.market(ForeverFlip.db,ForeverFlip.Engine.scope()).history
+        local w=M.slot(now);local t={b=30000,w={1,1,1,1,1,1,1},wn={3,3,3,3,3,3,3},p={1,1,1,1},pn={3,3,3,3}}
+        t.w[w]=0.8;t.w[(w%7)+1]=1.3;h['i:30']={scan={at=now,market=30000},t=t,units=12}
+        putBag(0,1,30,1);local UI=ForeverFlip.UI;UI.show('sell');UI.sellTable.rows[1]:Click();answer();UI.refresh()
+        assert(UI.sellText:GetText():find('higher'),UI.sellText:GetText())''')
+
+
 if __name__ == '__main__':
     unittest.main()

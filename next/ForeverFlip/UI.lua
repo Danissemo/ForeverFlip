@@ -975,7 +975,7 @@ function UI.refreshSell()
         lines[#lines + 1] = string.format(
             L("Prices for it are usually %d%% higher on %s: posting then may pay more."),
             math.floor((timing.high.f / timing.now - 1) * 100 + 0.5),
-            slotName(timing.high)
+            UI.slotName(timing.high)
         )
     end
     if floor then
