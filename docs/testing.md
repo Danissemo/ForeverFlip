@@ -36,7 +36,26 @@ python -m unittest discover -s tests -p "test_*.py"
 | `test_sync.py` | Full-scan capture, the SavedVariables reader, FFR1 and FF1 formats, the usual price in Python and Lua, the aggregator. |
 | `test_extras.py` | `ForeverFlipAPI`, aux fallback, CSV export, realm gold, presets. |
 | `test_forever12.py` | 1.2: vendor prices from the buyback list and the margin, the stuck throttle, owner names, gear searched by browse and version, other addons' full scans, the scan wait, disenchant rules and learning, the realm channel, the trust filter, the spending limit, cheap lots left, Buy next, the saved-data guard, hardcore scopes, tooltip advice. |
+| `test_simulation.py` | Simulated play sessions (see below), a `/reload` with the saved data written and read back as text, switching between a faction and a neutral house, and a full scan of 100 000 auctions read in small frames. |
 | `test_locale.py` | Every `L("...")` string has a Ukrainian translation, and no key is translated twice. |
+
+### Simulated sessions
+
+`tests/sim.lua` turns the mock into a living market: other players list items, commodities and gear,
+buy the cheap lots and let lots expire. A session runs in 15-minute ticks; each tick ForeverFlip
+makes a full scan, the sniper and the deal checks run, deals are bought, the bought stock is posted,
+own auctions sell, the mail is taken and vendor deals are sold at a merchant. Every page and tooltip
+is drawn after each tick, and these always have to hold:
+
+- every deal has a profit, and the scan counts add up (read, skipped and own
+  auctions make the total);
+- the journal agrees with the item statistics, and with the units the market says were bought and
+  sold;
+- every position exists in the bags or in your auctions, money never goes below zero, and nothing
+  is sold to a vendor at a loss;
+- no Lua error, caught or not.
+
+Seeds 1 to 3 run in the suite; for more, call `session(seed)` from `test_simulation.py` in a loop.
 
 The CI workflow runs the same tests, checks formatting with StyLua, and builds the archive on every
 push and pull request. Locally, the `pre-commit` hook runs StyLua and the tests before every commit

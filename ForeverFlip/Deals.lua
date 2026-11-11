@@ -118,11 +118,13 @@ local function order(a, b)
 end
 
 function D.replace(deals, scope)
+    -- Keep deals verified a moment ago; the scan may be older than that check. Only within the
+    -- same auction house: another house's lots are not on sale here.
+    local sameHouse = scope == D.scope
     D.scope = scope
-    -- Keep deals verified a moment ago; the scan may be older than that check.
     local keep = {}
     for _, d in ipairs(D.list) do
-        if d.verified and clock() - d.verified < D.FRESH then
+        if sameHouse and d.verified and clock() - d.verified < D.FRESH then
             keep[d.key] = d
         end
     end

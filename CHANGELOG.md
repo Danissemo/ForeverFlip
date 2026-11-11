@@ -41,7 +41,8 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **The neutral auction house** is recognised by the auctioneer first: an Alliance or Horde
   auctioneer always means the faction house, whatever the zone. The top right corner and the window
   title name the open house (Alliance blue, Horde red, neutral gold with its 15% cut), and opening
-  another house shows that house's own scan and deals.
+  another house shows that house's own scan and deals (deals just checked on the other house no
+  longer come along).
 - **Sales from a full scan:** items whose rows could not be read in time, and scans far smaller than
   the house's last one (a partial answer), no longer count their missing lots as sold.
 - **A late scan event** for the scan just read no longer starts a second reading and a new cooldown;
