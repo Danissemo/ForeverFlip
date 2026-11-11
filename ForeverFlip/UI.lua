@@ -2981,26 +2981,38 @@ function UI.refreshStatus()
     end
 end
 
+-- Which auction house the scans and prices belong to: a neutral house (goblin town) keeps its own
+-- history and a 15% cut, so the player must see when ForeverFlip thinks it is open.
+function UI.houseLine()
+    if F.Engine.house == "Neutral" then
+        return "|cffffd100" .. L("Neutral auction house (15% cut)") .. "|r\n"
+    end
+    local faction = UnitFactionGroup and UnitFactionGroup("player")
+    return string.format(L("Auction house: %s"), L(faction or "?")) .. "\n"
+end
+
 function UI.refreshSummary()
     local last = F.Scan.last
     if not last then
-        UI.summary:SetText("")
+        UI.summary:SetText(UI.houseLine())
         return
     end
     local s = last.stats
     -- One figure per line: with six menu entries the panel has room for them.
     UI.summary:SetText(
-        string.format(
-            L(
-                "Last scan %d min ago\nAuctions: %d\nItems: %d\nVendor price known: %d\nBelow vendor price: %d\nCollecting sales data: %d"
-            ),
-            math.floor((F.Engine.clock() - last.at) / 60),
-            last.total,
-            s.items,
-            s.vendorKnown,
-            s.belowVendor,
-            s.collecting
-        ) .. UI.sniperSummary()
+        UI.houseLine()
+            .. string.format(
+                L(
+                    "Last scan %d min ago\nAuctions: %d\nItems: %d\nVendor price known: %d\nBelow vendor price: %d\nCollecting sales data: %d"
+                ),
+                math.floor((F.Engine.clock() - last.at) / 60),
+                last.total,
+                s.items,
+                s.vendorKnown,
+                s.belowVendor,
+                s.collecting
+            )
+            .. UI.sniperSummary()
     )
 end
 
