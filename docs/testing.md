@@ -149,18 +149,33 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 | ⬜ | Hardcore | On a hardcore realm the prices are separate from the normal realm of the same name. |
 | ⬜ | Shop materials | With materials in the bags, Shop materials adds only what is missing. |
 | ⬜ | Saved data guard | Rename `ForeverFlip.lua` in SavedVariables while the game is closed, start the game: the window asks Reload / Continue. Put the file back afterwards. |
-| ⬜ | House badge | At a faction auction house the top right corner shows its name in blue (Alliance) or red (Horde); in Booty Bay, Gadgetzan or Everlook it shows the neutral house in gold. Going from one to the other and back shows each house's own scan and deals. |
+
+### Fixed since 1.2.0-beta.1
+
+Check these with 1.2.0-beta.2 (or later); they are the fixes testers of beta.1 should look at again.
+
+| | Area | Check |
+|---|---|---|
+| ⬜ | Sniper gear checks | Leave the sniper on at a house with gear deals for 10 minutes: no error (it was `Deals.lua:692`), gear deals turn checked. |
+| ⬜ | House badge | At a faction auction house the top right corner and the window title name it in blue (Alliance) or red (Horde); in Booty Bay, Gadgetzan or Everlook the neutral house in gold. Go from one to the other and back: each shows its own last scan and deals, none from the other house. |
+| ⬜ | Full scan answer | Press Full scan: the status counts the waited seconds (`35 / 300 s`), the sniper and checks stay still meanwhile, and the scan is read when the answer comes, also on a small house; the button shows no stale countdown while waiting. |
 | ⬜ | End of a full scan | On a large house the game does not stall when the scan finishes reading. |
+| ⬜ | Sales after a partial scan | When a scan comes back much smaller than the one before, Analytics shows no burst of sales of the missing items. |
+| ⬜ | Sell page | Items in the bags and in the reagent bag are listed on Selling → My items, also ones the auction house has not shown yet; `/ff bags` says why an item is not listed. |
+| ⬜ | A sale booked once | Sell an item bought through ForeverFlip, take the "Auction successful" mail: the journal has the sale once. |
 | ⬜ | Expired auction | Let an auction of bought stock expire (or cancel it in the game's own window), take the mail: Post next bought offers the item again at once. |
-| ⬜ | Full bags | Fill the bags, take auction mail with items: ForeverFlip stops with "bags full"; free space and take it again: the journal has the mail once. |
+| ⬜ | Full bags | Fill the bags and take auction mail with items: ForeverFlip stops with "bags full"; free some space and take it again: the journal has each mail once. |
+| ⬜ | Gear check and the Buy tab | Search something in the game's Buy tab right before checking a gear deal: the check never says "nobody sells" for gear that is listed. |
+| ⬜ | Tooltips | See the Tooltips row above (rewritten in beta.2). |
+| ⬜ | Bought elsewhere, sold by hand | See the Bought elsewhere and Vendor sale by hand rows above (new in beta.2). |
 
 ### Beta testing
 
 Beta releases (`vX.Y.Z-beta.N`, marked **Pre-release** on the
 [releases page](https://github.com/Danissemo/ForeverFlip/releases)) are for players who want to help
 test before a release. Install one like a normal release (replace the `ForeverFlip` folder; your saved
-data is kept), restart the game, and go through the table of the version above. The last rows of
-*New in 1.2* (from House badge on) are the fixes since 1.2.0-beta.1.
+data is kept), restart the game, and go through the table of the version above. If you tested
+1.2.0-beta.1, check [Fixed since 1.2.0-beta.1](#fixed-since-120-beta1) again.
 
 Report a bug in an [issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose) (the bug
 report form asks for the version and the log); questions and general impressions are welcome in
