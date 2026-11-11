@@ -88,7 +88,7 @@ list on a live realm. If something goes wrong, note the chat line (`ForeverFlip 
 | ⬜ | Disenchant | On an enchanter, a cheap green weapon or armor piece is a disenchant deal. |
 | ⬜ | Neutral house | At Booty Bay, Gadgetzan or Everlook deals mention a 15% cut and the history is separate. |
 | ⬜ | Shared scans | Export as text gives `FF1|...`; a guild member's scan appears under Received. |
-| ⬜ | Community scans | With full scans kept, the Sync helper uploads after `/reload`; the scan appears in the data repository's archive; Settings → Sharing shows community data after the next login. |
+| ⬜ | Community scans | With full scans kept, the Sync helper shares the scan after `/reload` and prints the data repository's answer; the scan is listed in `registry/scans.jsonl` of the data repository; Settings → Sharing shows community data after the next login. |
 | ✅ | CSV export | `/ff export` opens the journal as CSV. |
 | ⬜ | Persistence | After `/reload` the last scan and its deals are listed as *from scan*. |
 | ⬜ | Language | `/ff lang en` and `/reload` switch to English. |

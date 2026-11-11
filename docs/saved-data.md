@@ -111,13 +111,15 @@ ForeverFlipRaw = {
     format = "FFR1",
     scans = { -- newest first, at most 2
         { scope = "Realm-Alliance", realm = "Realm", faction = "Alliance", at = <time>, count = <auctions>,
-          addon = "1.1.0", rows = "<one line per auction>" },
+          addon = "1.1.0", seal = <checksum>, rows = "<one line per auction>" },
     },
 }
 ```
 
 Each line of `rows` is `itemID,count,buyout,minBid,bid,timeLeftBand,own,kind,name`; see
-[Community scans](community.md) and the data repository for the meaning of the fields.
+[Community scans](community.md) and the data repository for the meaning of the fields. `seal` is a
+checksum of the lines, the realm, the time and the number of auctions, computed while the scan was
+read; the Sync helper and the data repository refuse a scan whose lines no longer match it.
 
 ## `ForeverFlipShared`
 

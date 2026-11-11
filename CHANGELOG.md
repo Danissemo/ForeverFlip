@@ -91,10 +91,16 @@ auxForever, AuctionMin) and adapted to WoW Forever, community scans, and fixes f
 - **Community scans through GitHub.**
   - With **Settings → Sharing → Keep my full scans for the ForeverFlip Sync helper**, full scans are
     kept auction by auction (`ForeverFlipRaw`).
-  - The **ForeverFlip Sync** helper (`sync/`) uploads them unchanged to
+  - The **ForeverFlip Sync** helper (`sync/`) shares them unchanged with
     [ForeverFlip-Data](https://github.com/Danissemo/ForeverFlip-Data), where they are archived by
     day, and downloads the community summaries of your realms into the **ForeverFlip_Shared** addon.
-    See [docs/community.md](docs/community.md).
+  - Any GitHub account at least 7 days old can upload: the helper puts the scan into a secret gist and
+    opens an upload issue that the data repository processes and closes.
+  - Every kept scan is sealed with a checksum of its lines. The helper checks a scan before sending
+    and the data repository checks it again, so a scan edited afterwards is refused.
+  - A scan reaches the summaries only after a scan of another player confirms it, and only with the
+    items whose prices agree.
+  - See [docs/community.md](docs/community.md).
 - **Gold of all characters** of the realm and stock at cost on the Analytics page.
 - **CSV export** of the journal (`/ff export` or Export CSV on the Journal page).
 - **ForeverFlipAPI** for other addons (`GetPrice`, `GetDeal`). auxForever prices are used as a

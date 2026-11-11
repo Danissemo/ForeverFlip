@@ -177,6 +177,17 @@ These are taken from Classic and checked in a simulated client only:
 
 The [in-game checklist](docs/testing.md#in-game-checklist) lists what to try.
 
+### Can someone spoil the community prices with a fake scan?
+
+Not easily. Anyone with a GitHub account can share scans, but:
+
+- every scan is sealed by the addon while it reads it, so a scan edited afterwards is refused;
+- a scan reaches the community prices only when another player's scan confirms it, and only with the
+  items whose prices agree;
+- deals always come from your own scans and live checks.
+
+See [Safeguards](docs/community.md#safeguards).
+
 ### How do I report a bug?
 
 1. Type `/reload`.

@@ -54,7 +54,9 @@ GAME_PATHS = [
 
 
 def log(message: str) -> None:
-    print(time.strftime("%H:%M:%S"), message, flush=True)
+    line = f"{time.strftime('%H:%M:%S')} {message}"
+    encoding = sys.stdout.encoding or "utf-8"  # a Windows console cannot show every character
+    print(line.encode(encoding, "replace").decode(encoding), flush=True)
 
 
 # --- Configuration -------------------------------------------------------------------------------
