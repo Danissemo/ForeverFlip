@@ -849,6 +849,30 @@ function T.checksRemaining()
     return count
 end
 
+-- Own units on sale of an item.
+local function ownedUnits(key)
+    local n = 0
+    for _, a in ipairs(T.owned or {}) do
+        if a.key == key and not a.sold then
+            n = n + (a.qty or 1)
+        end
+    end
+    return n
+end
+
+-- True when a recent full scan saw no more units of the item than the player has listed: nobody
+-- else sells it. WoW Forever does not answer a search for an item without lots of other players.
+function T.alone(key)
+    local units = F.Scan.listedUnits(key)
+    if units == nil then
+        return false
+    end
+    if F.Scan.last.ownersKnown then
+        return units == 0 -- own lots are not in the count: any unit is another seller's
+    end
+    return units <= ownedUnits(key)
+end
+
 function T.checkOwned()
     local remaining = T.checksRemaining()
     if remaining > 0 then
@@ -856,7 +880,7 @@ function T.checkOwned()
     end
     local seen, queue = {}, {}
     for _, a in ipairs(T.owned) do
-        if a.key and not a.sold and not seen[a.key] then
+        if a.key and not a.sold and not seen[a.key] and not T.alone(a.key) then
             seen[a.key] = true
             queue[#queue + 1] = a.key
         end
@@ -883,17 +907,27 @@ function T.stepChecks()
     end
 end
 
--- Status of one own auction: "sold", "cheapest", "undercut" (with the cheaper price) or nil.
+-- Status of one own auction: "sold", "alone" (nobody else sells it), "cheapest", "undercut" (with
+-- the cheaper price), "no_answer" or nil (not checked).
 function T.ownedStatus(a)
     if a.sold then
         return "sold"
     end
     local check = a.key and T.prices[a.key]
     if not check or clock() - check.at > 600 then
+        if a.key and T.alone(a.key) then
+            return "alone"
+        end
+        if a.key and T.noAnswer[a.key] and clock() - T.noAnswer[a.key] <= 600 then
+            return "no_answer"
+        end
         return nil
     end
     local cheapest = check.rows[1] and check.rows[1].unit
-    if cheapest and a.price and cheapest < a.price then
+    if not cheapest then
+        return "alone"
+    end
+    if a.price and cheapest < a.price then
         return "undercut", cheapest
     end
     return "cheapest", cheapest

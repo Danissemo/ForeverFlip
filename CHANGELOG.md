@@ -21,6 +21,15 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- My auctions showed "not checked" for items nobody else sells, because WoW Forever does not answer
+  a search for them. Such items are now **only yours**, judged from the last full scan without a
+  search; a check without an answer shows **no answer**.
+- Deal marks appeared only in the list of items of the game's Buy tab, and went stale while
+  scrolling. Now the auctions of an item and the price tiers of a commodity are marked too, row by
+  row, and the marks are refreshed twice a second.
+- The sniper's figures did not fit the status line; they are in the summary on the left now.
+- Column headers, statuses and buttons were cut off or overlapped in Ukrainian.
+
 - Clicking a column header did not sort the tables of the Crafting, Sell my items, My auctions,
   Statistics, Analytics, Shopping list and Bids pages. Every table sorts now, both ways.
 - Ukrainian texts showed boxes in place of the middle dot and a few other symbols that the game's

@@ -321,13 +321,24 @@ function S.trackLots(h, seq, now)
     return sold
 end
 
--- Keys of every item other players listed in the scan (kept in memory only).
+-- Units of every item listed in the scan, by key (kept in memory only). On WoW Forever the scan does
+-- not name sellers, so the player's own lots may be counted too.
 function S.listedKeys(j)
     local listed = {}
-    for key in pairs(j.groups or {}) do
-        listed[key] = true
+    for key, g in pairs(j.groups or {}) do
+        listed[key] = g.units or 1
     end
     return listed
+end
+
+-- Units of an item in a recent full scan (up to 20 minutes old) of this auction house; nil when
+-- there is no such scan.
+function S.listedUnits(key)
+    local last = S.last
+    if not last or not last.listed or last.scope ~= F.Engine.scope() or F.Engine.clock() - (last.at or 0) > 1200 then
+        return nil
+    end
+    return last.listed[key] or 0
 end
 
 -- True when a recent full scan (up to 20 minutes old) of this auction house saw no lot of the item
@@ -415,6 +426,8 @@ function S.step()
             stats = j.stats,
             waitVendor = j.waitVendor,
             listed = S.listedKeys(j),
+            -- The scan named the player's own lots (and left them out of `listed`).
+            ownersKnown = j.own > 0,
         }
         S.job = nil
         S.setHot(j.hot)

@@ -37,7 +37,8 @@ The window has three parts:
 
 - **Top bar:** scan and sniper buttons and a status line. A thin yellow bar along the top edge shows
   the progress of the current task.
-- **Left column:** the page list and, below it, a short summary of the last scan.
+- **Left column:** the page list and, below it, a short summary of the last scan and of the sniper
+  (rounds, prices read, candidates, checks).
 - **Right side:** the selected page. Most pages have a table on top and an explanation and buttons
   at the bottom.
 
@@ -307,12 +308,14 @@ Your active auctions, with:
 | Qty | Units in the auction. |
 | My price | Your unit price. |
 | Cheapest other | The cheapest listing of another seller, after a check. |
-| Status | **cheapest**, **undercut**, or **sold, gold in the mail**. |
+| Status | **cheapest**, **undercut**, **only yours** (nobody else sells the item), **sold, gold in the mail**, or **no answer** (the check got no answer). |
 | Time left | The game's remaining time band. |
 
 Buttons:
 
-- **Check prices** checks your listed items one after another, one search per second.
+- **Check prices** checks your listed items one after another, one search per second. An item a
+  full scan of the last 20 minutes saw only as many units of as you have listed is marked **only
+  yours** without a search: WoW Forever does not answer a search for an item that nobody else sells.
 - **Refresh** reloads your auctions from the server.
 - **Cancel auction** cancels the selected auction. The item comes back by mail. **The deposit is
   lost**, and the game may charge more for cancelling.
@@ -479,8 +482,15 @@ For items seen in the scans, the tooltip gets extra lines:
 
 ### Marks in the Buy tab
 
-In the game's own Buy tab, browse results get a green stripe on the left when the item has a deal now,
-or when its lowest price is low enough to hold one.
+In the game's own Buy tab, rows get a green stripe on the left when their price is low enough to
+hold a deal: below the vendor price, far below the usual price of an item that sells, at or below
+your shopping list price, or below the disenchant value.
+
+- **List of items:** a row is also marked when the item has a deal now.
+- **Auctions of one item and price tiers of a commodity:** each row is judged by its own price.
+
+The marks follow the list as you scroll. An item sold at exactly its vendor price, for example,
+gets no mark: there is no profit in it.
 
 ### Mailbox
 

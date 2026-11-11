@@ -31,6 +31,7 @@ python -m unittest discover -s tests -p "test_*.py"
 | `test_no_sellers.py` | Items nobody sells: empty checks, fallback prices, guesses, no answer. |
 | `test_hidden_items.py` | Hiding items from the Sell page, the Hidden view, returning items. |
 | `test_sorting.py` | Column sorting of every table, both directions, cached lists untouched. |
+| `test_ingame_round2.py` | Own auctions nobody else sells, no answer, sniper summary, Buy tab marks per row. |
 | `test_extras.py` | `ForeverFlipAPI`, aux fallback, CSV export, realm gold, presets. |
 | `test_locale.py` | Every `L("...")` string has a Ukrainian translation, and no key is translated twice. |
 

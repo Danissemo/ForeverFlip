@@ -254,7 +254,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
-local paint = 0
+local paint, marks = 0, 0
 function E.update(elapsed)
     if not F.db then
         return
@@ -269,6 +269,12 @@ function E.update(elapsed)
     F.Sniper.step()
     F.Trade.step()
     F.Mail.step(GetTime and GetTime() or E.clock())
+    -- The game's Buy tab scrolls and reuses its rows: its deal marks are refreshed twice a second.
+    marks = marks + (elapsed or 0)
+    if marks >= 0.5 and F.UI and F.UI.highlightBrowse and F.AH.isOpen() then
+        marks = 0
+        pcall(F.UI.highlightBrowse)
+    end
     paint = paint + (elapsed or 0)
     if E.dirty and paint >= 0.25 and F.UI and F.UI.refresh then
         paint, E.dirty = 0, false

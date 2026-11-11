@@ -497,7 +497,7 @@ function UI.createDeals(p)
         {
             { "Name" },
             { "Price", 76 },
-            { "Qty", 36 },
+            { "Qty", 50 },
             { "Cost", 76 },
             { "Profit", 76 },
             { "Status", 88, "LEFT" },
@@ -558,15 +558,15 @@ function UI.createDeals(p)
     UI.dealText = bar.text
     UI.dealText:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 28)
     UI.dealText:SetJustifyV("TOP")
-    UI.cancelButton = button(bar, "Cancel", 90, function()
+    UI.cancelButton = button(bar, "Cancel", 96, function()
         F.Trade.cancel()
     end)
     UI.cancelButton:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
-    UI.confirmButton = button(bar, "Confirm purchase", 170, function()
+    UI.confirmButton = button(bar, "Confirm purchase", 150, function()
         F.Trade.confirm()
     end)
     UI.confirmButton:SetPoint("RIGHT", UI.cancelButton, "LEFT", -4, 0)
-    UI.buyButton = button(bar, "Buy", 110, function()
+    UI.buyButton = button(bar, "Buy", 86, function()
         if UI.selected then
             local ok, why = F.Trade.buy(UI.selected)
             if not ok then
@@ -578,7 +578,7 @@ function UI.createDeals(p)
         end
     end)
     UI.buyButton:SetPoint("RIGHT", UI.confirmButton, "LEFT", -4, 0)
-    UI.checkButton = button(bar, "Check price", 120, function()
+    UI.checkButton = button(bar, "Check price", 116, function()
         if UI.selected then
             F.Deals.verify(UI.selected)
             F.Engine.changed()
@@ -586,7 +586,7 @@ function UI.createDeals(p)
         end
     end)
     UI.checkButton:SetPoint("RIGHT", UI.buyButton, "LEFT", -4, 0)
-    UI.ignoreButton = button(bar, "Ignore item", 110, function()
+    UI.ignoreButton = button(bar, "Ignore item", 100, function()
         local d = UI.selected and F.Deals.get(UI.selected)
         if d then
             F.Shopping.block(d.key, U.linkName(d.link) or d.key)
@@ -1562,11 +1562,11 @@ function UI.createAuctions(p)
         list,
         {
             { "Name" },
-            { "Qty", 44 },
+            { "Qty", 50 },
             { "My price", 86 },
-            { "Cheapest other", 100 },
-            { "Status", 130, "LEFT" },
-            { "Time left", 64 },
+            { "Cheapest other", 104 },
+            { "Status", 126, "LEFT" },
+            { "Time left", 70 },
         },
         16,
         function(row)
@@ -1604,7 +1604,10 @@ end
 function UI.refreshAuctions()
     local owned = UI.auctionTable.sort(F.Trade.owned or {}, function(a, column)
         local status, cheapest = F.Trade.ownedStatus(a)
-        local rank = status == "sold" and 1 or status == "undercut" and 2 or status == "cheapest" and 3 or 4
+        local rank = status == "sold" and 1
+            or status == "undercut" and 2
+            or (status == "cheapest" or status == "alone") and 3
+            or 4
         return ({ nameOf(a.key or "", a.link), a.qty, a.price, cheapest, rank, a.timeLeft })[column]
     end)
     local undercutN = #F.Trade.undercutList()
@@ -1628,6 +1631,10 @@ function UI.refreshAuctions()
                 r.cols[4]:SetText("|cffff6060" .. L("undercut") .. "|r")
             elseif status == "cheapest" then
                 r.cols[4]:SetText("|cff40ff40" .. L("cheapest") .. "|r")
+            elseif status == "alone" then
+                r.cols[4]:SetText("|cff40ff40" .. L("only yours") .. "|r")
+            elseif status == "no_answer" then
+                r.cols[4]:SetText("|cffffd100" .. L("no answer") .. "|r")
             else
                 r.cols[4]:SetText("|cff999999" .. L("not checked") .. "|r")
             end
@@ -2441,16 +2448,7 @@ function UI.refreshStatus()
     if UI.selected and F.Deals.pending(UI.selected) then
         UI.status:SetText(L(F.Deals.search and F.Deals.search.key == UI.selected and "checking..." or "queued"))
     elseif F.Sniper.active() and F.Sniper.rounds > 0 then
-        UI.status:SetText(
-            string.format(
-                L("Deals: %d · checked: %d · sniper: %d rounds, %d prices read, %d checks"),
-                all,
-                done,
-                F.Sniper.rounds,
-                F.Sniper.items,
-                F.Deals.snipes or 0
-            )
-        )
+        UI.status:SetText(string.format(L("Deals: %d · checked: %d"), all, done))
     elseif F.Scan.last and F.db.settings.sniper and hot > 0 then
         UI.status:SetText(
             string.format(
@@ -2495,8 +2493,26 @@ function UI.refreshSummary()
             s.vendorKnown,
             s.belowVendor,
             s.collecting
-        )
+        ) .. UI.sniperSummary()
     )
+end
+
+-- Sniper figures for the summary on the left.
+function UI.sniperSummary()
+    if not F.db.settings.sniper then
+        return "\n\n" .. L("Sniper: off")
+    end
+    if not F.Sniper.active() then
+        return "\n\n" .. string.format(L("Sniper: %d checks"), F.Deals.snipes or 0)
+    end
+    return "\n\n"
+        .. string.format(
+            L("Sniper: %d rounds\nPrices read: %d\nCandidates: %d\nChecks: %d"),
+            F.Sniper.rounds,
+            F.Sniper.items,
+            F.Sniper.found,
+            F.Deals.snipes or 0
+        )
 end
 
 function UI.refresh()
@@ -2530,43 +2546,92 @@ end
 -- Deals in the game's Buy tab ------------------------------------------------------------------------
 -- Rows of the game's browse results get a green mark when the item has a deal now, or when its
 -- lowest price is at or below what the sniper would check. Only reads what the game shows.
-local function dealItem(id, price)
-    for _, d in ipairs(F.Deals.list) do
-        if d.id == id then
-            return true
+-- A row is marked when its price is at or below what can still hold a deal (the sniper's threshold:
+-- vendor price, resale, shopping list, disenchant), or, in the item list, when the item has a deal.
+local function dealItem(id, price, link, perRow)
+    if not id then
+        return false
+    end
+    if not perRow then
+        for _, d in ipairs(F.Deals.list) do
+            if d.id == id then
+                return true
+            end
         end
     end
-    local kind = id and F.AH.kindOf(id)
-    if kind and kind ~= "gear" and price then
-        local key = U.key(kind, id)
-        local limit = F.Sniper.threshold(key, id, F.Data.market(F.db, F.Engine.scope()).history)
-        return limit ~= nil and price <= limit
+    if not price or price <= 0 then
+        return false
     end
-    return false
+    local key = F.AH.keyFor(id, link)
+    if not key and F.AH.kindOf(id) ~= "gear" then
+        key = U.key(F.AH.kindOf(id) or "item", id)
+    end
+    local limit = key and F.Sniper.threshold(key, id, F.Data.market(F.db, F.Engine.scope()).history)
+    return limit ~= nil and price <= limit
 end
 
+-- The game's lists: browse results (one row per item), the auctions of an item, the price tiers of
+-- a commodity.
+local BUY_LISTS = {
+    { "BrowseResultsFrame", false },
+    { "ItemBuyFrame", true },
+    { "CommoditiesBuyFrame", true },
+}
+
 function UI.highlightBrowse()
-    local results = AuctionHouseFrame and AuctionHouseFrame.BrowseResultsFrame
-    local list = results and results.ItemList
-    local box = list and list.ScrollBox
-    if not box or not box.ForEachFrame or not results:IsShown() then
+    if not AuctionHouseFrame or not F.db then
         return
     end
-    local on = F.db.settings.highlight
-    box:ForEachFrame(function(row)
-        local data = row.rowData or (row.GetElementData and row:GetElementData())
-        local id = type(data) == "table" and data.itemKey and data.itemKey.itemID
-        if not row.ffMark then
-            row.ffMark = row:CreateTexture(nil, "OVERLAY")
-            row.ffMark:SetColorTexture(0.25, 1, 0.25, 0.9)
-            row.ffMark:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-            row.ffMark:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-            row.ffMark:SetWidth(4)
+    for _, spec in ipairs(BUY_LISTS) do
+        local frame = rawget(AuctionHouseFrame, spec[1])
+        local list = type(frame) == "table" and rawget(frame, "ItemList")
+        local box = type(list) == "table" and rawget(list, "ScrollBox")
+        if type(box) == "table" and frame:IsShown() then
+            UI.markRows(box, spec[2], frame)
         end
-        if on and id and dealItem(id, data.minPrice) then
-            row.ffMark:Show()
+    end
+end
+
+local function eachRow(box, fn)
+    if box.ForEachFrame then
+        box:ForEachFrame(fn)
+    elseif box.GetFrames then
+        for _, row in ipairs(box:GetFrames() or {}) do
+            fn(row)
+        end
+    end
+end
+
+function UI.markRows(box, perRow, frame)
+    local on = F.db.settings.highlight
+    eachRow(box, function(row)
+        local data = row.rowData or (row.GetElementData and row:GetElementData())
+        local id, price, link
+        if type(data) == "table" then
+            id = data.itemKey and data.itemKey.itemID or data.itemID
+            if not id and frame and frame.GetItemID then
+                local ok, frameID = pcall(frame.GetItemID, frame)
+                id = ok and frameID or nil
+            end
+            price = data.minPrice or data.buyoutAmount or data.unitPrice
+            link = data.itemLink
+            if data.containsOwnerItem or (data.numOwnerItems or 0) >= (data.quantity or 1) then
+                id = nil
+            end
+        end
+        local mark = rawget(row, "ffMark")
+        if not mark then
+            mark = row:CreateTexture(nil, "OVERLAY")
+            rawset(row, "ffMark", mark)
+            mark:SetColorTexture(0.25, 1, 0.25, 0.9)
+            mark:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+            mark:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+            mark:SetWidth(4)
+        end
+        if on and id and dealItem(id, price, link, perRow) then
+            mark:Show()
         else
-            row.ffMark:Hide()
+            mark:Hide()
         end
     end)
 end
