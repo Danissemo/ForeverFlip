@@ -321,6 +321,26 @@ function S.trackLots(h, seq, now)
     return sold
 end
 
+-- Keys of every item other players listed in the scan (kept in memory only).
+function S.listedKeys(j)
+    local listed = {}
+    for key in pairs(j.groups or {}) do
+        listed[key] = true
+    end
+    return listed
+end
+
+-- True when a recent full scan (up to 20 minutes old) of this auction house saw no lot of the item
+-- from another player: nobody sells it, whether or not an exact search answers.
+function S.notListed(key)
+    local last = S.last
+    return last ~= nil
+        and last.listed ~= nil
+        and last.scope == F.Engine.scope()
+        and F.Engine.clock() - (last.at or 0) <= 1200
+        and not last.listed[key]
+end
+
 -- Called every frame while a scan runs.
 function S.step()
     local j = S.job
@@ -394,6 +414,7 @@ function S.step()
             own = j.own,
             stats = j.stats,
             waitVendor = j.waitVendor,
+            listed = S.listedKeys(j),
         }
         S.job = nil
         S.setHot(j.hot)

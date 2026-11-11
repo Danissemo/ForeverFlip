@@ -373,11 +373,26 @@ end
 -- Suggested price: below the cheapest other seller (by the undercut setting); the normal price when
 -- nobody else sells or the cheapest asks more than the maximum; else a fallback price.
 -- Returns price, floor, cheapest, why ("undercut", "normal", "last", "aux", "cost", "vendor").
+-- Nobody else sells the item for sure: the last check found no lot, or the server did not answer
+-- the check of an item the last full scan did not see, or a recent full scan did not see it at all.
+-- On WoW Forever an exact search for an item without any lot gets no answer.
+function T.noSellers(key)
+    local check = T.prices[key]
+    if check and clock() - check.at <= 300 then
+        return #check.rows == 0
+    end
+    local silent = T.noAnswer[key] and clock() - T.noAnswer[key] <= 300
+    return F.Scan.notListed(key) or (silent and not (F.Scan.last and F.Scan.last.listed and F.Scan.last.listed[key]))
+end
+
 function T.suggest(item)
     local check = T.prices[item.key]
     local floor = T.floorFor(item)
     if not check or clock() - check.at > 300 then
-        return nil, floor, nil
+        if not T.noSellers(item.key) then
+            return nil, floor, nil
+        end
+        check = { rows = {}, at = clock() }
     end
     local s = F.db.settings
     local rule = T.rule(item.key) or {}
@@ -693,7 +708,7 @@ local function postFirst(list, quantity)
                 price = nil -- a guess needs the player's own look on the Sell page
             end
             local check = T.prices[item.key]
-            if not price and not (check and clock() - check.at <= 300) then
+            if not price and not (check and clock() - check.at <= 300) and not T.noSellers(item.key) then
                 T.checkPrice(item.key)
                 return true, "checking"
             end

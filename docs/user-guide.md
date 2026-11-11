@@ -272,6 +272,10 @@ from Settings. Gear and plain items are listed in whole silver; commodities may 
   3. your cost plus 25%;
   4. 1.5 × the vendor price, the game's own default.
 
+  This also happens without waiting for a check when the item was not on the auction house at the
+  last full scan (up to 20 minutes old), or when the auction house did not answer the check: on WoW
+  Forever a search for an item without any lot gets no answer.
+
   The last two are guesses: they are shown in yellow and Post next bought / Post all skip them.
   Check the price, change it if needed and press **Post**. Every price you post is remembered for
   the next time.

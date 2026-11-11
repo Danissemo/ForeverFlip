@@ -1080,7 +1080,10 @@ function UI.createSell(p)
             UI.sellSelected = row.item
             UI.sellPrice:SetText("")
             if row.item then
-                F.Trade.checkPrice(row.item.key)
+                -- An item a fresh full scan did not see has no lots: a search would get no answer.
+                if not F.Scan.notListed(row.item.key) then
+                    F.Trade.checkPrice(row.item.key)
+                end
                 UI.sellQty:SetText(row.item.count)
                 local rule = F.Trade.rule(row.item.key) or {}
                 UI.ruleMin:SetText(rule.min and U.plainMoney(rule.min) or "")
@@ -1296,6 +1299,14 @@ function UI.refreshSell()
     local lines = {}
     if item.position and item.position.mode == "vendor" then
         lines[#lines + 1] = L("Bought as a vendor deal: sell it to any vendor (button at the merchant).")
+    end
+    if price and not F.Trade.prices[item.key] and F.Scan.notListed(item.key) then
+        lines[#lines + 1] = string.format(
+            L("Nobody listed it at the last full scan (%d min ago)."),
+            math.floor((F.Engine.clock() - F.Scan.last.at) / 60)
+        )
+    elseif price and F.Trade.noAnswer[item.key] and not F.Trade.prices[item.key] then
+        lines[#lines + 1] = L("The auction house did not answer the check: nobody seems to sell it.")
     end
     if price then
         if UI.sellPrice:GetText() == "" then

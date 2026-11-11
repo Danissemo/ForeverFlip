@@ -20,7 +20,9 @@ All notable changes are listed here. The format follows
   - the price comes, in this order, from your last post of the item, auxForever, your cost + 25%, or
     1.5 × the vendor price;
   - guessed prices are marked and skipped by the posting queues;
-  - the page says when nobody sells the item or when the auction house did not answer.
+  - the page says when nobody sells the item or when the auction house did not answer;
+  - an item missing from a full scan of the last 20 minutes, or whose check got no answer (WoW
+    Forever does not answer a search for an item without lots), gets its price at once.
 
 ## [1.1.0] - 2026-11-10
 

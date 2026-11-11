@@ -5,6 +5,8 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["Nobody listed it at the last full scan (%d min ago)."] = "На останньому повному скані (%d хв тому) його ніхто не виставляв.",
+    ["The auction house did not answer the check: nobody seems to sell it."] = "Аукціон не відповів на перевірку: схоже, його ніхто не продає.",
     ["This is a guess: check the price, change it if needed and press Post. Post next bought and Post all skip guessed prices."] = "Це припущення: перевірте ціну, змініть її за потреби й натисніть «Виставити». «Виставити наступне куплене» та «Виставити все» пропускають припущені ціни.",
     ["Nobody sells it on the auction house now and ForeverFlip knows no price for it. Type a price and press Post; it is remembered for the next time."] = "Зараз ніхто не продає цей предмет на аукціоні, і ForeverFlip не знає його ціни. Введіть ціну й натисніть «Виставити»; вона запам'ятається на наступний раз.",
     ["The auction house did not answer the check. Press Check price again, or type a price and press Post."] = "Аукціон не відповів на перевірку. Натисніть «Перевірити ціну» ще раз або введіть ціну й натисніть «Виставити».",

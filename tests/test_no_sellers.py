@@ -39,11 +39,25 @@ class NoSellerTests(unittest.TestCase):
         local ok,why=T.postAll()
         for i=n+1,#calls do assert(calls[i][1]~='PostItem','a guess is never posted by the queue') end''')
 
-    def test_no_answer_is_reported(self):
-        run(NONE + '''T.checkPrice('i:70');run(1.1);assert(F.Deals.search);run(11)
+    def test_item_missing_from_a_fresh_scan_gets_a_price_without_a_check(self):
+        run(NONE + '''assert(F.Scan.notListed('i:70') and not F.Scan.notListed('c:10'))
+        local price,_,_,why=T.suggest(item());assert(price==100 and why=='vendor',why)
+        UI.show('sell');for _,r in ipairs(UI.sellTable.rows) do if r.key=='i:70' then UI.sellSelected=r.item end end
+        UI.refresh();assert(UI.sellText:GetText():find('last full scan',1,true),UI.sellText:GetText())
+        assert(UI.sellPrice:GetText()~='')''')
+
+    def test_no_answer_counts_as_no_sellers(self):
+        run(NONE + '''now=now+1300 -- the scan is too old to tell
+        assert(not F.Scan.notListed('i:70') and T.suggest(item())==nil)
+        T.checkPrice('i:70');run(1.1);assert(F.Deals.search);run(11)
         assert(T.noAnswer['i:70'] and not T.prices['i:70'])
+        local price,_,_,why=T.suggest(item());assert(price==100 and why=='vendor',why)
         UI.show('sell');for _,r in ipairs(UI.sellTable.rows) do if r.key=='i:70' then UI.sellSelected=r.item end end
         UI.refresh();assert(UI.sellText:GetText():find('did not answer',1,true),UI.sellText:GetText())''')
+
+    def test_no_answer_for_a_listed_item_is_not_trusted(self):
+        run(NONE + '''T.checkPrice('c:10');run(1.1);assert(F.Deals.search);run(11)
+        assert(T.noAnswer['c:10'] and not T.noSellers('c:10'),'the scan saw cloth listed')''')
 
     def test_aux_price_is_preferred_over_a_guess(self):
         run(NONE + '''AuxForeverAPI={IsReady=function() return true end,GetUsualPrice=function(id) return id==70 and 54321 or nil end}
