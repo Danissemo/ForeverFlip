@@ -149,13 +149,18 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 | ⬜ | Hardcore | On a hardcore realm the prices are separate from the normal realm of the same name. |
 | ⬜ | Shop materials | With materials in the bags, Shop materials adds only what is missing. |
 | ⬜ | Saved data guard | Rename `ForeverFlip.lua` in SavedVariables while the game is closed, start the game: the window asks Reload / Continue. Put the file back afterwards. |
+| ⬜ | House badge | At a faction auction house the top right corner shows its name in blue (Alliance) or red (Horde); in Booty Bay, Gadgetzan or Everlook it shows the neutral house in gold. Going from one to the other and back shows each house's own scan and deals. |
+| ⬜ | End of a full scan | On a large house the game does not stall when the scan finishes reading. |
+| ⬜ | Expired auction | Let an auction of bought stock expire (or cancel it in the game's own window), take the mail: Post next bought offers the item again at once. |
+| ⬜ | Full bags | Fill the bags, take auction mail with items: ForeverFlip stops with "bags full"; free space and take it again: the journal has the mail once. |
 
 ### Beta testing
 
 Beta releases (`vX.Y.Z-beta.N`, marked **Pre-release** on the
 [releases page](https://github.com/Danissemo/ForeverFlip/releases)) are for players who want to help
 test before a release. Install one like a normal release (replace the `ForeverFlip` folder; your saved
-data is kept), restart the game, and go through the table of the version above.
+data is kept), restart the game, and go through the table of the version above. The last rows of
+*New in 1.2* (from House badge on) are the fixes since 1.2.0-beta.1.
 
 Report a bug in an [issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose) (the bug
 report form asks for the version and the log); questions and general impressions are welcome in

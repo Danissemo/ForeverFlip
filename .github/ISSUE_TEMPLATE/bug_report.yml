@@ -11,7 +11,7 @@ body:
     attributes:
       label: ForeverFlip version
       description: Type `/ff` in game.
-      placeholder: 1.2.0-beta.1
+      placeholder: 1.2.0-beta.2
     validations:
       required: true
   - type: dropdown
