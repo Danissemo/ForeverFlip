@@ -46,6 +46,24 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **The end of a full scan** no longer stalls the game on a large history: forgetting old items
   and sweeping vanished ones run a slice per frame, and the scan is copied into the saved data on
   logout instead of at once.
+- **Latency audit fixes:**
+  - a single check (a click) goes before a running Check all and takes the place of a background
+    search in flight; searches wait for a full scan only while it waits for its answer;
+  - a price offer nobody confirms ends after a minute; a request the game refuses ends after three
+    tries and does not count against the 100 searches a minute; a sniper candidate whose search could
+    not start stays in the list; the full scan can release a stuck throttle itself;
+  - selecting another deal drops the price offer of the previous one, and Buy next confirms the deal
+    it shows; the status line follows a purchase (asking for the price, confirm, buying);
+  - Selling: the selected item follows its bag slot (also when scrolled out of view), a filled-in
+    price follows a new check while a typed one is kept, nothing is filled in while you type, Post
+    is enabled as soon as a price is typed, a second post waits for the first, an auction is not
+    cancelled twice;
+  - answers that come after the auction house closed check nothing; a repeated answer does not use
+    up a page; a bid check without an answer does not read old results; an auction house error ends
+    only a purchase sent a moment ago; item data is not asked for twice in a row;
+  - mail the game keeps refusing stops the mail job instead of looping; an error in one part of the
+    frame update no longer stops the others; the window redraws every second (timers, messages);
+  - the bags are read once per frame (a Selling refresh read them six times or more).
 - **Faster buying:** after a purchase the deal is worked out from the lots already read, so the next
   lot is bought on the next click without a new search; a click on Buy no longer waits for (or is
   disabled by) a search in flight. Before, every purchase searched the item again, and the Buy

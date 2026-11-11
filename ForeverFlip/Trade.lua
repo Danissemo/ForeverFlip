@@ -23,6 +23,13 @@ function T.busy()
     return T.op ~= nil and T.op.state ~= "done"
 end
 
+-- A post waits for the game's AUCTION_HOUSE_AUCTION_CREATED (up to 10 seconds) before the next one:
+-- a second post meanwhile would take the place of the first in T.lastPost.
+function T.postingNow()
+    local l = T.lastPost
+    return l ~= nil and #l.ids < l.auctions and clock() - l.at < 10
+end
+
 -- Buying ----------------------------------------------------------------------------------------
 -- T.op = { state = "quote" | "quoted" | "awaiting", key, kind, id, qty, cost, unit, auctionID, deal }
 -- A search in flight does not stop a purchase: buying goes first (Deals.yieldToPurchase).
@@ -43,6 +50,7 @@ function T.buy(key)
     end
     -- A search waiting for its answer (the sniper, a check) steps aside and is sent again later.
     F.Deals.yieldToPurchase()
+    F.Engine.message = nil
     local op = {
         key = deal.key,
         kind = deal.kind,
@@ -119,6 +127,7 @@ function T.confirm()
         return false
     end
     if not pcall(F.AH.confirm, op.id, op.qty) then
+        F.Engine.notify("error")
         return false
     end
     op.state, op.at = "awaiting", clock()
@@ -197,7 +206,7 @@ end
 
 function T.onError()
     local op = T.op
-    if op and op.state == "awaiting" and op.kind ~= "commodity" then
+    if op and op.state == "awaiting" and op.kind ~= "commodity" and clock() - op.at <= 10 then
         failed(op)
     end
 end
@@ -255,7 +264,13 @@ function T.step()
         T.op = nil
         F.Engine.notify("price_changed")
         F.Engine.changed()
+    elseif op and op.state == "quoted" and clock() - op.at > 60 then
+        pcall(F.AH.cancelQuote)
+        T.op = nil
+        F.Engine.notify("quote_expired")
+        F.Engine.changed()
     end
+    T.posting = T.postingNow()
     T.stepChecks()
     if
         F.AH.isOpen()
@@ -474,7 +489,7 @@ function T.durationFor(key, qty)
 end
 
 function T.post(item, qty, price, duration)
-    if T.posting or not F.AH.isOpen() then
+    if T.postingNow() or not F.AH.isOpen() then
         return false, "busy"
     end
     if not U.finite(qty) or qty < 1 or qty > item.count or not U.finite(price) or price < 1 then
@@ -487,11 +502,13 @@ function T.post(item, qty, price, duration)
         end
     end
     local confirm = T.pendingPost
+        and T.pendingPost.key == item.key
         and T.pendingPost.bag == item.bag
         and T.pendingPost.slot == item.slot
         and T.pendingPost.price == price
         and T.pendingPost.qty == qty
-    T.lastItem = { bag = item.bag, slot = item.slot, price = price, qty = qty }
+        and T.pendingPost.duration == duration
+    T.lastItem = { key = item.key, bag = item.bag, slot = item.slot, price = price, qty = qty, duration = duration }
     F.db.lastPosted = F.db.lastPosted or {}
     F.db.lastPosted[item.key] = price
     F.AH.learnDeposit(item, duration)
@@ -501,7 +518,7 @@ function T.post(item, qty, price, duration)
         return false, "error"
     end
     if needs and not confirm then
-        T.pendingPost = { bag = item.bag, slot = item.slot, price = price, qty = qty }
+        T.pendingPost = T.lastItem
         return true, "confirm"
     end
     T.pendingPost = nil
@@ -975,7 +992,11 @@ end
 function T.undercutList()
     local out = {}
     for _, a in ipairs(T.owned or {}) do
+        local just = T.cancelled[a.auctionID] and clock() - T.cancelled[a.auctionID] < 30
         local status, cheapest = T.ownedStatus(a)
+        if just then
+            status = nil
+        end
         local item = status == "undercut" and U.parseKey(a.key)
         if item then
             local floor = T.floorFor({ key = a.key, kind = item.kind })
@@ -1095,8 +1116,12 @@ function T.ownedStatus(a)
 end
 
 -- Cancelling loses the deposit (and maybe more: GetCancelCost); the item comes back by mail.
+T.cancelled = {}
 function T.cancelAuction(a)
     if not a or a.sold or not F.AH.isOpen() then
+        return false
+    end
+    if T.cancelled[a.auctionID] and clock() - T.cancelled[a.auctionID] < 30 then
         return false
     end
     if not pcall(F.AH.cancel, a.auctionID) then
@@ -1113,6 +1138,7 @@ function T.cancelAuction(a)
             end
         end
     end
+    T.cancelled[a.auctionID] = clock()
     T.ownedDue = clock() + 2
     F.Engine.notify("cancelled")
     F.Engine.changed()

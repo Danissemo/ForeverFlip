@@ -55,10 +55,14 @@ function A.keyFor(id, link)
 end
 
 -- Item data requests, paced at 40 per second.
-local queue, queued, nextPump = {}, {}, 0
+local queue, queued, nextPump, sentAt = {}, {}, 0, {}
 function A.requestItem(id)
     if queued[id] or #queue >= 4000 then
         return
+    end
+    local t = GetTime and GetTime() or 0
+    if sentAt[id] and t - sentAt[id] < 5 then
+        return -- asked for a moment ago: its answer is on the way
     end
     if C_Item and C_Item.IsItemDataCachedByID and C_Item.IsItemDataCachedByID(id) then
         return
@@ -77,6 +81,7 @@ function A.pump(now)
             return
         end
         queued[id] = nil
+        sentAt[id] = now
         if C_Item and C_Item.RequestLoadItemDataByID then
             pcall(C_Item.RequestLoadItemDataByID, id)
         end
@@ -544,7 +549,26 @@ function A.bagReport()
     return out
 end
 
+-- The bags are read once per frame: a page refresh asks for them several times (counts, queues,
+-- rows). Each caller gets its own copies, since callers change the entries.
+local bagFrame, bagCache
 function A.bagItems()
+    local t = GetTime and GetTime()
+    if not t or t ~= bagFrame or not bagCache then
+        bagCache, bagFrame = A.readBags(), t
+    end
+    local out = {}
+    for i, b in ipairs(bagCache) do
+        local copy = {}
+        for k, v in pairs(b) do
+            copy[k] = v
+        end
+        out[i] = copy
+    end
+    return out
+end
+
+function A.readBags()
     local out = {}
     if not C_Container or not ItemLocation then
         return out

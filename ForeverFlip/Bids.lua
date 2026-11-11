@@ -82,10 +82,12 @@ end
 
 -- Exact read of a candidate: the auction with the lowest next bid still worth it.
 function B.check(key, done)
-    return F.Deals.enqueue(key, function(k, ...)
-        B.read(k)
+    return F.Deals.enqueue(key, function(k, rows, ...)
+        if rows ~= nil then
+            B.read(k)
+        end
         if done then
-            done(k, ...)
+            done(k, rows, ...)
         end
     end, done and ("bidall:" .. key) or ("bid:" .. key))
 end

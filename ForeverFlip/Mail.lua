@@ -214,8 +214,17 @@ function Mail.step(now)
     end
     for i = 1, (GetInboxNumItems() or 0) do
         if Mail.isAuction(i) then
-            local _, _, _, _, money, _, _, hasItem = GetInboxHeaderInfo(i)
+            local _, _, _, subject, money, _, _, hasItem = GetInboxHeaderInfo(i)
             job.next = now + Mail.PACE
+            -- The same mail asked for again and again without a change: the game refuses it.
+            local sig = tostring(i) .. "|" .. tostring(subject) .. "|" .. tostring(money) .. "|" .. tostring(hasItem)
+            job.tries = job.tries or {}
+            job.tries[sig] = (job.tries[sig] or 0) + 1
+            if job.tries[sig] > 5 then
+                Mail.stop("mail_stuck")
+                return
+            end
+            local first = job.tries[sig] == 1
             if (money or 0) <= 0 and hasItem and freeSlots() == 0 then
                 -- Not booked yet: the mail stays, and is booked when its item is taken.
                 Mail.stop("bags_full")
@@ -224,14 +233,14 @@ function Mail.step(now)
             Mail.record(i)
             if (money or 0) > 0 then
                 TakeInboxMoney(i)
-                job.gold = job.gold + money
+                job.gold = job.gold + (first and money or 0)
             elseif hasItem then
                 if freeSlots() == 0 then
                     Mail.stop("bags_full")
                     return
                 end
                 AutoLootMailItem(i)
-                job.items = job.items + 1
+                job.items = job.items + (first and 1 or 0)
             end
             F.Engine.changed()
             return

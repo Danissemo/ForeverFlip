@@ -47,6 +47,7 @@ local MESSAGES = {
     quote_ready = "Price confirmed. Press Confirm purchase.",
     price_changed = "The price changed. The deal is checked again.",
     quote_expired = "The price offer expired. Press Buy again.",
+    mail_stuck = "The game kept refusing an auction mail: taking mail stopped. Take it by hand.",
     requote = "The price offer was about to expire; a new one was asked. Press Confirm when it arrives.",
     bought = "Purchase recorded.",
     buy_failed = "The purchase failed (someone was faster). The deal is checked again.",
@@ -681,6 +682,11 @@ function UI.createDeals(p)
     end)
     UI.cancelButton:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
     UI.confirmButton = button(bar, "Confirm purchase", 150, function()
+        local op = F.Trade.op
+        if op and UI.selected and op.key ~= UI.selected then
+            F.Trade.cancel()
+            return
+        end
         F.Trade.confirm()
     end)
     UI.confirmButton:SetPoint("RIGHT", UI.cancelButton, "LEFT", -4, 0)
@@ -716,6 +722,10 @@ function UI.createDeals(p)
 end
 
 function UI.selectDeal(key)
+    local op = F.Trade.op
+    if op and op.key ~= key and (op.state == "quote" or op.state == "quoted") then
+        F.Trade.cancel() -- Confirm must never buy an item other than the selected one
+    end
     UI.selected = key
     local d = key and F.Deals.get(key)
     if d and (not d.verified or F.Engine.clock() - d.verified > F.Deals.FRESH) then
@@ -1327,6 +1337,14 @@ function UI.createSell(p)
     priceLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 36)
     priceLabel:SetText(L("Price each"))
     UI.sellPrice = editbox(bar, 110)
+    UI.sellPrice:SetScript("OnTextChanged", function(self, userInput)
+        if self:GetText() == "" then
+            UI.sellPriceAuto = nil
+        elseif userInput then
+            UI.sellPriceAuto = nil -- typed by the player: kept as it is
+        end
+        F.Engine.changed()
+    end)
     UI.sellPrice:SetPoint("LEFT", priceLabel, "RIGHT", 10, 0)
     local qtyLabel = text(bar, "GameFontNormal")
     qtyLabel:SetPoint("LEFT", UI.sellPrice, "RIGHT", 14, 0)
@@ -1408,14 +1426,14 @@ function UI.createSell(p)
         F.Engine.notify(why)
     end)
     UI.postAuction:SetPoint("LEFT", UI.postAll, "RIGHT", 4, 0)
-    for b, text in pairs({
+    for b, tip in pairs({
         [UI.postAll] = "Posts every item for sale, one per click.",
         [UI.postAuction] = "Posts only items the auction house pays more for than a vendor, after the cut and the deposits (Best column). Items a vendor pays as much for stay in the bags for the merchant.",
     }) do
         b:SetScript("OnEnter", function(self)
             if GameTooltip then
                 GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                GameTooltip:SetText(L(text), 1, 1, 1, 1, true)
+                GameTooltip:SetText(L(tip), 1, 1, 1, 1, true)
                 GameTooltip:Show()
             end
         end)
@@ -1473,7 +1491,9 @@ end
 
 -- Capture every item in the selected category, independently of pagination and later updates.
 function UI.statusTargets()
-    local keys, scope, verifyDeals = {}, UI.section, false
+    ---@type boolean|fun(key: string, complete: function): boolean
+    local verifyDeals = false
+    local keys, scope = {}, UI.section
     if UI.section == "deals" then
         scope, verifyDeals = "deals:" .. UI.filter, true
         for _, d in ipairs(F.Deals.visible(UI.filter)) do
@@ -1553,6 +1573,19 @@ function UI.refreshSell()
             p and p.mode or nil,
         })[column]
     end)
+    if UI.sellSelected then
+        local found
+        for _, it in ipairs(sellItems(hiddenView)) do
+            if it.key == UI.sellSelected.key then
+                found = it
+                break
+            end
+        end
+        if not found then
+            UI.sellPrice:SetText("")
+        end
+        UI.sellSelected = found
+    end
     local hiddenCount = #F.Trade.hiddenItems()
     UI.sellSaleTab:SetText(L("For sale") .. " (" .. #sellItems(false) .. ")")
     UI.sellHiddenTab:SetText(L("Hidden") .. " (" .. hiddenCount .. ")")
@@ -1653,8 +1686,16 @@ function UI.refreshSell()
         lines[#lines + 1] = L("The auction house did not answer the check: nobody seems to sell it.")
     end
     if price then
-        if UI.sellPrice:GetText() == "" then
-            UI.sellPrice:SetText(U.plainMoney(math.max(price, floor or 0)))
+        local suggested = U.plainMoney(math.max(price, floor or 0))
+        local typing = UI.sellPrice.HasFocus and UI.sellPrice:HasFocus()
+        local shown = UI.sellPrice:GetText()
+        if not typing and (shown == "" or shown == UI.sellPriceAuto) and shown ~= suggested then
+            UI.sellPrice:SetText(suggested)
+            UI.sellPriceAuto = suggested
+        end
+        if F.Deals.pending(item.key) then
+            -- A check is on the way: the price shown is the last one known.
+            lines[#lines + 1] = "|cffffd100" .. L("Reading current listings...") .. "|r"
         end
         if F.Trade.GUESSES[why] and UI.sellPrice.SetTextColor then
             UI.sellPrice:SetTextColor(1, 0.82, 0)
@@ -3054,6 +3095,15 @@ function UI.refreshStatus()
         return
     elseif batch and batchTotal > 0 and UI.completedBatch ~= batch then
         UI.completedBatch, UI.batchSummaryAt = batch, F.Engine.clock()
+    end
+    local op = F.Trade.op
+    if op and (op.state == "quote" or op.state == "quoted" or op.state == "awaiting") then
+        UI.status:SetText(
+            op.state == "quoted" and string.format(L("Price offer ready: press Confirm (%s)."), U.money(op.cost))
+                or op.state == "quote" and L("Asking the auction house for the price of the purchase...")
+                or L("Buying: waiting for the auction house...")
+        )
+        return
     end
     local msg = F.Engine.message
     if msg and F.Engine.clock() - (F.Engine.messageAt or 0) < 20 then

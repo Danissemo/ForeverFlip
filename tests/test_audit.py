@@ -1,0 +1,151 @@
+"""Findings of the two latency audits of 1.2.0-beta.2 that were confirmed and fixed: stuck states,
+queue fairness, request budgets, purchases bound to what is on screen, the price field, posting and
+cancelling twice, late answers, mail that never goes away, and one failing part stopping the rest."""
+
+import unittest
+
+from test_addon import SETUP, run
+
+BASE = SETUP + '''local F, D, T, UI = ForeverFlip, ForeverFlip.Deals, ForeverFlip.Trade, ForeverFlip.UI
+F.Engine.autoVerify = false; F.db.settings.sniper = false
+'''
+
+
+class StuckStateTests(unittest.TestCase):
+    def test_a_quote_nobody_confirms_ends_after_a_minute(self):
+        run(BASE + '''fullScan(); D.verify('c:10'); answer()
+        assert(T.buy('c:10')); fire('COMMODITY_PRICE_UPDATED', 60, 900)
+        assert(T.op and T.op.state == 'quoted')
+        run(61)
+        assert(not T.op and F.Engine.message == 'quote_expired', 'searches and checks go on again')''')
+
+    def test_a_request_the_api_keeps_refusing_ends_and_spends_no_budget(self):
+        run(BASE + '''F.AH.search = function() error('refused') end
+        T.checkPrice('c:10')
+        for _ = 1, 50 do run(0.2) end
+        assert(not D.pending('c:10'), 'given up after three tries')
+        assert(#D.sent == 0, 'nothing was sent, so nothing counts against the 100 a minute')''')
+
+    def test_an_error_in_one_part_does_not_stop_the_others(self):
+        run(BASE + '''local steps = 0
+        local trade = F.Trade.step
+        F.Trade.step = function(...) steps = steps + 1; return trade(...) end
+        F.Scan.step = function() error('scan broke') end
+        run(1)
+        assert(steps > 0, 'the trade step still runs')''')
+
+
+class QueueTests(unittest.TestCase):
+    def test_a_single_check_goes_before_a_check_all_batch(self):
+        run(BASE + '''for i = 1, 20 do T.checkPrice('c:' .. (900 + i), function() end, true) end
+        T.checkPrice('c:10')
+        assert(D.requests[1].key == 'c:10', 'the click is next, not after the batch')''')
+
+    def test_a_sniper_candidate_that_could_not_start_is_kept(self):
+        run(BASE + '''F.Sniper.candidates = { { key = 'c:10', score = 1 } }
+        F.Sniper.active = function() return true end
+        D.request = function() return false end
+        F.db.settings.sniper = true; D.scope = F.Engine.scope(); D.lastRequest = -10
+        D.snipe()
+        assert(F.Sniper.candidates[1] and F.Sniper.candidates[1].key == 'c:10', 'back in the list')''')
+
+    def test_reading_a_scan_does_not_hold_back_checks(self):
+        run(BASE + '''local S = F.Scan
+        S.job = { state = 'reading' }
+        assert(not S.blocking(), 'reading is local work')
+        S.job = { state = 'waiting' }
+        assert(S.blocking(), 'waiting for the answer still holds searches back')
+        S.job = nil''')
+
+
+class LateAnswerTests(unittest.TestCase):
+    def test_answers_after_the_house_closed_check_nothing(self):
+        run(BASE + '''fullScan()
+        local called = false
+        D.verifyCallback = function() called = true end
+        fire('AUCTION_HOUSE_CLOSED'); AuctionHouseFrame:Hide() -- the game hides it
+        D.onResults(10)
+        assert(not called, 'a late answer does not mark a deal checked')''')
+
+    def test_a_bid_check_without_an_answer_reads_no_old_results(self):
+        run(BASE + '''fullScan()
+        F.Bids.candidates = { { key = 'i:30', id = 30, count = 1, value = 100000, bid = 100, profit = 1000 } }
+        local read = false
+        F.Bids.read = function() read = true end
+        local done = false
+        F.Bids.check('i:30', function() done = true end)
+        run(12)
+        assert(done and not read, 'the timeout is no answer')''')
+
+
+class PurchaseOnScreenTests(unittest.TestCase):
+    def test_selecting_another_deal_drops_the_quote(self):
+        run(BASE + '''fullScan(); D.verify('c:10'); answer()
+        assert(T.buy('c:10')); fire('COMMODITY_PRICE_UPDATED', 60, 900)
+        UI.selectDeal('i:30')
+        assert(not T.op and lastCall('CancelCommoditiesPurchase'), 'Confirm cannot buy c:10 now')''')
+
+    def test_buy_next_confirms_the_quoted_deal_and_shows_it(self):
+        run(BASE + '''fullScan(); D.verify('c:10'); answer()
+        UI.selected = 'c:10'; assert(T.buy('c:10')); fire('COMMODITY_PRICE_UPDATED', 60, 900)
+        UI.selected = nil
+        F.Engine.keyBuyNext()
+        assert(UI.selected == 'c:10' and T.op.state == 'awaiting')''')
+
+    def test_the_status_line_follows_the_purchase(self):
+        run(BASE + '''fullScan(); D.verify('c:10'); answer()
+        assert(T.buy('c:10')); UI.refresh()
+        assert(UI.status:GetText():find('Asking'), UI.status:GetText())
+        fire('COMMODITY_PRICE_UPDATED', 60, 900); UI.refresh()
+        assert(UI.status:GetText():find('Confirm'), UI.status:GetText())''')
+
+
+class SellingTests(unittest.TestCase):
+    SELL = BASE + '''putBag(0, 1, 30, 1); putBag(0, 2, 10, 20)
+    UI.show('sell')
+    local function pick(key) for _, r in ipairs(UI.sellTable.rows) do if r.key == key then r:Click() return end end end
+    '''
+
+    def test_the_selected_item_follows_its_bag_slot(self):
+        run(self.SELL + '''pick('c:10'); assert(UI.sellSelected.slot == 2)
+        bags[0][2] = nil; putBag(0, 7, 10, 20)
+        run(0.1); UI.refresh() -- the bags are read once per frame
+        assert(UI.sellSelected and UI.sellSelected.slot == 7, 'the post goes to the slot the item is in now')
+        bags[0][7] = nil; run(0.1); UI.refresh()
+        assert(not UI.sellSelected, 'an item gone from the bags is no longer selected')''')
+
+    def test_a_filled_in_price_follows_a_new_check_and_a_typed_one_is_kept(self):
+        run(self.SELL + '''pick('i:30')
+        T.prices['i:30'] = { rows = { { unit = 50000, qty = 1 } }, at = now }; UI.refresh()
+        local first = UI.sellPrice:GetText(); assert(first ~= '', 'a price is filled in')
+        T.prices['i:30'] = { rows = { { unit = 90000, qty = 1 } }, at = now }; UI.refresh()
+        assert(UI.sellPrice:GetText() ~= first, 'the new check changed the price')
+        UI.sellPrice:SetText('7g'); UI.sellPriceAuto = nil -- typed by the player
+        T.prices['i:30'] = { rows = { { unit = 30000, qty = 1 } }, at = now }; UI.refresh()
+        assert(UI.sellPrice:GetText() == '7g', 'a typed price is kept')''')
+
+    def test_a_second_post_waits_for_the_first(self):
+        run(self.SELL + '''T.lastPost = { ids = {}, auctions = 1, at = now, qty = 1, open = 1 }
+        local item = F.AH.bagItems()[1]
+        local ok, why = T.post(item, 1, 50000, 3)
+        assert(not ok and why == 'busy', tostring(why))
+        run(11)
+        assert(not T.postingNow(), 'no answer in 10 seconds: posting is free again')''')
+
+    def test_an_auction_is_cancelled_once(self):
+        run(self.SELL + '''local a = { auctionID = 5, qty = 1 }
+        assert(T.cancelAuction(a))
+        assert(not T.cancelAuction(a), 'the same auction is not cancelled twice')''')
+
+
+class MailTests(unittest.TestCase):
+    def test_a_mail_the_game_keeps_refusing_stops_the_job(self):
+        run(BASE + '''inbox = { { sender = 'Auction House', subject = 'Auction expired: Linen Bag', money = 0, items = 1 } }
+        AutoLootMailItem = function() end -- the game refuses it
+        MailFrame:Show(); fire('MAIL_SHOW'); F.Mail.start()
+        run(5)
+        assert(not F.Mail.job and F.Engine.message == 'mail_stuck', tostring(F.Engine.message))''')
+
+
+if __name__ == '__main__':
+    unittest.main()

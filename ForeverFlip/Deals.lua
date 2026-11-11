@@ -311,7 +311,8 @@ local function startRequest(r)
     end
     if not ok and D.search == r then
         D.search = nil
-        if r.fast then
+        D.sent[#D.sent] = nil -- the API refused it: nothing was sent
+        if r.fast or (r.attempts or 0) >= 3 then
             completeRequest(r, nil, false)
             F.Engine.changed()
             return true
@@ -369,9 +370,25 @@ function D.enqueue(key, callback, identity, fast)
             return false
         end
     end
-    D.requests[#D.requests + 1] = r
+    -- A single check (a click) goes before the searches of a Check all batch (fast ones).
+    local pos = #D.requests + 1
+    if not r.fast then
+        F.Engine.message = nil -- the status shows this check, not an older message
+        for i, q in ipairs(D.requests) do
+            if q.fast then
+                pos = i
+                break
+            end
+        end
+        -- A background search waiting for its answer (the sniper, an automatic check) steps
+        -- aside; it is sent again later.
+        if D.search and D.search.source ~= "manual" then
+            D.onDropped()
+        end
+    end
+    table.insert(D.requests, pos, r)
     D.queued[key] = r
-    if #D.requests == 1 and precise() >= r.readyAt then
+    if D.requests[1] == r and precise() >= r.readyAt then
         table.remove(D.requests, 1)
         D.queued[key] = nil
         if not startRequest(r) then
@@ -472,9 +489,16 @@ end
 
 -- Search results arrived (commodity: itemID; item or gear: item key table).
 function D.onResults(itemID, searchKey)
+    if not F.AH.isOpen() then
+        return
+    end
     local s = D.search
     if s and s.phase == "keys" and s.item.id == itemID and sameKey(searchKey, s.keys[s.keyIndex]) then
         local ok, rows, complete = pcall(F.AH.rows, s.item, searchKey)
+        if ok and not complete and s.keyPages > 0 and #rows <= (s.keyRows or 0) then
+            return -- the same rows again: wait for the page asked for (or the timeout)
+        end
+        s.keyRows = ok and #rows or 0
         -- A version with more listings than one page: up to 3 more pages, unless the cheapest
         -- page already reaches past the deal's price.
         local d = D.get(s.key)
@@ -513,6 +537,10 @@ function D.onResults(itemID, searchKey)
         finishSearch(nil, false)
         return
     end
+    if not complete and s.pages > 0 and #rows <= (s.rows or 0) then
+        return -- the same rows again: wait for the page asked for (or the timeout)
+    end
+    s.rows = #rows
     -- Enough when complete, or when the cheapest page already reaches past every deal price.
     local d = D.get(s.key)
     local last = rows[#rows]
@@ -528,7 +556,7 @@ end
 -- The player searched an item in the game's own Buy tab: its listings are a fresh check of the item,
 -- so a deal found in them can be bought at once, and a listed deal that is gone disappears.
 function D.learn(itemID, searchKey)
-    if not F.db or not F.db.settings.learnBrowsing or not D.scope or type(itemID) ~= "number" then
+    if not F.db or not F.db.settings.learnBrowsing or not D.scope or type(itemID) ~= "number" or not F.AH.isOpen() then
         return
     end
     local kind = F.AH.kindOf(itemID)
@@ -560,8 +588,13 @@ function D.onDropped()
     local s = D.search
     if s then
         D.search = nil
+        if s.phase == "browse" then
+            -- Its browse may still be answered: the next gear search must not take that answer
+            -- for its own (AH.foreignRecent).
+            F.AH.foreignAt = F.Engine.clock()
+        end
         s.readyAt = precise() + 2
-        if s.fast and (s.attempts or 0) >= 3 then
+        if (s.attempts or 0) >= 3 then
             completeRequest(s, nil, false)
         elseif s.source == "manual" then
             table.insert(D.requests, 1, s)
@@ -910,6 +943,9 @@ function D.snipe()
         if key and D.request(key, D.verifyCallback, "sniper", true) then
             D.snipes = (D.snipes or 0) + 1
             return true
+        end
+        if key then
+            F.Sniper.putBack(key)
         end
         return false
     end

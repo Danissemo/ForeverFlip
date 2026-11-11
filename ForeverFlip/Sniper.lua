@@ -162,6 +162,11 @@ function S.next()
     return c and c.key
 end
 
+-- A candidate whose search could not start (the request budget): first again next time.
+function S.putBack(key)
+    table.insert(S.candidates, 1, { key = key, score = math.huge })
+end
+
 local function idle()
     local D = F.Deals
     return F.AH.isOpen()

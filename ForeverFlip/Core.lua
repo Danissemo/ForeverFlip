@@ -354,24 +354,41 @@ function E.hookReplicate()
     end)
 end
 
-local paint, marks = 0, 0
+local paint, marks, tick = 0, 0, 0
+-- Each part of the frame update runs on its own: an error in one (reported once) does not stop the
+-- others, nor the window from being redrawn.
+local function part(name, fn, ...)
+    local ok, err = pcall(fn, ...)
+    if not ok then
+        report(name .. ": " .. tostring(err))
+    end
+end
 function E.update(elapsed)
     if not F.db then
         return
     end
-    F.AH.pump(GetTime and GetTime() or E.clock())
+    local now = GetTime and GetTime() or E.clock()
+    part("AH.pump", F.AH.pump, now)
     if F.AH.isOpen() then
         F.AH.ready(true) -- watched every frame, so a stuck "not ready" is noticed
     end
     if not F.Deals.pending() then
-        F.Scan.auto()
+        part("Scan.auto", F.Scan.auto)
     end
-    F.Scan.step()
-    F.Deals.step()
-    F.Sniper.step()
-    F.Trade.step()
-    F.Mail.step(GetTime and GetTime() or E.clock())
-    F.Share.step(GetTime and GetTime() or E.clock())
+    part("Scan.step", F.Scan.step)
+    part("Deals.step", F.Deals.step)
+    part("Sniper.step", F.Sniper.step)
+    part("Trade.step", F.Trade.step)
+    part("Mail.step", F.Mail.step, now)
+    part("Share.step", F.Share.step, now)
+    -- Timers on screen (the scan cooldown, a message running out) change without an event.
+    tick = tick + (elapsed or 0)
+    if tick >= 1 then
+        tick = 0
+        if F.UI and F.UI.frame and F.UI.frame:IsShown() then
+            E.dirty = true
+        end
+    end
     -- The game's Buy tab scrolls and reuses its rows: its deal marks are refreshed twice a second.
     marks = marks + (elapsed or 0)
     if marks >= 0.5 and F.UI and F.UI.highlightBrowse and F.AH.isOpen() then
@@ -400,6 +417,9 @@ end)
 function E.keyBuyNext()
     local T, UI = F.Trade, F.UI
     if T.op and T.op.state == "quoted" then
+        if UI then
+            UI.selected = T.op.key -- the confirmed purchase is the one on screen
+        end
         T.confirm()
         return
     end

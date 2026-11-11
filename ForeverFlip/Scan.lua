@@ -43,11 +43,11 @@ function S.busy()
     return S.job ~= nil
 end
 
--- Does the scan hold back searches and posts? For the whole scan, also while it waits for the
--- answer. Letting the sniper go on after a minute of waiting was tried: in game the answer then did
--- not come at all (auxForever holds its sniper back for the same reason).
+-- Does the scan hold back searches and posts? While it waits for the server's answer: letting the
+-- sniper go on during the wait was tried, and in game the answer then did not come at all
+-- (auxForever holds its sniper back for the same reason). Reading the answer is local work.
 function S.blocking()
-    return S.job ~= nil
+    return S.job ~= nil and S.job.state == "waiting"
 end
 
 -- The scan log: the last 20 requests and how each ended (shown by /ff diag).
@@ -88,7 +88,8 @@ function S.start()
     if S.cooldown() > 0 then
         return false, "cooldown"
     end
-    if not F.AH.ready(true) then
+    -- Not a peek: a throttle stuck on "not ready" is released after a few seconds (AH.ready).
+    if not F.AH.ready() then
         return false, "throttled"
     end
     -- The job exists before the request: the answer event may come during the call itself.
@@ -181,7 +182,7 @@ function S.auto()
         and S.cooldown() <= 0
         and not F.Trade.busy()
         and not F.Deals.searching()
-        and F.AH.ready(true)
+        and F.AH.ready()
     then
         S.start()
     end
