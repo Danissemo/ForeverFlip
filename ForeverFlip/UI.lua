@@ -60,6 +60,7 @@ local MESSAGES = {
     cancelled = "Auction cancelled. The item comes back by mail; the deposit is lost.",
     spend_limit = "The spending limit of this auction house visit is reached (Settings, Safety tab).",
     no_deal = "No deal to buy right now.",
+    bought_elsewhere = "A purchase made outside ForeverFlip was booked from its mail.",
 }
 
 -- Widgets ---------------------------------------------------------------------------------------------
@@ -1474,7 +1475,13 @@ function UI.refreshSell()
             if hiddenView then
                 r.cols[4]:SetText(item.away and L("not in the bags") or L("hidden"))
             else
-                r.cols[4]:SetText(p and (p.mode == "vendor" and L("sell to a vendor") or L("bought for resale")) or "")
+                local note = p
+                    and (
+                        p.mode == "vendor" and L("sell to a vendor")
+                        or p.mode == "other" and L("bought elsewhere")
+                        or L("bought for resale")
+                    )
+                r.cols[4]:SetText(note or "")
             end
             if UI.sellSelected and UI.sellSelected.key == item.key then
                 r.selected:Show()
@@ -3378,9 +3385,34 @@ end
 -- Item tooltips: the item's prices from the full scans.
 local ADVICE = {
     vendor = "Best: sell to a vendor",
-    auction = "Best: post on the auction house (after cut and deposits)",
+    auction = "Best: post on the auction house",
     disenchant = "Best: disenchant",
 }
+
+-- Item tooltips: what ForeverFlip knows about the item, for the auction house shown in the header.
+-- Each line says where its number comes from, so nothing reads as more certain than it is:
+--   prices        usual price (and its age), cheapest seen today, units listed at the last scan
+--   sales         units sold per day and the median price of sales seen, once measured
+--   yours         stock you bought (and what it cost), your auctions on sale now
+--   selling one   the vendor price (confirmed at a merchant or not), the auction house after the cut
+--                 and the deposits of the tries it takes to sell, and which pays more
+local function tipLine(tooltip, left, right, r, g, b)
+    tooltip:AddDoubleLine(left, right or "", r or 0.6, g or 0.6, b or 0.6, 1, 1, 1)
+end
+
+local function ownSelling(key)
+    local units, price = 0, nil
+    for _, a in ipairs(F.Trade.owned or {}) do
+        if a.key == key and not a.sold then
+            units = units + (a.qty or 1)
+            if a.price and a.qty and a.qty > 0 then
+                local each = a.price / a.qty
+                price = price and math.min(price, each) or each
+            end
+        end
+    end
+    return units, price
+end
 
 local function tooltipLines(tooltip)
     if not F.db or not F.db.settings.tooltipPrices or not tooltip.GetItem then
@@ -3389,100 +3421,117 @@ local function tooltipLines(tooltip)
     local _, link = tooltip:GetItem()
     local id = link and tonumber(link:match("item:(%d+)"))
     local key = id and F.AH.keyFor(id, link)
-    local h = key and F.Data.market(F.db, F.Engine.scope()).history[key]
-    local usual, usualAt, sharer = F.Market.usual(h)
-    if not usual or type(h) ~= "table" then
+    if not key then
         return
     end
-    local today = h.days and h.days[#h.days]
-    local low
-    local days = h.days or {}
-    for i = math.max(1, #days - 4), #days do
-        local d = days[i]
-        if d.min and (not low or d.min < low) then
-            low = d.min
+    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
+    if type(h) ~= "table" then
+        h = nil
+    end
+    local position = F.Data.char(F.db, F.Engine.owner()).positions[key]
+    local onSale, onSalePrice = ownSelling(key)
+    local usual, usualAt, sharer = F.Market.usual(h)
+    local advice = F.Market.advice(id, key, h)
+    if not usual and not position and onSale == 0 and not advice then
+        return
+    end
+    local houseName = UI.houseName()
+    tooltip:AddLine("ForeverFlip: " .. houseName, 1, 0.82, 0)
+    if usual and h then
+        tipLine(
+            tooltip,
+            L("Usual price")
+                .. " |cff999999("
+                .. UI.age(usualAt)
+                .. (sharer and (", " .. L("shared by") .. " " .. sharer) or "")
+                .. ")|r",
+            U.money(usual),
+            0.43,
+            0.84,
+            0.74
+        )
+        local today = h.days and h.days[#h.days]
+        if today and today.d == math.floor(F.Engine.clock() / 86400) and today.min then
+            tipLine(
+                tooltip,
+                string.format(L("Cheapest today (%d listed at the last scan)"), h.units or today.n or 0),
+                U.money(today.min)
+            )
+        end
+        local sale = F.Market.salePrice(h)
+        local s = F.Market.saleability(h, usual, F.Engine.clock())
+        if s.known then
+            tipLine(
+                tooltip,
+                L("Sold per day (measured between scans)"),
+                string.format("~%.1f", s.perDay) .. (sale and (" " .. L("at") .. " " .. U.money(sale)) or "")
+            )
+        else
+            tipLine(tooltip, L("Sales"), L("not measured yet (needs two scans)"))
+        end
+        local timing = F.Market.timing(h, F.Engine.clock())
+        if timing.ready and timing.spread >= 0.05 then
+            tipLine(
+                tooltip,
+                L("cheapest / dearest time"),
+                slotName(timing.low)
+                    .. " / "
+                    .. slotName(timing.high)
+                    .. string.format(" (+%d%%)", math.floor(timing.spread * 100 + 0.5))
+            )
         end
     end
-    tooltip:AddDoubleLine(
-        "ForeverFlip "
-            .. L("usual price")
-            .. " |cff999999("
-            .. UI.age(usualAt)
-            .. (sharer and (", " .. L("shared by") .. " " .. sharer) or "")
-            .. ")|r",
-        U.money(usual),
-        0.43,
-        0.84,
-        0.74,
-        1,
-        1,
-        1
-    )
+    if position and position.qty > 0 then
+        tipLine(
+            tooltip,
+            L("You hold"),
+            string.format(L("%d, paid %s each"), position.qty, U.money(math.floor(position.cost / position.qty))),
+            0.5,
+            0.8,
+            1
+        )
+    end
+    if onSale > 0 then
+        tipLine(
+            tooltip,
+            L("On sale by you"),
+            string.format(L("%d at %s"), onSale, onSalePrice and U.money(math.floor(onSalePrice)) or "?"),
+            0.5,
+            0.8,
+            1
+        )
+    end
     local deal = F.Deals.get(key)
     if deal then
-        tooltip:AddDoubleLine(
-            "ForeverFlip: " .. L("deal"),
-            string.format("%s %s", L("profit"), U.money(deal.profit)),
-            0.25,
-            1,
-            0.25,
-            0.25,
-            1,
-            0.25
-        )
+        tipLine(tooltip, L("Deal now"), string.format("%s %s", L("profit"), U.money(deal.profit)), 0.25, 1, 0.25)
     end
-    local sale = F.Market.salePrice(h)
-    if sale then
-        tooltip:AddDoubleLine(L("sells at (median of sales seen)"), U.money(sale), 0.6, 0.6, 0.6, 1, 1, 1)
-    end
-    local timing = F.Market.timing(h, F.Engine.clock())
-    if timing.ready and timing.spread >= 0.05 then
-        tooltip:AddDoubleLine(
-            L("cheapest / dearest time"),
-            slotName(timing.low)
-                .. " / "
-                .. slotName(timing.high)
-                .. string.format(" (+%d%%)", math.floor(timing.spread * 100 + 0.5)),
-            0.6,
-            0.6,
-            0.6,
-            1,
-            1,
-            1
-        )
-    end
-    if today and today.min then
-        tooltip:AddDoubleLine(
-            L("cheapest today / 5 days"),
-            U.money(today.min) .. " / " .. U.money(low),
-            0.6,
-            0.6,
-            0.6,
-            1,
-            1,
-            1
-        )
-    end
-    local s = F.Market.saleability(h, usual, F.Engine.clock())
-    if s.known then
-        tooltip:AddDoubleLine(
-            L("gone per day near the usual price"),
-            string.format("~%.1f", s.perDay),
-            0.6,
-            0.6,
-            0.6,
-            1,
-            1,
-            1
-        )
-    end
-    local advice = F.Market.advice(id, key, h)
     if advice then
-        local note = ""
-        if advice.best == "vendor" and advice.vendorHow ~= "seen" then
-            note = " |cff999999(" .. L("vendor price not confirmed yet") .. ")|r"
+        if advice.vendor then
+            tipLine(
+                tooltip,
+                L("Vendor pays")
+                    .. (
+                        advice.vendorHow == "seen" and ""
+                        or (" |cff999999(" .. L("not confirmed at a merchant") .. ")|r")
+                    ),
+                U.money(advice.vendor)
+            )
         end
-        tooltip:AddDoubleLine(L(ADVICE[advice.best]) .. note, U.money(advice.value), 1, 0.82, 0, 1, 1, 1)
+        if advice.auction then
+            tipLine(
+                tooltip,
+                string.format(
+                    L("Auction house, after the %d%% cut and %d deposits"),
+                    math.floor(F.Market.CUT * 100 + 0.5),
+                    advice.tries
+                ),
+                U.money(advice.auction)
+            )
+        end
+        if advice.disenchant then
+            tipLine(tooltip, L("Disenchant (materials after the cut)"), U.money(advice.disenchant))
+        end
+        tipLine(tooltip, L(ADVICE[advice.best]), "", 1, 0.82, 0)
     end
     tooltip:Show()
 end

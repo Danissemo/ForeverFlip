@@ -143,10 +143,24 @@ function T.overLimit(cost)
     return limit > 0 and (F.Engine.spent or 0) + (cost or 0) > limit * 10000
 end
 
+-- Purchases ForeverFlip booked whose buyer invoice is still to come by mail (T.onBuyerInvoice
+-- must not book them again): name (lower case) -> { n = units, at = time }.
+local function awaitInvoice(c, name, qty)
+    c.awaitMail = type(c.awaitMail) == "table" and c.awaitMail or {}
+    local k = string.lower(name or "")
+    local w = c.awaitMail[k]
+    if type(w) ~= "table" or clock() - (w.at or 0) > 3 * 86400 then
+        w = { n = 0 }
+    end
+    w.n, w.at = w.n + qty, clock()
+    c.awaitMail[k] = w
+end
+
 local function bought(op)
     F.Engine.spent = (F.Engine.spent or 0) + (op.cost or 0)
     local c = char()
     local name = displayName(op.key, op.link)
+    awaitInvoice(c, name, op.qty)
     F.Data.addPosition(c, op.key, name, op.qty, op.cost, op.mode, op.exit, clock())
     F.Data.log(c, { at = clock(), kind = "buy", key = op.key, name = name, qty = op.qty, amount = op.cost })
     T.op = nil
@@ -684,6 +698,60 @@ function T.onInvoice(inv)
     F.Engine.changed()
 end
 
+-- A buyer invoice (the mail with an item bought on the auction house). A won bid closes the bid;
+-- a purchase ForeverFlip made is only matched; any other purchase (the game's Buy tab, another
+-- addon) is booked as stock bought elsewhere ("other": counted, never posted automatically).
+function T.onBuyerInvoice(inv, link)
+    if F.Bids.won(inv.item) then
+        return
+    end
+    local c = char()
+    local count = math.max(1, inv.count or 1)
+    local w = type(c.awaitMail) == "table" and c.awaitMail[string.lower(inv.item)]
+    if type(w) == "table" and (w.n or 0) > 0 and clock() - (w.at or 0) <= 3 * 86400 then
+        local n = math.min(count, w.n)
+        w.n, count = w.n - n, count - n
+    end
+    if count <= 0 then
+        F.Engine.changed()
+        return
+    end
+    local id = type(link) == "string" and tonumber(link:match("item:(%d+)"))
+    local key = id and F.AH.keyFor(id, link)
+    if not key or (inv.bid or 0) <= 0 then
+        return
+    end
+    local amount = math.floor(inv.bid * count / math.max(1, inv.count or 1) + 0.5)
+    F.Data.addPosition(c, key, inv.item, count, amount, "other", nil, clock())
+    F.Data.log(c, { at = clock(), kind = "buy", key = key, name = inv.item, qty = count, amount = amount })
+    F.Engine.notify("bought_elsewhere")
+    F.Engine.changed()
+end
+
+-- Something was sold to a merchant without ForeverFlip's button (seen in the buyback list): stock
+-- of it is booked as a vendor sale. `each` is what the merchant paid for one.
+function T.onVendorSale(key, qty, each)
+    local c = char()
+    local p = c.positions[key]
+    if not p or p.qty <= 0 then
+        return false
+    end
+    qty = math.min(qty, p.qty)
+    local amount = each * qty
+    local cost = F.Data.sale(c, key, p.name, qty, amount, clock())
+    F.Data.log(c, {
+        at = clock(),
+        kind = "vendor",
+        key = key,
+        name = p.name,
+        qty = qty,
+        amount = amount,
+        profit = amount - cost,
+    })
+    F.Engine.changed()
+    return true
+end
+
 -- "Auction expired" / "Auction cancelled": the post did not sell.
 function T.onFailedPost(name, count)
     local r = rateOf(name)
@@ -702,7 +770,7 @@ function T.toPost()
     local out, seen = {}, {}
     for _, b in ipairs(F.AH.bagItems()) do
         local p = c.positions[b.key]
-        local own = p and (p.mode == "vendor" or p.mode == "shop" or p.mode == "disenchant")
+        local own = p and (p.mode == "vendor" or p.mode == "shop" or p.mode == "disenchant" or p.mode == "other")
         if p and not own and not T.hidden(b.key) and p.qty > (listed[b.key] or 0) and not seen[b.key] then
             seen[b.key] = true
             b.position = p
@@ -1067,6 +1135,7 @@ function T.sellToVendor()
         local item = U.parseKey(v.key)
         local price = F.AH.vendorPrice(item.id, true) or 0 -- the sale is booked at the real price
         C_Container.UseContainerItem(v.bag, v.slot)
+        F.Merchant.expectSale(item.id, v.count)
         local p = c.positions[v.key]
         local name = p and p.name or v.key
         local cost = F.Data.sale(c, v.key, name, v.count, price * v.count, clock())

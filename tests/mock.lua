@@ -502,6 +502,9 @@ TooltipDataProcessor = {
     end,
 }
 tooltipLines = {}
+function GameTooltip:AddLine(text)
+    tooltipLines[#tooltipLines + 1] = text
+end
 function GameTooltip:AddDoubleLine(left, right)
     tooltipLines[#tooltipLines + 1] = left .. " = " .. right
 end

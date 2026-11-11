@@ -47,6 +47,14 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **A late scan event** for the scan just read no longer starts a second reading and a new cooldown;
   a request that failed with an error does not use up the cooldown.
 - **A sale is booked once** when both the auction list and the invoice mail report it.
+- **Purchases outside ForeverFlip** (the game's Buy tab, another addon) are booked from their buyer
+  invoice mail as stock bought elsewhere; **sales to a merchant by hand** are booked from the buyback
+  list. Before, only what ForeverFlip itself bought and sold was tracked.
+- **Item tooltips** were rewritten: they name the auction house of their prices, say when sales are
+  not measured yet, show your stock and your auctions on sale, and the vendor price, the auction
+  house after the cut and deposits, and disenchanting side by side. The deposit of commodities is
+  the per-unit share of a stack, and the tries come from your own sale rate: cheap stackable goods
+  no longer look like a loss on the auction house.
 - **The Sell page lists every sellable bag item:** items the auction house has not seen yet get
   their kind from the item itself (as the game's Sell window does), and the reagent bag is read.
   `/ff bags` tells why an item is left out.

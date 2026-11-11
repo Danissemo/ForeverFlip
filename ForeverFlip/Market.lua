@@ -465,10 +465,11 @@ end
 -- Deposit of one auction: the game charges at least 1 silver (seen on WoW Forever); it is returned
 -- on a sale and lost when the auction expires. Estimated from the vendor price (Classic rule).
 -- What an item is best turned into, for the tooltip (as ForeverForge Auction advises): the vendor
--- price, the auction house assuming it sells on its third posting (the price after the cut, less
--- three deposits), or disenchanting (a character who can). { best, value, vendor, vendorHow,
--- auction, disenchant }; nil when nothing is known.
+-- price, the auction house after the cut and the deposits of the tries it takes to sell (from your
+-- own sale rate of the item once known, else M.POSTINGS), or disenchanting (a character who can).
+-- { best, value, vendor, vendorHow, auction, tries, disenchant }; nil when nothing is known.
 M.POSTINGS = 3
+M.STACK = 20
 function M.advice(id, key, h)
     local item = U.parseKey(key)
     if not item then
@@ -479,8 +480,15 @@ function M.advice(id, key, h)
     local price = h and (M.salePrice(h) or M.usual(h))
     if U.finite(price) and price > 0 then
         local depositFn = F.AH.depositFn(id, item.kind, F.Trade.durationFor and F.Trade.durationFor() or 3)
-        local one = depositFn and depositFn(1) or M.deposit(F.AH.clientVendorPrice(id), 1)
-        out.auction = math.floor(M.net(U.stepDown(price, item.kind), 1) - M.POSTINGS * one)
+        -- Commodities are posted as a stack and pay one deposit for it: per unit it is the deposit
+        -- of a stack of M.STACK, divided. Other items pay a deposit each.
+        local units = item.kind == "commodity" and M.STACK or 1
+        local stack = depositFn and depositFn(units) or M.deposit(F.AH.clientVendorPrice(id), units)
+        local one = stack / units
+        local name = U.itemInfo(id)
+        local rate = name and F.Trade.rate(name)
+        out.tries = rate and rate > 0 and math.max(1, math.min(5, math.ceil(1 / rate))) or M.POSTINGS
+        out.auction = math.floor(M.net(U.stepDown(price, item.kind), 1) - out.tries * one + 0.5)
     end
     if item.kind == "gear" and F.Disenchant.canDisenchant() then
         out.disenchant = F.Disenchant.value(id)

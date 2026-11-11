@@ -385,6 +385,9 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
 - **Sales** take units out of the position at average cost. Profit = money received after the cut
   − cost of those units.
 - **Item statistics:** bought, spent, sold, earned, profit, unit-days held, last sale.
+- **Sales to a merchant by hand** (`Merchant.watchBuyback`): the buyback list is compared each time
+  it changes; a new entry of an item in stock is booked as a vendor sale at the price paid. Sales of
+  the Sell vendor deals button are booked by it and only matched.
 - **Journal:** buy, sell, vendor, expired and fail entries, the latest 500.
 - **Invoices** (`Mail.record`, `Trade.onInvoice`). Every auction mail is read once, when its money or
   items are taken. That happens through the Take auction mail button, or through the game's
@@ -396,6 +399,10 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
       booked against the stock.
     - Units already booked from the own-auction list are not booked again: both paths reduce the
       same open quantity of the listing.
+  - **Buyer invoice** (an item bought on the auction house): a won bid closes the bid; a purchase
+    ForeverFlip made is only matched (it was booked when bought); any other purchase, through the
+    game's Buy tab or another addon, is booked as stock **bought elsewhere** at the price of the
+    invoice. Such stock is counted in statistics but never posted by Post next bought.
   - **Expired and cancelled mails** count as failed posts.
   - **Sale rate** per item = sold / (sold + failed), shown after 3 posts.
   - **Cut learning:** cut / sale price above 10% belongs to the neutral house, otherwise to the

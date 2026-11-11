@@ -136,6 +136,61 @@ local function buybackInfo(i)
     end
 end
 
+-- Sales to a merchant made by hand are booked too: the buyback list is compared with the one seen
+-- before, and each new entry of an item in stock is a vendor sale (T.onVendorSale). Sales of the
+-- Sell vendor deals button are booked by it and only matched here (V.expectSale).
+V.buyback, V.expected = nil, {}
+
+function V.expectSale(id, qty)
+    V.expected[id] = (V.expected[id] or 0) + qty
+end
+
+local function buybackEntries()
+    local list = {}
+    for i = 1, (GetNumBuybackItems and GetNumBuybackItems() or 0) do
+        local link = GetBuybackItemLink and GetBuybackItemLink(i)
+        local id = link and tonumber(link:match("item:(%d+)"))
+        local price, quantity = buybackInfo(i)
+        if id and U.finite(price) and U.finite(quantity) and quantity >= 1 then
+            list[#list + 1] =
+                { id = id, link = link, price = price, qty = quantity, sig = link .. "|" .. price .. "|" .. quantity }
+        end
+    end
+    return list
+end
+
+-- MERCHANT_SHOW: the list as it is; MERCHANT_UPDATE: the new entries are sales.
+function V.watchBuyback(first)
+    local list = buybackEntries()
+    if first or not V.buyback then
+        V.buyback, V.expected = list, {}
+        return 0
+    end
+    local before = {}
+    for _, e in ipairs(V.buyback) do
+        before[e.sig] = (before[e.sig] or 0) + 1
+    end
+    local booked = 0
+    for _, e in ipairs(list) do
+        if (before[e.sig] or 0) > 0 then
+            before[e.sig] = before[e.sig] - 1
+        else
+            local qty = e.qty
+            local expected = V.expected[e.id] or 0
+            if expected > 0 then
+                local n = math.min(expected, qty)
+                V.expected[e.id], qty = expected - n, qty - n
+            end
+            local key = qty > 0 and F.AH.keyFor(e.id, e.link)
+            if key and F.Trade.onVendorSale(key, qty, math.floor(e.price / e.qty)) then
+                booked = booked + 1
+            end
+        end
+    end
+    V.buyback = list
+    return booked
+end
+
 function V.learnBuyback(now)
     local seen = F.db and F.db.vendorSeen
     if not seen or not GetNumBuybackItems or not GetBuybackItemLink then

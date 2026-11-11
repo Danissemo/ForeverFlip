@@ -447,6 +447,96 @@ class ScanAnswerTests(unittest.TestCase):
         assert(S.blocking(), 'the sniper and checks wait while the answer is awaited')''')
 
 
+class TrackingTests(unittest.TestCase):
+    MAIL = SETUP + """local F, T = ForeverFlip, ForeverFlip.Trade
+    local c = F.Data.char(F.db, F.Engine.owner())
+    function GetInboxItemLink(i) return inbox[i] and inbox[i].link end
+    MailFrame:Show(); fire('MAIL_SHOW')
+    """
+
+    def test_a_purchase_made_outside_foreverflip_is_booked_from_its_mail(self):
+        run(self.MAIL + """inbox = { { sender = 'Auction House', subject = 'Auction won: Linen Bag', items = 1, link = link(30),
+            invoice = { kind = 'buyer', item = 'Linen Bag', bid = 25000, count = 1 } } }
+        fire('MAIL_INBOX_UPDATE'); F.Mail.record(1)
+        local p = c.positions['i:30']
+        assert(p and p.qty == 1 and p.cost == 25000 and p.mode == 'other', 'booked as bought elsewhere')""")
+
+    def test_a_purchase_of_foreverflip_is_not_booked_again_by_its_mail(self):
+        run(self.MAIL + """F.Data.addPosition(c, 'c:10', 'Linen Cloth', 5, 300, 'vendor', 100, now)
+        c.awaitMail = { ['linen cloth'] = { n = 5, at = now } }
+        inbox = { { sender = 'Auction House', subject = 'Auction won: Linen Cloth (5)', items = 1, link = link(10),
+            invoice = { kind = 'buyer', item = 'Linen Cloth', bid = 300, count = 5 } } }
+        fire('MAIL_INBOX_UPDATE'); F.Mail.record(1)
+        assert(c.positions['c:10'].qty == 5, c.positions['c:10'].qty)""")
+
+    def test_a_sale_to_a_merchant_by_hand_is_booked(self):
+        run(SETUP + """local F = ForeverFlip
+        local c = F.Data.char(F.db, F.Engine.owner())
+        F.Data.addPosition(c, 'c:10', 'Linen Cloth', 5, 300, 'vendor', 100, now)
+        buyback = {}
+        function GetNumBuybackItems() return #buyback end
+        function GetBuybackItemLink(i) return link(buyback[i][1]) end
+        function GetBuybackItemInfo(i) local b = buyback[i]; return 'x', 0, b[2], b[3] end
+        F.Merchant.watchBuyback(true)
+        buyback = { { 10, 500, 5 } }
+        F.Merchant.watchBuyback(false)
+        assert(not c.positions['c:10'], 'the stock was sold')
+        local e = c.journal[#c.journal]
+        assert(e.kind == 'vendor' and e.amount == 500 and e.profit == 200)""")
+
+    def test_the_sell_vendor_deals_button_is_not_booked_twice(self):
+        run(SETUP + """local F = ForeverFlip
+        local c = F.Data.char(F.db, F.Engine.owner())
+        F.Data.addPosition(c, 'c:10', 'Linen Cloth', 10, 600, 'vendor', 100, now)
+        buyback = {}
+        function GetNumBuybackItems() return #buyback end
+        function GetBuybackItemLink(i) return link(buyback[i][1]) end
+        function GetBuybackItemInfo(i) local b = buyback[i]; return 'x', 0, b[2], b[3] end
+        F.Merchant.watchBuyback(true)
+        F.Merchant.expectSale(10, 5)
+        F.Trade.onVendorSale('c:10', 5, 100)   -- what the button books itself
+        buyback = { { 10, 500, 5 } }
+        F.Merchant.watchBuyback(false)
+        assert(c.positions['c:10'].qty == 5, c.positions['c:10'].qty)""")
+
+
+class TooltipTests(unittest.TestCase):
+    def lines(self, code):
+        import re
+        return re.sub(r'\|c[0-9a-fA-F]{8}|\|r', '', self._lines(code))
+
+    def _lines(self, code):
+        return run(SETUP + code + """
+        tooltipLines = {}
+        for _, fn in ipairs(tooltipCalls) do fn(GameTooltip) end
+        return table.concat(tooltipLines, ' ## ')""")
+
+    def test_the_tooltip_names_the_house_stock_and_auctions(self):
+        text = self.lines("""fullScan()
+        local F = ForeverFlip
+        local c = F.Data.char(F.db, F.Engine.owner())
+        F.Data.addPosition(c, 'c:10', 'Linen Cloth', 4, 200, 'flip', 100, now)
+        F.Trade.owned = { { key = 'c:10', qty = 2, price = 160, sold = false } }
+        GameTooltip.itemLink = link(10)""")
+        self.assertIn('ForeverFlip: Alliance AH', text)
+        self.assertIn('You hold = 4, paid 50c each', text)
+        self.assertIn('On sale by you = 2 at 80c', text)
+        self.assertIn('Vendor pays', text)
+        self.assertNotIn('= -', text.split('Auction house')[1].split('##')[0], 'cloth posted as a stack does not lose to deposits')
+
+    def test_an_item_without_history_still_shows_stock_and_vendor(self):
+        text = self.lines("""local F = ForeverFlip
+        local c = F.Data.char(F.db, F.Engine.owner())
+        F.Data.addPosition(c, 'i:30', 'Linen Bag', 1, 1000, 'other', nil, now)
+        GameTooltip.itemLink = link(30)""")
+        self.assertIn('You hold = 1', text)
+        self.assertIn('Best: sell to a vendor', text)
+
+    def test_sales_not_measured_yet_are_said_so(self):
+        text = self.lines("""fullScan(); GameTooltip.itemLink = link(10)""")
+        self.assertIn('not measured yet', text)
+
+
 class HouseBadgeTests(unittest.TestCase):
     def test_the_corner_names_the_open_auction_house(self):
         run(SETUP + '''local F, UI = ForeverFlip, ForeverFlip.UI

@@ -54,6 +54,10 @@ local FAILED = { "AUCTION_EXPIRED_MAIL_SUBJECT", "AUCTION_REMOVED_MAIL_SUBJECT" 
 local function read(i)
     local _, _, sender, subject, money = GetInboxHeaderInfo(i)
     local snap = { subject = subject, money = money, sender = sender }
+    if GetInboxItemLink then
+        local ok, link = pcall(GetInboxItemLink, i, 1)
+        snap.link = ok and link or nil
+    end
     if GetInboxInvoiceInfo then
         local kind, item, _, bid, _, deposit, consignment, _, _, count = GetInboxInvoiceInfo(i)
         if type(kind) == "string" then
@@ -115,6 +119,12 @@ function Mail.record(i)
     local inv = snap.invoice
     if inv and inv.kind == "seller" and type(inv.item) == "string" then
         F.Trade.onInvoice(inv)
+        return
+    end
+    -- A buyer invoice comes with every item bought on the auction house, also through the game's
+    -- Buy tab or another addon: purchases ForeverFlip did not make are booked from it.
+    if inv and inv.kind == "buyer" and type(inv.item) == "string" then
+        F.Trade.onBuyerInvoice(inv, snap.link)
         return
     end
     local name, count = subjectItem(snap.subject, FAILED)

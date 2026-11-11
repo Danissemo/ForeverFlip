@@ -280,6 +280,7 @@ function E.handle(event, ...)
             F.Crafting.learn()
         end
     elseif event == "MERCHANT_UPDATE" then
+        F.Merchant.watchBuyback(false)
         F.Merchant.learnBuyback()
     elseif
         event == "UNIT_SPELLCAST_START"
@@ -294,6 +295,7 @@ function E.handle(event, ...)
         F.Share.onChannelNotice(...)
     elseif event == "MERCHANT_SHOW" or event == "MERCHANT_CLOSED" then
         if event == "MERCHANT_SHOW" then
+            F.Merchant.watchBuyback(true)
             F.Merchant.learnBuyback()
         end
         if F.UI and F.UI.merchant then

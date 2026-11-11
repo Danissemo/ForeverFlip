@@ -555,18 +555,24 @@ Each item alerts once, and alerts again only after 10 minutes or if the profit g
 
 ### Item tooltips
 
-For items seen in the scans, the tooltip gets extra lines:
+Item tooltips get a **ForeverFlip** block, headed with the auction house its prices belong to
+(for example `ForeverFlip: Alliance AH`; outside the auction house, your faction's house). Each line
+appears only when there is something to show, so items you only hold or could sell to a vendor get
+a block too:
 
-- **ForeverFlip usual price (age)**: the typical asking price from the last scan (yours, or a shared
-  one if newer, with the sharer's name) and how old it is.
-- **ForeverFlip: deal**: the profit of the item's current deal, if any.
-- **sells at**: the median price of the sales seen, once at least 3 sales were seen.
-- **cheapest / dearest time**: when the time-of-week pattern is known.
-- **cheapest today / 5 days**.
-- **gone per day near the usual price**: the measured sales rate.
-- **Best: ...**: whether the item is best sold to a vendor, disenchanted (a character who can) or
-  posted on the auction house, counting the cut and three deposits (as if it sells on the third
-  posting). A vendor price not yet confirmed at a merchant is marked.
+| Line | Meaning |
+|---|---|
+| **Usual price** (age, shared by) | The typical asking price of the last scan (yours, or a newer shared one) and how old it is. |
+| **Cheapest today** (N listed) | The lowest price seen today, and how many units the last scan listed. |
+| **Sold per day** … at … | Units measured sold per day between scans, and the median price of the sales seen. Until two scans measured it: *Sales: not measured yet*. |
+| **cheapest / dearest time** | When the time-of-week pattern is known. |
+| **You hold** | Stock you bought (through ForeverFlip, a bid, or elsewhere) and what it cost each. |
+| **On sale by you** | Your auctions of the item now, and the lowest price among them. |
+| **Deal now** | The profit of the item's current deal. |
+| **Vendor pays** | What a merchant pays, marked when not yet confirmed at a merchant. |
+| **Auction house, after the cut and N deposits** | One unit's money from the auction house: the usual (or sale) price after the cut, less a deposit for each try. N is the tries your own sale rate of the item suggests, 3 until it is known. Commodities pay the deposit of a stack of 20, per unit. |
+| **Disenchant** | The materials' value after the cut, for a character who can disenchant. |
+| **Best: …** | Which of these pays the most. |
 
 ### Marks in the Buy tab
 
