@@ -474,7 +474,7 @@ The Settings page has four tabs: **General** (the table below), **Key bindings**
 
 | Setting | Default | Meaning |
 |---|---|---|
-| Vendor prices not yet confirmed at a merchant count less, % | 20 | WoW Forever's server pays less than the game's item data says for some items. Until you sold an item to a merchant once, vendor deals count its vendor price this much lower. A vendor deal on such a price shows a yellow `*`. |
+| Vendor prices not yet confirmed at a merchant count less, % | 0 | A safety margin for vendor prices not yet seen at a merchant. Every price checked in game so far matched the item data, so it is off; a price a merchant really paid is always used for its item. Set it if Safety lists items a merchant paid less for. A vendor deal on such a price shows a yellow `*`. |
 | Gold one auction house visit may spend on deals | 0 | 0 = no limit. Otherwise buying stops for the visit once this much gold was spent. |
 | Cheap units of a vendor deal left for other buyers | 0 | The priciest of the cheap units stay listed, so you do not empty the market. |
 

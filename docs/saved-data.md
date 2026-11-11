@@ -64,7 +64,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `shareAuto` | `false` | Send each own full scan to the guild. |
 | `rawScans` | `false` | Keep full scans for the ForeverFlip Sync helper. |
 | `shareChannel` | `true` | Share full scans with every ForeverFlip user of the realm over a hidden channel. |
-| `vendorMargin` | `20` | Percent off the client's vendor price while a merchant has not confirmed it. |
+| `vendorMargin` | `0` | Percent off the client's vendor price while a merchant has not confirmed it (the old default of 20 is reset once, `vendorMarginReset`). |
 | `spendLimit` | `0` | Gold one auction house visit may spend on deals; `0` = no limit. |
 | `leaveLots` | `0` | Cheap units of a vendor deal left for other buyers. |
 

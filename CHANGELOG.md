@@ -46,6 +46,9 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **The end of a full scan** no longer stalls the game on a large history: forgetting old items
   and sweeping vanished ones run a slice per frame, and the scan is copied into the saved data on
   logout instead of at once.
+- **Vendor deals are back:** the vendor-price safety margin is 0% by default (it was 20%, and the
+  saved 20% is reset once). Every merchant price checked in game matched the client's, and the
+  margin left 1 of 74 items listed below their vendor price.
 - **Latency audit fixes:**
   - a single check (a click) goes before a running Check all and takes the place of a background
     search in flight; searches wait for a full scan only while it waits for its answer;

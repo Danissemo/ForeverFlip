@@ -34,7 +34,11 @@ D.DEFAULTS = {
     shareAuto = false, -- send each own full scan to the guild
     rawScans = false, -- keep full scans for the ForeverFlip Sync helper (community data)
     shareChannel = true, -- share full scans with every ForeverFlip user of the realm (hidden channel)
-    vendorMargin = 20, -- percent off the client's vendor price until a merchant's real price is seen
+    -- Percent off the client's vendor price until a merchant's real price is seen. 0: in game every
+    -- merchant price checked so far matched the client's, and 20% removed nearly all vendor deals
+    -- (74 items below the vendor price in one scan, 1 left at 20%). A price a merchant really paid
+    -- is always used for its item (vendorSeen).
+    vendorMargin = 0,
     spendLimit = 0, -- gold one auction house visit may spend on deals (0 = no limit)
     leaveLots = 0, -- cheap lots (or commodity units) of a deal left for other buyers
 }
@@ -47,6 +51,13 @@ function D.open(saved)
         if db.settings[k] == nil then
             db.settings[k] = v
         end
+    end
+    -- 1.2.0-beta.1 to beta.3 saved a default margin of 20%: back to the new default, once.
+    if not db.vendorMarginReset then
+        if db.settings.vendorMargin == 20 then
+            db.settings.vendorMargin = 0
+        end
+        db.vendorMarginReset = true
     end
     db.vendor = type(db.vendor) == "table" and db.vendor or {}
     db.vendorSeen = type(db.vendorSeen) == "table" and db.vendorSeen or {}

@@ -166,3 +166,15 @@ class AnalyticsInFramesTests(unittest.TestCase):
         A.invalidate()
         local old, again = A.market()
         assert(again and old and old.items >= 3000, 'the previous lists stay on screen meanwhile')''')
+
+
+class VendorMarginTests(unittest.TestCase):
+    def test_the_old_default_margin_is_reset_once(self):
+        run('''local D = ForeverFlip.Data
+        local db = D.open({ settings = { vendorMargin = 20 } })
+        assert(db.settings.vendorMargin == 0 and db.vendorMarginReset, 'the old default goes')
+        db.settings.vendorMargin = 20
+        db = D.open(db)
+        assert(db.settings.vendorMargin == 20, 'a margin set again by the player stays')
+        local fresh = D.open({})
+        assert(fresh.settings.vendorMargin == 0, 'new players start without a margin')''')

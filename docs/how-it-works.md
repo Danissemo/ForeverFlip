@@ -178,8 +178,9 @@ Take every unit priced below the vendor sell price, within budget. Profit is
 to any merchant right away. The deal is kept if profit ≥ **Minimum profit of a vendor deal**.
 
 The vendor price is what a merchant really paid when one was seen in the buyback list (any item you
-sell to a merchant). Until then it is the game's item data less the **Safety** margin (20%), because
-the server pays less than the client says for some items. Gear sold damaged sells for less, so for
+sell to a merchant). Until then it is the game's item data, less the **Safety** margin if you set
+one (0% by default: every merchant price checked in game matched the item data, and a margin of 20%
+removed nearly all vendor deals). A price a merchant paid that differs is used for that item from then on. Gear sold damaged sells for less, so for
 gear a lower buyback price only replaces a higher one after a patch changed the client's price.
 With **Cheap units left for other buyers** set, the priciest of the cheap units are not bought.
 
