@@ -28,6 +28,8 @@ D.DEFAULTS = {
     learnBrowsing = true, -- the player's own searches update prices and deals
     highlight = true, -- mark deals in the game's Buy tab
     disenchant = true, -- disenchant deals (only for a character who knows Disenchant)
+    shareReceive = true, -- merge full scans shared by guild and group members
+    shareAuto = false, -- send each own full scan to the guild
 }
 
 function D.open(saved)

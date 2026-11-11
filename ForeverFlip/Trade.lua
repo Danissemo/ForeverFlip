@@ -326,7 +326,7 @@ end
 
 local function usualOf(key)
     local h = F.Data.market(F.db, F.Engine.scope()).history[key]
-    return h and h.scan and U.finite(h.scan.market) and h.scan.market or nil, h
+    return M.usual(h), h
 end
 
 -- Lowest price a post of `item` may use: break-even of the stock, the rule's minimum, the minimum
@@ -969,6 +969,8 @@ function T.itemStats()
             profit = s.profit,
             rate = (T.rate(s.name)),
             avgDays = s.sold > 0 and s.days / s.sold or nil,
+            -- Days to sell only for units bought through ForeverFlip (their purchase time is known).
+            days = s.sold > 0 and s.bought > 0 and s.days > 0 and s.days / s.sold or nil,
             stock = p and p.qty or 0,
             stockCost = p and p.cost or 0,
             held = p and p.since and (now - p.since) / 86400 or nil,

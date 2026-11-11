@@ -439,6 +439,7 @@ function S.step()
         S.prune(j.scope, j.finishAt)
         S.save()
         F.Engine.notify("scan_done")
+        F.Share.afterScan()
     end
 end
 
@@ -554,7 +555,10 @@ end
 function S.prune(scope, now)
     local history = F.Data.market(F.db, scope).history
     for key, h in pairs(history) do
-        if type(h) ~= "table" or not h.scan or now - (h.scan.at or 0) > 14 * 86400 then
+        local seen = type(h) == "table"
+                and math.max(h.scan and h.scan.at or 0, type(h.shared) == "table" and h.shared.at or 0)
+            or 0
+        if now - seen > 14 * 86400 then
             history[key] = nil
         end
     end

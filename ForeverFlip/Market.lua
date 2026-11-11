@@ -255,6 +255,22 @@ function M.saleability(h, price, now)
     return out
 end
 
+-- Usual price of an item and when it was measured: the player's own last scan, or a scan another
+-- player shared (F.Share) when that one is newer. Returns price, time, sharer (nil when own).
+function M.usual(h)
+    if type(h) ~= "table" then
+        return nil
+    end
+    local own = type(h.scan) == "table" and U.finite(h.scan.market) and h.scan.market > 0 and h.scan or nil
+    local shared = type(h.shared) == "table" and U.finite(h.shared.m) and h.shared.m > 0 and h.shared or nil
+    if shared and (not own or (shared.at or 0) > (own.at or 0)) then
+        return shared.m, shared.at, shared.from or "?"
+    end
+    if own then
+        return own.market, own.at
+    end
+end
+
 -- Sales tracked auction by auction ----------------------------------------------------------------
 -- A full scan lists the auctions of an item in the order they were created, with a time-left band
 -- (0 = under 30 minutes, 1 = up to 2 hours, 2 = up to 12 hours, 3 = longer). Comparing two scans

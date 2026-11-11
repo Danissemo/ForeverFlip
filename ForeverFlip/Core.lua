@@ -107,6 +107,7 @@ local events = {
     "MERCHANT_CLOSED",
     "PLAYER_LOGOUT",
     "PLAYER_MONEY",
+    "CHAT_MSG_ADDON",
     "PLAYER_ENTERING_WORLD",
 }
 for _, event in ipairs(events) do
@@ -121,6 +122,7 @@ function E.handle(event, ...)
             F.Locale.apply(F.db.settings.language)
             E.applyCut()
             F.Mail.hook()
+            F.Share.register()
             F.Bids.prune()
             if F.UI and F.UI.tooltips then
                 F.UI.tooltips()
@@ -189,6 +191,9 @@ function E.handle(event, ...)
         end
     elseif event == "CHAT_MSG_SYSTEM" then
         F.Trade.onChat(...)
+    elseif event == "CHAT_MSG_ADDON" then
+        F.Share.onMessage(...)
+        return
     elseif event == "PLAYER_MONEY" or event == "PLAYER_ENTERING_WORLD" then
         F.Analytics.recordGold()
     elseif event == "PLAYER_LOGOUT" then
@@ -269,6 +274,7 @@ function E.update(elapsed)
     F.Sniper.step()
     F.Trade.step()
     F.Mail.step(GetTime and GetTime() or E.clock())
+    F.Share.step(GetTime and GetTime() or E.clock())
     -- The game's Buy tab scrolls and reuses its rows: its deal marks are refreshed twice a second.
     marks = marks + (elapsed or 0)
     if marks >= 0.5 and F.UI and F.UI.highlightBrowse and F.AH.isOpen() then
@@ -360,16 +366,17 @@ end
 function API.GetPrice(item)
     local key = keyOf(item)
     local h = key and F.Data.market(F.db, E.scope()).history[key]
-    if type(h) ~= "table" or type(h.scan) ~= "table" then
+    local usual, at = F.Market.usual(h)
+    if not usual or type(h) ~= "table" then
         return nil
     end
     local today = h.days and h.days[#h.days]
-    local s = h.scan.market and F.Market.saleability(h, h.scan.market, E.clock()) or {}
-    return h.scan.market,
+    local s = F.Market.saleability(h, usual, E.clock())
+    return usual,
         today and today.min or nil,
         F.Market.salePrice(h),
         s.known and s.perDay or nil,
-        h.scan.at and E.clock() - h.scan.at or nil
+        at and E.clock() - at or nil
 end
 
 -- The current deal of an item: mode ("vendor", "flip", "shop", "disenchant"), profit, cost, units,

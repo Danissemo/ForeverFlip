@@ -19,6 +19,17 @@ local MESSAGES = {
     bid_won = "Auction won: the item is booked as stock.",
     hidden = "The item is hidden: it is no longer offered for sale.",
     unhidden = "The item is back in the list for sale.",
+    share_queued = "Sending the scan...",
+    share_sent = "Scan sent.",
+    share_received = "A shared scan was added to the price history.",
+    share_invalid = "This text is not a ForeverFlip scan.",
+    other_realm = "The shared scan is from another realm.",
+    old = "The shared scan is more than 7 days old.",
+    duplicate = "This scan is already in the history.",
+    no_guild = "You are not in a guild.",
+    no_group = "You are not in a group.",
+    no_scan = "Make a full scan first.",
+    combat = "Key bindings cannot change in combat.",
     unknown_item = "Unknown item. Shift-click its link, or type its exact name once the game knows it.",
     checking = "Reading the current price first; press again to post.",
     mail_done = "Auction mail taken.",
@@ -1686,20 +1697,19 @@ function UI.createStats(p)
     list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 60)
     UI.statsTable = table_(list, {
         { "Name" },
-        { "Bought", 56 },
-        { "Sold", 50 },
+        { "Bought (col)", 52 },
+        { "Sold (col)", 52 },
+        { "Stock (col)", 52 },
         { "Profit", 90 },
-        { "In stock", 64 },
-        { "Days to sell", 80 },
-        { "Sell %", 50 },
-        { "Note", 80, "LEFT" },
+        { "Days (col)", 52 },
+        { "Sell %", 56 },
     }, 16, function() end)
     UI.statsText = footer(p, 56).text
 end
 
 function UI.refreshStats()
     local stats = UI.statsTable.sort(F.Trade.itemStats(), function(s, column)
-        return ({ s.name, s.bought, s.sold, s.profit, s.stock, s.avgDays, s.rate, s.stale and 1 or 0 })[column]
+        return ({ s.name, s.bought, s.sold, s.stock, s.sold > 0 and s.profit or nil, s.days, s.rate })[column]
     end)
     local stale = 0
     for i, r in ipairs(UI.statsTable.rows) do
@@ -1709,13 +1719,17 @@ function UI.refreshStats()
             r.key, r.link = s.key, nil
             r.icon:SetTexture(item and icon(item.id) or 134400)
             r.name:SetText(s.name)
-            r.cols[1]:SetText(s.bought)
-            r.cols[2]:SetText(s.sold)
-            r.cols[3]:SetText(U.money(s.profit))
-            r.cols[4]:SetText(s.stock)
-            r.cols[5]:SetText(s.avgDays and string.format("%.1f", s.avgDays) or "-")
+            r.cols[1]:SetText(s.bought > 0 and s.bought or "-")
+            r.cols[2]:SetText(s.sold > 0 and s.sold or "-")
+            -- Stock that has not sold for 3 days or more is red.
+            r.cols[3]:SetText(s.stock > 0 and (s.stale and "|cffff6060" .. s.stock .. "|r" or s.stock) or "-")
+            if s.sold > 0 then
+                r.cols[4]:SetText((s.profit < 0 and "|cffff6060-|r" or "") .. U.money(math.abs(s.profit)))
+            else
+                r.cols[4]:SetText("-")
+            end
+            r.cols[5]:SetText(s.days and string.format("%.1f", s.days) or "-")
             r.cols[6]:SetText(s.rate and string.format("%d%%", math.floor(s.rate * 100 + 0.5)) or "-")
-            r.cols[7]:SetText(s.stale and ("|cffff6060" .. L("stale") .. "|r") or "")
             r.selected:Hide()
             r:Show()
         else
@@ -2161,6 +2175,11 @@ end
 
 -- CSV export: the journal of the character in a text box to copy (Ctrl+A, Ctrl+C).
 function UI.showExport()
+    UI.showText(L("Journal as CSV: press Ctrl+A, then Ctrl+C to copy."), F.Analytics.csv())
+end
+
+-- A window with a text to copy, or (with onImport) a box to paste into and an Import button.
+function UI.showText(title, value, onImport)
     local w = UI.exportFrame
     if not w then
         w = CreateFrame("Frame", "ForeverFlipExport", UIParent)
@@ -2191,14 +2210,297 @@ function UI.showExport()
         scroll:SetScrollChild(w.box)
         UI.exportFrame = w
     end
-    w.box:SetText(F.Analytics.csv())
+    if not rawget(w, "import") then
+        w.import = button(w, "Import", 110, function()
+            if w.onImport and w.onImport(w.box:GetText()) then
+                w:Hide()
+            end
+        end)
+        w.import:SetPoint("TOPRIGHT", w.close, "TOPLEFT", -6, 0)
+    end
+    w.title:SetText(title)
+    w.onImport = onImport
+    if onImport then
+        w.import:Show()
+    else
+        w.import:Hide()
+    end
+    w.box:SetText(value or "")
     w:Show()
     w.box:SetFocus()
     w.box:HighlightText()
 end
 
 -- Settings page ------------------------------------------------------------------------------------
+-- Three tabs: General, Key bindings, Sharing.
 function UI.createSettings(p)
+    UI.settingTabs, UI.settingFrames = {}, {}
+    local tabs = { { "general", "General" }, { "keys", "Key bindings" }, { "share", "Sharing" } }
+    for i, t in ipairs(tabs) do
+        local frame = CreateFrame("Frame", nil, p)
+        frame:SetPoint("TOPLEFT", p, "TOPLEFT", 0, -30)
+        frame:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 0)
+        UI.settingFrames[t[1]] = frame
+        local b = button(p, t[2], 150, function()
+            UI.showSettingsTab(t[1])
+        end)
+        b:SetPoint("TOPLEFT", p, "TOPLEFT", 8 + (i - 1) * 156, -4)
+        UI.settingTabs[t[1]] = b
+    end
+    UI.createGeneralSettings(UI.settingFrames.general)
+    UI.createKeySettings(UI.settingFrames.keys)
+    UI.createShareSettings(UI.settingFrames.share)
+    UI.showSettingsTab("general")
+end
+
+function UI.showSettingsTab(id)
+    UI.settingsTab = id
+    for key, frame in pairs(UI.settingFrames) do
+        if key == id then
+            frame:Show()
+        else
+            frame:Hide()
+        end
+        UI.settingTabs[key]:SetEnabled(key ~= id)
+    end
+    UI.refresh()
+end
+
+-- Key bindings: click a button, press the key. Right-click clears; Escape cancels.
+UI.BINDINGS = {
+    { "FOREVERFLIP_BUY", "Buy or confirm the selected deal" },
+    { "FOREVERFLIP_POST", "Post next bought (then Post all)" },
+    { "FOREVERFLIP_CANCEL", "Cancel the next undercut auction" },
+    { "FOREVERFLIP_SCAN", "Full scan" },
+}
+local MODIFIER_KEYS = {
+    LSHIFT = true,
+    RSHIFT = true,
+    LCTRL = true,
+    RCTRL = true,
+    LALT = true,
+    RALT = true,
+    UNKNOWN = true,
+}
+
+function UI.bindingKey(command)
+    return GetBindingKey and GetBindingKey(command) or nil
+end
+
+-- Binds `key` to `command` in the character's (or account's) binding set; nil key clears it.
+function UI.setBinding(command, key)
+    if InCombatLockdown and InCombatLockdown() then
+        F.Engine.notify("combat")
+        return false
+    end
+    local old = UI.bindingKey(command)
+    while old do
+        SetBinding(old)
+        local again = UI.bindingKey(command)
+        if again == old then
+            break
+        end
+        old = again
+    end
+    if key then
+        SetBinding(key, command)
+    end
+    if SaveBindings and GetCurrentBindingSet then
+        SaveBindings(GetCurrentBindingSet())
+    end
+    F.Engine.changed()
+    return true
+end
+
+-- A key press as the game names it in bindings: "CTRL-SHIFT-B".
+function UI.keyName(key)
+    local prefix = ""
+    if IsAltKeyDown and IsAltKeyDown() then
+        prefix = prefix .. "ALT-"
+    end
+    if IsControlKeyDown and IsControlKeyDown() then
+        prefix = prefix .. "CTRL-"
+    end
+    if IsShiftKeyDown and IsShiftKeyDown() then
+        prefix = prefix .. "SHIFT-"
+    end
+    return prefix .. key
+end
+
+function UI.captureKey(command)
+    UI.capturing = command
+    local c = UI.keyCatcher
+    if not c then
+        c = CreateFrame("Frame", nil, UIParent)
+        c:SetAllPoints(UIParent)
+        c:SetFrameStrata("TOOLTIP")
+        if c.EnableKeyboard then
+            c:EnableKeyboard(true)
+        end
+        if c.SetPropagateKeyboardInput then
+            c:SetPropagateKeyboardInput(false)
+        end
+        c:SetScript("OnKeyDown", function(_, key)
+            UI.onCapturedKey(key)
+        end)
+        UI.keyCatcher = c
+    end
+    c:Show()
+    UI.refresh()
+end
+
+function UI.onCapturedKey(key)
+    local command = UI.capturing
+    if not command or MODIFIER_KEYS[key] then
+        return
+    end
+    UI.capturing = nil
+    if UI.keyCatcher then
+        UI.keyCatcher:Hide()
+    end
+    if key ~= "ESCAPE" then
+        UI.setBinding(command, UI.keyName(key))
+    end
+    UI.refresh()
+end
+
+function UI.createKeySettings(p)
+    UI.keyButtons = {}
+    for i, b in ipairs(UI.BINDINGS) do
+        local label = text(p, "GameFontNormal")
+        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -14 - (i - 1) * 34)
+        label:SetWidth(300)
+        label:SetText(L(b[2]))
+        local key = button(p, "", 170, function()
+            UI.captureKey(b[1])
+        end)
+        key:SetPoint("LEFT", label, "RIGHT", 10, 0)
+        if key.RegisterForClicks then
+            key:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        end
+        key:SetScript("OnClick", function(_, mouse)
+            if mouse == "RightButton" then
+                UI.setBinding(b[1], nil)
+            else
+                UI.captureKey(b[1])
+            end
+        end)
+        key.command = b[1]
+        UI.keyButtons[i] = key
+    end
+    UI.keyText = text(p, "GameFontHighlightSmall")
+    UI.keyText:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -14 - #UI.BINDINGS * 34 - 10)
+    UI.keyText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -14 - #UI.BINDINGS * 34 - 10)
+    UI.keyText:SetText(
+        L(
+            "Click a button, then press the key (with Shift, Ctrl or Alt if you like). Right-click clears a key; Escape cancels. The same keys are in the game's Key Bindings window under AddOns."
+        )
+    )
+end
+
+function UI.refreshKeys()
+    for _, b in ipairs(UI.keyButtons or {}) do
+        if UI.capturing == b.command then
+            b:SetText("|cffffd100" .. L("Press a key...") .. "|r")
+        else
+            b:SetText(UI.bindingKey(b.command) or L("Not bound"))
+        end
+    end
+end
+
+-- Sharing full scans with other players.
+function UI.createShareSettings(p)
+    local function toggle(y, setting, label)
+        local box = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
+        box:SetPoint("TOPLEFT", p, "TOPLEFT", 8, y)
+        box:SetScript("OnClick", function(self)
+            F.db.settings[setting] = self:GetChecked() and true or false
+        end)
+        box:SetChecked(F.db.settings[setting])
+        local t = text(p, "GameFontHighlight")
+        t:SetPoint("LEFT", box, "RIGHT", 4, 0)
+        t:SetText(L(label))
+        return box
+    end
+    UI.shareReceiveBox = toggle(-8, "shareReceive", "Accept full scans shared by guild and group members")
+    UI.shareAutoBox = toggle(-36, "shareAuto", "Send my full scans to the guild after each scan")
+    local send = text(p, "GameFontNormal")
+    send:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -80)
+    send:SetText(L("Send my last scan to:"))
+    UI.shareGuild = button(p, "Guild", 100, function()
+        local _, why = F.Share.send("GUILD")
+        F.Engine.notify(why)
+    end)
+    UI.shareGuild:SetPoint("LEFT", send, "RIGHT", 10, 0)
+    UI.shareGroup = button(p, "Group", 100, function()
+        local _, why = F.Share.send((IsInRaid and IsInRaid()) and "RAID" or "PARTY")
+        F.Engine.notify(why)
+    end)
+    UI.shareGroup:SetPoint("LEFT", UI.shareGuild, "RIGHT", 4, 0)
+    local whisper = text(p, "GameFontNormal")
+    whisper:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -112)
+    whisper:SetText(L("Player:"))
+    UI.shareName = editbox(p, 140)
+    UI.shareName:SetPoint("LEFT", whisper, "RIGHT", 10, 0)
+    UI.shareWhisper = button(p, "Send", 100, function()
+        local _, why = F.Share.send("WHISPER", UI.shareName:GetText())
+        F.Engine.notify(why)
+    end)
+    UI.shareWhisper:SetPoint("LEFT", UI.shareName, "RIGHT", 8, 0)
+    UI.shareExport = button(p, "Export as text", 150, function()
+        local snap = F.Share.snapshot()
+        if not snap then
+            F.Engine.notify("no_scan")
+            return
+        end
+        UI.showText(
+            L("Last full scan as text: press Ctrl+A, then Ctrl+C, and send it to a friend."),
+            F.Share.encode(snap)
+        )
+    end)
+    UI.shareExport:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -146)
+    UI.shareImport = button(p, "Import text", 150, function()
+        UI.showText(L("Paste a shared scan (Ctrl+V), then press Import."), "", function(textValue)
+            local merged, why = F.Share.import(textValue)
+            F.Engine.notify(merged and "share_received" or why)
+            return merged ~= nil
+        end)
+    end)
+    UI.shareImport:SetPoint("LEFT", UI.shareExport, "RIGHT", 6, 0)
+    UI.shareText = text(p, "GameFontHighlightSmall")
+    UI.shareText:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -184)
+    UI.shareText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -184)
+    UI.shareText:SetSpacing(3)
+end
+
+function UI.refreshShare()
+    local lines = {
+        L(
+            "A shared scan adds other players' prices of your realm to the history: more days, the weekly pattern, and a fresh usual price when your own scan is older. It never creates deals by itself, and the other player needs ForeverFlip too."
+        ),
+    }
+    local s = F.Share.sending
+    if #F.Share.outbox > 0 and s then
+        lines[#lines + 1] = string.format(L("Sending %d items: %d messages left."), s.items, #F.Share.outbox)
+    end
+    if #F.Share.received > 0 then
+        lines[#lines + 1] = L("Received:")
+        for i = 1, math.min(5, #F.Share.received) do
+            local r = F.Share.received[i]
+            lines[#lines + 1] = string.format("  %s: %d, %s", r.from, r.items, UI.age(r.at))
+        end
+    else
+        lines[#lines + 1] = L("No shared scan received yet.")
+    end
+    UI.shareText:SetText(table.concat(lines, "\n"))
+    local busy = #F.Share.outbox > 0
+    UI.shareGuild:SetEnabled(not busy and F.Scan.last ~= nil)
+    UI.shareGroup:SetEnabled(not busy and F.Scan.last ~= nil)
+    UI.shareWhisper:SetEnabled(not busy and F.Scan.last ~= nil)
+    UI.shareExport:SetEnabled(F.Scan.last ~= nil)
+end
+
+function UI.createGeneralSettings(p)
     local fields = {
         { "vendorMinProfit", "Minimum profit of a vendor deal", "money" },
         { "minProfit", "Minimum profit of a resale", "money" },
@@ -2213,7 +2515,7 @@ function UI.createSettings(p)
     UI.settingBoxes = {}
     for i, f in ipairs(fields) do
         local label = text(p, "GameFontNormal")
-        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -10 - (i - 1) * 25)
+        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -6 - (i - 1) * 23)
         label:SetWidth(300)
         label:SetText(L(f[2]))
         local e = editbox(p, 110)
@@ -2221,7 +2523,7 @@ function UI.createSettings(p)
         e.field = f
         UI.settingBoxes[i] = e
     end
-    local y = -10 - #fields * 25
+    local y = -6 - #fields * 23
     UI.saveButton = button(p, "Save", 110, function()
         for _, e in ipairs(UI.settingBoxes) do
             local key, kind = e.field[1], e.field[3]
@@ -2540,6 +2842,12 @@ function UI.refresh()
         UI.refreshCrafting()
     elseif UI.section == "journal" then
         UI.refreshJournal()
+    elseif UI.section == "settings" then
+        if UI.settingsTab == "keys" then
+            UI.refreshKeys()
+        elseif UI.settingsTab == "share" then
+            UI.refreshShare()
+        end
     end
 end
 
@@ -2832,7 +3140,8 @@ local function tooltipLines(tooltip)
     local id = link and tonumber(link:match("item:(%d+)"))
     local key = id and F.AH.keyFor(id, link)
     local h = key and F.Data.market(F.db, F.Engine.scope()).history[key]
-    if not h or type(h.scan) ~= "table" then
+    local usual, usualAt, sharer = F.Market.usual(h)
+    if not usual or type(h) ~= "table" then
         return
     end
     local today = h.days and h.days[#h.days]
@@ -2845,8 +3154,13 @@ local function tooltipLines(tooltip)
         end
     end
     tooltip:AddDoubleLine(
-        "ForeverFlip " .. L("usual price") .. " |cff999999(" .. UI.age(h.scan.at) .. ")|r",
-        h.scan.market and U.money(h.scan.market) or "-",
+        "ForeverFlip "
+            .. L("usual price")
+            .. " |cff999999("
+            .. UI.age(usualAt)
+            .. (sharer and (", " .. L("shared by") .. " " .. sharer) or "")
+            .. ")|r",
+        U.money(usual),
         0.43,
         0.84,
         0.74,
@@ -2899,7 +3213,7 @@ local function tooltipLines(tooltip)
             1
         )
     end
-    local s = F.Market.saleability(h, h.scan.market, F.Engine.clock())
+    local s = F.Market.saleability(h, usual, F.Engine.clock())
     if s.known then
         tooltip:AddDoubleLine(
             L("gone per day near the usual price"),

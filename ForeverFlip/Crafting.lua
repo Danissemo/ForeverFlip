@@ -58,7 +58,7 @@ end
 local function usual(history, id)
     local kind = F.AH.kindOf(id)
     local h = kind and kind ~= "gear" and history[U.key(kind, id)]
-    return h and h.scan and U.finite(h.scan.market) and h.scan.market or nil, h
+    return h and F.Market.usual(h) or nil, h
 end
 
 -- Cost of one unit of a material: the cheaper of the auction house and a merchant.

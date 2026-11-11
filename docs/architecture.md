@@ -41,6 +41,7 @@ namespace, here written as `F`.
 | `Disenchant.lua` | `F.Disenchant` | Disenchanting table, material value, disenchant deals. |
 | `Crafting.lua` | `F.Crafting` | Recipes from profession windows, merchant prices, recipe profits, materials to the shopping list. |
 | `Bids.lua` | `F.Bids` | Bid candidates, checks, placing bids, won and outbid bids. |
+| `Share.lua` | `F.Share` | Shared scans: snapshot, text form, addon messages, receiving and merging. |
 | `Core.lua` | `F.Engine` | Event frame, event dispatch, the per-frame update loop, scope and cut, error reporting, key binding actions, `ForeverFlipAPI`, slash commands. |
 | `UI.lua` | `F.UI` | Auction house tab and pages, history and export windows, mailbox and merchant buttons, merchant panel, item tooltips, Buy tab marks. |
 

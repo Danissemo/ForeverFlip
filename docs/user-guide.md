@@ -18,6 +18,7 @@ how the numbers are calculated, read [How it works](how-it-works.md).
 - [Journal and profit](#journal-and-profit)
 - [Price history window](#price-history-window)
 - [Settings](#settings)
+- [Sharing scans](#sharing-scans)
 - [Outside the auction house](#outside-the-auction-house)
 - [Key bindings](#key-bindings)
 - [Slash commands](#slash-commands)
@@ -334,13 +335,15 @@ One row per item you have traded through ForeverFlip:
 
 | Column | Meaning |
 |---|---|
-| Bought | Units bought. |
+| Bought | Units bought through ForeverFlip. |
 | Sold | Units sold (auction house and vendor). |
-| Profit | Money received minus the cost of the units sold. |
-| In stock | Units bought and not sold yet. |
-| Days to sell | Average days between buying and selling a unit. |
+| Stock | Units bought and not sold yet. **Red** when they have been held for 3 days or more without a sale. |
+| Profit | Money received minus the cost of the units sold. `-` while nothing has sold. |
+| Days | Average days between buying and selling a unit; only for units bought through ForeverFlip. |
 | Sell % | Share of your posts that sold, from auction mail (sold against expired and cancelled). Shown after 3 posts. |
-| Note | **stale** when stock has been held for 3 days or more without a sale. |
+
+`-` means "nothing yet". Each ending of a gear item ("of the Bear", "of the Wolf") has its own row;
+hover a row to see its full name.
 
 When your own results for an item are poor, ForeverFlip trusts the scan estimate for that item less,
 so fewer resale deals are suggested for it:
@@ -424,6 +427,18 @@ per day and the price at the top of the chart. Close the window with **X**.
 
 ## Settings
 
+The Settings page has three tabs: **General** (the table below), **Key bindings** and **Sharing**.
+
+**Key bindings:**
+
+- click the button next to an action, then press the key, with Shift, Ctrl or Alt if you like;
+- right-click a button to clear its key, Escape to cancel;
+- the keys are saved in the game's own key bindings and also appear in the game's Key Bindings window
+  under AddOns;
+- keys cannot be changed in combat.
+
+**Sharing** is described in [Sharing scans](#sharing-scans).
+
 | Setting | Default | Meaning |
 |---|---|---|
 | Minimum profit of a vendor deal | 10c | Smaller vendor deals are not listed. |
@@ -456,6 +471,36 @@ per day and the price at the top of the chart. Close the window with **X**.
 Money fields accept `1g 20s 5c`, `20s`, `1.5g` or a bare number of silver. Click **Save** to apply
 them.
 
+## Sharing scans
+
+Each ForeverFlip user sees only their own full scans, at most one per 15 minutes. Sharing scans pools
+them:
+
+- **More days of history**, and a time-of-week pattern that fills in faster.
+- **A fresh usual price** when your own scan is older, or while your scan is on cooldown. Tooltips
+  then say who shared it, for example `(5 min ago, shared by Friend)`.
+
+A shared scan carries, for every item seen, its usual price, cheapest price and units listed. It never
+creates deals by itself: deals still come from your own scans and live checks.
+
+On the **Settings → Sharing** tab:
+
+| Control | What it does |
+|---|---|
+| Accept full scans shared by guild and group members | On by default. Scans from other ForeverFlip users of your realm are added to your history. |
+| Send my full scans to the guild after each scan | Off by default. Each of your full scans is sent to the guild in the background. |
+| Send my last scan to: Guild / Group | Sends your last full scan once. |
+| Player + Send | Sends it to one player (whisper channel; they need ForeverFlip and must accept shared scans). |
+| Export as text / Import text | The scan as a text you can send anywhere, for example in Discord, and import on another account or by a friend. |
+
+How a scan is sent and received:
+
+- **Hidden addon messages** carry the scan, not chat lines, one message every 0.3 seconds. A scan of
+  a few thousand items takes a minute or two.
+- **What is accepted:** scans of your own realm, at most 7 days old, each scan once, and never your
+  own scan back.
+- **The list of received scans** is on the same tab.
+
 ## Outside the auction house
 
 ### Alerts
@@ -473,7 +518,8 @@ Each item alerts once, and alerts again only after 10 minutes or if the profit g
 
 For items seen in the scans, the tooltip gets extra lines:
 
-- **ForeverFlip usual price (age)**: the typical asking price from the last scan and how old it is.
+- **ForeverFlip usual price (age)**: the typical asking price from the last scan (yours, or a shared
+  one if newer, with the sharer's name) and how old it is.
 - **ForeverFlip: deal**: the profit of the item's current deal, if any.
 - **sells at**: the median price of the sales seen, once at least 3 sales were seen.
 - **cheapest / dearest time**: when the time-of-week pattern is known.
@@ -532,7 +578,8 @@ itself.
 
 ## Key bindings
 
-Set them in the game's **Key Bindings** window, under **AddOns → ForeverFlip**:
+Set them on **Settings → Key bindings** in the ForeverFlip tab, or in the game's **Key Bindings**
+window under **AddOns → ForeverFlip**:
 
 | Binding | Action |
 |---|---|

@@ -22,5 +22,6 @@ Merchant.lua
 Disenchant.lua
 Crafting.lua
 Bids.lua
+Share.lua
 Core.lua
 UI.lua

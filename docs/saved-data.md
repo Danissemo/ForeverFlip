@@ -22,6 +22,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `ui` | table | `ui.section`: the last opened page. |
 | `cuts` | table | `cuts[scope]` = the auction cut learned from invoices (for example `0.05` or `0.15`). |
 | `deposits` | table | `deposits[itemID][duration]` = deposit per unit the game charged for the last post of an item. |
+| `sharedSeen` | table | `sharedSeen["<scope>@<time>"]` = when a shared scan was merged, so each one is merged once (kept 7 days). |
 | `hiddenSell` | table | `hiddenSell[key]` = name of an item hidden from the Sell page and the posting queues. |
 | `lastPosted` | table | `lastPosted[key]` = the last unit price the player posted the item at. |
 | `rules` | table | `rules[key]` = posting rule `{ min, normal, max, keep }` (all optional; money in copper). |
@@ -55,6 +56,8 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `learnBrowsing` | `true` | The player's own searches update prices and deals. |
 | `highlight` | `true` | Marks in the game's Buy tab. |
 | `disenchant` | `true` | Disenchant deals (only for a character who knows Disenchant). |
+| `shareReceive` | `true` | Merge full scans shared by guild and group members. |
+| `shareAuto` | `false` | Send each own full scan to the guild. |
 
 Missing settings are filled in with these defaults at load.
 
@@ -78,6 +81,7 @@ Missing settings are filled in with these defaults at load.
 | `days` | Up to 14 daily records `{ d = day number, min = cheapest unit price, m = usual price, n = units listed, s = units sold }`. Present only for items traded often enough. |
 | `lots` | The item's lots of the last scan as text, `"price:count:band,..."` in scan order (up to 300), for lot-by-lot sales tracking. |
 | `lotsAt` | Time of the scan `lots` comes from. |
+| `shared` | The newest shared scan of the item: `{ at, m = usual price, min = cheapest, n = units, from = sharer }`. |
 | `sales` | Lot-tracked sales: `{ hours, pairs, at, b = price histogram of sold units }`, decayed with a 3-day half-life. The histogram is flat: `b[2k]` = units, `b[2k+1]` = cheapest price of 2% bucket k. |
 | `t` | Time-of-week pattern: `{ b = baseline, w = {7}, wn = {7}, p = {4}, pn = {4} }`, with factors and observation counts per weekday (`w`, Sunday first) and per part of the day (`p`). |
 

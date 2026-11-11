@@ -8,6 +8,12 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- **Shared scans.** Settings → Sharing sends your last full scan to the guild, the group or one
+  player, and can send every scan to the guild automatically. Received scans of your realm add days
+  to the price history, fill the weekly pattern, and give a fresh usual price when your own scan is
+  older. Scans can also be exported and imported as text.
+- **Key bindings in the addon:** Settings → Key bindings sets the four keys directly.
+
 - **Hide** on the Sell page takes items you want to keep out of the list for sale and out of the
   posting queues. A **Hidden** view lists them, including items no longer in the bags, and **Return
   to sale** brings them back.
@@ -20,6 +26,13 @@ All notable changes are listed here. The format follows
 - New README layout with a hero image, badges and a questions-and-answers section.
 
 ### Fixed
+
+- Statistics by item:
+  - names were cut off and duplicates of gear endings looked alike: the table has fewer, narrower
+    columns;
+  - unsold items show `-` instead of a profit of 0c;
+  - days to sell are shown only for units bought through ForeverFlip;
+  - stale stock is red.
 
 - My auctions showed "not checked" for items nobody else sells, because WoW Forever does not answer
   a search for them. Such items are now **only yours**, judged from the last full scan without a

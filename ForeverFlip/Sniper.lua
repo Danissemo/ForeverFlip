@@ -62,7 +62,7 @@ function S.threshold(key, id, history)
         limit = vendor - math.max(1, s.vendorMinProfit or 10)
     end
     local h = history[key]
-    local market = h and type(h.scan) == "table" and h.scan.market
+    local market = h and F.Market.usual(h)
     if U.finite(market) and market > 0 then
         local exit = U.stepDown(F.Market.salePrice(h) or market, item and item.kind)
         local d = F.Market.saleability(h, exit, F.Engine.clock())

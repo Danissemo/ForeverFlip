@@ -71,6 +71,8 @@
   - gold and stock of all your characters;
   - market lists and the time-of-week price pattern.
 - **History:** a 14-day price chart for any item (right-click), and tooltip prices with their age.
+- **Shared scans:** pool full scans with your guild, group or friends for more history and fresher
+  prices.
 - **Export:** the journal as CSV.
 - **Comfort:** key bindings, Careful / Balanced / Aggressive presets, `ForeverFlipAPI` for other
   addons, English and Ukrainian.

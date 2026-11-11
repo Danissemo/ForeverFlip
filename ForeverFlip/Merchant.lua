@@ -52,7 +52,7 @@ function V.offers(now)
         end
         if id and purchasable ~= false and not extended and (price or 0) > 0 and (quantity or 0) > 0 then
             local key, h = historyFor(id, link)
-            local market = h and type(h.scan) == "table" and h.scan.market
+            local market = h and F.Market.usual(h)
             if key and U.finite(market) then
                 local item = U.parseKey(key)
                 local today = type(h.days) == "table" and h.days[#h.days]

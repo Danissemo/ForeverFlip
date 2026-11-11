@@ -23,7 +23,7 @@ function B.value(key, id, history)
     local vendor = F.AH.vendorPrice(id)
     local value = vendor or 0
     local h = history[key]
-    local market = h and h.scan and h.scan.market
+    local market = h and F.Market.usual(h)
     if U.finite(market) and market > 0 then
         local s = F.Market.saleability(h, market, F.Engine.clock())
         if s.known and s.perDay >= 0.5 then

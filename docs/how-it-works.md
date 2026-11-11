@@ -20,6 +20,7 @@ them, so you can check them in the code.
 - [Merchant offers](#merchant-offers)
 - [Crafting](#crafting)
 - [Bids](#bids)
+- [Sharing scans](#sharing-scans)
 - [Safety rules](#safety-rules)
 - [Known facts about WoW Forever](#known-facts-about-wow-forever)
 
@@ -484,6 +485,38 @@ crafts.
      `vendor` if the vendor pays at least its worth, else `flip`.
    - The "Outbid" mail closes the bid.
    - Bids older than two days are forgotten.
+
+## Sharing scans
+
+`Share.lua`.
+
+- **Snapshot.** Every item seen in the player's last full scan, with its usual price, the day's
+  cheapest price and the units listed (`S.snapshot`).
+- **Text form.** `FF1|<scope>|<time>|key,usual,cheapest,units;...`, with numbers in base 36 and the
+  separators `%`, `,`, `;`, `|` in item keys escaped as `%XX`. The same text is used for export and
+  import.
+- **Transport.**
+  - Addon messages with the prefix `ForeverFlip` (`C_ChatInfo.SendAddonMessage`) to GUILD, PARTY,
+    RAID or WHISPER.
+  - The text is cut into pieces of 240 characters, each sent as `id:part:total:payload`, one every
+    0.3 seconds (`S.PACE`).
+  - The receiver joins the parts and drops an incomplete scan after 5 minutes.
+- **Acceptance** (`S.merge`):
+  - the scope's realm must be the player's realm;
+  - the scan must be at most 7 days old, and no more than 10 minutes in the future;
+  - each scan is merged once (`F.db.sharedSeen`);
+  - a scan within 2 minutes of the player's own scan is the same server scan, and is skipped.
+- **Merging,** per item:
+  1. `h.shared = { at, m, min, n, from }` when newer than the stored one;
+  2. the record of that day: the lowest price wins, the usual price and units fill in what is missing,
+     and the records stay in day order;
+  3. the time-of-week pattern, for items with 10 or more units listed.
+- **Usual price** (`Market.usual`): the newer of the player's own scan and the shared one. It is used
+  for posting prices, crafting, disenchant values, bids, merchant offers, the sniper threshold,
+  tooltips and `ForeverFlipAPI.GetPrice`. Sales estimates, lot tracking and deals use only the
+  player's own scans.
+- **Retention:** history entries known only from shared scans are pruned like the others, 14 days
+  after the item was last seen.
 
 ## Safety rules
 

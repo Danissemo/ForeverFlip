@@ -143,7 +143,7 @@ function DE.value(id)
     local total = 0
     for _, o in ipairs(outcomes) do
         local h = history[U.key("commodity", o[1])] or history[U.key("item", o[1])]
-        local price = h and h.scan and h.scan.market
+        local price = h and F.Market.usual(h)
         if not U.finite(price) then
             if o[2] >= 0.1 then
                 return nil
