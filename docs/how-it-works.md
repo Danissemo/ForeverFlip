@@ -50,8 +50,10 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
 1. **Request.** The scan job is created before the request, because the answer may arrive during
    the call itself. WoW Forever does not always send `REPLICATE_ITEM_LIST_UPDATE`, so the job also
    polls the number of replicated auctions once a second. The scan counts as arrived when that
-   number has changed and has stopped growing. With no answer in 45 seconds, the job gives up and
-   the next attempt is allowed a minute later.
+   number has changed and has stopped growing. Since launch the answer can take minutes, so the
+   job waits up to 10 minutes (`S.ANSWER_WAIT`), showing the seconds; with no answer it gives up
+   and the next attempt is allowed a minute later. A request refused by the account's 15-minute
+   limit is never answered.
 2. **Reading.** Rows are read in portions under a time budget per frame. Bid-only auctions and your
    own auctions are skipped. Rows whose item is not in the game cache are deferred; the item data is
    requested at most 40 items per second (`AH.lua`), and the deferred rows are retried for up to
@@ -74,7 +76,8 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
 Items that have not appeared in a full scan for 14 days are removed from the saved history.
 
 If another addon requests a full scan, ForeverFlip reads the same result and treats the 15-minute
-window as used.
+window as used. The call itself is watched (`C_AuctionHouse.ReplicateItems` is hooked), because the
+event that announces the answer is not always sent.
 
 ## Auction houses and the cut
 
@@ -241,8 +244,8 @@ candidate or part of Post all.
 ## Live verification
 
 `Deals.lua`. A deal from the full scan is only a lead. Before it can be bought, an exact search
-(`C_AuctionHouse.SendSearchQuery`; `SendSellSearchQuery` for gear) reads the item's current listings and the deal is evaluated again with them,
-using the same rules.
+(`C_AuctionHouse.SendSearchQuery`) reads the item's current listings and the deal is evaluated again
+with them, using the same rules.
 
 - A check is valid for **45 seconds** (`D.FRESH`). After that, Buy requires a new check.
 - Unchecked scan deals stay listed for **15 minutes** (`D.KEEP`).
@@ -251,8 +254,13 @@ using the same rules.
   an idle slot and never replaces a request of yours.
 - A search with no answer in 10 seconds is abandoned. A dropped request
   (`AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED`) is retried.
-- Gear is searched like the game's own Sell window does it, across every version of the item key,
-  and the rows are filtered by the full item name.
+- Gear is searched in two steps, because the sell search is never answered on WoW Forever: a browse
+  by the item's name lists its item-key versions, then each version is searched and the rows are
+  merged and filtered by the full item name. A complete browse without the item means nobody sells
+  it, known at once. (Without browse queries the sell search is still tried.)
+- The throttle check (`IsThrottledMessageSystemReady`) can stay "not ready" for good after a message
+  the server never answered. It is watched every frame; after 5 seconds of "not ready" one message
+  goes through.
 - **Automatic checks** (setting on by default): when nothing else runs, the best deal that has not
   been checked in 5 minutes is checked. The same deal is not retried within 2 minutes. Automatic
   checks pause while the selected deal is freshly checked, to leave you time to click Buy.
@@ -298,7 +306,9 @@ Gear keys are told apart only by the exact search, so a cheap gear item ID makes
 of that ID a candidate.
 
 Browse results that come while the sniper has no query of its own, such as the player browsing the
-game's Buy tab, are judged the same way.
+game's Buy tab or another addon's search, are judged the same way. Only their new rows are read, 300
+per frame, so another addon browsing the whole house does not freeze the game. A gear check needs
+the browse too: the round in flight gives way and starts again after the pause.
 
 ### Fallback: the hot list
 

@@ -16,8 +16,29 @@ stylua --check ForeverFlip
 The `sync/` folder (the Sync helper and the community aggregator) uses only the Python standard
 library; its tests run with the others.
 
-For in-game testing, link or copy the `ForeverFlip` folder into `Interface/AddOns` of your client and
-use `/reload` after each change.
+## Local development flow
+
+Turn on the repository's git hooks once per clone:
+
+```bash
+git config core.hooksPath .githooks
+git config ff.game "C:/World of Warcraft/_forever_"
+```
+
+Then every commit runs [`tools/devflow.py`](tools/devflow.py):
+
+| Hook | What it does |
+|---|---|
+| `pre-commit` | When code changed (`ForeverFlip/`, `sync/`, `tests/`, `tools/`): StyLua check and the whole test suite. A failure stops the commit. |
+| `post-commit` | Installs `ForeverFlip/` into the game's `Interface/AddOns` (a `/reload` in game picks it up; a full restart when a file was added or removed), then pushes `main` to GitHub. |
+
+Nothing else is published automatically: a release needs a tag (see [Releasing](#releasing)), which
+the hooks never push. `FF_NO_PUSH=1` or `FF_NO_INSTALL=1` skip a step for one commit. A push that
+fails (no network) is retried at the next commit, or with `python tools/devflow.py push`.
+
+An AI assistant working in the repository (Claude Code) also runs `python tools/devflow.py stop` as
+its Stop hook (`.claude/settings.local.json`, not committed): it cannot end its turn while changes are
+uncommitted, and anything committed but not pushed is pushed.
 
 Read [docs/architecture.md](docs/architecture.md) before larger changes.
 

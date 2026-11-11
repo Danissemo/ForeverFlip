@@ -1,0 +1,5 @@
+#!/bin/sh
+# Style check and tests before every commit that changes code (tools/devflow.py check).
+cd "$(git rev-parse --show-toplevel)" || exit 1
+. .githooks/python.sh
+exec "$PY" tools/devflow.py check

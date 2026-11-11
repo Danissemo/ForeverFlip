@@ -67,7 +67,9 @@ history, because the listings are separate, and counts the 15% cut.
 A full scan runs in stages, all shown on the progress bar:
 
 1. **Waiting for the auction house to send the full scan.** The server answers in a few seconds to a
-   minute. If it does not answer in 45 seconds, ForeverFlip says so and tries again a minute later.
+   minute. The status line counts the seconds while ForeverFlip waits for the answer (minutes on a
+   busy server). If it does not answer in 10 minutes, ForeverFlip says so and tries again a minute
+   later.
 2. **Reading auctions.** The scan is read in small portions per frame, so the game keeps running
    smoothly.
 3. **Loading item data.** Some items are not in the game's cache yet. ForeverFlip asks the game to
@@ -79,8 +81,8 @@ The server allows **one full scan per 15 minutes per account**. With **Full scan
 (Settings, on by default), ForeverFlip starts the next scan by itself when the cooldown ends, if the
 auction house is open and no other action is running.
 
-If another addon (Auctionator, TSM, ...) requests a full scan, ForeverFlip reads the result too and
-says so in the status line.
+If another addon (Auctionator, TSM, auxForever, ...) requests a full scan, ForeverFlip reads the
+result too and says so in the status line.
 
 The last scan and its deals are saved. After a `/reload` or a new login they are shown again until
 the next scan, but every deal has to be checked again before you can buy it.
@@ -99,7 +101,8 @@ Between full scans, the sniper watches the whole auction house:
    full deal rules. A deal that holds is listed as **ready** and raises an [alert](#alerts).
 
 Candidates are checked before the next page is asked for, and the sniper pauses while you buy, post
-or run a manual check. An unchanged lowest price is not checked again for two minutes.
+or run a manual check. An unchanged lowest price is not checked again for two minutes. Searches
+other addons make in the auction house feed the sniper too, without slowing the game.
 
 If the game client does not offer the browse queries the sniper needs, it falls back to re-reading
 the 150 items most often near a deal, one per second.
@@ -549,6 +552,9 @@ For items seen in the scans, the tooltip gets extra lines:
 - **cheapest / dearest time**: when the time-of-week pattern is known.
 - **cheapest today / 5 days**.
 - **gone per day near the usual price**: the measured sales rate.
+- **Best: ...**: whether the item is best sold to a vendor, disenchanted (a character who can) or
+  posted on the auction house, counting the cut and three deposits (as if it sells on the third
+  posting). A vendor price not yet confirmed at a merchant is marked.
 
 ### Marks in the Buy tab
 
@@ -630,7 +636,7 @@ A key press is an action of yours, like a click, so it may buy, post and cancel.
 | Message | Meaning |
 |---|---|
 | A full scan is allowed once per 15 minutes. | Wait for the countdown on the Full scan button. |
-| The auction house did not answer the full scan ... | Another addon may have used the 15-minute window. ForeverFlip tries again in a minute. |
+| The auction house did not answer the full scan in 10 minutes ... | Another addon may have used the 15-minute window. ForeverFlip tries again in a minute. |
 | The auction house returned an empty scan. | Try again later. |
 | The auction house is busy. | The server is throttling requests. Try again in a moment. |
 | Checking the current price first... | Buy was clicked on a deal that is not freshly checked. It is being checked now. |
@@ -645,6 +651,8 @@ A key press is an action of yours, like a click, so it may buy, post and cancel.
 | Bid placed. / Auction won. | See [Bids](#bids). |
 | Not enough money. | The deal costs more than you carry. |
 | Wait for the current action. | A purchase or post is still running. |
+| The spending limit of this auction house visit is reached. | Settings → Safety: raise the limit, or close and reopen the auction house for a new visit. |
+| No deal to buy right now. | The Buy next key found no deal you can afford. |
 
 Errors inside the addon are printed once in chat, as `ForeverFlip error: ...`. The latest 20 are
 saved in the SavedVariables file (see [Troubleshooting](#troubleshooting)).

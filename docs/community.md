@@ -19,6 +19,11 @@ ForeverFlip_Shared addon  ◀────  downloads the summaries    ◀──�
 The game gives addons no network access, so a small program, the **ForeverFlip Sync** helper, runs
 next to the game and moves the files.
 
+Inside the game, without the helper, ForeverFlip also shares scans with every ForeverFlip user of
+your realm over a hidden chat channel (Settings → Sharing, on by default); see
+[Sharing scans](user-guide.md#sharing-scans). That covers the players online with you; the GitHub
+data adds everyone's history and keeps the full scans.
+
 ## For players
 
 ### Getting community prices (no account needed)

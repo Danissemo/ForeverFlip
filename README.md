@@ -126,9 +126,10 @@ with the auction house open).
 | `/ff export` | The journal as CSV, ready to copy |
 | `/ff lang en` · `/ff lang uk` | Switch the language (after `/reload`) |
 
-The Key Bindings window has four bindings:
+The Key Bindings window has five bindings (also set on **Settings → Key bindings**):
 
 - Buy or confirm the selected deal
+- Buy the next best deal (each press: check, buy, confirm)
 - Post next bought (then Post all)
 - Cancel the next undercut auction
 - Full scan

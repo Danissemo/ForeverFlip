@@ -12,3 +12,6 @@ __pycache__/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local Claude Code settings (machine paths)
+.claude/settings.local.json

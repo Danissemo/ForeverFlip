@@ -39,7 +39,8 @@ python -m unittest discover -s tests -p "test_*.py"
 | `test_locale.py` | Every `L("...")` string has a Ukrainian translation, and no key is translated twice. |
 
 The CI workflow runs the same tests, checks formatting with StyLua, and builds the archive on every
-push and pull request.
+push and pull request. Locally, the `pre-commit` hook runs StyLua and the tests before every commit
+that changes code (see [CONTRIBUTING](../CONTRIBUTING.md#local-development-flow)).
 
 ### Static checks
 

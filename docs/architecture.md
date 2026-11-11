@@ -14,6 +14,8 @@ tests/                  automated tests (Python + lupa running Lua 5.1)
   mock.lua              simulated WoW client and WoW Forever auction house
   test_*.py             test suites
 tools/build.py          checks and packages a release archive into dist/
+tools/devflow.py        local flow: checks before a commit, install into the game and push after it
+.githooks/              the git hooks that call tools/devflow.py (git config core.hooksPath .githooks)
 sync/                   ForeverFlip Sync helper and the community data aggregator (Python)
 docs/                   documentation
 .github/                CI, release workflow, issue and PR templates, README images (assets/)

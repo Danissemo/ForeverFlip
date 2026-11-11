@@ -27,7 +27,7 @@ end
 `item` is an item link, an item string (`"item:2589::::::"`) or an item ID (`2589` or `"2589"`).
 Gear is priced per ending ("of the Bear"); pass a link to get the right one. Prices are in copper per
 unit, for the auction house the player uses (realm and faction, or the neutral house while one is
-open). Anything ForeverFlip does not know returns nil, never an error.
+open; hardcore realms have their own). Anything ForeverFlip does not know returns nil, never an error.
 
 ## Functions
 
