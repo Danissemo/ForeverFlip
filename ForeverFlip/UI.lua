@@ -150,6 +150,18 @@ end
 -- column is the item (icon and name) and takes the remaining width.
 local function table_(parent, columns, rows, onClick, onSort)
     local t = { rows = {}, headers = {} }
+    if not onSort then
+        -- Built-in sorting: a header click sorts by that column, a second click reverses it. Names
+        -- start A to Z, numbers start with the largest.
+        onSort = function(index)
+            if t.sortIndex == index then
+                t.descending = not t.descending
+            else
+                t.sortIndex, t.descending = index, index ~= 1
+            end
+            UI.refresh()
+        end
+    end
     local header = CreateFrame("Frame", nil, parent)
     header:SetPoint("TOPLEFT", parent, "TOPLEFT", 4, -4)
     header:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4, -4)
@@ -193,6 +205,41 @@ local function table_(parent, columns, rows, onClick, onSort)
     local first = headerCell(columns[1][1], nil, "LEFT", 1)
     first:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
     first:SetPoint("TOPRIGHT", header, "TOPRIGHT", -x, 0)
+    -- A sorted copy of `list` by the chosen column. `value(entry, column)` returns a number, a
+    -- string or nil; nil sorts last in both directions, equal values keep the list's order.
+    function t.sort(list, value)
+        local index = t.sortIndex
+        t.setSort(index, t.descending)
+        local out = {}
+        for i, e in ipairs(list) do
+            out[i] = e
+        end
+        if not index then
+            return out
+        end
+        local keys, order = {}, {}
+        for i, e in ipairs(out) do
+            local v = value(e, index)
+            if type(v) == "string" then
+                v = string.lower(v:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+            end
+            keys[e], order[e] = v, i
+        end
+        table.sort(out, function(a, b)
+            local x, y = keys[a], keys[b]
+            if x == nil or y == nil or type(x) ~= type(y) or x == y then
+                if (x == nil) ~= (y == nil) then
+                    return y == nil
+                end
+                return order[a] < order[b]
+            end
+            if t.descending then
+                return x > y
+            end
+            return x < y
+        end)
+        return out
+    end
     function t.setSort(index, descending)
         for i, h in ipairs(t.headers) do
             if i == index then
@@ -906,6 +953,16 @@ function UI.refreshShop()
     for _, b in ipairs(F.Shopping.blockedKeys()) do
         rows[#rows + 1] = { key = b.key, name = b.name, blocked = true }
     end
+    for _, e in ipairs(rows) do
+        local h = history[e.key]
+        local today = h and h.days and h.days[#h.days]
+        local d = F.Deals.get(e.key)
+        e.cheap = today and today.min or nil
+        e.state = e.blocked and 3 or (d and d.mode == "shop") and 1 or 2
+    end
+    rows = UI.shopTable.sort(rows, function(e, column)
+        return ({ e.name or e.key, e.max, e.qty, e.cheap, e.state })[column]
+    end)
     for i, r in ipairs(UI.shopTable.rows) do
         local e = rows[i]
         if e then
@@ -1001,7 +1058,16 @@ function UI.createBids(p)
 end
 
 function UI.refreshBids()
-    local list = F.Bids.candidates
+    local list = UI.bidTable.sort(F.Bids.candidates, function(c, column)
+        local o = F.Bids.offer(c.key)
+        return ({
+            nameOf(c.key),
+            o and o.bid or c.bid,
+            c.value,
+            o and o.profit or c.profit,
+            o and 1 or F.Deals.pending(c.key) and 2 or 3,
+        })[column]
+    end)
     for i, r in ipairs(UI.bidTable.rows) do
         local c = list[i]
         if c then
@@ -1295,7 +1361,20 @@ end
 
 function UI.refreshSell()
     local hiddenView = UI.sellView == "hidden"
-    local items = sellItems(hiddenView)
+    local listedNow = {}
+    for _, l in ipairs(F.Data.char(F.db, F.Engine.owner()).listings) do
+        listedNow[l.key] = (listedNow[l.key] or 0) + l.open
+    end
+    local items = UI.sellTable.sort(sellItems(hiddenView), function(item, column)
+        local p = item.position
+        return ({
+            item.name or U.linkName(item.link) or nameOf(item.key),
+            item.count,
+            p and p.qty > 0 and p.cost / p.qty or nil,
+            listedNow[item.key],
+            p and p.mode or nil,
+        })[column]
+    end)
     local hiddenCount = #F.Trade.hiddenItems()
     UI.sellSaleTab:SetText(L("For sale") .. " (" .. #sellItems(false) .. ")")
     UI.sellHiddenTab:SetText(L("Hidden") .. " (" .. hiddenCount .. ")")
@@ -1523,7 +1602,11 @@ function UI.createAuctions(p)
 end
 
 function UI.refreshAuctions()
-    local owned = F.Trade.owned or {}
+    local owned = UI.auctionTable.sort(F.Trade.owned or {}, function(a, column)
+        local status, cheapest = F.Trade.ownedStatus(a)
+        local rank = status == "sold" and 1 or status == "undercut" and 2 or status == "cheapest" and 3 or 4
+        return ({ nameOf(a.key or "", a.link), a.qty, a.price, cheapest, rank, a.timeLeft })[column]
+    end)
     local undercutN = #F.Trade.undercutList()
     UI.cancelUndercut:SetText(L("Cancel undercut") .. " (" .. undercutN .. ")")
     UI.cancelUndercut:SetEnabled(undercutN > 0 and F.AH.isOpen())
@@ -1608,7 +1691,9 @@ function UI.createStats(p)
 end
 
 function UI.refreshStats()
-    local stats = F.Trade.itemStats()
+    local stats = UI.statsTable.sort(F.Trade.itemStats(), function(s, column)
+        return ({ s.name, s.bought, s.sold, s.profit, s.stock, s.avgDays, s.rate, s.stale and 1 or 0 })[column]
+    end)
     local stale = 0
     for i, r in ipairs(UI.statsTable.rows) do
         local s = stats[i]
@@ -1836,7 +1921,19 @@ function UI.refreshAnalytics()
         b:SetEnabled(id ~= UI.marketView)
     end
     local m = F.Analytics.market()
-    local list = m[UI.marketView] or {}
+    local timingView = UI.marketView == "cheapNow" or UI.marketView == "sellNow"
+    local list = UI.marketTable.sort(m[UI.marketView] or {}, function(e, column)
+        if column == 1 then
+            return nameOf(e.key)
+        elseif column == 2 then
+            return e.market
+        elseif column == 3 then
+            return timingView and e.timing and e.timing.now or e.cheap
+        elseif column == 4 then
+            return timingView and e.timing and e.timing.now or e.change
+        end
+        return e.perDay
+    end)
     for i, row in ipairs(UI.marketTable.rows) do
         local e = list[i]
         if e then
@@ -1912,7 +2009,9 @@ function UI.createCrafting(p)
 end
 
 function UI.refreshCrafting()
-    local rows = F.Crafting.profits()
+    local rows = UI.craftTable.sort(F.Crafting.profits(), function(e, column)
+        return ({ e.name, e.cost, e.value, e.profit, e.perDay, e.route })[column]
+    end)
     for i, r in ipairs(UI.craftTable.rows) do
         local e = rows[i]
         if e then

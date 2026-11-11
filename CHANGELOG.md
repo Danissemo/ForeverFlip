@@ -21,6 +21,10 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- Clicking a column header did not sort the tables of the Crafting, Sell my items, My auctions,
+  Statistics, Analytics, Shopping list and Bids pages. Every table sorts now, both ways.
+- Ukrainian texts showed boxes in place of the middle dot and a few other symbols that the game's
+  Cyrillic font lacks; they use plain characters now.
 - The price box of the Sell page kept the last price after posting.
 - An item nobody sells on the auction house and never seen in a scan (recipes, rare drops) got no
   suggested price, and the Sell page kept asking for a price check. Now:

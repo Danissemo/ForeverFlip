@@ -41,7 +41,11 @@ The window has three parts:
 - **Right side:** the selected page. Most pages have a table on top and an explanation and buttons
   at the bottom.
 
-ForeverFlip remembers the last page you opened. **Right-click any item row** in any table to open its
+ForeverFlip remembers the last page you opened.
+
+- **Sort any table** by clicking a column header. Click it again to reverse the order; an arrow marks
+  the column. Names sort A to Z first, numbers largest first, and empty values always go last.
+- **Right-click any item row** in any table to open its
 [price history](#price-history-window).
 
 At a neutral auction house (Booty Bay, Gadgetzan, Everlook) ForeverFlip keeps a separate price
