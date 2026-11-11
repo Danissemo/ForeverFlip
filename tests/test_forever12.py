@@ -296,6 +296,25 @@ class OtherTests(unittest.TestCase):
         a = M.advice(30, 'i:30', h['i:30'])
         assert(a.best == 'auction' and a.auction < 50000)''')
 
+    def test_six_menu_entries_with_tabs_for_grouped_pages(self):
+        run(SETUP + '''local UI = ForeverFlip.UI
+        assert(#UI.categories == 6, #UI.categories)
+        UI.show('bids')
+        local deals = UI.categories[1]
+        assert(deals.selected:IsShown(), 'bids belong to Deals')
+        local tabs = UI.groupTabs[deals.group]
+        assert(#tabs == 5)
+        local shown, current = 0, nil
+        for _, b in ipairs(tabs) do
+            if b:IsShown() then shown = shown + 1 end
+            if b.id == 'bids' then current = b end
+        end
+        assert(shown == 5 and not current:IsEnabled(), 'the open page is the disabled tab')
+        UI.show('stats'); UI.categories[1].scripts.OnClick(UI.categories[1])
+        assert(UI.section == 'bids', 'a group opens the page it showed last')
+        UI.show('settings')
+        for _, b in ipairs(tabs) do assert(not b:IsShown()) end''')
+
     def test_shopping_for_a_craft_counts_what_the_bags_hold(self):
         run(SETUP + '''fullScan()
         function GetItemCount(id) return id == 10 and 7 or 0 end

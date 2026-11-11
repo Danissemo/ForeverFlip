@@ -38,12 +38,21 @@ The window has three parts:
 
 - **Top bar:** scan and sniper buttons and a status line. A thin yellow bar along the top edge shows
   the progress of the current task.
-- **Left column:** the page list and, below it, a short summary of the last scan and of the sniper
+- **Left column:** six entries and, below them, a short summary of the last scan and of the sniper
   (rounds, prices read, candidates, checks).
-- **Right side:** the selected page. Most pages have a table on top and an explanation and buttons
-  at the bottom.
+- **Right side:** the selected page. An entry with several pages shows them as tabs above the page.
+  Most pages have a table on top and an explanation and buttons at the bottom.
 
-ForeverFlip remembers the last page you opened.
+| Entry | Tabs |
+|---|---|
+| **Deals** | All · To vendor · Resale · From the list (shopping list deals) · Bids |
+| **Shopping list** | |
+| **Selling** | My items (the Sell my items page) · My auctions |
+| **Analytics** | Overview · By item (Statistics by item) · Journal and profit |
+| **Crafting** | |
+| **Settings** | |
+
+ForeverFlip remembers the last page you opened, and each entry opens the tab you used last.
 
 - **Sort any table** by clicking a column header. Click it again to reverse the order; an arrow marks
   the column. Names sort A to Z first, numbers largest first, and empty values always go last.

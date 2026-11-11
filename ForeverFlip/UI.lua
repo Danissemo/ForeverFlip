@@ -380,33 +380,18 @@ function UI.create()
     left:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
     left:SetWidth(LEFT_WIDTH)
     UI.categories = {}
-    local entries = {
-        { "deals:all", "All deals" },
-        { "deals:vendor", "Sell to vendor (no risk)" },
-        { "deals:flip", "Resale" },
-        { "deals:shop", "Shopping deals" },
-        { "bids", "Bids" },
-        { "shop", "Shopping list" },
-        { "sell", "Sell my items" },
-        { "auctions", "My auctions" },
-        { "stats", "Statistics by item" },
-        { "analytics", "Analytics" },
-        { "crafting", "Crafting" },
-        { "journal", "Journal and profit" },
-        { "settings", "Settings" },
-    }
-    for i, e in ipairs(entries) do
-        local c = category(left, e[2], function()
-            UI.show(e[1])
+    for i, group in ipairs(UI.GROUPS) do
+        local c = category(left, group.label, function()
+            UI.show(group.current or group.pages[1][1])
         end)
         c:SetPoint("TOPLEFT", left, "TOPLEFT", 8, -8 - (i - 1) * 23)
         c:SetPoint("TOPRIGHT", left, "TOPRIGHT", -8, -8 - (i - 1) * 23)
-        c.id = e[1]
+        c.group = group
         UI.categories[i] = c
     end
     UI.summary = text(left, "GameFontHighlightSmall")
-    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -8 - #entries * 23 - 12)
-    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -8 - #entries * 23 - 12)
+    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -8 - #UI.GROUPS * 23 - 12)
+    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -8 - #UI.GROUPS * 23 - 12)
     UI.summary:SetSpacing(2)
 
     -- Right: one page per category.
@@ -433,6 +418,24 @@ function UI.create()
         page:Hide()
         UI.pages[id] = page
     end
+    -- Tabs of the pages of a group, above the page.
+    UI.groupTabs = {}
+    for _, group in ipairs(UI.GROUPS) do
+        if #group.pages > 1 then
+            local width = math.floor(math.min(150, 590 / #group.pages))
+            local tabs = {}
+            for i, entry in ipairs(group.pages) do
+                local b = button(right, entry[2], width - 4, function()
+                    UI.show(entry[1])
+                end)
+                b:SetPoint("TOPLEFT", right, "TOPLEFT", 6 + (i - 1) * width, -4)
+                b.id = entry[1]
+                b:Hide()
+                tabs[#tabs + 1] = b
+            end
+            UI.groupTabs[group] = tabs
+        end
+    end
     UI.createDeals(UI.pages.deals)
     UI.createShop(UI.pages.shop)
     UI.createBids(UI.pages.bids)
@@ -444,6 +447,40 @@ function UI.create()
     UI.createJournal(UI.pages.journal)
     UI.createSettings(UI.pages.settings)
     UI.show(F.db.ui and F.db.ui.section or "deals:all")
+end
+
+-- Six entries on the left; a group of several pages shows them as tabs above the page. The page
+-- ids (UI.show) stay the same. Groups remember the page shown last.
+UI.GROUPS = {
+    {
+        label = "Deals",
+        pages = {
+            { "deals:all", "All" },
+            { "deals:vendor", "To vendor" },
+            { "deals:flip", "Resale" },
+            { "deals:shop", "From the list" },
+            { "bids", "Bids" },
+        },
+    },
+    { label = "Shopping list", pages = { { "shop", "Shopping list" } } },
+    { label = "Selling", pages = { { "sell", "My items" }, { "auctions", "My auctions" } } },
+    {
+        label = "Analytics",
+        pages = { { "analytics", "Overview" }, { "stats", "By item" }, { "journal", "Journal and profit" } },
+    },
+    { label = "Crafting", pages = { { "crafting", "Crafting" } } },
+    { label = "Settings", pages = { { "settings", "Settings" } } },
+}
+
+function UI.groupOf(id)
+    for _, group in ipairs(UI.GROUPS) do
+        for _, entry in ipairs(group.pages) do
+            if entry[1] == id then
+                return group
+            end
+        end
+    end
+    return UI.GROUPS[1]
 end
 
 function UI.show(id)
@@ -462,15 +499,32 @@ function UI.show(id)
     end
     F.db.ui = F.db.ui or {}
     F.db.ui.section = id
+    local group = UI.groupOf(id)
+    group.current = id
+    local tabbed = #group.pages > 1
     for key, p in pairs(UI.pages) do
         if key == page then
+            -- A page of a group with tabs starts below them.
+            p:ClearAllPoints()
+            p:SetPoint("TOPLEFT", UI.right, "TOPLEFT", 3, tabbed and -32 or -3)
+            p:SetPoint("BOTTOMRIGHT", UI.right, "BOTTOMRIGHT", -3, 3)
             p:Show()
         else
             p:Hide()
         end
     end
+    for g, tabs in pairs(UI.groupTabs) do
+        for _, b in ipairs(tabs) do
+            if g == group then
+                b:Show()
+            else
+                b:Hide()
+            end
+            b:SetEnabled(b.id ~= id)
+        end
+    end
     for _, c in ipairs(UI.categories) do
-        if c.id == id then
+        if c.group == group then
             c.selected:Show()
         else
             c.selected:Hide()
