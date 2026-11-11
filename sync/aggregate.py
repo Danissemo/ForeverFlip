@@ -131,7 +131,7 @@ class Hub:
 
     # The workflow's token has no access to gists; secret gists are read without one.
     def gist(self, gist_id):
-        return json.loads(self.call("GET", f"{API}/gists/{gist_id}", auth=False))
+        return self.call("GET", f"{API}/gists/{gist_id}", auth=False)
 
     def raw(self, url) -> bytes:
         if not url.startswith(GIST_RAW):
