@@ -42,7 +42,7 @@ class SummaryTests(unittest.TestCase):
     def test_sniper_figures_are_in_the_summary(self):
         run(SETUP + '''local F=ForeverFlip;enableBrowse();fullScan();F.db.settings.sniper=true
         F.Sniper.rounds,F.Sniper.items=3,900;F.UI.refresh()
-        local s=F.UI.summary:GetText();assert(s:find('Sniper: 3 rounds',1,true) and s:find('Prices read: 900',1,true),s)
+        local s=F.UI.summary:GetText();assert(s:find('Sniper: 3 rounds, 900 prices',1,true),s)
         assert(not F.UI.status:GetText():find('sniper',1,true),F.UI.status:GetText())''')
 
 
