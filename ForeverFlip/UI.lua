@@ -392,7 +392,7 @@ function UI.create()
     UI.summary = text(left, "GameFontHighlightSmall")
     UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -8 - #UI.GROUPS * 23 - 12)
     UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -8 - #UI.GROUPS * 23 - 12)
-    UI.summary:SetSpacing(2)
+    UI.summary:SetSpacing(4)
 
     -- Right: one page per category.
     local right = inset(f, "auctionhouse-background-index")
@@ -2982,10 +2982,12 @@ function UI.refreshSummary()
         return
     end
     local s = last.stats
-    -- Six short lines: the panel ends above the money display, and Ukrainian is longer.
+    -- One figure per line: with six menu entries the panel has room for them.
     UI.summary:SetText(
         string.format(
-            L("Scan %d min ago\nAuctions %d, items %d\nVendor price %d, below %d\nSales data: %d"),
+            L(
+                "Last scan %d min ago\nAuctions: %d\nItems: %d\nVendor price known: %d\nBelow vendor price: %d\nCollecting sales data: %d"
+            ),
             math.floor((F.Engine.clock() - last.at) / 60),
             last.total,
             s.items,
@@ -2999,14 +3001,14 @@ end
 -- Sniper figures for the summary on the left.
 function UI.sniperSummary()
     if not F.db.settings.sniper then
-        return "\n" .. L("Sniper: off")
+        return "\n\n" .. L("Sniper: off")
     end
     if not F.Sniper.active() then
-        return "\n" .. string.format(L("Sniper: %d checks"), F.Deals.snipes or 0)
+        return "\n\n" .. string.format(L("Sniper: %d checks"), F.Deals.snipes or 0)
     end
-    return "\n"
+    return "\n\n"
         .. string.format(
-            L("Sniper: %d rounds, %d prices\nCandidates %d, checks %d"),
+            L("Sniper: %d rounds\nPrices read: %d\nCandidates: %d\nChecks: %d"),
             F.Sniper.rounds,
             F.Sniper.items,
             F.Sniper.found,
