@@ -251,6 +251,7 @@ out.
 | Qty | Units in the bags. |
 | Cost each | What you paid per unit, if it was bought through ForeverFlip. |
 | Listed | Units you already have on the auction house. |
+| Best | Where one unit brings the most, and how much: **Vendor** (a merchant pays at least what the auction house leaves after the cut and the deposits), **AH** (the auction house pays more), **Disenchant** (a character who can disenchant), or *AH: no price yet* when no scan priced the item. It is the same comparison as the item tooltip. |
 | Note | Whether the item was bought for resale or as a vendor deal. |
 
 Under the table:
@@ -280,6 +281,9 @@ At the bottom:
 - **Post all (N)** handles every sellable item in the bags, also items you did not buy through
   ForeverFlip. Vendor-deal stock, shopping purchases, ignored items and the units of a *keep* rule
   are left out.
+- **Post AH-worthy (N)** is Post all without the items whose Best is **Vendor**: only what the
+  auction house pays more for is posted, and the rest stays in the bags for a merchant. Items with no
+  auction price yet are posted (nothing says a vendor pays more).
 
 How the two posting queues work:
 

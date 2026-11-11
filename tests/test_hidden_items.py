@@ -46,3 +46,35 @@ class HiddenItemsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BestWayTests(unittest.TestCase):
+    """The Best column and the two Post all buttons: everything, or only what the auction house pays
+    more for than a vendor."""
+
+    SETUP = HIDE + """F.db.settings.vendorMargin = 0
+    local history = F.Data.market(F.db, F.Engine.scope()).history
+    -- Linen Bag: a merchant pays 20s, the auction house about 21s before the cut and deposits.
+    history['i:30'] = { scan = { at = now, market = 2100 } }
+    -- Linen Cloth: a merchant pays 1s, the auction house far more.
+    history['c:10'] = { scan = { at = now, market = 5000 } }
+    """
+
+    def test_vendor_or_auction_per_item(self):
+        run(self.SETUP + """assert(T.bestWay('i:30', 30) == 'vendor', T.bestWay('i:30', 30))
+        assert(T.bestWay('c:10', 10) == 'auction', T.bestWay('c:10', 10))
+        F.Data.market(F.db, F.Engine.scope()).history['i:30'] = nil
+        assert(T.bestWay('i:30', 30) == 'unknown', 'no auction price: unknown, not vendor')""")
+
+    def test_post_ah_worthy_leaves_vendor_items_out(self):
+        run(self.SETUP + """local function has(list, key) for _, b in ipairs(list) do if b.key == key then return true end end end
+        assert(has(T.toPostAll(), 'i:30') and has(T.toPostAll(), 'c:10'), 'Post all: everything')
+        assert(not has(T.toPostAll(true), 'i:30') and has(T.toPostAll(true), 'c:10'), 'AH-worthy: no vendor item')
+        UI.refresh()
+        assert(UI.postAll:GetText() == 'Post all (2)', UI.postAll:GetText())
+        assert(UI.postAuction:GetText() == 'Post AH-worthy (1)', UI.postAuction:GetText())
+        assert(row('i:30').cols[4]:GetText():find('Vendor'), row('i:30').cols[4]:GetText())
+        assert(row('c:10').cols[4]:GetText():find('AH'), row('c:10').cols[4]:GetText())
+        UI.postAuction:Click()
+        local q = lastCall('SendSearchQuery') or lastCall('PostCommodity') or lastCall('PostItem')
+        assert(not lastCall('PostItem'), 'the vendor item is not posted')""")

@@ -1214,10 +1214,11 @@ function UI.createSell(p)
         list,
         {
             { "Name" },
-            { "Qty", 50 },
-            { "Cost each", 90 },
-            { "Listed", 60 },
-            { "Note", 150, "LEFT" },
+            { "Qty", 40 },
+            { "Cost each", 80 },
+            { "Listed", 50 },
+            { "Best", 120 },
+            { "Note", 120, "LEFT" },
         },
         SELL_ROWS,
         function(row)
@@ -1331,7 +1332,7 @@ function UI.createSell(p)
         end
     end)
     UI.ruleSave:SetPoint("LEFT", UI.ruleKeep, "RIGHT", 10, 0)
-    UI.postButton = button(bar, "Post", 140, function()
+    UI.postButton = button(bar, "Post", 110, function()
         local item = UI.sellSelected
         if not item then
             return
@@ -1346,17 +1347,40 @@ function UI.createSell(p)
         end
     end)
     UI.postButton:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
-    UI.postNext = button(bar, "Post next bought", 180, function()
+    UI.postNext = button(bar, "Post next bought", 170, function()
         local _, why = F.Trade.postNext()
         F.Engine.notify(why)
     end)
     UI.postNext:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
-    UI.postAll = button(bar, "Post all", 130, function()
+    UI.postAll = button(bar, "Post all", 115, function()
         local _, why = F.Trade.postAll()
         F.Engine.notify(why)
     end)
     UI.postAll:SetPoint("LEFT", UI.postNext, "RIGHT", 4, 0)
-    UI.sellCheck = button(bar, "Check price", 120, function()
+    -- Post all, except what a merchant pays at least as much for (the Best column says "Vendor").
+    UI.postAuction = button(bar, "Post AH-worthy", 155, function()
+        local _, why = F.Trade.postAll(true)
+        F.Engine.notify(why)
+    end)
+    UI.postAuction:SetPoint("LEFT", UI.postAll, "RIGHT", 4, 0)
+    for b, text in pairs({
+        [UI.postAll] = "Posts every item for sale, one per click.",
+        [UI.postAuction] = "Posts only items the auction house pays more for than a vendor, after the cut and the deposits (Best column). Items a vendor pays as much for stay in the bags for the merchant.",
+    }) do
+        b:SetScript("OnEnter", function(self)
+            if GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(L(text), 1, 1, 1, 1, true)
+                GameTooltip:Show()
+            end
+        end)
+        b:SetScript("OnLeave", function()
+            if GameTooltip then
+                GameTooltip:Hide()
+            end
+        end)
+    end
+    UI.sellCheck = button(bar, "Check price", 110, function()
         if UI.sellSelected then
             F.Trade.checkPrice(UI.sellSelected.key)
             F.Engine.changed()
@@ -1441,13 +1465,27 @@ function UI.refreshSell()
     for _, l in ipairs(F.Data.char(F.db, F.Engine.owner()).listings) do
         listedNow[l.key] = (listedNow[l.key] or 0) + l.open
     end
+    local ways = {}
+    local function way(item)
+        local w = ways[item.key]
+        if not w then
+            local name, value = F.Trade.bestWay(item.key, item.id)
+            w = { name = name, value = value }
+            ways[item.key] = w
+        end
+        return w
+    end
     local items = UI.sellTable.sort(sellItems(hiddenView), function(item, column)
         local p = item.position
+        if column == 5 then
+            return way(item).value
+        end
         return ({
             item.name or U.linkName(item.link) or nameOf(item.key),
             item.count,
             p and p.qty > 0 and p.cost / p.qty or nil,
             listedNow[item.key],
+            nil,
             p and p.mode or nil,
         })[column]
     end)
@@ -1472,8 +1510,9 @@ function UI.refreshSell()
             local p = item.position
             r.cols[2]:SetText(p and p.qty > 0 and U.money(p.cost / p.qty) or "-")
             r.cols[3]:SetText(listings[item.key] or "-")
+            r.cols[4]:SetText(UI.bestText(way(item)))
             if hiddenView then
-                r.cols[4]:SetText(item.away and L("not in the bags") or L("hidden"))
+                r.cols[5]:SetText(item.away and L("not in the bags") or L("hidden"))
             else
                 local note = p
                     and (
@@ -1481,7 +1520,7 @@ function UI.refreshSell()
                         or p.mode == "other" and L("bought elsewhere")
                         or L("bought for resale")
                     )
-                r.cols[4]:SetText(note or "")
+                r.cols[5]:SetText(note or "")
             end
             if UI.sellSelected and UI.sellSelected.key == item.key then
                 r.selected:Show()
@@ -1519,17 +1558,13 @@ function UI.refreshSell()
         UI.sellCheck:Disable()
         UI.ruleSave:Disable()
         UI.refreshPostNext()
-        local all = #F.Trade.toPostAll()
-        UI.postAll:SetText(L("Post all") .. " (" .. all .. ")")
-        UI.postAll:SetEnabled(all > 0 and not F.Trade.posting)
+        UI.refreshPostAll()
         return
     end
     for _, b in ipairs(UI.durations) do
         b:SetEnabled(F.db.settings.duration ~= b.value)
     end
-    local all = #F.Trade.toPostAll()
-    UI.postAll:SetText(L("Post all") .. " (" .. all .. ")")
-    UI.postAll:SetEnabled(all > 0 and not F.Trade.posting)
+    UI.refreshPostAll()
     UI.ruleSave:SetEnabled(UI.sellSelected ~= nil)
     local item = UI.sellSelected
     if not item then
@@ -3338,6 +3373,24 @@ function UI.attach()
         end)
     end
     UI.tab = b
+end
+
+function UI.refreshPostAll()
+    local all, worthy = #F.Trade.toPostAll(), #F.Trade.toPostAll(true)
+    UI.postAll:SetText(L("Post all") .. " (" .. all .. ")")
+    UI.postAll:SetEnabled(all > 0 and not F.Trade.posting)
+    UI.postAuction:SetText(L("Post AH-worthy") .. " (" .. worthy .. ")")
+    UI.postAuction:SetEnabled(worthy > 0 and not F.Trade.posting)
+end
+
+-- The Best column of the Sell page: where one unit brings the most, and how much.
+local BEST = { vendor = "Vendor", auction = "AH", disenchant = "Disenchant" }
+function UI.bestText(w)
+    if w.name == "unknown" then
+        return "|cff999999" .. L("AH: no price yet") .. "|r"
+    end
+    local color = w.name == "vendor" and "|cffffb84d" or w.name == "auction" and "|cff40ff40" or "|cffb070ff"
+    return color .. L(BEST[w.name]) .. " " .. U.money(w.value) .. "|r"
 end
 
 function UI.refreshPostNext()

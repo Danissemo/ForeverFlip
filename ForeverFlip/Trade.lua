@@ -879,9 +879,29 @@ function T.hiddenItems()
     return out
 end
 
+-- Where one unit of an item brings the most: "vendor" when a merchant pays at least what the
+-- auction house leaves after the cut and the deposits, "auction" when the auction house pays more,
+-- "disenchant" when the materials are worth more (a character who can); "unknown" when the auction
+-- house has no price for it yet. Returns way, value, advice (F.Market.advice).
+function T.bestWay(key, id)
+    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
+    local advice = F.Market.advice(id, key, type(h) == "table" and h or nil)
+    if not advice then
+        return "unknown", nil, nil
+    end
+    if not advice.auction then
+        return "unknown", advice.vendor, advice
+    end
+    if advice.vendor and advice.vendor >= advice.auction and advice.best ~= "disenchant" then
+        return "vendor", advice.vendor, advice
+    end
+    return advice.best, advice.value, advice
+end
+
 -- Every sellable bag item, not only purchases: vendor-deal stock and blocked items are left out,
--- and each item's "keep" rule stays in the bags.
-function T.toPostAll()
+-- and each item's "keep" rule stays in the bags. With `auctionOnly`, items a merchant pays at least
+-- as much for (T.bestWay) are left out too: they are better sold to a vendor.
+function T.toPostAll(auctionOnly)
     local positions = char().positions
     local out, seen = {}, {}
     for _, b in ipairs(F.AH.bagItems()) do
@@ -894,6 +914,7 @@ function T.toPostAll()
             and not (p and p.mode == "vendor")
             and not blocked
             and not (rule and rule.keep and rule.keep >= T.bagCount(b.key))
+            and not (auctionOnly and T.bestWay(b.key, b.id) == "vendor")
         then
             seen[b.key] = true
             out[#out + 1] = b
@@ -912,8 +933,8 @@ function T.bagCount(key)
     return n
 end
 
-function T.postAll()
-    return postFirst(T.toPostAll(), function(item)
+function T.postAll(auctionOnly)
+    return postFirst(T.toPostAll(auctionOnly), function(item)
         local rule = T.rule(item.key)
         local spare = T.bagCount(item.key) - (rule and rule.keep or 0)
         return math.min(item.count, spare)
