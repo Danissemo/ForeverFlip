@@ -81,7 +81,8 @@ class OwnerTests(unittest.TestCase):
     def test_the_player_token_and_names_with_a_realm_are_the_player(self):
         run(SETUP + '''local A = ForeverFlip.AH
         local me = UnitName('player')
-        assert(A.isPlayer('player') and A.isPlayer(me) and A.isPlayer(me .. '-Some Realm'))
+        assert(A.isPlayer('player') and A.isPlayer(me) and A.isPlayer(me .. '-' .. GetRealmName()))
+        assert(not A.isPlayer(me .. '-OtherRealm'), 'names are not unique: another realm is somebody else')
         assert(not A.isPlayer('Seller') and not A.isPlayer('') and not A.isPlayer(nil))''')
 
 
@@ -89,7 +90,8 @@ class OwnLotTests(unittest.TestCase):
     def test_own_lots_named_player_or_with_a_realm_are_skipped_in_the_scan(self):
         run(SETUP + '''local me = UnitName('player')
         addAuction(10, 10, 5, 'player')
-        addAuction(10, 11, 5, me .. '-Some Realm')
+        addAuction(10, 11, 5, me .. '-' .. GetRealmName())
+        addAuction(10, 12, 5, me .. '-OtherRealm')  -- a namesake
         fullScan()
         assert(ForeverFlip.Scan.last.own == 3, ForeverFlip.Scan.last.own)''')
 
@@ -123,6 +125,11 @@ class GearSearchTests(unittest.TestCase):
 
     def test_a_browse_of_the_player_is_not_taken_for_the_gear_search(self):
         run(SETUP + '''enableBrowse()
+        function hooksecurefunc(t, name, fn)
+            local orig = t[name]
+            t[name] = function(...) local a, b = orig(...); fn(...); return a, b end
+        end
+        ForeverFlip.AH.browseHooked = false; ForeverFlip.AH.hookBrowse()
         fullScan()
         local D, U = ForeverFlip.Deals, ForeverFlip.Util
         local key = U.key('gear', 20, 'Northern Shortsword of Nature Protection')
@@ -194,10 +201,15 @@ class DisenchantTests(unittest.TestCase):
         function GetLootSlotInfo(i) return 0, 'x', loot[i][2] end
         bags[0] = { [1] = { itemID = 40, stackCount = 1, isLocked = true } }
         assert(select(2, DE.outcomes(2, 25, 2)) == 'table')
-        DE.onCast('UNIT_SPELLCAST_START', 'player', nil, DE.SPELL)
-        DE.onCast('UNIT_SPELLCAST_INTERRUPTED', 'player', nil, DE.SPELL)
+        DE.onCast('UNIT_SPELLCAST_START', 'player', 'g1', DE.SPELL)
+        DE.onCast('UNIT_SPELLCAST_INTERRUPTED', 'player', 'g1', DE.SPELL)
         loot = { { 2589, 2 } }
         assert(not DE.onLoot(), 'an interrupted cast: the next loot is not a disenchant')
+        DE.onCast('UNIT_SPELLCAST_START', 'player', 'g2', DE.SPELL)
+        DE.onCast('UNIT_SPELLCAST_FAILED', 'player', 'g3', DE.SPELL)  -- a second press while casting
+        loot = { { 10940, 2 } }
+        assert(DE.onLoot(), 'the running cast still counts, also with the loot before SUCCEEDED')
+        F.db.deSeen = {}
         for i = 1, DE.LEARN do
             DE.onCast('UNIT_SPELLCAST_START', 'player', nil, DE.SPELL)
             DE.onCast('UNIT_SPELLCAST_SUCCEEDED', 'player', nil, DE.SPELL)

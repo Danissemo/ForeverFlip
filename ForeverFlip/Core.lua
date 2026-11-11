@@ -149,6 +149,7 @@ function E.handle(event, ...)
                 F.UI.noSavedData()
             end
             E.hookReplicate()
+            F.AH.hookBrowse()
             F.Locale.apply(F.db.settings.language)
             E.applyCut()
             F.Mail.hook()
@@ -166,6 +167,7 @@ function E.handle(event, ...)
     end
     if event == "AUCTION_HOUSE_SHOW" then
         E.spent = 0
+        F.AH.refreshPlayer()
         E.house = E.detectHouse()
         E.applyCut()
         F.Scan.restore(E.scope())

@@ -176,17 +176,25 @@ function A.throttleReset()
     notReadySince, lastCheck = nil, nil
 end
 
--- Is this owner the player? Owner lists name the player "player" (TSM normalises it the same way).
--- WoW Forever characters have surnames and names are not unique, so a realm part is ignored.
+-- Is this owner the player? Owner lists name the player "player" (TSM normalises it the same way),
+-- or give the name, with the realm for a connected realm. Names are not unique on WoW Forever, so
+-- a name with another realm is somebody else. The names are worked out once (A.refreshPlayer, at
+-- each scan and when the auction house opens): this runs for every row of a full scan.
+local myName, myFullName
+function A.refreshPlayer()
+    myName = UnitName and UnitName("player") or nil
+    local realm = (GetNormalizedRealmName and GetNormalizedRealmName())
+        or (GetRealmName and (GetRealmName() or ""):gsub("[%s%-]", ""))
+    myFullName = myName and realm and realm ~= "" and (myName .. "-" .. realm) or nil
+end
 function A.isPlayer(owner)
-    if type(owner) ~= "string" or owner == "" then
+    if not owner or owner == "" then
         return false
     end
-    if owner == "player" then
-        return true
+    if not myName then
+        A.refreshPlayer()
     end
-    local me = UnitName("player")
-    return owner == me or owner:match("^([^%-]+)") == me
+    return owner == "player" or owner == myName or owner == myFullName
 end
 
 -- Full scan -------------------------------------------------------------------------------------
@@ -277,12 +285,35 @@ function A.canSearchGear()
 end
 function A.gearBrowse(item)
     local name = U.itemInfo(item.id)
-    AH.SendBrowseQuery({
+    A.ownBrowse = true
+    local ok, err = pcall(AH.SendBrowseQuery, {
         searchString = name or item.name or "",
         sorts = sorts(),
         filters = {},
         itemClassFilters = {},
     })
+    A.ownBrowse = false
+    if not ok then
+        error(err, 0)
+    end
+end
+
+-- Browse queries ForeverFlip did not send (the game's Buy tab, another addon) replace the results:
+-- a gear search waiting for its own answer is told (Deals.onForeignBrowse).
+function A.hookBrowse()
+    if A.browseHooked or not hooksecurefunc or not AH.SendBrowseQuery then
+        return
+    end
+    A.browseHooked = true
+    for _, name in ipairs({ "SendBrowseQuery", "SearchForItemKeys" }) do
+        if AH[name] then
+            hooksecurefunc(AH, name, function()
+                if not A.ownBrowse then
+                    F.Deals.onForeignBrowse()
+                end
+            end)
+        end
+    end
 end
 -- The item-key versions of `id` in the browse results so far.
 function A.gearKeys(id)
@@ -347,7 +378,13 @@ function A.canBrowse()
     return AH.SendBrowseQuery ~= nil and AH.GetBrowseResults ~= nil and AH.HasFullBrowseResults ~= nil
 end
 function A.browse()
-    AH.SendBrowseQuery({ searchString = "", sorts = sorts(), filters = {}, itemClassFilters = {} })
+    A.ownBrowse = true
+    local ok, err =
+        pcall(AH.SendBrowseQuery, { searchString = "", sorts = sorts(), filters = {}, itemClassFilters = {} })
+    A.ownBrowse = false
+    if not ok then
+        error(err, 0)
+    end
 end
 function A.browseMore()
     AH.RequestMoreBrowseResults()
@@ -360,7 +397,12 @@ function A.searchKeys(ids)
     for i, id in ipairs(ids) do
         keys[i] = plainKey(id)
     end
-    AH.SearchForItemKeys(keys, sorts())
+    A.ownBrowse = true
+    local ok, err = pcall(AH.SearchForItemKeys, keys, sorts())
+    A.ownBrowse = false
+    if not ok then
+        error(err, 0)
+    end
 end
 -- Every result row so far: { id, minPrice, qty }. The lowest price of an item may be a bid.
 function A.browseResults()

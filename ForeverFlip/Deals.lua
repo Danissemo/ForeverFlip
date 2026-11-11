@@ -408,18 +408,8 @@ function D.onBrowse()
     end
     if #keys == 0 then
         -- A complete browse without the item: nobody sells it. Unknown after three pages, and
-        -- unknown when the results do not look like this search's (the player browsed in the
-        -- game's Buy tab at the same moment): an empty answer, or one with items of that name.
-        local name = string.lower(U.itemInfo(s.item.id) or "")
-        local rows, ours = F.AH.browseResults(), #F.AH.browseResults() == 0
-        for _, r in ipairs(rows) do
-            local other = U.itemInfo(r.id)
-            if name ~= "" and other and string.lower(other):find(name, 1, true) then
-                ours = true
-                break
-            end
-        end
-        if ours and F.AH.browseFull() then
+        -- unknown when somebody else sent a browse meanwhile (the answer may be theirs).
+        if F.AH.browseFull() and not s.foreign then
             finishSearch({}, true)
         else
             finishSearch(nil, false)
@@ -429,6 +419,15 @@ function D.onBrowse()
     s.keys, s.keyIndex = keys, 0
     nextGearKey(s)
     return true
+end
+
+-- Somebody else sent a browse query (AH.hookBrowse): the answer a gear search waits for may be
+-- theirs, so it can no longer prove that nobody sells the item.
+function D.onForeignBrowse()
+    local s = D.search
+    if s and s.phase == "browse" then
+        s.foreign = true
+    end
 end
 
 function D.onBrowseFailure()

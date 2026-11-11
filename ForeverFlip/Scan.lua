@@ -98,6 +98,7 @@ local function beginReading(j, total)
     j.state, j.total, j.index = "reading", total, 0
     j.groups, j.order, j.deferred = {}, {}, {}
     j.read, j.skipped, j.own = 0, 0, 0
+    F.AH.refreshPlayer()
     j.lots = F.AH.canTrackLots()
     j.raw = F.Raw.active() and {} or nil
 end
@@ -392,6 +393,10 @@ function S.step()
         return
     end
     local now = clock()
+    if j.state == "waiting" and now ~= j.painted then
+        j.painted = now -- the seconds on the status line, and the end of the quiet minute
+        F.Engine.changed()
+    end
     if j.state == "waiting" then
         if polled(j, now) then
             beginReading(j, j.last)

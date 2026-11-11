@@ -53,7 +53,8 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    number has changed and has stopped growing. Since launch the answer can take minutes, so the
    job waits up to 10 minutes (`S.ANSWER_WAIT`), showing the seconds; with no answer it gives up
    and the next attempt is allowed a minute later. A request refused by the account's 15-minute
-   limit is never answered.
+   limit is never answered, so searches and the sniper wait only for the first minute
+   (`S.QUIET`) and then go on while the scan waits.
 2. **Reading.** Rows are read in portions under a time budget per frame. Bid-only auctions and your
    own auctions are skipped. Rows whose item is not in the game cache are deferred; the item data is
    requested at most 40 items per second (`AH.lua`), and the deferred rows are retried for up to

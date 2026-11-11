@@ -61,7 +61,7 @@ function V.offers(now)
                 local reference = U.finite(low) and math.min(market, low) or market
                 local exit = U.below(reference, item.kind)
                 local unit = price / quantity
-                local deposit = M.deposit(F.AH.vendorPrice(id), item.kind == "commodity" and quantity or 1)
+                local deposit = M.deposit(F.AH.clientVendorPrice(id), item.kind == "commodity" and quantity or 1)
                 local each = M.net(exit, 1) - unit - deposit / (item.kind == "commodity" and quantity or 1)
                 local d = M.saleability(h, exit, now)
                 if each > 0 and d.known and d.perDay >= 0.5 then

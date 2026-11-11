@@ -269,21 +269,23 @@ local function lockedItem()
     end
 end
 
--- UNIT_SPELLCAST_START notes the item; _SUCCEEDED marks the cast done; _INTERRUPTED and _FAILED
--- forget it, so a loot window that follows (a mob, a chest) is never counted as a disenchant.
--- (event, unit, cast GUID, spell ID)
-function DE.onCast(event, unit, _, spellID)
+-- UNIT_SPELLCAST_START notes the item and the cast; _INTERRUPTED and _FAILED of that same cast
+-- forget it, so a loot window that follows (a mob, a chest) is never counted as a disenchant. A
+-- second press while casting fails with its own cast GUID and leaves the running cast alone. The
+-- loot window may come before or after _SUCCEEDED. (event, unit, cast GUID, spell ID)
+function DE.onCast(event, unit, castGUID, spellID)
     if unit ~= "player" or spellID ~= DE.SPELL then
         return
     end
+    local c = DE.casting
     if event == "UNIT_SPELLCAST_START" then
         local id = lockedItem()
-        DE.casting = id and { id = id, at = F.Engine.clock() } or nil
+        DE.casting = id and { id = id, at = F.Engine.clock(), guid = castGUID } or nil
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-        if DE.casting then
-            DE.casting.done, DE.casting.at = true, F.Engine.clock()
+        if c and (not c.guid or c.guid == castGUID) then
+            c.done = true
         end
-    else
+    elseif c and (not c.guid or not castGUID or c.guid == castGUID) and not c.done then
         DE.casting = nil
     end
 end
@@ -291,7 +293,7 @@ end
 function DE.onLoot()
     local c = DE.casting
     DE.casting = nil
-    if not c or not c.done or F.Engine.clock() - c.at > 10 or not GetNumLootItems or not GetLootSlotLink then
+    if not c or F.Engine.clock() - c.at > 15 or not GetNumLootItems or not GetLootSlotLink then
         return false
     end
     local _, _, quality, level, _, _, _, _, _, _, _, classID = U.itemInfo(c.id)

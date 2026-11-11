@@ -73,7 +73,7 @@ function S.threshold(key, id, history)
         local exit = U.stepDown(F.Market.salePrice(h) or market, item and item.kind)
         local d = F.Market.saleability(h, exit, F.Engine.clock())
         if d.known and d.perDay >= 0.5 then
-            local deposit = F.Market.deposit(vendor, 1)
+            local deposit = F.Market.deposit(F.AH.clientVendorPrice(id), 1)
             local buy = (F.Market.net(exit, 1) - deposit) / (1 + (s.minROI or 0.2))
             limit = math.max(limit or 0, math.floor(buy))
         end

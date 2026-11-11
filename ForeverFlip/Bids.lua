@@ -28,7 +28,8 @@ function B.value(key, id, history)
         local s = F.Market.saleability(h, market, F.Engine.clock())
         if s.known and s.perDay >= 0.5 then
             local item = U.parseKey(key)
-            local net = F.Market.net(U.stepDown(market, item and item.kind), 1) - F.Market.deposit(vendor, 1)
+            local net = F.Market.net(U.stepDown(market, item and item.kind), 1)
+                - F.Market.deposit(F.AH.clientVendorPrice(id), 1)
             value = math.max(value, net)
         end
     end
