@@ -14,13 +14,22 @@ function E.wallet()
     return GetMoney() or 0
 end
 
--- Neutral auction houses (goblin towns) have their own listings and a 15% cut.
-local NEUTRAL_TOWNS = {
-    ["booty bay"] = true,
-    ["gadgetzan"] = true,
-    ["everlook"] = true,
+-- Neutral auction houses (goblin towns) have their own listings and a 15% cut. Each of the three
+-- zones holds exactly one auction house, the neutral one, so the zone's map ID tells it in any client
+-- language; the English town names are a fallback for clients without C_Map.
+local NEUTRAL_MAPS = {
+    [1434] = true, -- Stranglethorn Vale: Booty Bay
+    [1446] = true, -- Tanaris: Gadgetzan
+    [1452] = true, -- Winterspring: Everlook
 }
+local NEUTRAL_TOWNS = { ["booty bay"] = true, ["gadgetzan"] = true, ["everlook"] = true }
 function E.detectHouse()
+    if C_Map and C_Map.GetBestMapForUnit then
+        local ok, map = pcall(C_Map.GetBestMapForUnit, "player")
+        if ok and NEUTRAL_MAPS[map] then
+            return "Neutral"
+        end
+    end
     for _, get in ipairs({ GetSubZoneText, GetMinimapZoneText, GetRealZoneText, GetZoneText }) do
         local ok, zone = pcall(get)
         if ok and type(zone) == "string" and (NEUTRAL_TOWNS[zone] or NEUTRAL_TOWNS[string.lower(zone)]) then

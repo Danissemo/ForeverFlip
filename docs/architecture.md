@@ -15,7 +15,7 @@ tests/                  automated tests (Python + lupa running Lua 5.1)
   test_*.py             test suites
 tools/build.py          checks and packages a release archive into dist/
 docs/                   documentation
-.github/                CI, release workflow, issue and PR templates
+.github/                CI, release workflow, issue and PR templates, README images (assets/)
 ```
 
 ## Modules and load order

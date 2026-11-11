@@ -1,158 +1,209 @@
-# ForeverFlip
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/hero-dark.svg" />
+    <img alt="ForeverFlip — auction house trading assistant for WoW Forever" src=".github/assets/hero-light.svg" width="900" />
+  </picture>
+</div>
 
-**An auction house trading assistant for WoW Forever.** ForeverFlip reads the whole auction house,
-finds lots you can profit from, checks each one against the live listings right before you buy, and
-then helps you post, track and cash out what you bought.
+<p align="center">
+  <a href="https://github.com/Danissemo/ForeverFlip/releases/latest"><img src="https://img.shields.io/github/v/release/Danissemo/ForeverFlip?label=release&color=f5b52e" alt="Latest release" /></a>
+  <a href="https://github.com/Danissemo/ForeverFlip/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Danissemo/ForeverFlip/ci.yml?branch=main&label=tests" alt="Tests" /></a>
+  <a href="https://github.com/Danissemo/ForeverFlip/releases"><img src="https://img.shields.io/github/downloads/Danissemo/ForeverFlip/total?color=2ea44f" alt="Downloads" /></a>
+  <img src="https://img.shields.io/badge/WoW%20Forever-1.60.1-8a2be2" alt="WoW Forever 1.60.1" />
+  <img src="https://img.shields.io/badge/Lua-5.1-000080?logo=lua&logoColor=white" alt="Lua 5.1" />
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Danissemo/ForeverFlip?color=blue" alt="MIT license" /></a>
+</p>
 
-[User guide](docs/user-guide.md) · [How it works](docs/how-it-works.md) · [Changelog](CHANGELOG.md)
+<h3 align="center">
+  Scan the whole auction house, find lots worth flipping, check them live and buy, post and track profit, all from one tab.
+</h3>
 
----
+<p align="center">
+  <a href="docs/user-guide.md">User guide</a> ·
+  <a href="docs/how-it-works.md">How it works</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="https://github.com/Danissemo/ForeverFlip/releases/latest">Download</a>
+</p>
 
-## Features
+> [!IMPORTANT]
+> **ForeverFlip never trades on its own.** Every purchase, bid, post and cancel starts with your click
+> or key press. In the background it only reads the auction house, at the pace the server allows.
+
+> [!CAUTION]
+> Download ForeverFlip only from the [Releases](https://github.com/Danissemo/ForeverFlip/releases) page
+> of this repository. Each archive comes with its SHA-256 checksum.
+
+## ✨ Feature highlights
 
 **Finding deals**
 
-- **Full auction house scan.** Reads every auction the server returns (often more than 200 000)
-  without freezing the game, at most once per 15 minutes. It can rescan automatically while the
-  auction house is open, and it also reads full scans that other addons request.
-- **Fast sniper.** Between full scans, browse rounds read the lowest price of every item on the
-  auction house in seconds. Hot items and the shopping list are re-read in batches of 100. Every
-  cheap price is checked with an exact search at once.
-- **Vendor deals.** Lots priced below what a vendor pays for the item. You buy them, sell them to any
-  vendor and keep the difference, with no market risk.
-- **Resale deals.** Lots priced well below the next seller, for items that really sell at the resale
-  price.
-  - **Sales tracked auction by auction:** partial buys count as sales; expired and cancelled lots do
-    not.
-  - **Resale price cap:** at what real sales reached.
-  - **Profit** includes the auction cut and the deposit you lose on unsold lots.
-- **Shopping list.** Items with the most you pay for one; cheaper lots become Shopping deals.
-- **Disenchant deals** for enchanters: green and blue gear below the value of its materials.
-- **Bids** on auctions ending within 30 minutes whose next bid is well below the item's worth.
-- **Crafting.** Prices every recipe you know with auction and merchant prices, and shows what is
-  worth crafting.
-- **Live check before every purchase.** A deal is only a lead until an exact search confirms it with
-  the current listings. A check is valid for 45 seconds. Your own searches in the game's Buy tab count
-  as checks too.
-- **Alerts.** A sound, a screen message and a mark in the game's Buy tab when a deal can be bought.
+- **Full scans:** every auction of the house, often more than 200 000, read in small portions so
+  the game never freezes. One per 15 minutes, automatic while the auction house is open, and scans
+  of other addons are read too.
+- **Fast sniper:** browse rounds read the lowest price of every item in seconds; hot items and your
+  shopping list are re-read 100 at a time; every suspicious price is checked at once.
+- **Vendor deals:** lots below what a vendor pays. Buy, sell to any merchant, keep the difference,
+  with no market risk.
+- **Resale:** lots far below the next seller, for items that really sell at the resale price.
+  - Sales are tracked auction by auction.
+  - Profit counts the auction cut and the deposit risk.
+- **Shopping list:** your items and your price; cheaper lots become deals.
+- **Disenchant deals** for enchanters.
+- **Bids** on auctions about to end.
+- **Crafting:** what is worth crafting, priced from your recipes, auction and merchant prices.
+- **Live check:** nothing can be bought until an exact search confirms the deal in the last 45 seconds.
+- **Alerts:** a sound, a screen message and a green mark in the game's Buy tab.
 
 **Selling**
 
-- **Posting rules:** undercut by a step or a percent, a minimum and maximum price, units to keep, hold
-  below the minimum. Posts never go below your break-even.
+- **Posting rules:** undercut by a step or a percent, minimum and maximum price, units to keep, hold
+  below the minimum. Never below your break-even.
 - **Post next bought / Post all:** one click per item, at the right price and an automatic duration.
 - **Cancel undercut:** cancels undercut auctions one by one, only when the repost still pays.
-- **Take auction mail** in one click, and **Sell vendor deals** at any merchant in one click.
-- **Merchant to auction house offers:** items a merchant sells for less than they fetch on the
-  auction house.
+- **One-click chores:** take all auction mail, sell all vendor deals at a merchant.
 
 **Accounting and analytics**
 
-- **Journal, stock at average cost, profit per item, days to sell.**
-- **Sale invoices** from auction mail book the exact amounts, also for items posted with the game's
-  own Sell tab. Expired and cancelled mails give the sale rate of each item.
-- **The cut is learned from invoices**, and neutral auction houses get their own 15% cut and their
-  own history.
-- **Analytics:** profit per day, return, hit rate, best and worst items, gold and stock of all
-  characters, market lists (below usual, sells most, falling, rising, cheap now, sell now), and the
-  time-of-week price pattern.
-- **14-day price history** chart for any item (right-click), and price lines with their age in item
-  tooltips.
-- **CSV export** of the journal.
+- **Books from auction mail:** the real sale amounts, the learned cut, and the sale rate of every item.
+- **Analytics:**
+  - profit per day, return and hit rate;
+  - best and worst items;
+  - gold and stock of all your characters;
+  - market lists and the time-of-week price pattern.
+- **History:** a 14-day price chart for any item (right-click), and tooltip prices with their age.
+- **Export:** the journal as CSV.
+- **Comfort:** key bindings, Careful / Balanced / Aggressive presets, `ForeverFlipAPI` for other
+  addons, English and Ukrainian.
 
-**Comfort**
+## 📦 Installation
 
-- Key bindings for Buy/Confirm, Post, Cancel undercut and Full scan.
-- Careful, Balanced and Aggressive presets.
-- `ForeverFlipAPI` for other addons; auxForever prices as a fallback.
-- English and Ukrainian.
+1. Download `ForeverFlip-<version>.zip` from the [latest release](https://github.com/Danissemo/ForeverFlip/releases/latest).
+2. Unpack it into `Interface/AddOns/` of your WoW Forever client, so that the file
+   `Interface/AddOns/ForeverFlip/ForeverFlip.toc` exists.
+3. Restart the game or type `/reload`, and make sure ForeverFlip is enabled in the AddOns list.
+4. Optional:
+   - bind keys under **Key Bindings → AddOns → ForeverFlip**;
+   - open each profession window once, so the Crafting page knows your recipes.
 
-ForeverFlip never buys, posts or cancels anything on its own. Every trade starts with your click.
+> [!TIP]
+> To update, replace the `ForeverFlip` folder. Your data lives in
+> `WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua` and is kept.
 
-## Requirements
-
-| | |
+| Requirement | |
 |---|---|
 | Game | WoW Forever, client 1.60.1 (Interface `16001`) |
-| Dependencies | None. [LibAHTab](https://www.curseforge.com/wow/addons/libahtab) is used if installed, so the ForeverFlip tab sits next to other addon tabs. [auxForever](https://github.com/TylerHampton/aux-forever) prices are used if installed |
+| Dependencies | None |
+| Optional | [LibAHTab](https://www.curseforge.com/wow/addons/libahtab) puts the tab next to other addon tabs. [auxForever](https://github.com/TylerHampton/aux-forever) prices fill in materials ForeverFlip has not seen yet |
 | Works next to | Auctionator, TradeSkillMaster and other auction addons |
 
-## Installation
+## 🚀 Quick start
 
-1. Download `ForeverFlip-<version>.zip` from the [latest release](../../releases/latest).
-2. Unpack it into `World of Warcraft/<client folder>/Interface/AddOns/`. You should end up with
-   `Interface/AddOns/ForeverFlip/ForeverFlip.toc`.
-3. Restart the game or type `/reload`. Make sure ForeverFlip is enabled in the AddOns list on the
-   character select screen.
-4. Optional: bind keys under **Key Bindings → AddOns → ForeverFlip**, and open your profession windows
-   once so the Crafting page knows your recipes.
-
-To update, delete the old `ForeverFlip` folder and unpack the new one. Your data is kept: it is stored
-in `WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua`, not in the addon folder.
-
-## Quick start
-
-1. Open the auction house and click the **ForeverFlip** tab at the bottom.
-2. Click **Full scan** (or wait for the automatic scan) and let the progress bar finish.
-3. Open **Sell to vendor (no risk)**. Click a deal: it is checked live and, if it still holds, its
-   status turns **ready**.
-4. Click **Buy**. For stackable goods, also click **Confirm purchase** once the game quotes the price.
-5. Sell vendor deals at any merchant with **Sell vendor deals**. List resale purchases from
+1. Open the auction house and click the **ForeverFlip** tab.
+2. Click **Full scan**, or wait for the automatic one, and let the progress bar finish.
+3. Open **Sell to vendor (no risk)** and click a deal. It is checked live; when it says **ready**,
+   click **Buy**. For stackable goods, also click **Confirm purchase** once the game quotes the price.
+4. Sell vendor deals at any merchant with **Sell vendor deals**. Post resale purchases with
    **Sell my items → Post next bought**.
 
-Resale deals need sales data: they start to appear after two or three full scans (30 to 45 minutes
+Resale deals need sales data, so they start to appear after two or three full scans (30–45 minutes
 with the auction house open).
 
-The [user guide](docs/user-guide.md) explains every page, button, status and setting.
-
-## Slash commands
+## ⌨️ Commands and key bindings
 
 | Command | Action |
 |---|---|
-| `/ff` or `/foreverflip` | Shows the version and a short hint |
-| `/ff diag` | Prints statistics of the last full scan (auctions read, skipped, deals found) |
-| `/ff rescan` | Allows a full scan right away after the server did not answer the last one |
-| `/ff export` | Opens the journal as CSV to copy into a spreadsheet |
-| `/ff lang en` / `/ff lang uk` | Switches the language (takes effect after `/reload`) |
+| `/ff` | Version and a short hint |
+| `/ff diag` | Statistics of the last full scan |
+| `/ff rescan` | Allow a full scan right away after the server did not answer |
+| `/ff export` | The journal as CSV, ready to copy |
+| `/ff lang en` · `/ff lang uk` | Switch the language (after `/reload`) |
 
-## Documentation
+The Key Bindings window has four bindings:
 
-| Document | Contents |
+- Buy or confirm the selected deal
+- Post next bought (then Post all)
+- Cancel the next undercut auction
+- Full scan
+
+## 📚 Documentation
+
+| Document | What is inside |
 |---|---|
 | [User guide](docs/user-guide.md) | Every page, button, status, setting and message |
-| [How it works](docs/how-it-works.md) | Scanning, demand estimates, deal maths, limits and safety rules |
-| [Architecture](docs/architecture.md) | Modules, load order, events and data flow, for developers |
+| [How it works](docs/how-it-works.md) | Scans, the sniper, sales tracking, deal maths, limits and safety rules |
+| [Architecture](docs/architecture.md) | Modules, load order, events and data flow |
 | [Saved data](docs/saved-data.md) | Layout of the `ForeverFlipData` SavedVariables file |
 | [API](docs/api.md) | `ForeverFlipAPI` for other addons |
-| [Testing](docs/testing.md) | Automated tests and an in-game checklist |
-| [Contributing](CONTRIBUTING.md) | Development setup, style and release process |
+| [Testing](docs/testing.md) | Automated tests and the in-game checklist |
 
-## Limits and honest notes
+## ❓ Questions and answers
 
-- The server allows one full scan per 15 minutes **per account**. If another addon uses that window,
-  ForeverFlip reads its results instead.
-- Sales are measured from full scans, auction by auction, when the client reports each auction's
-  time left; otherwise from listings that disappear, where expired lots look like sales. Either way it
-  is an estimate. ForeverFlip lowers its trust in an item when your own stock of it does not sell or
-  keeps coming back unsold.
-- Commodity deposits come from the game; item deposits are learned from your posts, and estimated
-  with the classic rule until then.
-- The 15% neutral cut and the disenchanting table are taken from Classic and have not been confirmed
-  on WoW Forever. The cut is corrected from your sale invoices.
-- No profit is guaranteed: other players see the same lots. A purchase that fails because someone
-  was faster costs nothing.
+### There are no deals after a scan
 
-## Development
+- Vendor deals depend on the market at that moment; often there are none.
+- Resale needs sales data from two or three scans.
+- Check the minimums in **Settings**, or try the **Aggressive** preset.
+- `/ff diag` shows how many items are still collecting data.
+
+### The Buy button stays grey
+
+A deal can be bought only when it is **ready**, checked in the last 45 seconds, while no other search
+or purchase runs. Click the deal to check it again.
+
+### The scan does not start
+
+The server allows one full scan per 15 minutes **per account**, and another addon may have used the
+window. Wait for the countdown on the button, or use `/ff rescan` if the server did not answer.
+
+### Is the profit guaranteed?
+
+No. Other players see the same lots, and sales are an estimate. Several safeguards limit the risk:
+
+- each resale buys at most about one day of sales;
+- the resale price is capped at what real sales reached;
+- items whose stock does not sell, or keeps coming back unsold, are trusted less;
+- a purchase that fails because someone was faster costs nothing.
+
+### What has not been confirmed on WoW Forever yet?
+
+These are taken from Classic and checked in a simulated client only:
+
+- the 15% cut of neutral auction houses, which is corrected from your sale invoices;
+- the disenchanting table.
+
+The [in-game checklist](docs/testing.md#in-game-checklist) lists what to try.
+
+### How do I report a bug?
+
+1. Type `/reload`.
+2. Copy the `errors` section of `WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua`, plus the
+   output of `/ff diag`.
+3. Paste both into a [new issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose).
+
+## 🛠️ Local development
+
+You need Python 3.12 and [StyLua](https://github.com/JohnnyMorganz/StyLua). The tests run the real
+addon code in Lua 5.1 through [lupa](https://github.com/scoder/lupa), against a simulated WoW client
+and auction house.
 
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -p "test_*.py"
+stylua --check ForeverFlip
 python tools/build.py
 ```
 
-The tests run the real addon code in Lua 5.1 (through [lupa](https://github.com/scoder/lupa)) against
-a simulated WoW client and auction house. See [CONTRIBUTING.md](CONTRIBUTING.md).
+`tools/build.py` checks the TOC and the version, runs the tests and writes `dist/ForeverFlip-<version>.zip`
+with its checksum.
 
-## License
+## 🤝 Contributing
 
-[MIT](LICENSE)
+Bug reports, observations of how the WoW Forever server behaves, and pull requests are welcome. Read
+the [contributing guide](CONTRIBUTING.md) for the code style, tests and the release process.
+
+## 📄 License
+
+ForeverFlip is released under the [MIT license](LICENSE).
+
+<sub>World of Warcraft is a trademark of Blizzard Entertainment. ForeverFlip is a fan-made addon and
+is not affiliated with or endorsed by Blizzard Entertainment.</sub>

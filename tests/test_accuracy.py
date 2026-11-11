@@ -35,6 +35,15 @@ class NeutralHouseTests(unittest.TestCase):
         ForeverFlip.db.cuts={['Realm-Neutral']=0.1}
         fire('AUCTION_HOUSE_SHOW');assert(M.CUT==0.1)''')
 
+    def test_neutral_zone_is_recognised_by_map_in_any_language(self):
+        lua = runtime(open_ah=False)
+        lua.execute('''function GetSubZoneText() return "Somewhere" end
+        C_Map={GetBestMapForUnit=function() return 1446 end}
+        fire('AUCTION_HOUSE_SHOW');assert(ForeverFlip.Engine.house=='Neutral')
+        fire('AUCTION_HOUSE_CLOSED');C_Map.GetBestMapForUnit=function() return 1429 end
+        fire('AUCTION_HOUSE_SHOW');assert(ForeverFlip.Engine.house==nil)''')
+
+
 class QuoteTests(unittest.TestCase):
     def test_stale_quote_is_asked_again_instead_of_confirmed(self):
         run(SETUP + '''fullScan();local D,T=ForeverFlip.Deals,ForeverFlip.Trade

@@ -6,6 +6,13 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Neutral auction houses are recognised by the zone's map ID, in any client language; the English
+  town names remain a fallback.
+- CI uses current versions of the GitHub actions and a pinned StyLua binary.
+- New README layout with a hero image, badges and a questions-and-answers section.
+
 ## [1.1.0] - 2026-11-10
 
 Features found in other auction addons (TSM, Auctionator, Point Blank Sniper, AnS, Journalator,

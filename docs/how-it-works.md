@@ -80,8 +80,10 @@ window as used.
 `Core.lua`. Each auction house has its own history and deals, keyed by its scope:
 
 - `<realm>-<faction>`: the faction house;
-- `<realm>-Neutral`: the neutral house, recognised by the town the player stands in. The towns are
-  Booty Bay, Gadgetzan and Everlook.
+- `<realm>-Neutral`: the neutral house of Booty Bay, Gadgetzan or Everlook. Each of their zones
+  (Stranglethorn Vale, Tanaris, Winterspring) holds only that one auction house, so the zone's map
+  ID (`C_Map.GetBestMapForUnit`) identifies it in any client language. The English town names are a
+  fallback.
 
 The auction cut (`M.CUT`) is set when the auction house opens: 5% for a faction house, 15% for a
 neutral one, unless a cut was [learned from invoices](#accounting).

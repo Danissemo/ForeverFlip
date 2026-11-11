@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.18" cy="0.5" r="0.45">
+      <stop offset="0" stop-color="#f5b52e" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#f5b52e" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="340" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="340" rx="24" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="1199" height="339" rx="24" fill="none" stroke="#30363d"/>
+  
+  <defs>
+    <linearGradient id="golddark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset="0.55" stop-color="#f5b52e"/>
+      <stop offset="1" stop-color="#c97f10"/>
+    </linearGradient>
+    <linearGradient id="rimdark" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#a86408"/>
+      <stop offset="1" stop-color="#ffd76a"/>
+    </linearGradient>
+    <marker id="headdark" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5a3300"/>
+    </marker>
+  </defs>
+  <circle cx="200" cy="170" r="108" fill="url(#rimdark)"/>
+  <circle cx="200" cy="170" r="95.04" fill="url(#golddark)"/>
+  <circle cx="200" cy="170" r="95.04" fill="none" stroke="#fff3c4" stroke-opacity="0.55" stroke-width="2"/>
+  <path d="M 139.51999999999998 160.928 A 60.480000000000004 60.480000000000004 0 0 1 255.6416 147.0176"
+        fill="none" stroke="#5a3300" stroke-width="12.959999999999999" stroke-linecap="round" marker-end="url(#headdark)"/>
+  <path d="M 260.48 179.072 A 60.480000000000004 60.480000000000004 0 0 1 144.3584 192.9824"
+        fill="none" stroke="#5a3300" stroke-width="12.959999999999999" stroke-linecap="round" marker-end="url(#headdark)"/>
+  <text x="358" y="150" font-size="86" font-weight="700" letter-spacing="-1.5" fill="#f0f6fc" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif">Forever<tspan fill="#f5b52e">Flip</tspan></text>
+  <text x="362" y="205" font-size="27" fill="#9da7b3" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif">Auction house trading assistant for WoW Forever</text>
+  <rect x="360" y="252" rx="15" ry="15" width="110.0" height="30" fill="#1f2630" stroke="#30363d"/><text x="415.0" y="272" text-anchor="middle" font-size="15" fill="#d1d7e0" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif">Full scans</text><rect x="480.0" y="252" rx="15" ry="15" width="119.19999999999999" height="30" fill="#1f2630" stroke="#30363d"/><text x="539.6" y="272" text-anchor="middle" font-size="15" fill="#d1d7e0" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif">Fast sniper</text><rect x="609.2" y="252" rx="15" ry="15" width="146.79999999999998" height="30" fill="#1f2630" stroke="#30363d"/><text x="682.6" y="272" text-anchor="middle" font-size="15" fill="#d1d7e0" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif">Verified deals</text><rect x="766.0" y="252" rx="15" ry="15" width="137.6" height="30" fill="#1f2630" stroke="#30363d"/><text x="834.8" y="272" text-anchor="middle" font-size="15" fill="#d1d7e0" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif">Posting rules</text><rect x="913.6" y="252" rx="15" ry="15" width="110.0" height="30" fill="#1f2630" stroke="#30363d"/><text x="968.6" y="272" text-anchor="middle" font-size="15" fill="#d1d7e0" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif">Accounting</text>
+</svg>
