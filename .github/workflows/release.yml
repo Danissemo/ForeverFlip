@@ -61,8 +61,9 @@ jobs:
           if [ "$base" != "$version" ]; then
             {
               echo "> [!WARNING]"
-              echo "> Beta for testing. Please report what you find: see"
-              echo "> [Beta testing](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/testing.md#beta-testing)."
+              echo "> Beta for testing. What to check in game:"
+              echo "> [the ${base} checklist](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/testing.md#in-game-checklist),"
+              echo "> how to report: [Beta testing](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/testing.md#beta-testing)."
               echo
             } > release-notes.md
           fi
