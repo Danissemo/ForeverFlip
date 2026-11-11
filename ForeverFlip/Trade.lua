@@ -25,13 +25,9 @@ end
 
 -- Buying ----------------------------------------------------------------------------------------
 -- T.op = { state = "quote" | "quoted" | "awaiting", key, kind, id, qty, cost, unit, auctionID, deal }
+-- A search in flight does not stop a purchase: buying goes first (Deals.yieldToPurchase).
 function T.canBuy(deal)
-    return deal
-        and deal.verified
-        and clock() - deal.verified <= F.Deals.FRESH
-        and not T.busy()
-        and not F.Deals.searching()
-        and F.AH.isOpen()
+    return deal and deal.verified and clock() - deal.verified <= F.Deals.FRESH and not T.busy() and F.AH.isOpen()
 end
 
 function T.buy(key)
@@ -45,6 +41,8 @@ function T.buy(key)
     if T.overLimit(deal.cost) then
         return false, "spend_limit"
     end
+    -- A search waiting for its answer (the sniper, a check) steps aside and is sent again later.
+    F.Deals.yieldToPurchase()
     local op = {
         key = deal.key,
         kind = deal.kind,
@@ -165,8 +163,9 @@ local function bought(op)
     F.Data.log(c, { at = clock(), kind = "buy", key = op.key, name = name, qty = op.qty, amount = op.cost })
     T.op = nil
     F.Engine.notify("bought")
-    -- Gear and items are bought one auction per click: read the listings again for the next one.
-    F.Deals.verify(op.key)
+    -- Gear and items are bought one auction per click: the deal is worked out again from the lots
+    -- already read, without the lot just bought, so the next click buys the next lot at once.
+    F.Deals.afterPurchase(op)
     F.Engine.changed()
 end
 
@@ -316,7 +315,9 @@ function T.checkPrice(key, callback, fast)
         return F.Deals.enqueue(key, rememberPrice, rememberPrice, fast)
     end
     return F.Deals.enqueue(key, function(k, rows, complete)
-        if not fast or complete then
+        -- The search is sorted by price: its first pages hold the cheapest lots, which is all a
+        -- price needs, also when an item has more lots than the pages read.
+        if not fast or complete or (rows and #rows > 0) then
             rememberPrice(k, rows)
         end
         if callback then
@@ -1183,8 +1184,12 @@ function T.vendorItems()
             if info and info.itemID then
                 for key, p in pairs(c.positions) do
                     local item = U.parseKey(key)
+                    -- Never at a loss: the merchant must pay at least what a unit cost on average.
+                    local vendor = item and F.AH.vendorPrice(item.id, true) or 0
                     if
                         p.mode == "vendor"
+                        and p.qty > 0
+                        and vendor * p.qty >= p.cost
                         and item.id == info.itemID
                         and (item.kind ~= "gear" or string.lower(U.linkName(info.hyperlink) or "") == item.name)
                     then

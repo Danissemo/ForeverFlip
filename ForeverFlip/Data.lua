@@ -109,6 +109,11 @@ function D.addPosition(char, key, name, qty, cost, mode, exit, at)
         local s = D.itemStats(char, key, name)
         s.bought, s.spent = s.bought + qty, s.spent + cost
     end
+    -- Stock held for resale stays for resale when a vendor deal of the same item adds cheap units:
+    -- else the vendor sale would sell the dearer resale units at a loss too.
+    if mode == "vendor" and p.qty > 0 and p.mode and p.mode ~= "vendor" then
+        mode = p.mode
+    end
     p.qty, p.cost = p.qty + qty, p.cost + cost
     p.mode, p.exit, p.name = mode or p.mode, exit or p.exit, name or p.name
     return p

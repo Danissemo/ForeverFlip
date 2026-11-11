@@ -155,7 +155,27 @@ class TradeTests(unittest.TestCase):
         assert(T.buy(key));local bid=lastCall('PlaceBid');assert(bid[3]==400)
         fire('CHAT_MSG_SYSTEM','You won an auction for Northern Shortsword of Healing')
         local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
-        assert(c.positions[key].qty==1 and not T.op);run(1.1);assert(D.searching(),'next lot is checked')''')
+        assert(c.positions[key].qty==1 and not T.op)
+        local left=D.get(key);assert(not left or left.lots[1].auctionID~=bid[2],'the bought lot is not offered again')
+        run(1.1);assert(not D.searching(),'the rest is known from the check: no new search')''')
+
+    def test_several_lots_are_bought_one_click_each_without_a_new_search(self):
+        run(SETUP + '''local F,D,T=ForeverFlip,ForeverFlip.Deals,ForeverFlip.Trade
+        F.Engine.autoVerify=false;F.db.settings.sniper=false
+        addItem(40,'Moon Gem',2000,'item') -- a merchant pays 20s: lots under it are vendor deals
+        for i=1,30 do addAuction(40,5000+i,1) end
+        fullScan()
+        for i=1,3 do addAuction(40,1000+i,1) end
+        D.verify('i:40');answer()
+        local d=D.get('i:40');assert(d and d.verified and d.qty==3,'three cheap lots: '..tostring(d and d.qty))
+        for n=1,3 do
+            assert(T.canBuy(D.get('i:40')),'lot '..n..' can be bought at once')
+            assert(T.buy('i:40'));local id=lastCall('PlaceBid')[2]
+            for i,a in ipairs(auctions) do if a.id==id then table.remove(auctions,i) break end end
+            fire('AUCTION_HOUSE_PURCHASE_COMPLETED',id)
+            assert(not T.op and not D.searching(),'no search between the purchases')
+        end
+        assert(not D.get('i:40') or D.get('i:40').lots[1].unit>4000,'the cheap lots are all bought')''')
 
     def test_purchase_without_answer_is_settled_in_the_journal(self):
         run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false

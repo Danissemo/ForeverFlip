@@ -116,15 +116,21 @@ class StatusBatchTests(unittest.TestCase):
         run(12);done,total,active,failed=D.batchProgress();assert(done==2 and failed==2)
         ''')
 
-    def test_incomplete_batch_result_cannot_refresh_the_price_cache(self):
+    def test_a_long_list_gives_its_cheapest_price(self):
         run(BATCH + '''local old={at=now-100,rows={{unit=500,qty=1}}}
         T.prices[keys[1]]=old
         F.AH.rows=function() return {{unit=60,qty=1}},false end
         D.startBatch('sell',{keys[1]},false);D.search.pages=3;answer()
-        run(1.1);D.search.pages=3;answer() -- the second try is partial too
         local done,total,active,failed=D.batchProgress()
-        assert(done==1 and total==1 and not active and failed==1)
-        assert(T.prices[keys[1]]==old,'partial failed results cannot look current')
+        assert(done==1 and total==1 and not active and failed==0,'more lots than the pages read is no failure')
+        assert(T.prices[keys[1]]~=old and T.prices[keys[1]].rows[1].unit==60,'the cheapest lots are the price')''')
+
+    def test_a_deal_check_still_needs_the_whole_list(self):
+        run(BATCH + '''F.AH.rows=function() return {{unit=60,qty=1}},false end
+        D.startBatch('deals:all',{keys[1]},true);D.search.pages=3;answer()
+        run(1.1);D.search.pages=3;answer()
+        local done,total,active,failed=D.batchProgress()
+        assert(done==1 and not active and failed==1)
         ''')
 
     def test_deal_evaluation_error_counts_a_failure_and_releases_batch(self):

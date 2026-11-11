@@ -638,7 +638,9 @@ function D.startBatch(scope, keys, mode)
                 return
             end
             finished = true
-            local success = rows ~= nil and completeRows
+            -- A price check is answered by the cheapest lots (the search is sorted by price); a
+            -- deal check needs the whole list of the item.
+            local success = rows ~= nil and (completeRows or (mode == false and #rows > 0))
             if verifyDeals then
                 local ok, err = pcall(D.verifyCallback, key, rows, completeRows)
                 if not ok then
@@ -749,6 +751,46 @@ function D.verify(key, callback, source)
         return D.request(key, done, source, true)
     end
     return D.enqueue(key, done, callback or D.verifyCallback)
+end
+
+-- The player buys: a search waiting for its answer is put back in the queue (a check of the
+-- player's goes first again, a background one is retried), so the purchase does not wait for it.
+function D.yieldToPurchase()
+    if D.search then
+        D.onDropped()
+    end
+end
+
+-- A purchase went through: the deal is evaluated again from the rows of its check, less what was
+-- bought (the auction for gear and items, the cheapest units for commodities). No search is sent;
+-- the deal keeps the time of its check, so it is checked again once that is too old.
+function D.afterPurchase(op)
+    local d = D.get(op.key)
+    if not d or type(d.rows) ~= "table" then
+        D.verify(op.key)
+        return
+    end
+    local rows, left = {}, op.kind == "commodity" and (op.qty or 0) or 0
+    for _, r in ipairs(d.rows) do
+        if op.kind ~= "commodity" then
+            if not (op.auctionID and r.auctionID == op.auctionID) then
+                rows[#rows + 1] = r
+            end
+        elseif left >= (r.qty or 0) then
+            left = left - (r.qty or 0)
+        else
+            local copy = U.copy(r)
+            copy.qty = (r.qty or 0) - left
+            left = 0
+            rows[#rows + 1] = copy
+        end
+    end
+    local verified = d.verified
+    D.verifyCallback(op.key, rows, true)
+    local live = D.get(op.key)
+    if live then
+        live.verified = verified
+    end
 end
 
 function D.verifyCallback(k, rows, complete, callback)
