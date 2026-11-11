@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
+import urllib.error
 
 from test_addon import SETUP, runtime
 
@@ -203,6 +204,7 @@ class FakeHub:
         self.gists[gist_id] = {'owner': {'login': login}, 'files': {
             'scan.001.b64': {'content': base64.b64encode(packed).decode(), 'size': 10, 'truncated': False}}}
         self.issues.append({'number': number, 'user': {'login': login}, 'title': 'Scan upload: x',
+                            'created_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                             'body': f'scope: {scan.scope}\ntime: {scan.at}\nsha256: {digest}\ngist: {gist_id}\n'})
 
     def scan_issues(self):
@@ -213,6 +215,8 @@ class FakeHub:
         return self.created.get(login, 0)
 
     def gist(self, gist_id):
+        if gist_id in getattr(self, 'offline', ()):
+            raise urllib.error.URLError('rate limited')
         return self.gists[gist_id]
 
     def release(self, tag, create_body=None):
@@ -309,6 +313,14 @@ class AggregatorTests(unittest.TestCase):
         self.assertTrue(hub.closed[3])
         self.assertIn('10 minutes', hub.comments[4])
         self.assertIn('does not belong', hub.comments[5])
+
+    def test_a_network_failure_postpones_the_upload(self):
+        hub = FakeHub()
+        hub.add_upload(make_scan(self.now - 60, market()), 'Owner', 1)
+        hub.offline = {f'{1:020x}'}
+        report = aggregate.process(hub, self.data, self.now)
+        self.assertNotIn(1, hub.closed)
+        self.assertTrue(any('postponed' in line for line in report))
 
     def test_unconfirmed_after_a_day(self):
         hub = FakeHub()

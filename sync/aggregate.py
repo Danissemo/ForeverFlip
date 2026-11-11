@@ -65,10 +65,11 @@ class Hub:
     def __init__(self, repo: str, token: str):
         self.repo, self.token = repo, token
 
-    def call(self, method, url, data=None, content_type=None, accept="application/vnd.github+json"):
+    def call(self, method, url, data=None, content_type=None, accept="application/vnd.github+json", auth=True):
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Accept", accept)
-        req.add_header("Authorization", f"Bearer {self.token}")
+        if auth:
+            req.add_header("Authorization", f"Bearer {self.token}")
         req.add_header("User-Agent", "ForeverFlip-aggregator")
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
         if content_type:
@@ -128,13 +129,14 @@ class Hub:
         self.json("PATCH", f"/repos/{self.repo}/issues/{number}",
                   {"state": "closed", "state_reason": "completed" if completed else "not_planned"})
 
+    # The workflow's token has no access to gists; secret gists are read without one.
     def gist(self, gist_id):
-        return self.json("GET", f"/gists/{gist_id}")
+        return json.loads(self.call("GET", f"{API}/gists/{gist_id}", auth=False))
 
     def raw(self, url) -> bytes:
         if not url.startswith(GIST_RAW):
             raise ValueError("unexpected gist address")
-        return self.call("GET", url, accept="text/plain")
+        return self.call("GET", url, accept="text/plain", auth=False)
 
     def account_created(self, login) -> float:
         user = self.json("GET", f"/users/{urllib.parse.quote(login)}")
@@ -177,7 +179,12 @@ def parse_issue(body: str) -> dict:
 
 def read_gist(hub: Hub, gist_id: str, author: str) -> bytes:
     """The uploaded file: the gist's parts (scan.001.b64, scan.002.b64, ...) joined and decoded."""
-    gist = hub.gist(gist_id)
+    try:
+        gist = hub.gist(gist_id)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise ValueError("the gist was not found") from exc
+        raise
     owner = (gist.get("owner") or {}).get("login", "")
     if owner.lower() != author.lower():
         raise ValueError("the gist does not belong to the author of the issue")
@@ -386,8 +393,13 @@ def process(hub, data: pathlib.Path, now: float) -> list[str]:
         number = issue["number"]
         try:
             entry, scan = accept_upload(hub, issue, entries, uploaders, now)
-        except (ValueError, urllib.error.HTTPError) as exc:
-            reason = str(exc) if isinstance(exc, ValueError) else f"GitHub answered {exc.code}"
+        except (ValueError, urllib.error.URLError) as exc:
+            if not isinstance(exc, ValueError):
+                opened = calendar.timegm(time.strptime(issue["created_at"], "%Y-%m-%dT%H:%M:%SZ"))
+                if now - opened < WAIT:  # a network or rate-limit failure: try again at the next run
+                    report.append(f"#{number} postponed: {exc}")
+                    continue
+            reason = str(exc) if isinstance(exc, ValueError) else "GitHub could not be read for 24 hours"
             report.append(f"refused #{number}: {reason}")
             hub.comment(number, f"❌ The scan was refused: {reason}.")
             hub.close(number, completed=False)
