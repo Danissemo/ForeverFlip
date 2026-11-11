@@ -35,6 +35,7 @@ class ShareTests(unittest.TestCase):
             local parts={} for _,m in ipairs(sentMessages) do parts[#parts+1]=m[2]:match('^%w+:%w+:%w+:(.*)$') end return parts end)())).at
         F.Scan.last=nil
         for _,m in ipairs(sentMessages) do Sh.onMessage('ForeverFlip',m[2],'GUILD','Friend-Realm') end
+        run(0.5) -- decoded and merged a slice per frame
         local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
         assert(h.shared and h.shared.from=='Friend-Realm' and h.shared.at==at,'merged')
         assert(#Sh.received==1 and Sh.received[1].items>0)''')
@@ -105,3 +106,18 @@ class StatisticsDisplayTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReceivingInFramesTests(unittest.TestCase):
+    def test_a_large_scan_is_merged_a_slice_per_frame(self):
+        run(SETUP + '''local F,Sh=ForeverFlip,ForeverFlip.Share
+        F.db.settings.shareReceive=true
+        local items={}
+        for i=1,3000 do items[i]={key='i:'..(5000+i),m=1000+i,min=900+i,n=5} end
+        local text=Sh.encode({scope=F.Engine.scope(),at=now-60,items=items})
+        Sh.onMessage('ForeverFlip','abc:1:1:'..text,'GUILD','Friend-Realm')
+        assert(#Sh.received==0,'nothing is merged in the event itself')
+        local frames=0
+        while #Sh.received==0 do run(0.05);frames=frames+1;assert(frames<500) end
+        assert(frames>2,'spread over several frames: '..frames)
+        assert(Sh.received[1].items==3000,Sh.received[1].items)''')

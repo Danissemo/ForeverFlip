@@ -2152,7 +2152,8 @@ function UI.refreshAnalytics()
     for id, b in pairs(UI.viewButtons) do
         b:SetEnabled(id ~= UI.marketView)
     end
-    local m = F.Analytics.market()
+    local m, working = F.Analytics.market()
+    m = m or {}
     local timingView = UI.marketView == "cheapNow" or UI.marketView == "sellNow"
     local list = UI.marketTable.sort(m[UI.marketView] or {}, function(e, column)
         if column == 1 then
@@ -2194,14 +2195,17 @@ function UI.refreshAnalytics()
     local empty = UI.marketTable.empty
     if #list == 0 then
         empty:SetText(
-            L("No data yet. Market lists fill in after a few full scans; price moves need scans on two different days.")
+            working and L("Working out the market lists...")
+                or L(
+                    "No data yet. Market lists fill in after a few full scans; price moves need scans on two different days."
+                )
         )
         empty:Show()
     else
         empty:Hide()
     end
     UI.marketText:SetText(
-        string.format(L("%d items with history · click a row to check it on the auction house now"), m.items)
+        string.format(L("%d items with history · click a row to check it on the auction house now"), m.items or 0)
     )
 end
 

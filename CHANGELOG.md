@@ -64,6 +64,9 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   - mail the game keeps refusing stops the mail job instead of looping; an error in one part of the
     frame update no longer stops the others; the window redraws every second (timers, messages);
   - the bags are read once per frame (a Selling refresh read them six times or more).
+  - a scan shared by another player is decoded and merged a slice per frame (20 000 items took
+    over 100 ms in one go when it arrived); Analytics works out a large history a slice per frame
+    and shows the previous lists meanwhile.
 - **Faster buying:** after a purchase the deal is worked out from the lots already read, so the next
   lot is bought on the next click without a new search; a click on Buy no longer waits for (or is
   disabled by) a search in flight. Before, every purchase searched the item again, and the Buy

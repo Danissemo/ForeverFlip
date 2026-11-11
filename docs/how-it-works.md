@@ -84,6 +84,11 @@ Items that have not appeared in a full scan for 14 days are removed from the sav
 rest of the scan, this pass over the history (and the sweep of vanished items) runs a slice per
 frame, so the end of a scan does not stall the game on a large history.
 
+Other large passes work the same way: a scan another player shares is decoded and merged about
+4 ms a frame (`Share.work`), and the Analytics market lists of a history of more than 2 000 items are
+worked out a slice per frame (`Analytics.step`), showing the previous lists until the new ones are
+ready.
+
 If another addon requests a full scan, ForeverFlip reads the same result and treats the 15-minute
 window as used. The call itself is watched (`C_AuctionHouse.ReplicateItems` is hooked), because the
 event that announces the answer is not always sent.

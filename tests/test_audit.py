@@ -149,3 +149,20 @@ class MailTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AnalyticsInFramesTests(unittest.TestCase):
+    def test_a_large_history_is_worked_out_a_slice_per_frame(self):
+        run(BASE + '''fullScan()
+        local A = F.Analytics
+        local history = F.Data.market(F.db, F.Engine.scope()).history
+        for i = 1, 3000 do history['i:' .. (6000 + i)] = { scan = { at = now, market = 1000 + i } } end
+        A.invalidate()
+        local m, working = A.market()
+        assert(working, 'not worked out in the call itself')
+        local frames = 0
+        repeat run(0.05); frames = frames + 1; m, working = A.market() until not working or frames > 500
+        assert(not working and m.items >= 3000 and frames > 1, 'ready after ' .. frames .. ' frames')
+        A.invalidate()
+        local old, again = A.market()
+        assert(again and old and old.items >= 3000, 'the previous lists stay on screen meanwhile')''')

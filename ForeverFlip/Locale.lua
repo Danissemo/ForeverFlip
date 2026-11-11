@@ -354,6 +354,7 @@ T.uk = {
     ["No full scan yet."] = "Повного скану ще не було.",
     ["open the auction house and use the ForeverFlip tab."] = "відкрийте аукціон і вкладку ForeverFlip.",
     ["saved"] = "Збережено.",
+    ["Working out the market lists..."] = "Рахую списки ринку...",
     ["reload"] = "Мову збережено. Введіть /reload.",
     ["The game kept refusing an auction mail: taking mail stopped. Take it by hand."] = "Гра постійно відмовляла в листі аукціону: збір пошти зупинено. Заберіть його вручну.",
     ["Buying: waiting for the auction house..."] = "Покупка: чекаємо на аукціон...",

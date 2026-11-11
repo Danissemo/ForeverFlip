@@ -98,7 +98,22 @@ function S.encode(snap)
     return "FF" .. S.VERSION .. "|" .. esc(snap.scope) .. "|" .. S.enc(snap.at) .. "|" .. table.concat(parts, ";")
 end
 
-function S.decode(text)
+-- A frame budget: true once `ms` milliseconds (or `count` steps without a timer) are used.
+local function budget(ms, count)
+    local t0 = debugprofilestop and debugprofilestop()
+    local n = 0
+    return function()
+        n = n + 1
+        if t0 then
+            return n % 50 == 0 and debugprofilestop() - t0 >= ms
+        end
+        return n >= count
+    end
+end
+S.budget = budget
+
+-- Decoding in steps: S.decodeBegin reads the header, S.decodeSome the records (until `done()`).
+function S.decodeBegin(text)
     if type(text) ~= "string" then
         return nil
     end
@@ -112,22 +127,43 @@ function S.decode(text)
     if not snap.at then
         return nil
     end
-    for record in body:gmatch("[^;]+") do
+    return { snap = snap, body = body, pos = 1 }
+end
+
+function S.decodeSome(ctx, done)
+    local body = ctx.body
+    while ctx.pos <= #body do
+        local stop = body:find(";", ctx.pos, true) or (#body + 1)
+        local record = body:sub(ctx.pos, stop - 1)
+        ctx.pos = stop + 1
         local key, m, min, n = record:match("^([^,]+),(%w+),(%w+),(%w+)$")
         key = key and unesc(key)
         if key and U.parseKey(key) then
-            snap.items[#snap.items + 1] = { key = key, m = S.dec(m), min = S.dec(min), n = S.dec(n) }
+            ctx.snap.items[#ctx.snap.items + 1] = { key = key, m = S.dec(m), min = S.dec(min), n = S.dec(n) }
+        end
+        if done and done() then
+            return false
         end
     end
-    return snap
+    return true
+end
+
+function S.decode(text)
+    local ctx = S.decodeBegin(text)
+    if not ctx then
+        return nil
+    end
+    S.decodeSome(ctx)
+    return ctx.snap
 end
 
 local function realmOf(scope)
     return scope and scope:match("^(.*)%-[^%-]+$")
 end
 
--- Merges a received scan. Returns the number of items merged, or nil and a reason.
-function S.merge(snap, from, how)
+-- Merging in steps: S.mergeBegin checks the scan (realm, age, seen before), S.mergeSome merges its
+-- items (until `done()`), S.mergeEnd records it. S.merge does it all at once.
+function S.mergeBegin(snap, from, how)
     if not snap or not F.db then
         return nil, "invalid"
     end
@@ -153,10 +189,23 @@ function S.merge(snap, from, how)
             F.db.sharedSeen[k] = nil
         end
     end
-    local history = F.Data.market(F.db, snap.scope).history
-    local day = math.floor(snap.at / 86400)
-    local merged = 0
-    for _, it in ipairs(snap.items) do
+    return {
+        snap = snap,
+        from = from,
+        how = how,
+        now = now,
+        history = F.Data.market(F.db, snap.scope).history,
+        day = math.floor(snap.at / 86400),
+        merged = 0,
+        i = 1,
+    }
+end
+
+function S.mergeSome(ctx, done)
+    local snap, history, day, from = ctx.snap, ctx.history, ctx.day, ctx.from
+    while ctx.i <= #snap.items do
+        local it = snap.items[ctx.i]
+        ctx.i = ctx.i + 1
         local known = history[it.key] and F.Market.usual(history[it.key])
         local trusted = not U.finite(known) or known <= 0 or (it.m <= known * S.TRUST and it.m * S.TRUST >= known)
         if U.finite(it.m) and it.m > 0 and trusted then
@@ -172,10 +221,22 @@ function S.merge(snap, from, how)
             if (it.n or 0) >= 10 or h.t then
                 F.Market.recordTiming(h, it.m, snap.at)
             end
-            merged = merged + 1
+            ctx.merged = ctx.merged + 1
+        end
+        if done and done() then
+            return false
         end
     end
-    table.insert(S.received, 1, { from = from, at = snap.at, scope = snap.scope, items = merged, how = how, got = now })
+    return true
+end
+
+function S.mergeEnd(ctx)
+    local snap, merged = ctx.snap, ctx.merged
+    table.insert(
+        S.received,
+        1,
+        { from = ctx.from, at = snap.at, scope = snap.scope, items = merged, how = ctx.how, got = ctx.now }
+    )
     while #S.received > 10 do
         table.remove(S.received)
     end
@@ -184,6 +245,16 @@ function S.merge(snap, from, how)
     end
     F.Engine.changed()
     return merged
+end
+
+-- Merges a received scan at once (an import). Returns the number of items merged, or nil and a reason.
+function S.merge(snap, from, how)
+    local ctx, why = S.mergeBegin(snap, from, how)
+    if not ctx then
+        return nil, why
+    end
+    S.mergeSome(ctx)
+    return S.mergeEnd(ctx)
 end
 
 -- The item's record of `day`, kept in day order (at most F.Scan.DAYS records).
@@ -327,10 +398,47 @@ function S.onMessage(prefix, text, channel, sender)
     if r.got >= r.total then
         S.inbox[key] = nil
         local name = Ambiguate and Ambiguate(sender, "none") or sender
-        local merged = S.merge(S.decode(table.concat(r.parts)), name, channel)
-        if merged then
-            F.Engine.notify("share_received")
+        -- Decoded and merged a slice per frame (S.work): a scan of 20 000 items took over 100 ms in
+        -- one go, a stall when it arrived.
+        S.pending[#S.pending + 1] = { text = table.concat(r.parts), from = name, how = channel }
+    end
+end
+
+-- Received scans waiting to be decoded and merged, and the one being worked.
+S.pending = {}
+function S.work()
+    local w = S.working
+    if not w then
+        local next = table.remove(S.pending, 1)
+        if not next then
+            return
         end
+        local ctx = S.decodeBegin(next.text)
+        if not ctx then
+            return
+        end
+        w = { stage = "decode", ctx = ctx, from = next.from, how = next.how }
+        S.working = w
+    end
+    local done = budget(4, 400)
+    if w.stage == "decode" then
+        if not S.decodeSome(w.ctx, done) then
+            return
+        end
+        local merge = S.mergeBegin(w.ctx.snap, w.from, w.how)
+        if not merge then
+            S.working = nil
+            return
+        end
+        w.stage, w.ctx = "merge", merge
+        return
+    end
+    if not S.mergeSome(w.ctx, done) then
+        return
+    end
+    S.working = nil
+    if S.mergeEnd(w.ctx) then
+        F.Engine.notify("share_received")
     end
 end
 
@@ -562,4 +670,7 @@ function S.step(now)
         runWaits(now)
     end
     stepOutbox(now)
+    if S.working or #S.pending > 0 then
+        S.work()
+    end
 end

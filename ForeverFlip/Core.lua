@@ -381,6 +381,7 @@ function E.update(elapsed)
     part("Trade.step", F.Trade.step)
     part("Mail.step", F.Mail.step, now)
     part("Share.step", F.Share.step, now)
+    part("Analytics.step", F.Analytics.step)
     -- Timers on screen (the scan cooldown, a message running out) change without an event.
     tick = tick + (elapsed or 0)
     if tick >= 1 then

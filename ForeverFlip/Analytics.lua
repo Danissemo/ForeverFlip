@@ -108,48 +108,44 @@ end
 --   gaps:     today's cheapest far below the usual price, weighted by how much sells
 --   falling:  usual price dropped most against the 5-day average (possible buys)
 --   rising:   usual price rose most (possible sells of own stock)
-local cache
-function A.market(now)
-    now = now or F.Engine.clock()
-    local scope = F.Engine.scope()
-    local last = F.Scan.last
-    local stamp = scope .. ":" .. tostring(last and last.at)
-    if cache and cache.stamp == stamp then
-        return cache
-    end
-    local history = F.Data.market(F.db, scope).history
-    local rows = {}
-    for key, h in pairs(history) do
-        local market = type(h) == "table" and type(h.scan) == "table" and h.scan.market
-        if U.finite(market) and market > 0 then
-            local s = F.Market.saleability(h, market, now)
-            local days = type(h.days) == "table" and h.days or {}
-            local today = days[#days]
-            local cheap = today and today.min
-            local sum, n = 0, 0
-            for i = math.max(1, #days - 5), #days - 1 do
-                if U.finite(days[i].m) then
-                    sum, n = sum + days[i].m, n + 1
-                end
+-- A large history is worked out a slice per frame (A.step): 20 000 items took about 150 ms in one
+-- go. Meanwhile the page shows the previous result (or "working out"); a small one is done at once.
+local cache, building
+A.SYNC = 2000
+
+local function rowOf(rows, key, h, now)
+    local market = type(h) == "table" and type(h.scan) == "table" and h.scan.market
+    if U.finite(market) and market > 0 then
+        local s = F.Market.saleability(h, market, now)
+        local days = type(h.days) == "table" and h.days or {}
+        local today = days[#days]
+        local cheap = today and today.min
+        local sum, n = 0, 0
+        for i = math.max(1, #days - 5), #days - 1 do
+            if U.finite(days[i].m) then
+                sum, n = sum + days[i].m, n + 1
             end
-            local avg = n > 0 and sum / n or nil
-            local timing = F.Market.timing(h, now)
-            local r = {
-                timing = timing.ready and timing or nil,
-                key = key,
-                market = market,
-                cheap = cheap,
-                perDay = s.known and s.perDay or nil,
-                units = h.units,
-                change = avg and avg > 0 and (market - avg) / avg or nil,
-            }
-            if cheap and cheap < market * 0.95 then
-                r.gap = market * 0.95 - cheap
-                r.score = r.gap * math.min(r.perDay or 0, 10)
-            end
-            rows[#rows + 1] = r
         end
+        local avg = n > 0 and sum / n or nil
+        local timing = F.Market.timing(h, now)
+        local r = {
+            timing = timing.ready and timing or nil,
+            key = key,
+            market = market,
+            cheap = cheap,
+            perDay = s.known and s.perDay or nil,
+            units = h.units,
+            change = avg and avg > 0 and (market - avg) / avg or nil,
+        }
+        if cheap and cheap < market * 0.95 then
+            r.gap = market * 0.95 - cheap
+            r.score = r.gap * math.min(r.perDay or 0, 10)
+        end
+        rows[#rows + 1] = r
     end
+end
+
+local function summarize(stamp, scope, rows)
     local function top(filter, value, limit)
         local out = {}
         for _, r in ipairs(rows) do
@@ -169,8 +165,9 @@ function A.market(now)
         end
         return out
     end
-    cache = {
+    return {
         stamp = stamp,
+        scope = scope,
         items = #rows,
         liquid = top(function(r)
             return r.perDay and r.perDay > 0
@@ -204,7 +201,58 @@ function A.market(now)
             return r.timing.now
         end),
     }
-    return cache
+end
+
+-- Works on the result being built until `done()`; true when it is ready.
+function A.build(done)
+    local b = building
+    if not b then
+        return true
+    end
+    local history = F.Data.market(F.db, b.scope).history
+    while b.i <= #b.keys do
+        local key = b.keys[b.i]
+        b.i = b.i + 1
+        rowOf(b.rows, key, history[key], b.now)
+        if done and done() then
+            return false
+        end
+    end
+    building = nil
+    cache = summarize(b.stamp, b.scope, b.rows)
+    F.Engine.changed()
+    return true
+end
+
+-- Called every frame (Core): goes on with a result being built, about 4 ms a frame.
+function A.step()
+    if building and F.Share and F.Share.budget then
+        A.build(F.Share.budget(4, 300))
+    end
+end
+
+-- The market lists; nil while the first result is worked out (the second value is then true).
+function A.market(now)
+    now = now or F.Engine.clock()
+    local scope = F.Engine.scope()
+    local last = F.Scan.last
+    local stamp = scope .. ":" .. tostring(last and last.at)
+    if cache and cache.stamp == stamp then
+        return cache
+    end
+    if not building or building.stamp ~= stamp then
+        local keys = {}
+        for key in pairs(F.Data.market(F.db, scope).history) do
+            keys[#keys + 1] = key
+        end
+        building = { stamp = stamp, scope = scope, keys = keys, i = 1, rows = {}, now = now }
+    end
+    if #building.keys <= A.SYNC then
+        A.build()
+        return cache
+    end
+    local old = cache and cache.scope == scope and cache or nil
+    return old, true
 end
 
 -- Journal of the character as CSV (date, kind, item, quantity, amount, profit in copper).
@@ -277,5 +325,9 @@ function A.realm(back, now)
 end
 
 function A.invalidate()
-    cache = nil
+    -- The previous result stays on screen until the new one is ready (A.market).
+    if cache then
+        cache.stamp = nil
+    end
+    building = nil
 end
