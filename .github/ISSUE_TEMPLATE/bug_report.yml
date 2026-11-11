@@ -1,0 +1,64 @@
+name: Bug report
+description: Something does not work as described
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Testing a beta? The [Beta testing](https://github.com/Danissemo/ForeverFlip/blob/main/docs/testing.md#beta-testing) table tells what to check.
+  - type: input
+    id: version
+    attributes:
+      label: ForeverFlip version
+      description: Type `/ff` in game.
+      placeholder: 1.2.0-beta.1
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Full scan
+        - Sniper
+        - Deals and buying
+        - Selling and my auctions
+        - Shopping list, bids or crafting
+        - Analytics, statistics or journal
+        - Sharing scans (in game or Sync helper)
+        - Settings, key bindings or the menu
+        - Tooltips, mailbox or merchant
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the exact chat line if there was one (it starts with `ForeverFlip error:`). Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1. Open the auction house
+        2. ...
+  - type: textarea
+    id: errors
+    attributes:
+      label: Error log and /ff diag
+      description: Type `/reload`, then copy the `errors` section of `WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua`, and the output of `/ff diag`.
+      render: text
+  - type: input
+    id: addons
+    attributes:
+      label: Other auction addons
+      placeholder: Auctionator, TSM, auxForever ...

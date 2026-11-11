@@ -204,7 +204,10 @@ See [Safeguards](docs/community.md#safeguards).
 1. Type `/reload`.
 2. Copy the `errors` section of `WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua`, plus the
    output of `/ff diag`.
-3. Paste both into a [new issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose).
+3. Paste both into a [bug report](https://github.com/Danissemo/ForeverFlip/issues/new/choose).
+
+Questions go to [Discussions](https://github.com/Danissemo/ForeverFlip/discussions). A security
+problem is reported privately: see the [security policy](SECURITY.md).
 
 ## 🛠️ Local development
 
@@ -224,8 +227,13 @@ and prints its SHA-256.
 
 ## 🤝 Contributing
 
-Bug reports, observations of how the WoW Forever server behaves, and pull requests are welcome. Read
-the [contributing guide](CONTRIBUTING.md) for the code style, tests and the release process.
+Bug reports, observations of how the WoW Forever server behaves, ideas and pull requests are welcome.
+
+- [Contributing guide](CONTRIBUTING.md): the code style, tests, the local flow and releases.
+- [Code of conduct](CODE_OF_CONDUCT.md): how we talk to each other.
+- [Security policy](SECURITY.md): how to report a security problem privately.
+- [Discussions](https://github.com/Danissemo/ForeverFlip/discussions): questions, ideas and beta
+  feedback that is not a bug.
 
 ## 📄 License
 

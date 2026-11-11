@@ -1,7 +1,10 @@
 # Contributing to ForeverFlip
 
 Thank you for helping. Bug reports with an error log, in-game observations of how the WoW Forever
-server behaves, and pull requests are all welcome.
+server behaves, and pull requests are all welcome. Everyone taking part follows the
+[code of conduct](CODE_OF_CONDUCT.md); security problems are reported privately as the
+[security policy](SECURITY.md) explains. Questions are welcome in
+[Discussions](https://github.com/Danissemo/ForeverFlip/discussions).
 
 ## Development setup
 

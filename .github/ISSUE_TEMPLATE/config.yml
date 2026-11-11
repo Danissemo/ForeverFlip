@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or help
+    url: https://github.com/Danissemo/ForeverFlip/discussions/categories/q-a
+    about: Ask how something works or why a deal looks the way it does.
+  - name: Beta testing
+    url: https://github.com/Danissemo/ForeverFlip/blob/main/docs/testing.md#beta-testing
+    about: What to check in a beta and how to report it.
+  - name: Security problem
+    url: https://github.com/Danissemo/ForeverFlip/security/advisories/new
+    about: Report it privately, not in a public issue.

@@ -130,7 +130,9 @@ Beta releases (`vX.Y.Z-beta.N`, marked **Pre-release** on the
 test before a release. Install one like a normal release (replace the `ForeverFlip` folder; your saved
 data is kept), restart the game, and go through the table of the version above.
 
-Report what you find in an [issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose):
+Report a bug in an [issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose) (the bug
+report form asks for the version and the log); questions and general impressions are welcome in
+[Discussions](https://github.com/Danissemo/ForeverFlip/discussions). A bug report has:
 
 - the row of the table and what happened instead;
 - a screenshot when something looks wrong;

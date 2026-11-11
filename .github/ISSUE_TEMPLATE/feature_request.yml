@@ -1,0 +1,27 @@
+name: Feature request
+description: An idea that would make ForeverFlip better
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Not sure yet? Start a thread in [Ideas](https://github.com/Danissemo/ForeverFlip/discussions/categories/ideas) first. ForeverFlip never trades on its own: ideas that need automatic buying, posting or cancelling cannot be done.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you want to do
+      description: The situation in game, and what is hard about it today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How it could work. Another addon that does it well is a good hint.
+    validations:
+      required: true
+  - type: textarea
+    id: facts
+    attributes:
+      label: What you have seen on WoW Forever
+      description: Anything you noticed about how the server behaves that the idea depends on.
