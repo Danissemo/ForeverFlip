@@ -46,10 +46,10 @@ The window has three parts:
 | Entry | Tabs |
 |---|---|
 | **Deals** | All · To vendor · Resale · From the list (shopping list deals) · Bids |
-| **Shopping list** | |
 | **Selling** | My items (the Sell my items page) · My auctions |
-| **Analytics** | Overview · By item (Statistics by item) · Journal and profit |
+| **Shopping list** | |
 | **Crafting** | |
+| **Analytics** | Overview · By item (Statistics by item) · Journal and profit |
 | **Settings** | |
 
 ForeverFlip remembers the last page you opened, and each entry opens the tab you used last.

@@ -449,8 +449,9 @@ function UI.create()
     UI.show(F.db.ui and F.db.ui.section or "deals:all")
 end
 
--- Six entries on the left; a group of several pages shows them as tabs above the page. The page
--- ids (UI.show) stay the same. Groups remember the page shown last.
+-- Six entries on the left, in the order of a session: find and buy, sell, plan purchases, craft,
+-- look at the results. A group of several pages shows them as tabs above the page. The page ids
+-- (UI.show) stay the same. Groups remember the page shown last.
 UI.GROUPS = {
     {
         label = "Deals",
@@ -462,13 +463,13 @@ UI.GROUPS = {
             { "bids", "Bids" },
         },
     },
-    { label = "Shopping list", pages = { { "shop", "Shopping list" } } },
     { label = "Selling", pages = { { "sell", "My items" }, { "auctions", "My auctions" } } },
+    { label = "Shopping list", pages = { { "shop", "Shopping list" } } },
+    { label = "Crafting", pages = { { "crafting", "Crafting" } } },
     {
         label = "Analytics",
         pages = { { "analytics", "Overview" }, { "stats", "By item" }, { "journal", "Journal and profit" } },
     },
-    { label = "Crafting", pages = { { "crafting", "Crafting" } } },
     { label = "Settings", pages = { { "settings", "Settings" } } },
 }
 
