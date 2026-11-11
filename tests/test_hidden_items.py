@@ -155,13 +155,13 @@ class ScrollTests(unittest.TestCase):
         UI.show('sell'); UI.refresh()
         local function shown() local n, names = 0, {} for _, r in ipairs(UI.sellTable.rows) do if r:IsShown() then n = n + 1; names[r.key] = true end end return n, names end
         local n, names = shown()
-        assert(n == 11, 'eleven rows: ' .. n)
-        assert(UI.sellTable.headers[1]:GetText():find('1%-11 / 15'), UI.sellTable.headers[1]:GetText())
+        assert(n == 12, 'twelve rows: ' .. n)
+        assert(UI.sellTable.headers[1]:GetText():find('1%-12 / 15'), UI.sellTable.headers[1]:GetText())
         UI.sellTable.wheel(nil, -1); UI.sellTable.wheel(nil, -1)
         n, names = shown()
-        assert(UI.sellTable.headers[1]:GetText():find('5%-15 / 15'), UI.sellTable.headers[1]:GetText())
+        assert(UI.sellTable.headers[1]:GetText():find('4%-15 / 15'), UI.sellTable.headers[1]:GetText())
         local seen = 0
         for i = 1, 15 do if names['i:' .. (700 + i)] then seen = seen + 1 end end
-        assert(n == 11 and seen >= 1, 'the last items are reachable')
+        assert(n == 12 and seen >= 1, 'the last items are reachable')
         UI.sellTable.wheel(nil, 5)
-        assert(UI.sellTable.headers[1]:GetText():find('1%-11'), 'back to the top')""")
+        assert(UI.sellTable.headers[1]:GetText():find('1%-12'), 'back to the top')""")

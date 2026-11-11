@@ -46,6 +46,14 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **The end of a full scan** no longer stalls the game on a large history: forgetting old items
   and sweeping vanished ones run a slice per frame, and the scan is copied into the saved data on
   logout instead of at once.
+- **Deals: Sells at and Profit/day.** The Cost column became **Sells at**, the price a unit sells
+  at (for a resale: at most what a quarter of the sales seen reached, `*` when no sales were seen);
+  Est./day became **Profit/day**, which joins the profit, that price and the measured sales into
+  what the deal earns per day. The Selling page says what buyers paid lately and how many units a
+  day sell at the suggested price.
+- **Selling is more compact:** the rule fields moved into a panel opened with **Rule...**, Check
+  price is a small refresh button beside the price, and the list shows 12 rows. Check all is
+  narrower.
 - **Vendor deals are back:** the vendor-price safety margin is 0% by default (it was 20%, and the
   saved 20% is reset once). Every merchant price checked in game matched the client's, and the
   margin left 1 of 74 items listed below their vendor price.

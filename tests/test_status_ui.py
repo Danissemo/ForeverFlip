@@ -101,7 +101,7 @@ class CategoryStatusTests(unittest.TestCase):
         ''')
         runtime(open_ah=False).execute('''
         ForeverFlip.Locale.apply('uk');fire('AUCTION_HOUSE_SHOW')
-        assert(ForeverFlip.UI.dealTable.headers[7]:GetText()=='Оцін./д')
+        assert(ForeverFlip.UI.dealTable.headers[7]:GetText()=='Приб./день')
         ''')
 
 
@@ -130,23 +130,32 @@ end
 
 
 class SaleabilityTableTests(unittest.TestCase):
-    def test_estimates_use_resale_exit_history_and_distinguish_zero_unknown_and_vendor(self):
+    def test_profit_per_day_uses_resale_exit_history_and_distinguishes_zero_unknown_and_vendor(self):
         runtime().execute(SALEABILITY + '''
-        assert(UI.dealTable.headers[7],'missing estimate column')
-        assert(row('c:10').cols[6]:GetText()=='~8.0','must use history at resale exit, not purchase or cached rate')
-        assert(row('c:20').cols[6]:GetText()=='0','observed zero is known')
-        assert(row('c:30').cols[6]:GetText()=='-','unknown is not zero')
-        assert(row('c:40').cols[6]:GetText()=='vendor','vendor sale does not need AH demand')
-        assert(row('c:50').cols[6]:GetText():find('|cff999999') and row('c:50').cols[6]:GetText():find('~2.0'))
+        assert(UI.dealTable.headers[7]:GetText()=='Profit/day')
+        local U=F.Util
+        local function cell(key) return row(key).cols[6]:GetText() end
+        assert(cell('c:10')==U.money(80),'8 a day sell the one unit: all 80 profit a day, '..cell('c:10'))
+        assert(cell('c:20')==U.money(0),'observed zero sales make no profit a day')
+        assert(cell('c:30')=='?','unknown is not zero')
+        assert(cell('c:40')==U.money(80),'a vendor deal pays at once')
+        assert(cell('c:50'):find('|cff999999'),'old data is grey')
+        assert(row('c:10').cols[3]:GetText():find(U.money(1000),1,true),'sells at the resale exit price')
         ''')
 
-    def test_estimate_sort_is_numeric_with_unknown_and_vendor_last_in_both_directions(self):
+    def test_profit_per_day_counts_only_the_units_sold_in_a_day(self):
         runtime().execute(SALEABILITY + '''
-        assert(UI.dealTable.headers[7],'missing sortable estimate column')
+        local U=F.Util;local d=D.list[1];d.qty=16;d.profit=1600
+        UI.refreshDeals()
+        assert(row('c:10').cols[6]:GetText()==U.money(800),'8 of 16 units a day: half the profit, '..row('c:10').cols[6]:GetText())
+        ''')
+
+    def test_profit_per_day_sort_is_numeric_with_unknown_last_in_both_directions(self):
+        runtime().execute(SALEABILITY + '''
         UI.dealTable.headers[7]:Click()
-        assert(keys()=='c:60,c:10,c:50,c:20,c:70,c:30,c:40',keys())
+        assert(keys()=='c:10,c:40,c:50,c:60,c:20,c:70,c:30',keys())
         UI.dealTable.headers[7]:Click()
-        assert(keys()=='c:20,c:70,c:50,c:10,c:60,c:30,c:40',keys())
+        assert(keys()=='c:20,c:70,c:10,c:40,c:50,c:60,c:30',keys())
         assert(D.list[1].key=='c:10','sorting must not reorder backend work')
         ''')
 
@@ -166,8 +175,8 @@ class SaleabilityTableTests(unittest.TestCase):
         assert(type(header.scripts.OnEnter)=='function','estimate needs a caveat tooltip')
         header.scripts.OnEnter(header)
         local tip=GameTooltip:GetText()
-        assert(tip:find('Expired/cancelled') and tip:find('probability'),tip)
-        assert(tip:find('unknown') and tip:find('Zero') and tip:find('3 hours'),tip)
+        assert(tip:find('expired or cancelled') and tip:find('probability'),tip)
+        assert(tip:find('not measured yet') and tip:find('3 hours') and tip:find('vendor deal pays'),tip)
         header.scripts.OnLeave(header);assert(not GameTooltip:IsShown())
         ''')
 

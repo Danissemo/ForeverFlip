@@ -141,11 +141,11 @@ weapons and armor priced below the expected value of their materials.
 |---|---|
 | Item | Icon and name. Hover for the game tooltip; right-click for the price history. |
 | Price | The highest unit price you pay in this deal (the last lot taken). |
-| Qty | Units to buy. |
-| Cost | Total price of those units. |
+| Qty | Units to buy (their total price is in the line under the table). |
+| Sells at | The price one unit sells at. A resale counts on the usual asking price, but never more than what a quarter of the sales seen reached (green); `*` means no sales were seen yet, so it is only the asking price. A vendor deal shows the vendor price (orange; `*` = not yet confirmed at a merchant). Shopping, disenchant and bid deals show their kind. |
 | Profit | Money you keep. For a resale: after the auction cut and the deposit risk. For a shopping deal: the saving against your price. For a disenchant deal: the material value minus the cost. |
 | Status | See below. |
-| Est./day | For resale deals: units per day that sell near the resale price. For other deals: the kind of deal. |
+| Profit/day | Profit, Sells at and the measured sales in one figure: what the deal earns per day. A resale earns its profit times the share of its units the market takes in a day (units sold per day near the Sells at price, at most all of them); 16 units of which 8 sell a day earn half the profit a day. A vendor deal pays all of it at once. `?` = sales not measured yet (two full scans needed). The units per day themselves are in the line under the table. |
 
 Click a column header to sort by it, and click it again to reverse the order. Use **<** and **>** to
 change pages.
@@ -279,12 +279,16 @@ At the bottom:
   - The price field accepts `1g 20s 5c`, `20s`, `1.5g` or a bare number of silver.
   - Duration is 2, 8 or 24 hours, or **Auto**: the shortest duration the item's measured sales fill
     (a shorter post costs a smaller deposit), else 24 hours.
-- **Rule: min / max / keep** for the selected item, saved with **Save rule**:
+- The text above the fields says what buyers paid lately (the middle of the sales seen between full
+  scans) and how many units a day sell at the suggested price.
+- The small **refresh** button right of the price reads the current listings of the selected item
+  again (**Check price**). A price stays fresh for 5 minutes.
+- **Rule...** (beside Hide) opens the rule of the selected item; most items need none. A green `*`
+  on the button means the item has one. Saved with **Save rule**:
   - **min:** never post below this price.
   - **max:** if the cheapest other seller asks more than this, it is ignored and the item is posted
     at its normal price (the usual price).
-  - **keep:** this many units stay in the bags.
-- **Check price** reads the current listings of the selected item. A price stays fresh for 5 minutes.
+  - **keep:** this many units stay in the bags (Post all leaves them).
 - **Post next bought (N)** handles the items you bought for resale, oldest first, still in the bags
   and not yet listed. N is how many are waiting.
 - **Post all (N)** handles every sellable item in the bags, also items you did not buy through

@@ -405,7 +405,7 @@ function UI.create()
     UI.sniperButton:SetPoint("LEFT", UI.scanButton, "RIGHT", 6, 0)
     -- Check all: every entry of the open page is searched on the auction house again (one search
     -- after another), and the page shows what was found.
-    UI.bulkButton = button(f, "Check all", 160, function()
+    UI.bulkButton = button(f, "Check all", 110, function()
         UI.checkStatuses()
     end)
     UI.bulkButton:SetPoint("LEFT", UI.sniperButton, "RIGHT", 6, 0)
@@ -616,10 +616,10 @@ function UI.createDeals(p)
             { "Name" },
             { "Price", 76 },
             { "Qty", 50 },
-            { "Cost", 76 },
+            { "Sells at", 76 },
             { "Profit", 76 },
             { "Status", 88, "LEFT" },
-            { "Est./day", 68 },
+            { "Profit/day", 76 },
         },
         DEAL_ROWS,
         function(row)
@@ -641,10 +641,10 @@ function UI.createDeals(p)
         if GameTooltip then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(
-                L("Est./day")
+                L("Profit/day")
                     .. "\n\n"
                     .. L(
-                        "Estimated units that disappeared per day near the resale price, not a sale probability. Expired/cancelled lots can count.\n\nTwo usable full scans are required. Zero means none disappeared; '-' means unknown. Vendor deals need no auction-house resale.\n\nGrey estimates use data older than 3 hours. Checking a current price does not refresh sale history. Short observations are smoothed: one unit gone in 15 minutes counts as about 5-6 a day, not 96."
+                        "The profit the deal makes per day: for a resale, its profit times the share of its units the market takes in a day (Est./day near the Sells at price, at most all of them); a vendor deal pays all of it at once.\n\nEst./day counts units that disappeared per day near the resale price, not a sale probability: expired or cancelled lots can count. Two usable full scans are required; '?' means not measured yet, 0 means none disappeared. Grey: data older than 3 hours."
                     ),
                 1,
                 1,
@@ -789,18 +789,47 @@ local function saleEstimate(d, history, now)
     return F.Market.saleability(history[d.key], d.exit, now)
 end
 
-local MODE_LABELS = { vendor = "vendor", shop = "shopping list", disenchant = "disenchant", bid = "bid" }
-local function estimateText(d, estimate)
-    if d.mode == "vendor" and d.vendorHow and d.vendorHow ~= "seen" then
-        -- The server may pay less than the client says until a merchant confirmed the price.
-        return L("vendor") .. " |cffffd100*|r"
-    elseif d.mode ~= "flip" then
-        return L(MODE_LABELS[d.mode] or d.mode)
-    elseif not estimate.known then
+-- What the deal sells at, per unit: the vendor price, or the resale price the deal counts on (the
+-- usual asking price, at most what a quarter of the sales seen reached). A resale price with no
+-- sales seen yet is only the asking price: marked with "*".
+local MODE_LABELS = { shop = "shopping list", disenchant = "disenchant", bid = "bid" }
+local function sellsAtText(d, history)
+    if MODE_LABELS[d.mode] then
+        return L(MODE_LABELS[d.mode]) -- bought for the list, to disenchant, or a bid
+    end
+    if not U.finite(d.exit) then
         return "-"
     end
-    local value = estimate.perDay == 0 and "0" or string.format("~%.1f", estimate.perDay)
-    return estimate.stale and "|cff999999" .. value .. "|r" or value
+    if d.mode == "vendor" then
+        local mark = d.vendorHow and d.vendorHow ~= "seen" and " |cffffd100*|r" or ""
+        return "|cffffb84d" .. U.money(d.exit) .. "|r" .. mark
+    elseif d.mode == "flip" then
+        local seen = F.Market.saleCap(history[d.key]) ~= nil
+        return "|cff40ff40" .. U.money(d.exit) .. "|r" .. (seen and "" or " |cffffd100*|r")
+    end
+    return U.money(d.exit)
+end
+
+-- Profit per day: a resale's profit times the share of its units sold in a day; nil when its sales
+-- are not measured yet. Other deals pay at once.
+local function profitPerDay(d, estimate)
+    if d.mode ~= "flip" then
+        return d.profit
+    end
+    if not estimate.known then
+        return nil
+    end
+    local share = (d.qty or 1) > 0 and math.min(1, (estimate.perDay or 0) / d.qty) or 0
+    return math.floor(d.profit * share)
+end
+
+local function profitDayText(d, estimate)
+    local value = profitPerDay(d, estimate)
+    if not value then
+        return "?"
+    end
+    local shown = U.money(value)
+    return d.mode == "flip" and estimate.stale and "|cff999999" .. shown .. "|r" or shown
 end
 
 local function estimateSentence(estimate)
@@ -874,11 +903,11 @@ function UI.refreshDeals()
         elseif field == 3 then
             return d.qty
         elseif field == 4 then
-            return d.cost
+            return d.exit or 0
         elseif field == 5 then
             return d.profit
         elseif field == 7 then
-            return estimates[d.key].perDay
+            return profitPerDay(d, estimates[d.key])
         end
         if F.Deals.search and F.Deals.search.key == d.key then
             return 0
@@ -919,10 +948,10 @@ function UI.refreshDeals()
             r.name:SetText(nameOf(d.key, d.link))
             r.cols[1]:SetText(U.money(d.maxUnit or 0))
             r.cols[2]:SetText(d.qty)
-            r.cols[3]:SetText(U.money(d.cost))
+            r.cols[3]:SetText(sellsAtText(d, history))
             r.cols[4]:SetText(U.money(d.profit))
             r.cols[5]:SetText(dealStatus(d))
-            r.cols[6]:SetText(estimateText(d, estimates[d.key]))
+            r.cols[6]:SetText(profitDayText(d, estimates[d.key]))
             if d.key == UI.selected then
                 r.selected:Show()
             else
@@ -1260,11 +1289,11 @@ UI.FALLBACK_TEXT = {
     cost = "Nobody sells it and there is no price history. Suggested: your cost plus 25%%, %s.",
     vendor = "Nobody sells it and there is no price history. Suggested: 1.5 x the vendor price, %s.",
 }
-local SELL_ROWS = 11
+local SELL_ROWS = 12
 function UI.createSell(p)
     local list = CreateFrame("Frame", nil, p)
     list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
-    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 142)
+    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 112)
     UI.sellTable = table_(
         list,
         {
@@ -1330,13 +1359,74 @@ function UI.createSell(p)
         UI.refresh()
     end)
     UI.sellHide:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -6, 6)
+    -- Rule of the selected item (minimum and maximum price, units kept in the bags), in a panel over
+    -- the bottom of the list, opened with "Rule..." beside Hide. Most items need none.
+    local panel = CreateFrame("Frame", nil, p)
+    panel:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 4, 32)
+    panel:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -4, 32)
+    panel:SetHeight(64)
+    if panel.SetFrameLevel and list.GetFrameLevel then
+        panel:SetFrameLevel((list:GetFrameLevel() or 1) + 20)
+    end
+    local back = panel:CreateTexture(nil, "BACKGROUND")
+    back:SetColorTexture(0.05, 0.05, 0.05, 0.95)
+    back:SetAllPoints()
+    local edge = panel:CreateTexture(nil, "BORDER")
+    edge:SetColorTexture(1, 0.82, 0, 0.4)
+    edge:SetHeight(1)
+    edge:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+    edge:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
+    panel:Hide()
+    UI.rulePanel = panel
+    local help = text(panel, "GameFontHighlightSmall")
+    help:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 10, 8)
+    help:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -10, 8)
+    help:SetText(
+        L("min: never post below this price. max: sellers asking more are ignored. keep: units that stay in the bags.")
+    )
+    local ruleLabel = text(panel, "GameFontNormal")
+    ruleLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -10)
+    ruleLabel:SetText(L("Rule: min"))
+    UI.ruleMin = editbox(panel, 70)
+    UI.ruleMin:SetPoint("LEFT", ruleLabel, "RIGHT", 8, 0)
+    local maxLabel = text(panel, "GameFontNormal")
+    maxLabel:SetPoint("LEFT", UI.ruleMin, "RIGHT", 10, 0)
+    maxLabel:SetText(L("max"))
+    UI.ruleMax = editbox(panel, 70)
+    UI.ruleMax:SetPoint("LEFT", maxLabel, "RIGHT", 8, 0)
+    local keepLabel = text(panel, "GameFontNormal")
+    keepLabel:SetPoint("LEFT", UI.ruleMax, "RIGHT", 10, 0)
+    keepLabel:SetText(L("keep"))
+    UI.ruleKeep = editbox(panel, 40)
+    UI.ruleKeep:SetPoint("LEFT", keepLabel, "RIGHT", 8, 0)
+    UI.ruleSave = button(panel, "Save rule", 95, function()
+        local item = UI.sellSelected
+        if item then
+            F.Trade.setRule(item.key, {
+                min = U.parseMoney(UI.ruleMin:GetText()),
+                max = U.parseMoney(UI.ruleMax:GetText()),
+                keep = tonumber(UI.ruleKeep:GetText()),
+            })
+            F.Engine.notify("saved")
+            panel:Hide()
+        end
+    end)
+    UI.ruleSave:SetPoint("LEFT", UI.ruleKeep, "RIGHT", 10, 0)
+    UI.ruleToggle = button(p, "Rule...", 90, function()
+        if panel:IsShown() then
+            panel:Hide()
+        elseif UI.sellSelected then
+            panel:Show()
+        end
+    end)
+    UI.ruleToggle:SetPoint("RIGHT", UI.sellHide, "LEFT", -4, 0)
 
-    local bar = footer(p, 138)
+    local bar = footer(p, 108)
     UI.sellText = bar.text
     local priceLabel = text(bar, "GameFontNormal")
     priceLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 36)
     priceLabel:SetText(L("Price each"))
-    UI.sellPrice = editbox(bar, 110)
+    UI.sellPrice = editbox(bar, 100)
     UI.sellPrice:SetScript("OnTextChanged", function(self, userInput)
         if self:GetText() == "" then
             UI.sellPriceAuto = nil
@@ -1347,7 +1437,7 @@ function UI.createSell(p)
     end)
     UI.sellPrice:SetPoint("LEFT", priceLabel, "RIGHT", 10, 0)
     local qtyLabel = text(bar, "GameFontNormal")
-    qtyLabel:SetPoint("LEFT", UI.sellPrice, "RIGHT", 14, 0)
+    qtyLabel:SetPoint("LEFT", UI.sellPrice, "RIGHT", 40, 0) -- room for the Check price button
     qtyLabel:SetText(L("Quantity"))
     UI.sellQty = editbox(bar, 50)
     UI.sellQty:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
@@ -1367,34 +1457,6 @@ function UI.createSell(p)
         b:SetPoint("LEFT", i == 1 and durationLabel or UI.durations[i - 1], "RIGHT", i == 1 and 8 or 2, 0)
         UI.durations[i] = b
     end
-    -- Rule of the selected item: minimum and maximum price, units kept in the bags.
-    local ruleLabel = text(bar, "GameFontNormal")
-    ruleLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 66)
-    ruleLabel:SetText(L("Rule: min"))
-    UI.ruleMin = editbox(bar, 70)
-    UI.ruleMin:SetPoint("LEFT", ruleLabel, "RIGHT", 8, 0)
-    local maxLabel = text(bar, "GameFontNormal")
-    maxLabel:SetPoint("LEFT", UI.ruleMin, "RIGHT", 10, 0)
-    maxLabel:SetText(L("max"))
-    UI.ruleMax = editbox(bar, 70)
-    UI.ruleMax:SetPoint("LEFT", maxLabel, "RIGHT", 8, 0)
-    local keepLabel = text(bar, "GameFontNormal")
-    keepLabel:SetPoint("LEFT", UI.ruleMax, "RIGHT", 10, 0)
-    keepLabel:SetText(L("keep"))
-    UI.ruleKeep = editbox(bar, 40)
-    UI.ruleKeep:SetPoint("LEFT", keepLabel, "RIGHT", 8, 0)
-    UI.ruleSave = button(bar, "Save rule", 95, function()
-        local item = UI.sellSelected
-        if item then
-            F.Trade.setRule(item.key, {
-                min = U.parseMoney(UI.ruleMin:GetText()),
-                max = U.parseMoney(UI.ruleMax:GetText()),
-                keep = tonumber(UI.ruleKeep:GetText()),
-            })
-            F.Engine.notify("saved")
-        end
-    end)
-    UI.ruleSave:SetPoint("LEFT", UI.ruleKeep, "RIGHT", 10, 0)
     UI.postButton = button(bar, "Post", 100, function()
         local item = UI.sellSelected
         if not item then
@@ -1445,15 +1507,34 @@ function UI.createSell(p)
     end
     -- The bottom row holds the posting buttons; checking the selected item's price sits at the end
     -- of the rule row above.
-    UI.sellCheck = button(bar, "Check price", 100, function()
+    -- Check price: reads the selected item's listings again (selecting it already does once).
+    UI.sellCheck = CreateFrame("Button", nil, bar)
+    UI.sellCheck:SetSize(22, 22)
+    UI.sellCheck:SetPoint("LEFT", UI.sellPrice, "RIGHT", 6, 0)
+    if UI.sellCheck.SetNormalTexture then
+        UI.sellCheck:SetNormalTexture("Interface\\Buttons\\UI-RefreshButton")
+        UI.sellCheck:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    end
+    UI.sellCheck:SetScript("OnClick", function()
         if UI.sellSelected then
             F.Trade.checkPrice(UI.sellSelected.key)
             F.Engine.changed()
             UI.refresh()
         end
     end)
-    UI.sellCheck:SetPoint("TOP", UI.ruleSave, "TOP", 0, 0)
-    UI.sellCheck:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
+    UI.sellCheck:SetScript("OnEnter", function(self)
+        if GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(L("Check price"), 1, 1, 1)
+            GameTooltip:AddLine(L("Reads the item's current listings again."), 1, 0.82, 0, true)
+            GameTooltip:Show()
+        end
+    end)
+    UI.sellCheck:SetScript("OnLeave", function()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
 end
 
 -- Bag items for sale, or (hidden = true) the hidden items, also those no longer in the bags.
@@ -1593,6 +1674,12 @@ function UI.refreshSell()
     UI.sellHiddenTab:SetEnabled(not hiddenView)
     UI.sellHide:SetText(L(hiddenView and "Return to sale" or "Hide"))
     UI.sellHide:SetEnabled(UI.sellSelected ~= nil)
+    UI.ruleToggle:SetEnabled(UI.sellSelected ~= nil and not hiddenView)
+    local rule = UI.sellSelected and F.Trade.rule(UI.sellSelected.key)
+    UI.ruleToggle:SetText(L("Rule...") .. (rule and " |cff40ff40*|r" or ""))
+    if not UI.sellSelected or hiddenView then
+        UI.rulePanel:Hide()
+    end
     local listings = {}
     for _, l in ipairs(F.Data.char(F.db, F.Engine.owner()).listings) do
         listings[l.key] = (listings[l.key] or 0) + l.open
@@ -1741,6 +1828,22 @@ function UI.refreshSell()
         lines[#lines + 1] = L("Press Check price to read the current listings.")
     end
     local h = F.Data.market(F.db, F.Engine.scope()).history[item.key]
+    -- What buyers really paid (sales seen between full scans), and how much sells a day at the price.
+    local sale = h and F.Market.salePrice(h)
+    if sale then
+        lines[#lines + 1] =
+            string.format(L("Buyers paid about %s each lately (the middle of the sales seen)."), U.money(sale))
+    end
+    if price and h then
+        local s = F.Market.saleability(h, price, F.Engine.clock())
+        if s.known then
+            lines[#lines + 1] = string.format(
+                L("At %s about %s units a day sell."),
+                U.money(price),
+                s.perDay == 0 and "0" or string.format("%.1f", s.perDay)
+            )
+        end
+    end
     local timing = h and F.Market.timing(h, F.Engine.clock())
     if timing and timing.ready and timing.now <= 0.95 and timing.spread >= 0.08 then
         lines[#lines + 1] = string.format(

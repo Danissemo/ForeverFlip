@@ -184,6 +184,9 @@ Check these with 1.2.0-beta.3 (or later).
 | ⬜ | Check all without an answer | Check all on My items with an item only you sell: the search is tried twice, the status says `(1 without an answer)` and the chat names the item. |
 | ⬜ | Post queue clicks | Press Post AH-worthy once: the prices are read for the whole queue; each next press posts one lot. |
 | ⬜ | Check all | The button at the top says Check all. On Shopping list, Bids and Crafting it is enabled too and counts `Checking <page>: done/total`; afterwards Crafting shows the recipes priced with the checked prices, and Selling → My items the Best column with them. |
+| ⬜ | Vendor deals | After a full scan, To vendor lists many deals again (the vendor margin is 0% by default; Safety shows it). |
+| ⬜ | Sells at and Profit/day | The deals table shows Sells at (green for a resale, orange for a vendor deal, `*` when not confirmed) and Profit/day; `?` for a resale whose sales are not measured. Sorting by Profit/day puts unknown ones last. |
+| ⬜ | Compact Selling | The bottom of Selling → My items has the price row and the post buttons only; the refresh button beside the price checks it again; Rule... opens the min / max / keep panel; 12 rows fit in the list; nothing overlaps. |
 | ⬜ | House name | The open house is named in the middle of the bottom bar, right of the money display; the summary on the left no longer repeats it. |
 | ⬜ | A click goes first | Start Check all on My items, then select another item and press Check price: its price is read next, not after the whole batch. With the sniper on, Check price starts at once. |
 | ⬜ | Price offer | Press Buy on a commodity deal and then select another deal: the price offer is dropped (Confirm cannot buy the first item). The status line shows each step: asking for the price, Confirm with the price, buying. An offer nobody confirms ends after a minute. |
