@@ -256,9 +256,11 @@ local function completeRequest(r, rows, complete)
         return
     end
     r.completed = true
+    -- Gear: the item-key versions searched, for callbacks that read each of them (bids). Kept
+    -- apart from the arguments: callbacks such as D.verifyCallback take a 4th argument of their own.
+    D.versions = r.keys
     for _, cb in ipairs(r.callbacks or {}) do
-        -- Gear: the item-key versions searched (bids read each of them).
-        local ok, err = pcall(cb.run, r.key, rows, complete, r.keys)
+        local ok, err = pcall(cb.run, r.key, rows, complete)
         if not ok then
             F.Engine.report(err)
         end

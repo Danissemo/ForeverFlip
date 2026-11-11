@@ -416,6 +416,19 @@ class WholeCodeReviewTests(unittest.TestCase):
         assert(afterOwned == afterInvoice, tostring(afterOwned) .. ' vs ' .. tostring(afterInvoice))''')
 
 
+class SniperGearTests(unittest.TestCase):
+    def test_a_sniper_check_of_gear_completes_without_an_error(self):
+        run(SETUP + '''enableBrowse(); fullScan()
+        local D, U = ForeverFlip.Deals, ForeverFlip.Util
+        local key = U.key('gear', 20, 'Northern Shortsword of Nature Protection')
+        local errs = {}
+        ForeverFlip.Engine.report = function(e) errs[#errs + 1] = tostring(e) end
+        assert(D.request(key, D.verifyCallback, 'sniper', true))
+        answer(); run(1)
+        assert(#errs == 0, table.concat(errs, ' | '))
+        assert(D.get(key) and D.get(key).verified, 'the gear deal is checked')''')
+
+
 class ReviewTests(unittest.TestCase):
     def test_hardcore_scans_are_merged_and_cuts_learned_for_the_hardcore_house(self):
         run(SETUP + '''Enum = Enum or {}; Enum.GameRule = { HardcoreRuleset = 7 }
