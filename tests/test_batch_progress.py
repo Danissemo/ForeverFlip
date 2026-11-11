@@ -13,7 +13,7 @@ for id=10,29 do
     owned[#owned+1]={auctionID=id,itemKey={itemID=id},quantity=1,buyoutAmount=300,status=0}
 end
 fire('OWNED_AUCTIONS_UPDATED');UI.show('auctions')
-UI.checkOwned:Click();run(0.6);UI.refreshAuctions()
+UI.checkOwned:Click();run(1.2);UI.refreshAuctions()
 '''
 
 

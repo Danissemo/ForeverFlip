@@ -387,7 +387,7 @@ end
 
 -- The next item-key version of a gear search, or the end of it with every version's rows.
 local function nextGearKey(s)
-    s.keyIndex = s.keyIndex + 1
+    s.keyIndex, s.keyPages = s.keyIndex + 1, 0
     local key = s.keys[s.keyIndex]
     if not key then
         table.sort(s.found, function(a, b)
@@ -464,6 +464,18 @@ function D.onResults(itemID, searchKey)
     local s = D.search
     if s and s.phase == "keys" and s.item.id == itemID and sameKey(searchKey, s.keys[s.keyIndex]) then
         local ok, rows, complete = pcall(F.AH.rows, s.item, searchKey)
+        -- A version with more listings than one page: up to 3 more pages, unless the cheapest
+        -- page already reaches past the deal's price.
+        local d = D.get(s.key)
+        local last = ok and rows[#rows]
+        local enough = complete or (d and last and last.unit > (d.exit or 0) * 1.2)
+        if ok and not enough and s.keyPages < 3 and F.AH.ready() then
+            s.keyPages, s.at = s.keyPages + 1, clock()
+            if pcall(F.AH.moreKey, searchKey) then
+                return
+            end
+        end
+        complete = complete or enough
         if ok then
             for _, r in ipairs(rows) do
                 if not r.auctionID or not s.foundIDs[r.auctionID] then
@@ -526,7 +538,9 @@ function D.learn(itemID, searchKey)
     for _, key in ipairs(keys) do
         local ok, rows, complete = pcall(F.AH.rows, U.parseKey(key), searchKey)
         if ok and rows and #rows > 0 then
-            D.verifyCallback(key, rows, complete or #rows >= 40)
+            -- One gear ending is spread over several item-key versions: a search of one version
+            -- is never a complete check of the ending (prices are still learned below).
+            D.verifyCallback(key, rows, kind ~= "gear" and (complete or #rows >= 40))
         end
     end
 end

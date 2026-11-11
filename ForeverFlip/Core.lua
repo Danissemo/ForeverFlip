@@ -24,6 +24,14 @@ local NEUTRAL_MAPS = {
 }
 local NEUTRAL_TOWNS = { ["booty bay"] = true, ["gadgetzan"] = true, ["everlook"] = true }
 function E.detectHouse()
+    -- The auctioneer tells it best: the auctioneers of Alliance and Horde towns belong to their
+    -- faction, the goblins of the neutral houses to none. The zone is only the fallback.
+    if UnitExists and UnitFactionGroup and UnitExists("npc") then
+        local faction = UnitFactionGroup("npc")
+        if faction == "Alliance" or faction == "Horde" then
+            return nil
+        end
+    end
     if C_Map and C_Map.GetBestMapForUnit then
         local ok, map = pcall(C_Map.GetBestMapForUnit, "player")
         if ok and NEUTRAL_MAPS[map] then
@@ -352,7 +360,6 @@ function E.update(elapsed)
         F.Scan.auto()
     end
     F.Scan.step()
-    F.Trade.stepChecks()
     F.Deals.step()
     F.Sniper.step()
     F.Trade.step()

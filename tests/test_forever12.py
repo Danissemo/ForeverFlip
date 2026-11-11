@@ -361,6 +361,61 @@ class OtherTests(unittest.TestCase):
         assert(C.have(10) == 7)''')
 
 
+class WholeCodeReviewTests(unittest.TestCase):
+    def test_a_faction_auctioneer_means_the_faction_house_in_any_zone(self):
+        run(SETUP + '''local E = ForeverFlip.Engine
+        C_Map = { GetBestMapForUnit = function() return 1434 end }  -- Stranglethorn Vale
+        function UnitExists(u) return u == 'npc' end
+        npcFaction = 'Alliance'
+        local real = UnitFactionGroup
+        UnitFactionGroup = function(u) if u == 'npc' then return npcFaction end return real(u) end
+        assert(E.detectHouse() == nil, 'an Alliance auctioneer is the Alliance house')
+        npcFaction = nil
+        assert(E.detectHouse() == 'Neutral', 'a goblin auctioneer in a neutral town')''')
+
+    def test_rows_that_never_loaded_are_not_booked_as_sold(self):
+        run(SETUP + '''enableTimeLeft(); local F = ForeverFlip
+        fullScan()
+        local h = F.Data.market(F.db, F.Engine.scope()).history['c:10']
+        assert(h.lots, 'lots of the first scan')
+        -- The next scan cannot read cloth's rows (item data never loads in time).
+        items[10].cached = false
+        now = now + 901; F.db.lastScan = 0; fullScan()
+        assert((F.Market.demandAt(h, 60).sold or 0) == 0, 'unread rows are not sales')
+        assert(h.lots, 'the lots stay for the next full scan')''')
+
+    def test_a_far_smaller_scan_books_no_vanished_sales(self):
+        run(SETUP + '''enableTimeLeft(); local F = ForeverFlip
+        for i = 1, 40 do addAuction(30, 30000 + i, 1) end
+        fullScan()
+        for i = #auctions, 1, -1 do if auctions[i].item == 30 then table.remove(auctions, i) end end
+        now = now + 901; F.db.lastScan = 0; fullScan()
+        local h = F.Data.market(F.db, F.Engine.scope()).history['i:30']
+        assert((F.Market.demandAt(h, 30000).sold or 0) == 0, 'a scan with most auctions missing is partial')
+        assert(h.lots, 'the lots stay for the next full scan')''')
+
+    def test_opening_another_house_shows_its_own_scan(self):
+        run(SETUP + '''local F = ForeverFlip
+        fullScan(); assert(#F.Deals.list > 0)
+        fire('AUCTION_HOUSE_CLOSED')
+        F.Engine.detectHouse = function() return 'Neutral' end
+        fire('AUCTION_HOUSE_SHOW')
+        assert(F.Engine.scope() == 'Realm-Neutral')
+        assert(F.Scan.last == nil and #F.Deals.list == 0, 'no Alliance deals at the neutral house')''')
+
+    def test_an_invoice_after_the_owned_list_does_not_book_the_sale_twice(self):
+        run(SETUP + '''local F, T = ForeverFlip, ForeverFlip.Trade
+        local c = F.Data.char(F.db, F.Engine.owner())
+        F.Data.addPosition(c, 'i:30', 'Linen Bag', 3, 3000, 'flip', 5000, now)
+        c.listings = { { key = 'i:30', name = 'Linen Bag', ids = { 77 }, open = 3, price = 5000, at = now } }
+        owned = { { auctionID = 77, itemKey = { itemID = 30 }, quantity = 1, buyoutAmount = 5000, status = 1 } }
+        fire('OWNED_AUCTIONS_UPDATED')
+        local afterOwned = c.positions['i:30'] and c.positions['i:30'].qty
+        T.onInvoice({ item = 'Linen Bag', count = 1, bid = 5000, cut = 250 })
+        local afterInvoice = c.positions['i:30'] and c.positions['i:30'].qty
+        assert(afterOwned == afterInvoice, tostring(afterOwned) .. ' vs ' .. tostring(afterInvoice))''')
+
+
 class ReviewTests(unittest.TestCase):
     def test_hardcore_scans_are_merged_and_cuts_learned_for_the_hardcore_house(self):
         run(SETUP + '''Enum = Enum or {}; Enum.GameRule = { HardcoreRuleset = 7 }

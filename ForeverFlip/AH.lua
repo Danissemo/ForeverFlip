@@ -326,9 +326,12 @@ function A.gearKeys(id)
     end
     return out
 end
--- Step 2: one exact version.
+-- Step 2: one exact version, and its next page.
 function A.searchKey(key)
     AH.SendSearchQuery(key, sorts(), true)
+end
+function A.moreKey(key)
+    AH.RequestMoreItemSearchResults(key)
 end
 function A.more(item)
     if item.kind == "commodity" then

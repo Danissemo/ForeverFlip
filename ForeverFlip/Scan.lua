@@ -71,9 +71,11 @@ function S.start()
     -- The job exists before the request: the answer event may come during the call itself.
     local base = F.AH.replicateCount()
     S.job = { state = "waiting", at = clock(), scope = F.Engine.scope(), base = base, last = -1 }
+    local before = F.db.lastScan
     F.db.lastScan = clock()
     local ok = pcall(F.AH.replicate)
     if not ok then
+        F.db.lastScan = before -- nothing reached the server
         S.job = nil
         return false, "error"
     end
@@ -158,6 +160,11 @@ function S.onReplicate()
     if not j then
         -- Another addon (Auctionator, TSM, ...) asked for a full scan: use it too. The
         -- server allows one per 15 minutes for the account, so ours waits for the next window.
+        -- A late event for the scan just read (it was taken by polling) is not a new scan.
+        local last = S.last
+        if last and last.total == total and clock() - (S.finishedAt or 0) < 300 then
+            return
+        end
         if F.AH.isOpen() and U.finite(total) and total > 0 then
             F.db.lastScan = clock()
             S.job = { state = "waiting", at = clock(), scope = F.Engine.scope() }
@@ -181,6 +188,7 @@ local function ingest(j, i)
     local ok, r = pcall(F.AH.replicateRow, i)
     if not ok or not r then
         j.skipped = j.skipped + 1
+        j.unreadable = (j.unreadable or 0) + 1
         return true
     end
     if not r.complete then
@@ -310,12 +318,14 @@ local function finish(j, done)
             end
         elseif g.rows[1] and not F.AH.vendorKnown(g.id) then
             -- Re-evaluated when the item's data loads (F.Scan.itemLoaded); items a vendor does
-            -- not buy (price 0) never wait.
-            for n = #g.rows, 4, -1 do
-                g.rows[n] = nil
+            -- not buy (price 0) never wait. The waiting copy keeps its 3 cheapest rows (a vendor
+            -- deal needs no more); the resale evaluation below still sees every row.
+            local waiting = { key = g.key, kind = g.kind, id = g.id, link = g.link, market = value, rows = {} }
+            for n = 1, math.min(3, #g.rows) do
+                waiting.rows[n] = g.rows[n]
             end
             j.waitVendor[g.id] = j.waitVendor[g.id] or {}
-            table.insert(j.waitVendor[g.id], g)
+            table.insert(j.waitVendor[g.id], waiting)
         end
         local deal, reason = F.Deals.evaluate(g, vendor, h, now)
         if deal then
@@ -338,10 +348,22 @@ local function finish(j, done)
         end
     end
     if j.lots and not j.swept then
-        -- Items that vanished from the house since the last scan: all their lots are gone.
+        -- Items that vanished from the house since the last scan: all their lots are gone. Not
+        -- when rows could not be read at all, or when the scan is far smaller than the house's
+        -- last one (a partial answer): then a missing item proves nothing.
         j.swept = true
-        for key, h in pairs(history) do
-            if type(h) == "table" and h.lots and not j.groups[key] and (h.lotsAt or now) < now then
+        local previous = F.Data.market(F.db, j.scope).last
+        local partial = (j.unreadable or 0) > j.total * 0.005
+            or (type(previous) == "table" and (previous.total or 0) > 0 and j.total < previous.total * 0.6)
+        for key, h in pairs(partial and {} or history) do
+            local item = U.parseKey(key)
+            if
+                type(h) == "table"
+                and h.lots
+                and not j.groups[key]
+                and (h.lotsAt or now) < now
+                and not (item and j.unread and j.unread[item.id])
+            then
                 local sold = S.trackLots(h, {}, now)
                 local today = h.days and h.days[#h.days]
                 if sold > 0 and today and today.d == math.floor(now / 86400) then
@@ -459,6 +481,14 @@ function S.step()
         j.deferred = left
         if #left == 0 or now >= j.recoverUntil then
             j.skipped = j.skipped + #left
+            -- Items whose rows never loaded are still on the house: they must not count as gone.
+            j.unread = j.unread or {}
+            for _, i in ipairs(left) do
+                local ok, r = pcall(F.AH.replicateRow, i)
+                if ok and r and r.id then
+                    j.unread[r.id] = true
+                end
+            end
             j.state, j.cursor, j.finishAt = "finishing", 1, now
             j.deals, j.waitVendor, j.hot = {}, {}, {}
             j.stats = { items = 0, vendorKnown = 0, belowVendor = 0, collecting = 0 }
@@ -482,7 +512,7 @@ function S.step()
             -- The scan named the player's own lots (and left them out of `listed`).
             ownersKnown = j.own > 0,
         }
-        S.job = nil
+        S.job, S.finishedAt = nil, clock()
         F.Raw.finish(j)
         S.setHot(j.hot)
         if F.Analytics then
@@ -572,8 +602,15 @@ function S.save()
 end
 
 function S.restore(scope)
-    if S.last or S.job or not F.db then
+    if S.job or not F.db or (S.last and S.last.scope == scope) then
         return false
+    end
+    if S.last then
+        -- Another house was open before (a faction house, then a neutral one): its scan, deals
+        -- and sniper list must not stay on screen here.
+        S.save()
+        S.last, S.hot = nil, {}
+        F.Deals.replace({}, scope)
     end
     local saved = F.Data.market(F.db, scope).last
     if type(saved) ~= "table" or type(saved.stats) ~= "table" then

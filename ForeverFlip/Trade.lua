@@ -547,6 +547,8 @@ function T.onOwned()
                         c.booked[a.auctionID] = clock()
                         local qty = math.min(a.qty, l.open)
                         l.open = l.open - qty
+                        -- The invoice of this sale comes later by mail: it must not book it again.
+                        l.awaiting = (l.awaiting or 0) + qty
                         local unit = a.price or l.price
                         local net = M.net(unit, qty)
                         local cost = F.Data.sale(c, l.key, l.name, qty, net, clock())
@@ -630,6 +632,18 @@ function T.onInvoice(inv)
         table.remove(c.invoices)
     end
     local name = string.lower(inv.item)
+    -- Units already booked from the owned-auction list (T.onOwned) are only matched here.
+    local count = inv.count
+    for _, l in ipairs(c.listings) do
+        if count > 0 and string.lower(l.name or "") == name and (l.awaiting or 0) > 0 then
+            local n = math.min(count, l.awaiting)
+            l.awaiting, count = l.awaiting - n, count - n
+        end
+    end
+    if count <= 0 then
+        F.Engine.changed()
+        return
+    end
     local listing, known
     for _, l in ipairs(c.listings) do
         if string.lower(l.name or "") == name then
@@ -642,13 +656,13 @@ function T.onInvoice(inv)
     end
     local key, qty
     if listing then
-        key, qty = listing.key, math.min(inv.count, listing.open)
+        key, qty = listing.key, math.min(count, listing.open)
         listing.open = listing.open - qty
     elseif not known then
         -- Posted outside ForeverFlip (or the listing is older than three days): book against stock.
         for k, p in pairs(c.positions) do
             if string.lower(p.name or "") == name and p.mode ~= "vendor" then
-                key, qty = k, math.min(inv.count, p.qty)
+                key, qty = k, math.min(count, p.qty)
                 break
             end
         end

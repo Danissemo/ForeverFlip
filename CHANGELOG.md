@@ -39,6 +39,16 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **Bids on gear** are read for every item-key version, also versions with bid-only auctions.
 - **Deposits** in crafting and resale estimates come from the game's vendor price, which is what the
   auction house charges on.
+- **The neutral auction house** is recognised by the auctioneer first: an Alliance or Horde
+  auctioneer always means the faction house, whatever the zone. The summary on the left names the
+  open house, and opening another house shows that house's own scan and deals.
+- **Sales from a full scan:** items whose rows could not be read in time, and scans far smaller than
+  the house's last one (a partial answer), no longer count their missing lots as sold.
+- **A late scan event** for the scan just read no longer starts a second reading and a new cooldown;
+  a request that failed with an error does not use up the cooldown.
+- **A sale is booked once** when both the auction list and the invoice mail report it.
+- **Gear checks** read up to three more pages of a version with many listings; a search of one gear
+  version in the game's Buy tab is no longer taken as a full check of the deal.
 
 ### Added
 
