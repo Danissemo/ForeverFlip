@@ -13,6 +13,15 @@ All notable changes are listed here. The format follows
 - CI uses current versions of the GitHub actions and a pinned StyLua binary.
 - New README layout with a hero image, badges and a questions-and-answers section.
 
+### Fixed
+
+- An item nobody sells on the auction house and never seen in a scan (recipes, rare drops) got no
+  suggested price, and the Sell page kept asking for a price check. Now:
+  - the price comes, in this order, from your last post of the item, auxForever, your cost + 25%, or
+    1.5 × the vendor price;
+  - guessed prices are marked and skipped by the posting queues;
+  - the page says when nobody sells the item or when the auction house did not answer.
+
 ## [1.1.0] - 2026-11-10
 
 Features found in other auction addons (TSM, Auctionator, Point Blank Sniper, AnS, Journalator,

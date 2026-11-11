@@ -319,6 +319,14 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
   - **normal price:** the rule's `normal`, else the usual price. It is used when nobody else sells,
     or when the cheapest other seller asks more than the maximum (the rule's `max`, else
     `maxPricePercent` × the normal price, 200% by default);
+  - **fallback** (`T.fallbackPrice`) when nobody else sells and there is no normal price, in this
+    order:
+    1. the last price the player posted the item at (`F.db.lastPosted`);
+    2. auxForever's usual price;
+    3. the stock's break-even + 25%;
+    4. 1.5 × the vendor price.
+
+    The last two are guesses (`T.GUESSES`) that the posting queues never post;
   - **minimum:** 1 silver for items and 1 copper for commodities.
 - **Floor** (`T.floorFor`), the highest of:
   - the break-even price of the stock: the price that returns the average unit cost after the cut

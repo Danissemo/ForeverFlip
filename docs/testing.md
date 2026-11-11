@@ -28,6 +28,7 @@ python -m unittest discover -s tests -p "test_*.py"
 | `test_shopping.py` | Shopping deals, ignored items, the shopping page, learning from searches, key bindings. |
 | `test_crafting.py` | Recipes, material and product prices, Shop materials, disenchant table and deals. |
 | `test_bids.py` | Bid candidates, checks, placing, won and outbid bids, the Bids page. |
+| `test_no_sellers.py` | Items nobody sells: empty checks, fallback prices, guesses, no answer. |
 | `test_extras.py` | `ForeverFlipAPI`, aux fallback, CSV export, realm gold, presets. |
 | `test_locale.py` | Every `L("...")` string has a Ukrainian translation, and no key is translated twice. |
 

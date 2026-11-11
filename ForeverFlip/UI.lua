@@ -1054,6 +1054,13 @@ function UI.refreshBids()
 end
 
 -- Sell page --------------------------------------------------------------------------------------
+-- Where a suggested price comes from when nobody else sells the item.
+UI.FALLBACK_TEXT = {
+    last = "Nobody else sells it now. Suggested: your last price %s.",
+    aux = "Nobody else sells it now. Suggested: auxForever's usual price %s.",
+    cost = "Nobody sells it and there is no price history. Suggested: your cost plus 25%%, %s.",
+    vendor = "Nobody sells it and there is no price history. Suggested: 1.5 x the vendor price, %s.",
+}
 local SELL_ROWS = 11
 function UI.createSell(p)
     local list = CreateFrame("Frame", nil, p)
@@ -1294,12 +1301,26 @@ function UI.refreshSell()
         if UI.sellPrice:GetText() == "" then
             UI.sellPrice:SetText(U.plainMoney(math.max(price, floor or 0)))
         end
+        if F.Trade.GUESSES[why] and UI.sellPrice.SetTextColor then
+            UI.sellPrice:SetTextColor(1, 0.82, 0)
+        elseif UI.sellPrice.SetTextColor then
+            UI.sellPrice:SetTextColor(1, 1, 1)
+        end
         if why == "normal" and cheapest then
             lines[#lines + 1] = string.format(
                 L("The cheapest other seller asks %s, above the maximum. Suggested: the normal price %s."),
                 U.money(cheapest),
                 U.money(price)
             )
+        elseif UI.FALLBACK_TEXT[why] then
+            lines[#lines + 1] = string.format(L(UI.FALLBACK_TEXT[why]), U.money(price))
+            if F.Trade.GUESSES[why] then
+                lines[#lines + 1] = "|cffffd100"
+                    .. L(
+                        "This is a guess: check the price, change it if needed and press Post. Post next bought and Post all skip guessed prices."
+                    )
+                    .. "|r"
+            end
         else
             lines[#lines + 1] = cheapest
                     and string.format(
@@ -1313,6 +1334,13 @@ function UI.refreshSell()
         lines[#lines + 1] = L("Reading current listings...")
     elseif F.Deals.pending(item.key) then
         lines[#lines + 1] = L("queued")
+    elseif F.Trade.prices[item.key] and F.Engine.clock() - F.Trade.prices[item.key].at <= 300 then
+        lines[#lines + 1] = L(
+            "Nobody sells it on the auction house now and ForeverFlip knows no price for it. Type a price and press Post; it is remembered for the next time."
+        )
+    elseif F.Trade.noAnswer[item.key] and F.Engine.clock() - F.Trade.noAnswer[item.key] <= 300 then
+        lines[#lines + 1] =
+            L("The auction house did not answer the check. Press Check price again, or type a price and press Post.")
     else
         lines[#lines + 1] = L("Press Check price to read the current listings.")
     end

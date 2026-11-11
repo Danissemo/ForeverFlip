@@ -266,9 +266,15 @@ end
 -- never below the price that returns what the item cost.
 T.prices = {} -- key -> { rows, at }
 
+-- A check that got no answer is remembered too: the Sell page then says so instead of asking for
+-- a check again.
+T.noAnswer = {}
 local function rememberPrice(k, rows)
     if rows then
         T.prices[k] = { rows = rows, at = clock() }
+        T.noAnswer[k] = nil
+    else
+        T.noAnswer[k] = clock()
     end
 end
 
@@ -340,8 +346,33 @@ function T.floorFor(item)
     return floor
 end
 
+-- Price of an item nobody sells and ForeverFlip has no market price for, with its source:
+-- "last" = the player's last post of it, "aux" = auxForever's usual price, then two guesses:
+-- "cost" = the stock's break-even plus 25%, "vendor" = 1.5 x the vendor price (the game's own
+-- default). Guesses are only suggestions: the posting queues never use them.
+T.GUESSES = { cost = true, vendor = true }
+function T.fallbackPrice(item)
+    local last = F.db.lastPosted and F.db.lastPosted[item.key]
+    if U.finite(last) and last > 0 then
+        return last, "last"
+    end
+    local aux = F.Engine.auxPrice and F.Engine.auxPrice(item.id)
+    if aux then
+        return aux, "aux"
+    end
+    local position = char().positions[item.key]
+    if position and position.qty > 0 then
+        return math.floor(M.breakEven(position.cost / position.qty, 1, item.kind) * 1.25), "cost"
+    end
+    local vendor = F.AH.vendorPrice(item.id)
+    if vendor then
+        return math.floor(vendor * 1.5), "vendor"
+    end
+end
+
 -- Suggested price: below the cheapest other seller (by the undercut setting); the normal price when
--- nobody else sells or the cheapest asks more than the maximum. Returns price, floor, cheapest, why.
+-- nobody else sells or the cheapest asks more than the maximum; else a fallback price.
+-- Returns price, floor, cheapest, why ("undercut", "normal", "last", "aux", "cost", "vendor").
 function T.suggest(item)
     local check = T.prices[item.key]
     local floor = T.floorFor(item)
@@ -359,6 +390,11 @@ function T.suggest(item)
         price, why = T.undercut(cheapest, item.kind), "undercut"
     elseif normal then
         price, why = U.stepDown(normal, item.kind), "normal"
+    else
+        local fallback, source = T.fallbackPrice(item)
+        if fallback then
+            price, why = U.stepDown(fallback, item.kind), source
+        end
     end
     if price and price < (item.kind == "commodity" and 1 or 100) then
         price = item.kind == "commodity" and 1 or 100
@@ -407,6 +443,8 @@ function T.post(item, qty, price, duration)
         and T.pendingPost.price == price
         and T.pendingPost.qty == qty
     T.lastItem = { bag = item.bag, slot = item.slot, price = price, qty = qty }
+    F.db.lastPosted = F.db.lastPosted or {}
+    F.db.lastPosted[item.key] = price
     F.AH.learnDeposit(item, duration)
     local ok, needs = pcall(F.AH.post, item, qty, price, duration, confirm)
     if not ok then
@@ -650,7 +688,10 @@ T.held = {}
 local function postFirst(list, quantity)
     for _, item in ipairs(list) do
         if not T.held[item.key] then
-            local price, floor = T.suggest(item)
+            local price, floor, _, why = T.suggest(item)
+            if T.GUESSES[why] then
+                price = nil -- a guess needs the player's own look on the Sell page
+            end
             local check = T.prices[item.key]
             if not price and not (check and clock() - check.at <= 300) then
                 T.checkPrice(item.key)

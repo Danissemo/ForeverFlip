@@ -5,6 +5,13 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["This is a guess: check the price, change it if needed and press Post. Post next bought and Post all skip guessed prices."] = "Це припущення: перевірте ціну, змініть її за потреби й натисніть «Виставити». «Виставити наступне куплене» та «Виставити все» пропускають припущені ціни.",
+    ["Nobody sells it on the auction house now and ForeverFlip knows no price for it. Type a price and press Post; it is remembered for the next time."] = "Зараз ніхто не продає цей предмет на аукціоні, і ForeverFlip не знає його ціни. Введіть ціну й натисніть «Виставити»; вона запам'ятається на наступний раз.",
+    ["The auction house did not answer the check. Press Check price again, or type a price and press Post."] = "Аукціон не відповів на перевірку. Натисніть «Перевірити ціну» ще раз або введіть ціну й натисніть «Виставити».",
+    ["Nobody else sells it now. Suggested: your last price %s."] = "Зараз ніхто інший не продає. Пропозиція: ваша минула ціна %s.",
+    ["Nobody else sells it now. Suggested: auxForever's usual price %s."] = "Зараз ніхто інший не продає. Пропозиція: звичайна ціна auxForever %s.",
+    ["Nobody sells it and there is no price history. Suggested: your cost plus 25%%, %s."] = "Ніхто не продає, історії цін немає. Пропозиція: ваша собівартість плюс 25%%, %s.",
+    ["Nobody sells it and there is no price history. Suggested: 1.5 x the vendor price, %s."] = "Ніхто не продає, історії цін немає. Пропозиція: 1,5 × ціна торговця, %s.",
     ["All characters of the realm (%d): gold %s (%s over the period) · stock at cost %s"] = "Усі персонажі сервера (%d): золото %s (%s за період) · склад за собівартістю %s",
     ["Presets:"] = "Набори:",
     ["Careful"] = "Обережно",

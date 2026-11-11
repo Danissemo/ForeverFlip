@@ -22,6 +22,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `ui` | table | `ui.section`: the last opened page. |
 | `cuts` | table | `cuts[scope]` = the auction cut learned from invoices (for example `0.05` or `0.15`). |
 | `deposits` | table | `deposits[itemID][duration]` = deposit per unit the game charged for the last post of an item. |
+| `lastPosted` | table | `lastPosted[key]` = the last unit price the player posted the item at. |
 | `rules` | table | `rules[key]` = posting rule `{ min, normal, max, keep }` (all optional; money in copper). |
 | `shopping` | table | `shopping[key]` = shopping list entry `{ max, qty, name }`. |
 | `blocked` | table | `blocked[key]` = name of an ignored item. |

@@ -263,7 +263,18 @@ How the two posting queues work:
 The **suggested price** is one legal step below the cheapest other seller, or the **Undercut %**
 from Settings. Gear and plain items are listed in whole silver; commodities may use copper.
 
-- **No other seller,** or the cheapest one asks more than the maximum: the normal price is used.
+- **No other seller,** or the cheapest one asks more than the maximum: the normal price is used
+  (the rule's normal price, else the usual price from the scans).
+- **No other seller and no price history** (an item that is never on the auction house), in this
+  order:
+  1. your last posting price of the item;
+  2. auxForever's usual price;
+  3. your cost plus 25%;
+  4. 1.5 × the vendor price, the game's own default.
+
+  The last two are guesses: they are shown in yellow and Post next bought / Post all skip them.
+  Check the price, change it if needed and press **Post**. Every price you post is remembered for
+  the next time.
 - **The floor** is the highest of:
   - your break-even price for stock bought through ForeverFlip;
   - the rule's minimum;
