@@ -273,7 +273,7 @@ local function startRequest(r)
         or D.search
         or not F.AH.isOpen()
         or F.Trade.busy()
-        or F.Scan.busy()
+        or F.Scan.blocking()
         or not F.AH.ready()
         or now - (D.lastRequest or -10) < (r.fast and 0.4 or 1)
         or #D.sent >= 100
@@ -407,8 +407,23 @@ function D.onBrowse()
         return true
     end
     if #keys == 0 then
-        -- A complete browse without the item: nobody sells it. Unknown after three pages.
-        finishSearch({}, F.AH.browseFull())
+        -- A complete browse without the item: nobody sells it. Unknown after three pages, and
+        -- unknown when the results do not look like this search's (the player browsed in the
+        -- game's Buy tab at the same moment): an empty answer, or one with items of that name.
+        local name = string.lower(U.itemInfo(s.item.id) or "")
+        local rows, ours = F.AH.browseResults(), #F.AH.browseResults() == 0
+        for _, r in ipairs(rows) do
+            local other = U.itemInfo(r.id)
+            if name ~= "" and other and string.lower(other):find(name, 1, true) then
+                ours = true
+                break
+            end
+        end
+        if ours and F.AH.browseFull() then
+            finishSearch({}, true)
+        else
+            finishSearch(nil, false)
+        end
         return true
     end
     s.keys, s.keyIndex = keys, 0
@@ -663,7 +678,7 @@ function D.step()
     if s and now - s.at > 10 then
         finishSearch(nil, false)
     end
-    if D.search or F.Trade.busy() or F.Scan.busy() or not F.AH.isOpen() then
+    if D.search or F.Trade.busy() or F.Scan.blocking() or not F.AH.isOpen() then
         return
     end
     local r = D.requests[1]

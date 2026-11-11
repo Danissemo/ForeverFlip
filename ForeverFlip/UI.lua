@@ -930,7 +930,7 @@ function UI.refreshDeals()
     else
         UI.dealText:SetText(L("Select a deal. Its price is checked on the auction house before you can buy."))
     end
-    UI.checkButton:SetEnabled(d ~= nil and not F.Deals.pending(d.key) and not F.Trade.busy() and not F.Scan.busy())
+    UI.checkButton:SetEnabled(d ~= nil and not F.Deals.pending(d.key) and not F.Trade.busy() and not F.Scan.blocking())
     UI.buyButton:SetEnabled(d ~= nil and F.Trade.canBuy(d) and true or false)
     UI.ignoreButton:SetEnabled(d ~= nil)
     UI.confirmButton:SetEnabled(op ~= nil and op.state == "quoted")
@@ -1528,7 +1528,7 @@ function UI.refreshSell()
         UI.sellCheck:Disable()
         return
     end
-    UI.sellCheck:SetEnabled(not F.Deals.pending(item.key) and not F.Trade.busy() and not F.Scan.busy())
+    UI.sellCheck:SetEnabled(not F.Deals.pending(item.key) and not F.Trade.busy() and not F.Scan.blocking())
     local price, floor, cheapest, why = F.Trade.suggest(item)
     local lines = {}
     if item.position and item.position.mode == "vendor" then
@@ -2904,7 +2904,12 @@ function UI.refreshStatus()
     local scope, keys = UI.statusTargets()
     local batchDone, batchTotal, batchActive, batchFailed = F.Deals.batchProgress()
     UI.bulkButton:SetEnabled(
-        scope ~= nil and #keys > 0 and F.AH.isOpen() and not batchActive and not F.Trade.busy() and not F.Scan.busy()
+        scope ~= nil
+            and #keys > 0
+            and F.AH.isOpen()
+            and not batchActive
+            and not F.Trade.busy()
+            and not F.Scan.blocking()
     )
     local key, done, total = F.Scan.progress()
     if key then

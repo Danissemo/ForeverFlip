@@ -165,7 +165,7 @@ end
 local function idle()
     local D = F.Deals
     return F.AH.isOpen()
-        and not F.Scan.busy()
+        and not F.Scan.blocking()
         and not F.Trade.busy()
         and not D.search
         and #D.requests == 0

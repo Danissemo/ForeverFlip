@@ -269,21 +269,29 @@ local function lockedItem()
     end
 end
 
--- UNIT_SPELLCAST_START / _SUCCEEDED (unit, cast GUID, spell ID).
-function DE.onCast(unit, _, spellID)
+-- UNIT_SPELLCAST_START notes the item; _SUCCEEDED marks the cast done; _INTERRUPTED and _FAILED
+-- forget it, so a loot window that follows (a mob, a chest) is never counted as a disenchant.
+-- (event, unit, cast GUID, spell ID)
+function DE.onCast(event, unit, _, spellID)
     if unit ~= "player" or spellID ~= DE.SPELL then
         return
     end
-    local id = lockedItem() or (DE.casting and DE.casting.id)
-    if id then
-        DE.casting = { id = id, at = F.Engine.clock() }
+    if event == "UNIT_SPELLCAST_START" then
+        local id = lockedItem()
+        DE.casting = id and { id = id, at = F.Engine.clock() } or nil
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+        if DE.casting then
+            DE.casting.done, DE.casting.at = true, F.Engine.clock()
+        end
+    else
+        DE.casting = nil
     end
 end
 
 function DE.onLoot()
     local c = DE.casting
     DE.casting = nil
-    if not c or F.Engine.clock() - c.at > 10 or not GetNumLootItems or not GetLootSlotLink then
+    if not c or not c.done or F.Engine.clock() - c.at > 10 or not GetNumLootItems or not GetLootSlotLink then
         return false
     end
     local _, _, quality, level, _, _, _, _, _, _, _, classID = U.itemInfo(c.id)

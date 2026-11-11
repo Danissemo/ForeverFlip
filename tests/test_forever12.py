@@ -85,6 +85,15 @@ class OwnerTests(unittest.TestCase):
         assert(not A.isPlayer('Seller') and not A.isPlayer('') and not A.isPlayer(nil))''')
 
 
+class OwnLotTests(unittest.TestCase):
+    def test_own_lots_named_player_or_with_a_realm_are_skipped_in_the_scan(self):
+        run(SETUP + '''local me = UnitName('player')
+        addAuction(10, 10, 5, 'player')
+        addAuction(10, 11, 5, me .. '-Some Realm')
+        fullScan()
+        assert(ForeverFlip.Scan.last.own == 3, ForeverFlip.Scan.last.own)''')
+
+
 class GearSearchTests(unittest.TestCase):
     def test_gear_is_searched_by_browse_then_by_version(self):
         run(SETUP + '''enableBrowse()
@@ -111,6 +120,18 @@ class GearSearchTests(unittest.TestCase):
         D.enqueue(key, function(_, rows, complete) got = { rows = rows, complete = complete } end)
         answer()
         assert(got and got.complete and #got.rows == 0, 'a full browse without it: nobody sells it')''')
+
+    def test_a_browse_of_the_player_is_not_taken_for_the_gear_search(self):
+        run(SETUP + '''enableBrowse()
+        fullScan()
+        local D, U = ForeverFlip.Deals, ForeverFlip.Util
+        local key = U.key('gear', 20, 'Northern Shortsword of Nature Protection')
+        for i = #auctions, 1, -1 do if auctions[i].item == 20 then table.remove(auctions, i) end end
+        local got
+        D.enqueue(key, function(_, rows, complete) got = { rows = rows, complete = complete } end)
+        C_AuctionHouse.SendBrowseQuery({ searchString = 'Linen' })  -- the player, in the Buy tab
+        browseAnswer()
+        assert(got and not got.complete and got.rows == nil, 'unknown, not "nobody sells it"')''')
 
     def test_without_browse_the_old_search_is_used(self):
         run(SETUP + '''fullScan()
@@ -173,8 +194,13 @@ class DisenchantTests(unittest.TestCase):
         function GetLootSlotInfo(i) return 0, 'x', loot[i][2] end
         bags[0] = { [1] = { itemID = 40, stackCount = 1, isLocked = true } }
         assert(select(2, DE.outcomes(2, 25, 2)) == 'table')
+        DE.onCast('UNIT_SPELLCAST_START', 'player', nil, DE.SPELL)
+        DE.onCast('UNIT_SPELLCAST_INTERRUPTED', 'player', nil, DE.SPELL)
+        loot = { { 2589, 2 } }
+        assert(not DE.onLoot(), 'an interrupted cast: the next loot is not a disenchant')
         for i = 1, DE.LEARN do
-            DE.onCast('player', nil, DE.SPELL)
+            DE.onCast('UNIT_SPELLCAST_START', 'player', nil, DE.SPELL)
+            DE.onCast('UNIT_SPELLCAST_SUCCEEDED', 'player', nil, DE.SPELL)
             loot = { i % 3 == 0 and { 10939, 1 } or { 10940, 3 } }
             assert(DE.onLoot())
         end

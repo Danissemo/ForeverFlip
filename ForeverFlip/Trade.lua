@@ -249,7 +249,7 @@ function T.step()
         and clock() >= (T.ownedDue or 0)
         and not F.Deals.searching()
         and not F.Deals.pending()
-        and not F.Scan.busy()
+        and not F.Scan.blocking()
         and not T.busy()
         and F.AH.ready()
     then
@@ -1051,7 +1051,7 @@ function T.sellToVendor()
     local sold = 0
     for _, v in ipairs(T.vendorItems()) do
         local item = U.parseKey(v.key)
-        local price = F.AH.vendorPrice(item.id) or 0
+        local price = F.AH.vendorPrice(item.id, true) or 0 -- the sale is booked at the real price
         C_Container.UseContainerItem(v.bag, v.slot)
         local p = c.positions[v.key]
         local name = p and p.name or v.key

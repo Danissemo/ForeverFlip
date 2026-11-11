@@ -41,7 +41,7 @@ function B.consider(j, key, kind, r)
         return
     end
     j.bids = j.bids or {}
-    j.bids[#j.bids + 1] = { key = key, id = r.id, kind = kind, bid = r.minBid, count = r.count or 1 }
+    j.bids[#j.bids + 1] = { key = key, id = r.id, kind = kind, bid = r.minBid, count = math.max(1, r.count or 1) }
 end
 
 -- End of a scan: candidates with enough profit, best first.

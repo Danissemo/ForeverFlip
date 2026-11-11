@@ -122,6 +122,8 @@ local events = {
     "LOOT_OPENED",
     "UNIT_SPELLCAST_START",
     "UNIT_SPELLCAST_SUCCEEDED",
+    "UNIT_SPELLCAST_INTERRUPTED",
+    "UNIT_SPELLCAST_FAILED",
     "CHAT_MSG_CHANNEL_NOTICE",
     "TRADE_SKILL_SHOW",
     "TRADE_SKILL_LIST_UPDATE",
@@ -262,8 +264,13 @@ function E.handle(event, ...)
         end
     elseif event == "MERCHANT_UPDATE" then
         F.Merchant.learnBuyback()
-    elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_SUCCEEDED" then
-        F.Disenchant.onCast(...)
+    elseif
+        event == "UNIT_SPELLCAST_START"
+        or event == "UNIT_SPELLCAST_SUCCEEDED"
+        or event == "UNIT_SPELLCAST_INTERRUPTED"
+        or event == "UNIT_SPELLCAST_FAILED"
+    then
+        F.Disenchant.onCast(event, ...)
     elseif event == "LOOT_OPENED" then
         F.Disenchant.onLoot()
     elseif event == "CHAT_MSG_CHANNEL_NOTICE" then

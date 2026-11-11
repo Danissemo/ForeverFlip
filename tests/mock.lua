@@ -542,10 +542,12 @@ end
 -- per call, like the server: the lowest price and total quantity of each item, cheapest first.
 browseShown = {}
 local browseRows, browseFull, browsePending, browseQuery = {}, true, false, nil
-local function browseAll(ids)
+local function browseAll(ids, search)
     local byItem, out = {}, {}
+    search = search and string.lower(search) or ""
     for _, a in ipairs(auctions) do
-        if not ids or ids[a.item] then
+        local named = search == "" or string.lower(a.name or items[a.item].name):find(search, 1, true)
+        if (not ids or ids[a.item]) and named then
             local unit = a.buyout / a.count
             local r = byItem[a.item]
             if not r then
@@ -566,7 +568,7 @@ function enableBrowse(pageSize)
     pageSize = pageSize or 1000
     C_AuctionHouse.SendBrowseQuery = function(query)
         call("SendBrowseQuery", query)
-        browseQuery, browseShown, browsePending = browseAll(nil), {}, true
+        browseQuery, browseShown, browsePending = browseAll(nil, query and query.searchString), {}, true
     end
     C_AuctionHouse.SearchForItemKeys = function(keys)
         local ids = {}

@@ -42,6 +42,19 @@ function S.busy()
     return S.job ~= nil
 end
 
+-- Does the scan hold back searches and posts? While it is read and evaluated, and in the first
+-- S.QUIET seconds of waiting for the answer (usually enough). After that searches go on while it
+-- waits: a request the account's 15-minute limit refused is never answered, and the sniper would
+-- otherwise stand still for the whole S.ANSWER_WAIT.
+S.QUIET = 60
+function S.blocking()
+    local j = S.job
+    if not j then
+        return false
+    end
+    return j.state ~= "waiting" or clock() - (j.at or 0) < S.QUIET
+end
+
 function S.start()
     if S.job then
         return false, "busy"
@@ -85,7 +98,6 @@ local function beginReading(j, total)
     j.state, j.total, j.index = "reading", total, 0
     j.groups, j.order, j.deferred = {}, {}, {}
     j.read, j.skipped, j.own = 0, 0, 0
-    j.player = F.AH.player()
     j.lots = F.AH.canTrackLots()
     j.raw = F.Raw.active() and {} or nil
 end
@@ -156,7 +168,8 @@ local function ingest(j, i)
         F.AH.requestItem(r.id)
         return false
     end
-    if (r.minBid or 0) > 0 and r.band == 0 and not (r.owner and r.owner == j.player) then
+    local mine = F.AH.isPlayer(r.owner)
+    if (r.minBid or 0) > 0 and r.band == 0 and not mine then
         local key, kind = F.AH.keyFor(r.id, r.link)
         if key then
             F.Bids.consider(j, key, kind, r)
@@ -165,7 +178,7 @@ local function ingest(j, i)
     if r.buyout <= 0 or r.count <= 0 then
         return true -- bid only
     end
-    if r.owner and r.owner == j.player then
+    if mine then
         j.own = j.own + 1
         return true
     end

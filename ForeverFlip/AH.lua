@@ -176,10 +176,6 @@ function A.throttleReset()
     notReadySince, lastCheck = nil, nil
 end
 
-function A.player()
-    return UnitName("player")
-end
-
 -- Is this owner the player? Owner lists name the player "player" (TSM normalises it the same way).
 -- WoW Forever characters have surnames and names are not unique, so a realm part is ignored.
 function A.isPlayer(owner)
