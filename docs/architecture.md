@@ -52,21 +52,24 @@ namespace, here written as `F`.
 ## Runtime flow
 
 ```
-ADDON_LOADED ──► Data.open(ForeverFlipData) ─► Locale.apply ─► UI.tooltips
-AUCTION_HOUSE_SHOW ──► Scan.restore(scope) ─► UI.attach (create tab and pages)
+ADDON_LOADED ──► Data.open(ForeverFlipData) ─► Locale.apply ─► Engine.applyCut ─► UI.tooltips
+             ─► Mail.hook ─► Share.register ─► Raw.importCommunity (ForeverFlip_Shared) ─► Bids.prune
+AUCTION_HOUSE_SHOW ──► Engine.detectHouse ─► Engine.applyCut ─► Scan.restore(scope) ─► UI.attach
 
 OnUpdate (every frame, Engine.update)
   AH.pump            item data requests, 40 per second
   Scan.auto          start a full scan when allowed
-  Scan.step          read / recover / evaluate a portion of the scan
+  Scan.step          read (and capture raw lines) / recover / evaluate a portion of the scan
   Trade.stepChecks   own-auction price checks
   Deals.step         search timeouts, queued requests, automatic checks, sniper candidates
   Sniper.step        browse rounds and key batches when nothing else waits
   Trade.step         purchase timeouts
   Mail.step          paced mail looting
+  Share.step         one shared-scan message every 0.3 seconds
+  UI.highlightBrowse marks in the game's Buy tab, twice a second
   UI.refresh         at most 4 times a second, only when something changed
 
-Events ──► Engine.handle ──► Scan / Deals / Trade / Mail / UI handlers
+Events ──► Engine.handle ──► Scan / Deals / Sniper / Trade / Mail / Share / Crafting / UI handlers
 ```
 
 `F.Engine.changed()` marks the UI dirty. `F.Engine.notify(key)` sets the status message, which the

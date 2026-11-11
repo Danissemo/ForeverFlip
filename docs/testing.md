@@ -57,62 +57,38 @@ lua-language-server --check=ForeverFlip --configpath=.luarc.json --checklevel=Wa
 ## In-game checklist
 
 The simulated client cannot prove how the live server behaves. Before a release, go through this
-list on a live realm. Each step takes 1–3 minutes. If something goes wrong, note the chat line
-(`ForeverFlip error: ...`), type `/reload` and copy the `errors` section from the SavedVariables file.
+list on a live realm. If something goes wrong, note the chat line (`ForeverFlip error: ...`), type
+`/reload` and copy the `errors` section from the SavedVariables file.
 
-1. **Full scan.** Click **Full scan**. The progress bar goes through waiting, reading and
-   evaluating. `/ff diag` reports the auctions read.
-2. **Automatic scan.** Leave the auction house open until the Full scan countdown ends. The next scan
-   starts by itself. If the server does not answer, the status line says *Next try in a minute*.
-3. **Vendor deal.** Click a vendor deal, wait for **ready**, click **Buy**. *Purchase recorded*
-   appears and the journal has a buy entry.
-4. **Commodity purchase.** Buy a commodity deal: **Buy**, then **Confirm purchase** after *Price
-   confirmed*.
-5. **Sniper.** After a scan, the status line shows the number of items watched and checks made. The
-   check count grows by about one per second, and no "too many requests" errors appear in chat.
-6. **Alert.** When a deal becomes buyable, a sound plays and a yellow line appears in the middle of
-   the screen.
-7. **Posting.** **Sell my items → Post next bought.** The first click reads the price and the second
-   posts it. The game's own Auctions tab shows the lot at the addon's price.
-8. **My auctions.** **Check prices** gives every lot a status (**cheapest** or **undercut**).
-   **Cancel auction** removes a lot, and the item comes back by mail.
-9. **Sale.** When a lot sells, My auctions shows **sold, gold in the mail**, and the journal has a sale
-   with its profit.
-10. **Mail.** At a mailbox, **Take auction mail (N)** takes auction mail only. It does not touch
-    player mail or cash on delivery, and it prints a summary.
-11. **Vendor selling.** At a merchant, **Sell vendor deals (N)** sells the items bought as vendor
-    deals and adds journal entries.
-12. **Merchant offers.** At a merchant with goods that also trade on the auction house, the
-    ForeverFlip panel lists profitable items.
-13. **Tooltips.** Hover over an item seen in a scan. The tooltip shows the usual price and the
-    cheapest today / 5 days.
-14. **Resale.** After two or three full scans (30–45 minutes), the Resale page lists deals with an
-    Est./day value.
-15. **Persistence.** `/reload`. The last scan and its deals are still listed with the status
-    *from scan*.
-16. **Language.** `/ff lang uk`, `/reload`. The interface is in Ukrainian. Switch back with
-    `/ff lang en`.
-17. **Fast sniper.** With the sniper on, the status line shows rounds and prices read growing, a
-    round takes seconds, and no "too many requests" errors appear. A cheap item listed by a friend
-    is found within a round.
-18. **Lot sales.** After two scans 15 minutes apart, an item tooltip shows "sells at" for a busy item,
-    and right-clicking it in a table opens the history with green sold bars.
-19. **Invoices.** Post an item with the game's own Sell tab. When it sells, take the mail: the
-    journal shows the sale with the exact amount, and Statistics shows Sell %.
-20. **Neutral house.** At Booty Bay, Gadgetzan or Everlook the deal sentences mention a 15% cut and the
-    history is separate. After a sale there, check `cuts` in the SavedVariables file.
-21. **Stale quote.** Buy a commodity deal, wait 25 seconds before Confirm: a new quote is asked, and
-    the next Confirm buys without an error.
-22. **Posting rules.** Set a rule (min, max, keep) on the Sell page, use Post all: kept units stay,
-    nothing is posted below the minimum.
-23. **Cancel undercut.** After Check prices, Cancel undercut cancels one auction per click; the item
-    returns by mail.
-24. **Shopping list.** Add an item with a high price: it shows as a Shopping deal and can be bought.
-25. **Buy tab.** Search an item with a deal in the game's Buy tab: the deal turns ready in the
-    ForeverFlip tab, and browse results show the green stripe.
-26. **Key bindings.** Bind Buy in the Key Bindings window and buy a deal with the key.
-27. **Crafting.** Open a profession window, then the Crafting page at the auction house: recipes are
-    listed with costs.
-28. **Disenchant.** On an enchanter, a cheap green weapon or armor piece shows as a disenchant deal.
-29. **Bids.** On the Bids page, check and bid on an auction ending soon; after winning, the item is
-    in the journal as bought.
+✅ = confirmed in game on WoW Forever, ⬜ = still to check.
+
+| | Area | Check |
+|---|---|---|
+| ✅ | Install | `/ff` shows the version; all pages are listed on the left. |
+| ✅ | Full scan | The progress bar goes through waiting, reading and evaluating; the summary shows the auctions read. |
+| ⬜ | Automatic scan | With the auction house open, the next scan starts when the countdown ends. |
+| ✅ | Sorting | Every table sorts by its headers, both ways. |
+| ✅ | Ukrainian | No boxes in place of symbols; headers and buttons fit. |
+| ⬜ | Fast sniper | The summary on the left shows rounds and prices read growing; no "too many requests" errors. |
+| ⬜ | Lot sales | After two scans 15 minutes apart, busy items show "sells at"; right-click opens a history with sold bars; Resale lists deals with Est./day. |
+| ⬜ | Buy tab marks | Rows priced below their vendor price get a green stripe in the item list, an item's auctions and a commodity's price tiers. |
+| ⬜ | Vendor deal | Click → ready → Buy; *Purchase recorded*; a journal entry. |
+| ⬜ | Commodity and stale quote | Buy → *Price confirmed* → Confirm; waiting 25 seconds asks a new quote, the next Confirm buys without an error. |
+| ✅ | Post | A selected item is posted at the addon's price; the price box clears afterwards. |
+| ✅ | Items nobody sells | A recipe or rare item gets a marked suggested price at once; the price you post is suggested next time. |
+| ✅ | Hide and return | Hide removes an item from the list and from Post all; the Hidden view returns it. |
+| ⬜ | Posting rules | min, max and keep of a rule hold with Post all. |
+| ⬜ | My auctions | Check prices gives cheapest / undercut / only yours; Cancel undercut cancels one auction per click. |
+| ⬜ | Sale and invoice | A sold lot shows "sold, gold in the mail"; Take auction mail books the sale with the exact amount; Statistics shows Sell %. |
+| ✅ | Statistics | Names fit; unsold items show `-`. |
+| ✅ | Crafting | Opening a profession window lists its recipes with costs on the Crafting page. |
+| ⬜ | Key bindings | Settings → Key bindings sets a key; the key buys the selected deal. |
+| ⬜ | Shopping list | An item added with a high price shows as a Shopping deal and can be bought. |
+| ⬜ | Bids | A bid on an auction ending soon is placed; a won auction appears in the journal. |
+| ⬜ | Disenchant | On an enchanter, a cheap green weapon or armor piece is a disenchant deal. |
+| ⬜ | Neutral house | At Booty Bay, Gadgetzan or Everlook deals mention a 15% cut and the history is separate. |
+| ⬜ | Shared scans | Export as text gives `FF1|...`; a guild member's scan appears under Received. |
+| ⬜ | Community scans | With full scans kept, the Sync helper uploads after `/reload`; the scan appears in the data repository's archive; Settings → Sharing shows community data after the next login. |
+| ✅ | CSV export | `/ff export` opens the journal as CSV. |
+| ⬜ | Persistence | After `/reload` the last scan and its deals are listed as *from scan*. |
+| ⬜ | Language | `/ff lang en` and `/reload` switch to English. |

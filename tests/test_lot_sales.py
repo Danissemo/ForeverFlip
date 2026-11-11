@@ -2,7 +2,7 @@
 
 import unittest
 
-from test_addon import SETUP, run, runtime
+from test_addon import SETUP, run
 
 LOTS = '''local M=ForeverFlip.Market
 local function seq(t) local s={} for _,l in ipairs(t) do s[#s+1]=l[1];s[#s+1]=l[2];s[#s+1]=l[3] end return s end

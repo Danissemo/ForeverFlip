@@ -80,7 +80,7 @@ function D.evaluate(g, vendor, history, now)
         itemBudget = room,
         trust = D.trust(g.key, now),
         budget = D.budget(),
-        deposit = F.AH.depositFn(g.id, g.kind, vendor, F.Trade.durationFor and F.Trade.durationFor() or 3),
+        deposit = F.AH.depositFn(g.id, g.kind, F.Trade.durationFor and F.Trade.durationFor() or 3),
         history = history,
         market = D.resaleCap(g.market, history),
         now = now or clock(),
@@ -170,7 +170,7 @@ function D.get(key)
 end
 
 function D.visible(filter)
-    local out, now = {}, clock()
+    local out = {}
     for _, d in ipairs(D.list) do
         -- Deals of the last scan stay listed until the next one; buying checks them first.
         if not filter or filter == "all" or d.mode == filter then

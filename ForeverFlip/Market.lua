@@ -97,7 +97,7 @@ end
 
 -- Estimated units per day sold at or above 85% of `price`, rounded to the level that does not
 -- overcount. pairs = 0 means not enough scans yet (two scans make one pair).
-function M.demandAt(h, price, now)
+function M.demandAt(h, price)
     local lots = U.finite(price) and M.lotDemand(h, price)
     if lots then
         return lots
@@ -248,7 +248,7 @@ function M.saleability(h, price, now)
             return out
         end
     end
-    local demand = M.demandAt(h, price, now)
+    local demand = M.demandAt(h, price)
     if U.finite(demand.perDay) and demand.perDay >= 0 then
         out.known, out.perDay = true, demand.perDay
     end
@@ -576,7 +576,7 @@ function M.evaluate(rows, ctx)
         local profit = exit > r.unit and M.net(exit, qty) - cost - M.depositRisk(kind, ctx.vendor, qty, ctx.deposit)
             or 0
         if profit > 0 then
-            local d = M.demandAt(ctx.history, exit, ctx.now)
+            local d = M.demandAt(ctx.history, exit)
             -- Own results: stock of this item that did not sell lowers the scan estimate.
             d.perDay = d.perDay * (ctx.trust or 1)
             if d.pairs < 1 then

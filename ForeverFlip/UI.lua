@@ -237,17 +237,17 @@ local function table_(parent, columns, rows, onClick, onSort)
             keys[e], order[e] = v, i
         end
         table.sort(out, function(a, b)
-            local x, y = keys[a], keys[b]
-            if x == nil or y == nil or type(x) ~= type(y) or x == y then
-                if (x == nil) ~= (y == nil) then
-                    return y == nil
+            local va, vb = keys[a], keys[b]
+            if va == nil or vb == nil or type(va) ~= type(vb) or va == vb then
+                if (va == nil) ~= (vb == nil) then
+                    return vb == nil
                 end
                 return order[a] < order[b]
             end
             if t.descending then
-                return x > y
+                return va > vb
             end
-            return x < y
+            return va < vb
         end)
         return out
     end
@@ -2757,30 +2757,30 @@ function UI.refreshStatus()
         UI.status:SetText(summary)
         return
     end
-    local done, all = F.Deals.progress()
+    local checked, all = F.Deals.progress()
     local hot = F.Scan.hot and #F.Scan.hot or 0
     if UI.selected and F.Deals.pending(UI.selected) then
         UI.status:SetText(L(F.Deals.search and F.Deals.search.key == UI.selected and "checking..." or "queued"))
     elseif F.Sniper.active() and F.Sniper.rounds > 0 then
-        UI.status:SetText(string.format(L("Deals: %d · checked: %d"), all, done))
+        UI.status:SetText(string.format(L("Deals: %d · checked: %d"), all, checked))
     elseif F.Scan.last and F.db.settings.sniper and hot > 0 then
         UI.status:SetText(
             string.format(
                 L("Deals: %d · checked: %d · sniper watches %d items, %d checks"),
                 all,
-                done,
+                checked,
                 hot,
                 F.Deals.snipes or 0
             )
         )
     elseif F.Deals.search then
-        UI.status:SetText(string.format(L("Checking deals on the auction house: %d / %d"), done, all))
+        UI.status:SetText(string.format(L("Checking deals on the auction house: %d / %d"), checked, all))
     elseif F.Scan.last then
         UI.status:SetText(
             string.format(
                 L("Deals: %d · checked: %d · from the scan %d min ago"),
                 all,
-                done,
+                checked,
                 math.floor((F.Engine.clock() - F.Scan.last.at) / 60)
             )
         )

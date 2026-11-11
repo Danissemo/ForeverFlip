@@ -71,7 +71,8 @@ function T.buy(key)
     return true
 end
 
-function T.onQuote(unit, total)
+-- COMMODITY_PRICE_UPDATED (unit price, total price).
+function T.onQuote(_, total)
     local op = T.op
     if not op or op.state ~= "quote" then
         return

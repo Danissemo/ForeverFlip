@@ -359,9 +359,9 @@ end
 
 -- Deposit of a stack of n units as the game charges it, for deal evaluation. Commodities ask the
 -- game directly (twice per item and session); items need a bag location, so the deposit per unit
--- learned from the last post of the item is used. nil: estimate from the vendor price.
+-- learned from the last post of the item is used. nil: the caller estimates from the vendor price.
 local depositRates = {}
-function A.depositFn(id, kind, vendor, duration)
+function A.depositFn(id, kind, duration)
     if kind == "commodity" and AH.CalculateCommodityDeposit then
         local cacheKey = id .. ":" .. duration
         local rate = depositRates[cacheKey]

@@ -9,7 +9,7 @@ class DepositTests(unittest.TestCase):
     def test_commodity_deal_uses_the_deposit_the_game_charges(self):
         run('''local M=ForeverFlip.Market
         C_AuctionHouse.CalculateCommodityDeposit=function(id,duration,qty) return 300*qty end
-        local fn=ForeverFlip.AH.depositFn(10,'commodity',100,3);assert(fn(1)==300 and fn(4)==1200)
+        local fn=ForeverFlip.AH.depositFn(10,'commodity',3);assert(fn(1)==300 and fn(4)==1200)
         local rows={{unit=100,qty=4},{unit=1000,qty=50}}
         local h={flow={hours=24,sold={90,90,90,90},pairs=4,at=now,market=1000}}
         local ctx={kind='commodity',vendor=10,budget=1e6,history=h,market=1000,now=now,deposit=fn,
@@ -18,10 +18,10 @@ class DepositTests(unittest.TestCase):
 
     def test_item_deposit_is_learned_when_posting(self):
         run(SETUP + '''C_AuctionHouse.CalculateItemDeposit=function() return 250 end
-        assert(ForeverFlip.AH.depositFn(30,'item',2000,3)==nil)
+        assert(ForeverFlip.AH.depositFn(30,'item',3)==nil)
         putBag(0,1,30,1);local item=ForeverFlip.AH.bagItems()[1]
         ForeverFlip.Trade.post(item,1,40000,3)
-        local fn=ForeverFlip.AH.depositFn(30,'item',2000,3);assert(fn and fn(2)==500)''')
+        local fn=ForeverFlip.AH.depositFn(30,'item',3);assert(fn and fn(2)==500)''')
 
 
 class NeutralHouseTests(unittest.TestCase):
