@@ -205,7 +205,7 @@ end
 
 -- "You won an auction for X" (also printed when the purchase event never comes).
 function T.onChat(msg)
-    if type(msg) ~= "string" then
+    if F.Util.secret(msg) or type(msg) ~= "string" then
         return
     end
     local won = type(ERR_AUCTION_WON_S) == "string" and ERR_AUCTION_WON_S:gsub("%%s", "\1")
@@ -818,7 +818,27 @@ end
 -- One click of a posting queue: the first item that is not held reads its price or is posted.
 -- Below the floor an item is posted at the floor, or held (skipped) with the "hold" setting.
 T.held = {}
+-- Every item of a posting queue without a fresh price is searched at once (one search after
+-- another, in the background): the price is read before its turn comes, so each next click posts.
+local function readAhead(list)
+    for _, item in ipairs(list) do
+        local check = T.prices[item.key]
+        if
+            not T.held[item.key]
+            and not (check and clock() - check.at <= 300)
+            and not T.noSellers(item.key)
+            and not F.Deals.pending(item.key)
+        then
+            T.checkPrice(item.key)
+        end
+    end
+end
+
+-- One click posts the first item of the queue whose price is known; items whose search is still on
+-- the way are passed over until their answer comes.
 local function postFirst(list, quantity)
+    readAhead(list)
+    local waiting = false
     for _, item in ipairs(list) do
         if not T.held[item.key] then
             local price, floor, _, why = T.suggest(item)
@@ -827,24 +847,25 @@ local function postFirst(list, quantity)
             end
             local check = T.prices[item.key]
             if not price and not (check and clock() - check.at <= 300) and not T.noSellers(item.key) then
-                T.checkPrice(item.key)
-                return true, "checking"
-            end
-            if price and floor and price < floor then
-                if F.db.settings.belowMin == "hold" then
-                    price = nil
-                else
-                    price = U.stepUp(floor, item.kind)
+                waiting = true -- its search is on the way (readAhead)
+            else
+                if price and floor and price < floor then
+                    if F.db.settings.belowMin == "hold" then
+                        price = nil
+                    else
+                        price = U.stepUp(floor, item.kind)
+                    end
                 end
-            end
-            if price then
-                local qty = quantity(item)
+                local qty = price and quantity(item) or 0
                 if qty >= 1 then
                     return T.post(item, qty, price, T.durationFor(item.key, qty))
                 end
+                T.held[item.key] = true
             end
-            T.held[item.key] = true
         end
+    end
+    if waiting then
+        return true, "checking"
     end
     return false, "nothing_to_post"
 end

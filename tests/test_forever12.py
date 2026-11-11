@@ -417,6 +417,31 @@ class WholeCodeReviewTests(unittest.TestCase):
         assert((F.Market.demandAt(h, 30000).sold or 0) == 0, 'a scan with most auctions missing is partial')
         assert(h.lots, 'the lots stay for the next full scan')''')
 
+    def test_a_scan_survives_closing_the_auction_house(self):
+        run(SETUP + """local F, S = ForeverFlip, ForeverFlip.Scan
+        assert(S.start())
+        fire('AUCTION_HOUSE_CLOSED')
+        assert(not S.busy() and F.db.scanPending, 'the request is remembered')
+        assert(F.Engine.message == 'scan_paused', tostring(F.Engine.message))
+        run(30)
+        fire('AUCTION_HOUSE_SHOW')
+        assert(S.busy() and F.Engine.message == 'scan_resumed', 'waiting again')
+        local n = 0
+        while S.busy() do run(0.05); n = n + 1; assert(n < 20000) end
+        assert(S.last and S.last.total > 0, 'the answer was read')
+        assert(F.db.scanPending == nil and F.db.scanLog[1].outcome == 'read', tostring(F.db.scanLog[1].outcome))""")
+
+    def test_a_scan_with_no_answer_says_so_in_the_log(self):
+        run(SETUP + """local F, S = ForeverFlip, ForeverFlip.Scan
+        local real = C_AuctionHouse.GetNumReplicateItems
+        C_AuctionHouse.GetNumReplicateItems = function() return 0 end
+        C_AuctionHouse.ReplicateItems = function() end
+        assert(S.start())
+        local n = 0
+        while S.busy() do run(1); n = n + 1; assert(n < 1000) end
+        assert(F.Engine.message == 'scan_timeout' and F.db.scanLog[1].outcome == 'no answer', tostring(F.db.scanLog[1].outcome))
+        C_AuctionHouse.GetNumReplicateItems = real""")
+
     def test_the_end_of_a_scan_forgets_old_items_and_saves_on_logout(self):
         run(SETUP + '''local F = ForeverFlip
         local history = F.Data.market(F.db, F.Engine.scope()).history

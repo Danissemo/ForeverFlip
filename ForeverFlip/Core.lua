@@ -182,6 +182,7 @@ function E.handle(event, ...)
         E.house = E.detectHouse()
         E.applyCut()
         F.Scan.restore(E.scope())
+        F.Scan.resume(E.scope())
         if F.UI then
             F.UI.attach()
         end
@@ -558,6 +559,22 @@ SlashCmdList.FOREVERFLIP = function(msg)
             )
         )
         F.db.diag = { at = last.at, total = last.total, read = last.read, skipped = last.skipped, stats = U.copy(s) }
+        -- The last full scan requests and how each ended.
+        for i, e in ipairs(F.db.scanLog or {}) do
+            if i > 5 then
+                break
+            end
+            print(
+                string.format(
+                    "  %s: %s%s, %d auctions in the list, after %d s",
+                    date and date("%H:%M", e.at) or tostring(e.at),
+                    e.outcome,
+                    e.other and " (another addon's request)" or "",
+                    e.count or 0,
+                    math.floor((e.ended or e.at) - e.at)
+                )
+            )
+        end
         return
     end
     if msg == "bags" then

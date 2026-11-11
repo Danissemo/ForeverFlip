@@ -360,7 +360,7 @@ end
 local function ownChannel(...)
     for i = 1, select("#", ...) do
         local v = select(i, ...)
-        if type(v) == "string" and v:lower():find(S.CHANNEL:lower(), 1, true) then
+        if not F.Util.secret(v) and type(v) == "string" and v:lower():find(S.CHANNEL:lower(), 1, true) then
             return true
         end
     end
@@ -422,7 +422,7 @@ end
 
 -- CHAT_MSG_CHANNEL_NOTICE: the game re-adds a joined channel to the chat windows.
 function S.onChannelNotice(_, _, _, name)
-    if type(name) == "string" and ownChannel(name) then
+    if not F.Util.secret(name) and type(name) == "string" and ownChannel(name) then
         S.hide()
     end
 end

@@ -31,13 +31,18 @@ local MESSAGES = {
     no_scan = "Make a full scan first.",
     combat = "Key bindings cannot change in combat.",
     unknown_item = "Unknown item. Shift-click its link, or type its exact name once the game knows it.",
-    checking = "Reading the current price first; press again to post.",
+    checking = "Reading the current prices of the items to post (one per second); press again to post the next one.",
     mail_done = "Auction mail taken.",
     mail_closed = "The mailbox was closed.",
     bags_full = "The bags are full.",
     scan_done = "Full scan processed.",
     scan_empty = "The auction house returned an empty scan. Try again later.",
-    scan_timeout = "The auction house did not answer the full scan in 5 minutes (another addon may have used the 15-minute window). Next try in a minute.",
+    scan_timeout = "The server sent no full scan in 5 minutes (the list stayed empty; another addon or another character of the account may have used the 15-minute window). Next try in a minute.",
+    scan_unsettled = "The full scan list kept changing for 5 minutes and was not read. Next try in a minute.",
+    scan_dropped = "The server threw the full scan request away (too many requests). Next try in 10 seconds.",
+    scan_paused = "The auction house closed while waiting for the full scan: the wait goes on when you open it again.",
+    scan_paused_reading = "The auction house closed during the full scan: it is read again when you open it.",
+    scan_resumed = "Waiting again for the full scan sent before.",
     scan_other = "Another addon requested a full scan: ForeverFlip reads it too.",
     quote_ready = "Price confirmed. Press Confirm purchase.",
     price_changed = "The price changed. The deal is checked again.",
@@ -2982,7 +2987,12 @@ function UI.refreshStatus()
     )
     local key, done, total = F.Scan.progress()
     if key then
-        UI.status:SetText(string.format(L(PROGRESS[key]), done, total))
+        local line = string.format(L(PROGRESS[key]), done, total)
+        if key == "scan_waiting" then
+            -- What the server has sent so far: 0 means no answer yet.
+            line = line .. " (" .. string.format(L("server list: %d"), F.AH.replicateCount()) .. ")"
+        end
+        UI.status:SetText(line)
         UI.progress:SetValue(total > 0 and done / total or 0)
         UI.scanButton:SetText(L("Full scan"))
         UI.scanButton:Disable()

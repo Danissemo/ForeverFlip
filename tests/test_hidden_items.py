@@ -127,3 +127,22 @@ class CheckAllTests(unittest.TestCase):
         assert(T.bestWay('i:30', 30) == 'vendor')
         T.prices['i:30'] = { rows = { { unit = 90000, qty = 1 } }, at = now }
         assert(T.bestWay('i:30', 30) == 'auction', 'the live price says the auction house pays more')""")
+
+
+class PostingQueueTests(unittest.TestCase):
+    def test_the_first_click_reads_every_price_then_each_click_posts(self):
+        run(HIDE + """local posts = 0
+        local function count() posts = 0 for _, c in ipairs(calls) do if c[1] == 'PostItem' or c[1] == 'PostCommodity' then posts = posts + 1 end end return posts end
+        local ok, why = T.postAll()
+        assert(why == 'checking', tostring(why))
+        assert(F.Deals.pending('i:30') and F.Deals.pending('c:10'), 'both prices are read at once')
+        local n = 0
+        while F.Deals.search or #F.Deals.requests > 0 do
+            if F.Deals.search then answer() end
+            run(1.1); n = n + 1; assert(n < 50)
+        end
+        T.postAll(); fire('AUCTION_HOUSE_AUCTION_CREATED', 1); run(1)
+        assert(count() == 1, 'the second click posts: ' .. count())
+        T.posting = nil
+        T.postAll(); fire('AUCTION_HOUSE_AUCTION_CREATED', 2); run(1)
+        assert(count() == 2, 'the third click posts the other item: ' .. count())""")

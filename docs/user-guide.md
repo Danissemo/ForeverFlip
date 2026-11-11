@@ -287,9 +287,11 @@ At the bottom:
 
 How the two posting queues work:
 
-- **First click on an item:** if there is no fresh price, ForeverFlip reads the listings
-  (*Reading the current price first*).
-- **Next click:** posts the item at the suggested price.
+- **First click:** every item of the queue without a fresh price is searched, one per second, in
+  the background (*Reading the current prices of the items to post*).
+- **Each next click:** posts the first item whose price is known at the suggested price; items whose
+  search is still on the way are passed over until their answer comes. The game allows one post per
+  click, so a queue of 5 items takes 5 clicks after the first.
 - **Below the floor:** the item is posted at the floor, or skipped with **Keep items in the bags
   when the market is below their floor** (Settings).
 

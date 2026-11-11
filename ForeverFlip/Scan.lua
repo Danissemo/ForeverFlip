@@ -50,6 +50,34 @@ function S.blocking()
     return S.job ~= nil
 end
 
+-- The scan log: the last 20 requests and how each ended (shown by /ff diag).
+function S.log(outcome, count)
+    local p = F.db.scanPending
+    F.db.scanLog = type(F.db.scanLog) == "table" and F.db.scanLog or {}
+    table.insert(F.db.scanLog, 1, {
+        at = p and p.at or clock(),
+        ended = clock(),
+        outcome = outcome,
+        count = count or F.AH.replicateCount(),
+        other = p and p.other or nil,
+    })
+    while #F.db.scanLog > 20 do
+        table.remove(F.db.scanLog)
+    end
+end
+
+-- The request is over (read, given up or thrown away): nothing to wait for after a reopen.
+local function settle(outcome, count)
+    if F.db.scanPending then
+        S.log(outcome, count)
+    end
+    F.db.scanPending = nil
+end
+
+local function remember(j)
+    F.db.scanPending = { at = j.at, scope = j.scope, base = j.base, baseMark = j.baseMark, other = j.other }
+end
+
 function S.start()
     if S.job then
         return false, "busy"
@@ -81,7 +109,35 @@ function S.start()
         S.job = nil
         return false, "error"
     end
+    remember(S.job)
     F.Engine.changed()
+    return true
+end
+
+-- The auction house opened again (also after /reload): a request sent before, not answered or not
+-- read yet, is waited for again. An answer that came meanwhile is in the client's list.
+function S.resume(scope)
+    local p = F.db.scanPending
+    if S.job or type(p) ~= "table" then
+        return false
+    end
+    local age = clock() - (p.at or 0)
+    if p.scope ~= scope or age > S.ANSWER_WAIT + (p.answered and 600 or 0) or age < 0 then
+        settle(p.answered and "closed while reading" or "closed while waiting")
+        return false
+    end
+    S.job = {
+        state = "waiting",
+        at = p.at,
+        scope = scope,
+        base = p.base,
+        -- An answer that already arrived is read at once (any list differs from this mark).
+        baseMark = p.answered and "resumed" or p.baseMark,
+        last = -1,
+        other = p.other,
+        resumed = true,
+    }
+    F.Engine.notify("scan_resumed")
     return true
 end
 
@@ -99,10 +155,14 @@ local function polled(j, now)
     local mark = F.AH.replicateMark()
     local ready = n > 0 and mark ~= j.baseMark and mark == j.lastMark
     j.last, j.lastMark = n, mark
+    j.seen = math.max(j.seen or 0, n)
     return ready
 end
 
 local function beginReading(j, total)
+    if F.db.scanPending then
+        F.db.scanPending.answered = true
+    end
     j.state, j.total, j.index = "reading", total, 0
     j.groups, j.order, j.deferred = {}, {}, {}
     j.read, j.skipped, j.own = 0, 0, 0
@@ -127,7 +187,11 @@ function S.auto()
     end
 end
 
+-- The auction house closed: the scan stops, but its request stays remembered (S.resume).
 function S.stop()
+    if S.job then
+        F.Engine.notify(S.job.state == "waiting" and "scan_paused" or "scan_paused_reading")
+    end
     S.job = nil
 end
 
@@ -138,7 +202,8 @@ function S.onDropped()
     if j and j.state == "waiting" and not j.other and clock() - (j.at or 0) <= 3 then
         S.job = nil
         F.db.lastScan = clock() - S.COOLDOWN + 10
-        F.Engine.notify("scan_timeout")
+        settle("dropped by the server")
+        F.Engine.notify("scan_dropped")
     end
 end
 
@@ -158,6 +223,7 @@ function S.onOtherScan()
         last = -1,
         other = true,
     }
+    remember(S.job)
     F.Engine.notify("scan_other")
 end
 
@@ -185,6 +251,7 @@ function S.onReplicate()
     end
     if not U.finite(total) or total <= 0 then
         S.job = nil
+        settle("empty list", 0)
         F.Engine.notify("scan_empty")
         return
     end
@@ -445,7 +512,7 @@ function S.step()
         return
     end
     if j.scope ~= F.Engine.scope() or not F.AH.isOpen() then
-        S.job = nil
+        S.stop()
         return
     end
     local now = clock()
@@ -457,10 +524,13 @@ function S.step()
         if polled(j, now) then
             beginReading(j, j.last)
         elseif now - j.at > S.ANSWER_WAIT then
-            -- No answer: try again in a minute instead of waiting the whole 15 minutes.
+            -- No answer: try again in a minute instead of waiting the whole 15 minutes. Whether the
+            -- server sent nothing or a list that kept changing tells the two cases apart.
             S.job = nil
             F.db.lastScan = now - S.COOLDOWN + 60
-            F.Engine.notify("scan_timeout")
+            local seen = j.seen or 0
+            settle(seen > 0 and "list kept changing" or "no answer", seen)
+            F.Engine.notify(seen > 0 and "scan_unsettled" or "scan_timeout")
         end
         return
     end
@@ -530,6 +600,7 @@ function S.step()
             ownersKnown = j.own > 0,
         }
         S.job, S.finishedAt = nil, clock()
+        settle("read", j.total)
         F.Raw.finish(j)
         S.setHot(j.hot)
         if F.Analytics then

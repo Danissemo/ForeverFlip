@@ -4,6 +4,12 @@ F.version = "1.2.0-beta.2"
 local U = {}
 F.Util = U
 
+-- True when the client hides the value from addons (a "secret" value: chat text on newer clients).
+-- Such a value cannot be read, compared or indexed without an error.
+function U.secret(v)
+    return issecretvalue ~= nil and issecretvalue(v) == true
+end
+
 function U.finite(n)
     return type(n) == "number" and n == n and n ~= math.huge and n ~= -math.huge
 end
