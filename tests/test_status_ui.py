@@ -91,10 +91,10 @@ class CategoryStatusTests(unittest.TestCase):
         UI.show('sell');UI.bulkButton:Click();run(0.1)
         assert(D.search,'batch must start an auction search')
         local oldRows=F.AH.rows;F.AH.rows=function() error('unavailable auction results') end
-        answer();F.AH.rows=oldRows;UI.refresh()
+        answer();run(1.1);answer();F.AH.rows=oldRows;UI.refresh()
         local done,total,active,failed=D.batchProgress()
         assert(done==1 and total==1 and not active and failed==1)
-        assert(UI.status:GetText():find('1/1') and UI.status:GetText():find('1 failed'),UI.status:GetText())
+        assert(UI.status:GetText():find('1/1') and UI.status:GetText():find('1 without an answer'),UI.status:GetText())
         assert(UI.bulkButton:IsEnabled(),'completed batches may be started again')
         F.Locale.apply('uk');UI.refresh()
         assert(UI.bulkButton:GetText()=='Перевірити все')

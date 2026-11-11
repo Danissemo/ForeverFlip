@@ -100,7 +100,10 @@ class StatusBatchTests(unittest.TestCase):
         assert(done==1 and total==2 and active and failed==1)
         run(0.5);assert(D.search.key==keys[2]);answer()
         done,total,active,failed=D.batchProgress()
-        assert(done==2 and total==2 and not active and failed==1 and sends()==4)
+        assert(done==1 and total==2 and active and failed==0,'the dropped key gets a second try')
+        run(1.1);assert(D.search and D.search.key==keys[1]);answer()
+        done,total,active,failed=D.batchProgress()
+        assert(done==2 and total==2 and not active and failed==0 and sends()==5)
         ''')
 
     def test_timeout_and_transport_exception_finish_instead_of_requeue_forever(self):
@@ -118,6 +121,7 @@ class StatusBatchTests(unittest.TestCase):
         T.prices[keys[1]]=old
         F.AH.rows=function() return {{unit=60,qty=1}},false end
         D.startBatch('sell',{keys[1]},false);D.search.pages=3;answer()
+        run(1.1);D.search.pages=3;answer() -- the second try is partial too
         local done,total,active,failed=D.batchProgress()
         assert(done==1 and total==1 and not active and failed==1)
         assert(T.prices[keys[1]]==old,'partial failed results cannot look current')
@@ -126,9 +130,10 @@ class StatusBatchTests(unittest.TestCase):
     def test_deal_evaluation_error_counts_a_failure_and_releases_batch(self):
         run(BATCH + '''D.verifyCallback=function() error('evaluation failed') end
         D.startBatch('deals:all',{keys[1]},true);answer()
+        run(1.1);answer() -- the second try fails the same way
         local done,total,active,failed=D.batchProgress()
         assert(done==1 and total==1 and not active and failed==1 and not D.pending())
-        assert(#F.db.errors==1)
+        assert(#F.db.errors==1,'the same error is logged once')
         ''')
 
     def test_house_close_clears_batch_and_cannot_replay_cancelled_work(self):
@@ -165,3 +170,22 @@ class StatusBatchTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BatchRetryTests(unittest.TestCase):
+    def test_an_unanswered_search_succeeds_on_the_second_try(self):
+        run(BATCH + '''local oldRows=F.AH.rows
+        F.AH.rows=function() error('no answer this time') end
+        D.startBatch('sell',{keys[1]},false);answer()
+        assert(select(3,D.batchProgress()),'still running: the second try is due')
+        F.AH.rows=oldRows
+        run(1.1);answer()
+        local done,total,active,failed=D.batchProgress()
+        assert(done==1 and total==1 and not active and failed==0)''')
+
+    def test_a_fresh_scan_without_lots_needs_no_search(self):
+        run(BATCH + '''F.Scan.notListed=function() return true end
+        D.startBatch('sell',{keys[1]},false)
+        local done,total,active,failed=D.batchProgress()
+        assert(done==1 and not active and failed==0 and not D.search,'nobody else sells it: no search')
+        assert(#T.prices[keys[1]].rows==0)''')

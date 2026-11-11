@@ -621,12 +621,17 @@ function D.startBatch(scope, keys, mode)
             snapshot[#snapshot + 1] = key
         end
     end
-    local batch = { scope = scope, keys = snapshot, total = #snapshot, done = 0, failed = 0, active = #snapshot > 0 }
+    local batch = {
+        scope = scope,
+        keys = snapshot,
+        total = #snapshot,
+        done = 0,
+        failed = 0,
+        failedKeys = {},
+        active = #snapshot > 0,
+    }
     D.batch = batch
-    for _, key in ipairs(snapshot) do
-        if D.batch ~= batch then
-            break -- a synchronous close can cancel the whole batch while sending its first key
-        end
+    local function send(key)
         local finished = false
         local function complete(_, rows, completeRows)
             if finished then
@@ -642,9 +647,29 @@ function D.startBatch(scope, keys, mode)
                 end
             end
             batch.done = batch.done + 1
-            batch.failed = batch.failed + (success and 0 or 1)
-            batch.active = batch.done < batch.total
+            if not success then
+                batch.failed = batch.failed + 1
+                batch.failedKeys[#batch.failedKeys + 1] = key
+            end
+            if batch.done >= batch.total and batch.failed > 0 and not batch.retried and D.batch == batch then
+                -- The searches without an answer are sent once more (from the next frame): a
+                -- dropped or slow answer usually comes the second time.
+                batch.retried, batch.retryKeys = true, batch.failedKeys
+                batch.done, batch.failed, batch.failedKeys = batch.done - #batch.retryKeys, 0, {}
+            else
+                batch.active = batch.done < batch.total
+                if not batch.active and batch.failed > 0 then
+                    D.reportUnanswered(batch)
+                end
+            end
             F.Engine.changed()
+        end
+        -- A price check of an item a fresh full scan saw no lot of: nobody else sells it, and the
+        -- server would not answer the search (WoW Forever).
+        if mode == false and F.Scan.notListed(key) then
+            F.Trade.prices[key] = { rows = {}, at = F.Engine.clock() }
+            complete(key, {}, true)
+            return
         end
         local accepted
         if type(mode) == "function" then
@@ -658,8 +683,52 @@ function D.startBatch(scope, keys, mode)
             complete(key, nil, false)
         end
     end
+    batch.send = send
+    for _, key in ipairs(snapshot) do
+        if D.batch ~= batch then
+            break -- a synchronous close can cancel the whole batch while sending its first key
+        end
+        send(key)
+    end
     F.Engine.changed()
     return #snapshot
+end
+
+-- Sends the second try of a batch's unanswered searches (called every frame).
+function D.batchRetry()
+    local batch = D.batch
+    local keys = batch and batch.retryKeys
+    if not keys or not F.AH.isOpen() then
+        return
+    end
+    batch.retryKeys = nil
+    for _, key in ipairs(keys) do
+        if D.batch ~= batch then
+            break
+        end
+        batch.send(key)
+    end
+end
+
+-- The items still without an answer after the second try, named in the chat once. On WoW Forever
+-- the server does not answer a search for an item nobody else sells.
+function D.reportUnanswered(batch)
+    local names = {}
+    for _, key in ipairs(batch.failedKeys) do
+        local item = U.parseKey(key)
+        local name = item and (U.itemInfo(item.id) or item.name) or key
+        names[#names + 1] = name
+    end
+    batch.unanswered = names
+    print(
+        "ForeverFlip: "
+            .. string.format(
+                F.Locale.text(
+                    "no answer for: %s. The server does not answer for items nobody else sells; the next full scan tells for sure."
+                ),
+                table.concat(names, ", ")
+            )
+    )
 end
 
 function D.batchProgress(scope)
@@ -714,6 +783,7 @@ end
 
 -- Called every frame: timeouts, retries, and automatic verification of the best unverified deals.
 function D.step()
+    D.batchRetry()
     local now = clock()
     local s = D.search
     if s and s.waitKey and F.AH.ready() then

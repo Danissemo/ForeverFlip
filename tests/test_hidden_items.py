@@ -146,3 +146,22 @@ class PostingQueueTests(unittest.TestCase):
         T.posting = nil
         T.postAll(); fire('AUCTION_HOUSE_AUCTION_CREATED', 2); run(1)
         assert(count() == 2, 'the third click posts the other item: ' .. count())""")
+
+
+class ScrollTests(unittest.TestCase):
+    def test_a_long_list_scrolls_with_the_mouse_wheel(self):
+        run(SETUP + """local F, UI = ForeverFlip, ForeverFlip.UI
+        for i = 1, 15 do addItem(700 + i, 'Ware ' .. string.format('%02d', i), 10, 'item'); putBag(1 + math.floor((i - 1) / 16), 1 + (i - 1) % 16, 700 + i, 1) end
+        UI.show('sell'); UI.refresh()
+        local function shown() local n, names = 0, {} for _, r in ipairs(UI.sellTable.rows) do if r:IsShown() then n = n + 1; names[r.key] = true end end return n, names end
+        local n, names = shown()
+        assert(n == 11, 'eleven rows: ' .. n)
+        assert(UI.sellTable.headers[1]:GetText():find('1%-11 / 15'), UI.sellTable.headers[1]:GetText())
+        UI.sellTable.wheel(nil, -1); UI.sellTable.wheel(nil, -1)
+        n, names = shown()
+        assert(UI.sellTable.headers[1]:GetText():find('5%-15 / 15'), UI.sellTable.headers[1]:GetText())
+        local seen = 0
+        for i = 1, 15 do if names['i:' .. (700 + i)] then seen = seen + 1 end end
+        assert(n == 11 and seen >= 1, 'the last items are reachable')
+        UI.sellTable.wheel(nil, 5)
+        assert(UI.sellTable.headers[1]:GetText():find('1%-11'), 'back to the top')""")

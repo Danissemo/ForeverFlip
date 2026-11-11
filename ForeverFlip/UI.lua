@@ -224,6 +224,24 @@ local function table_(parent, columns, rows, onClick, onSort)
     local first = headerCell(columns[1][1], nil, "LEFT", 1)
     first:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
     first:SetPoint("TOPRIGHT", header, "TOPRIGHT", -x, 0)
+    -- Scrolling: a list longer than the rows is scrolled with the mouse wheel; the first header
+    -- says which entries are shown. A table with its own pages (the deals) sets t.paged.
+    t.offset, t.size = 0, rows
+    function t.scroll(steps)
+        if t.paged then
+            return
+        end
+        t.offset = math.max(0, (t.offset or 0) + steps * 3)
+        UI.refresh()
+    end
+    local function wheel(_, delta)
+        t.scroll(-delta)
+    end
+    if header.EnableMouseWheel then
+        header:EnableMouseWheel(true)
+        header:SetScript("OnMouseWheel", wheel)
+    end
+    t.wheel = wheel
     -- A sorted copy of `list` by the chosen column. `value(entry, column)` returns a number, a
     -- string or nil; nil sorts last in both directions, equal values keep the list's order.
     function t.sort(list, value)
@@ -234,7 +252,7 @@ local function table_(parent, columns, rows, onClick, onSort)
             out[i] = e
         end
         if not index then
-            return out
+            return t.window(out)
         end
         local keys, order = {}, {}
         for i, e in ipairs(out) do
@@ -257,6 +275,23 @@ local function table_(parent, columns, rows, onClick, onSort)
             end
             return va < vb
         end)
+        return t.window(out)
+    end
+    -- The part of a sorted list the rows show, from the scroll offset; the first header counts.
+    function t.window(list)
+        local total = #list
+        local label = L(columns[1][1])
+        if t.paged or total <= t.size then
+            t.offset = 0
+            first:SetText(label)
+            return list
+        end
+        t.offset = math.min(t.offset or 0, total - t.size)
+        first:SetText(string.format("%s |cff999999(%d-%d / %d)|r", label, t.offset + 1, t.offset + t.size, total))
+        local out = {}
+        for i = 1, t.size do
+            out[i] = list[t.offset + i]
+        end
         return out
     end
     function t.setSort(index, descending)
@@ -306,6 +341,10 @@ local function table_(parent, columns, rows, onClick, onSort)
         end
         if r.RegisterForClicks then
             r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        end
+        if r.EnableMouseWheel then
+            r:EnableMouseWheel(true)
+            r:SetScript("OnMouseWheel", t.wheel)
         end
         r:SetScript("OnClick", function(self, mouse)
             if mouse == "RightButton" and self.key then
@@ -595,6 +634,7 @@ function UI.createDeals(p)
             UI.refresh()
         end
     )
+    UI.dealTable.paged = true -- the deals have pages (Previous / Next)
     local estimateHeader = UI.dealTable.headers[7]
     estimateHeader:SetScript("OnEnter", function(self)
         if GameTooltip then
@@ -3024,7 +3064,8 @@ function UI.refreshStatus()
         local summary =
             string.format(L("Checked %s: %d/%d"), L(BATCH_SCOPES[batch.scope] or batch.scope), batchDone, batchTotal)
         if batchFailed > 0 then
-            summary = summary .. string.format(L(" (%d failed)"), batchFailed)
+            -- Still unanswered after the automatic second try (the chat names them).
+            summary = summary .. string.format(L(" (%d without an answer)"), batchFailed)
         end
         UI.status:SetText(summary)
         return
@@ -3134,12 +3175,9 @@ end
 
 -- Which auction house the scans and prices belong to: a neutral house (goblin town) keeps its own
 -- history and a 15% cut, so the player must see when ForeverFlip thinks it is open.
+-- The open auction house is named in the bottom bar (UI.houseName); the summary does not repeat it.
 function UI.houseLine()
-    if F.Engine.house == "Neutral" then
-        return "|cffffd100" .. L("Neutral auction house (15% cut)") .. "|r\n"
-    end
-    local faction = UnitFactionGroup and UnitFactionGroup("player")
-    return string.format(L("Auction house: %s"), L(faction or "?")) .. "\n"
+    return ""
 end
 
 function UI.refreshSummary()

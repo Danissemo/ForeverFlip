@@ -34,7 +34,9 @@ When you open the auction house, a **ForeverFlip** tab appears next to the game'
 Sell, Auctions). If [LibAHTab](https://www.curseforge.com/wow/addons/libahtab) is installed, the tab
 is created through it so it sits next to the tabs of other addons.
 
-The window has three parts:
+The window has three parts. Tables longer than their rows scroll with the mouse wheel; the first
+column's header then shows which entries are on screen, for example `Name (5-15 / 15)`. The deals
+have pages instead (Previous / Next).
 
 - **Top bar:** scan and sniper buttons and a status line. A thin yellow bar along the top edge shows
   the progress of the current task.
@@ -68,7 +70,7 @@ history, because the listings are separate, and counts the 15% cut.
 |---|---|
 | **Full scan** | Asks the server for every auction of the house. The button shows a countdown while the 15-minute cooldown runs. |
 | **Sniper: ON / OFF** | Turns the [sniper](#sniper) on or off. |
-| **Check all** | Searches every entry of the open page on the auction house again, one search after another, and the page shows what was found: deals are kept, updated or dropped (All, To vendor, Resale, From the list); the items on the **Shopping list** are checked as shopping deals; **Bids** reads the best bid of every candidate; **My items** and **My auctions** read the current price of every item (the Best column and the suggested prices use it); **Crafting** reads every material and product, and the recipes are priced with those prices for 5 minutes. While it runs the button shows `Checking <page>: done/total`. Afterwards it shows `Checked ...`, with the number of failed searches if any. |
+| **Check all** | Searches every entry of the open page on the auction house again, one search after another, and the page shows what was found: deals are kept, updated or dropped (All, To vendor, Resale, From the list); the items on the **Shopping list** are checked as shopping deals; **Bids** reads the best bid of every candidate; **My items** and **My auctions** read the current price of every item (the Best column and the suggested prices use it); **Crafting** reads every material and product, and the recipes are priced with those prices for 5 minutes. While it runs the button shows `Checking <page>: done/total`. Afterwards it shows `Checked ...`. Searches without an answer are sent once more by themselves; what still has none is shown as `(N without an answer)` and named in the chat. On WoW Forever the server does not answer a search for an item nobody else sells, so these are usually items only you have; an item a full scan of the last 20 minutes did not see is not searched at all. |
 | Auction house (bottom bar, beside the money display) | Which auction house is open: **Alliance AH** (blue), **Horde AH** (red) or **Neutral AH, 15% cut** (gold, at Booty Bay, Gadgetzan or Everlook). Each house keeps its own scans, prices and deals; the window title says it too. |
 | Status line | The current task (`Reading auctions 12000 / 231000`, `Evaluating items ...`), the last message, or the number of deals and how many are checked. The sniper's own figures are in the summary on the left. |
 

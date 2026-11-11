@@ -46,6 +46,11 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **The end of a full scan** no longer stalls the game on a large history: forgetting old items
   and sweeping vanished ones run a slice per frame, and the scan is copied into the saved data on
   logout instead of at once.
+- **Tables scroll with the mouse wheel:** a list longer than its rows (Selling, Bids, Crafting,
+  Shopping list, Analytics) showed only its first rows; the first header shows which are on screen.
+- **Check all tries unanswered searches again** by itself, says `(N without an answer)` instead of
+  "failed" and names those items in the chat; items a fresh full scan did not see are not searched.
+- **The summary no longer repeats the auction house**; it is named in the bottom bar.
 - **A full scan survives closing the auction house and `/reload`:** the request is remembered
   and the wait goes on when the house opens again (before, the answer was ignored while the
   15-minute pause still ran). While waiting, the status shows how many auctions the server has sent
