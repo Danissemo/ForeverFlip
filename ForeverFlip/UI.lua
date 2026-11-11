@@ -1214,11 +1214,11 @@ function UI.createSell(p)
         list,
         {
             { "Name" },
-            { "Qty", 40 },
+            { "Qty", 50 },
             { "Cost each", 80 },
-            { "Listed", 50 },
-            { "Best", 120 },
-            { "Note", 120, "LEFT" },
+            { "Listed", 60 },
+            { "Best", 110 },
+            { "Note", 110, "LEFT" },
         },
         SELL_ROWS,
         function(row)
@@ -1308,19 +1308,19 @@ function UI.createSell(p)
     local ruleLabel = text(bar, "GameFontNormal")
     ruleLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 66)
     ruleLabel:SetText(L("Rule: min"))
-    UI.ruleMin = editbox(bar, 80)
+    UI.ruleMin = editbox(bar, 70)
     UI.ruleMin:SetPoint("LEFT", ruleLabel, "RIGHT", 8, 0)
     local maxLabel = text(bar, "GameFontNormal")
     maxLabel:SetPoint("LEFT", UI.ruleMin, "RIGHT", 10, 0)
     maxLabel:SetText(L("max"))
-    UI.ruleMax = editbox(bar, 80)
+    UI.ruleMax = editbox(bar, 70)
     UI.ruleMax:SetPoint("LEFT", maxLabel, "RIGHT", 8, 0)
     local keepLabel = text(bar, "GameFontNormal")
     keepLabel:SetPoint("LEFT", UI.ruleMax, "RIGHT", 10, 0)
     keepLabel:SetText(L("keep"))
     UI.ruleKeep = editbox(bar, 40)
     UI.ruleKeep:SetPoint("LEFT", keepLabel, "RIGHT", 8, 0)
-    UI.ruleSave = button(bar, "Save rule", 110, function()
+    UI.ruleSave = button(bar, "Save rule", 95, function()
         local item = UI.sellSelected
         if item then
             F.Trade.setRule(item.key, {
@@ -1332,7 +1332,7 @@ function UI.createSell(p)
         end
     end)
     UI.ruleSave:SetPoint("LEFT", UI.ruleKeep, "RIGHT", 10, 0)
-    UI.postButton = button(bar, "Post", 110, function()
+    UI.postButton = button(bar, "Post", 100, function()
         local item = UI.sellSelected
         if not item then
             return
@@ -1347,18 +1347,18 @@ function UI.createSell(p)
         end
     end)
     UI.postButton:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
-    UI.postNext = button(bar, "Post next bought", 170, function()
+    UI.postNext = button(bar, "Post next bought", 165, function()
         local _, why = F.Trade.postNext()
         F.Engine.notify(why)
     end)
     UI.postNext:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
-    UI.postAll = button(bar, "Post all", 115, function()
+    UI.postAll = button(bar, "Post all", 105, function()
         local _, why = F.Trade.postAll()
         F.Engine.notify(why)
     end)
     UI.postAll:SetPoint("LEFT", UI.postNext, "RIGHT", 4, 0)
     -- Post all, except what a merchant pays at least as much for (the Best column says "Vendor").
-    UI.postAuction = button(bar, "Post AH-worthy", 155, function()
+    UI.postAuction = button(bar, "Post AH-worthy", 150, function()
         local _, why = F.Trade.postAll(true)
         F.Engine.notify(why)
     end)
@@ -1380,14 +1380,17 @@ function UI.createSell(p)
             end
         end)
     end
-    UI.sellCheck = button(bar, "Check price", 110, function()
+    -- The bottom row holds the posting buttons; checking the selected item's price sits at the end
+    -- of the rule row above.
+    UI.sellCheck = button(bar, "Check price", 100, function()
         if UI.sellSelected then
             F.Trade.checkPrice(UI.sellSelected.key)
             F.Engine.changed()
             UI.refresh()
         end
     end)
-    UI.sellCheck:SetPoint("RIGHT", UI.postButton, "LEFT", -4, 0)
+    UI.sellCheck:SetPoint("TOP", UI.ruleSave, "TOP", 0, 0)
+    UI.sellCheck:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
 end
 
 -- Bag items for sale, or (hidden = true) the hidden items, also those no longer in the bags.
