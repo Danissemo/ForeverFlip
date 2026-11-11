@@ -23,7 +23,8 @@ class NoSellerTests(unittest.TestCase):
 
     def test_sell_page_explains_and_fills_the_price(self):
         run(NONE + '''UI.show('sell');for _,r in ipairs(UI.sellTable.rows) do if r.key=='i:70' then r:Click() end end
-        run(1.1);answer();UI.refresh()
+        assert(not F.Deals.search,'no search for an item the fresh scan did not see')
+        UI.refresh()
         assert(UI.sellPrice:GetText()~='','price filled in')
         assert(UI.sellText:GetText():find('guess',1,true),UI.sellText:GetText())
         assert(UI.postButton:IsEnabled())''')
