@@ -361,9 +361,13 @@ function UI.create()
         UI.checkStatuses()
     end)
     UI.bulkButton:SetPoint("LEFT", UI.sniperButton, "RIGHT", 6, 0)
+    -- Top right corner: which auction house this is (its own prices; a neutral one takes 15%).
+    UI.houseBadge = text(f, "GameFontNormal")
+    UI.houseBadge:SetPoint("RIGHT", f, "TOPRIGHT", -12, 19)
+    UI.houseBadge:SetJustifyH("RIGHT")
     UI.status = text(f, "GameFontNormal")
     UI.status:SetPoint("LEFT", UI.bulkButton, "RIGHT", 10, 0)
-    UI.status:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+    UI.status:SetPoint("RIGHT", UI.houseBadge, "LEFT", -12, 0)
     UI.status:SetWordWrap(false)
     UI.progress = CreateFrame("StatusBar", nil, f)
     UI.progress:SetHeight(3)
@@ -2898,6 +2902,7 @@ local BATCH_SCOPES = {
 }
 
 function UI.refreshStatus()
+    UI.refreshHouse()
     UI.sniperButton:SetText(L(F.db.settings.sniper and "Sniper: ON" or "Sniper: OFF"))
     UI.sniperBox:SetChecked(F.db.settings.sniper)
     UI.bulkButton:SetText(L("Check all statuses"))
@@ -2978,6 +2983,25 @@ function UI.refreshStatus()
         )
     else
         UI.status:SetText(L("Press Full scan to read the whole auction house."))
+    end
+end
+
+-- The open auction house in short, and its colour: Alliance blue, Horde red, neutral gold.
+function UI.houseName()
+    if F.Engine.house == "Neutral" then
+        return L("Neutral AH, 15% cut"), "ffd100"
+    end
+    local faction = UnitFactionGroup and UnitFactionGroup("player")
+    if faction == "Horde" then
+        return L("Horde AH"), "ff5050"
+    end
+    return L("Alliance AH"), "4fa3ff"
+end
+
+function UI.refreshHouse()
+    if UI.houseBadge then
+        local name, color = UI.houseName()
+        UI.houseBadge:SetText("|cff" .. color .. name .. "|r")
     end
 end
 
@@ -3291,7 +3315,7 @@ function UI.attach()
             PanelTemplates_SelectTab(b)
         end
         if AuctionHouseFrame.SetTitle then
-            AuctionHouseFrame:SetTitle("ForeverFlip")
+            AuctionHouseFrame:SetTitle("ForeverFlip: " .. UI.houseName())
         end
         UI.frame:Show()
     end)

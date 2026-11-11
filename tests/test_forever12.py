@@ -429,6 +429,15 @@ class SniperGearTests(unittest.TestCase):
         assert(D.get(key) and D.get(key).verified, 'the gear deal is checked')''')
 
 
+class HouseBadgeTests(unittest.TestCase):
+    def test_the_corner_names_the_open_auction_house(self):
+        run(SETUP + '''local F, UI = ForeverFlip, ForeverFlip.UI
+        UI.refresh()
+        assert(UI.houseBadge:GetText():find('Alliance AH', 1, true), UI.houseBadge:GetText())
+        F.Engine.house = 'Neutral'; UI.refresh()
+        assert(UI.houseBadge:GetText():find('Neutral AH, 15% cut', 1, true), UI.houseBadge:GetText())''')
+
+
 class SellPageTests(unittest.TestCase):
     def test_bag_items_the_auction_house_does_not_know_yet_are_listed(self):
         run(SETUP + '''local A = ForeverFlip.AH
