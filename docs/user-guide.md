@@ -196,11 +196,18 @@ by itself.
        arrives.
      - Use **Cancel** to drop the quote.
    - **Items and gear** are bought one auction per click, because the server sells one lot per
-     purchase. After each purchase the item is checked again so the next click buys the next lot.
+     purchase. After a purchase the deal is worked out again from the lots its check read, without
+     the lot just bought: the next click buys the next lot at once, with no new search, while the
+     check is fresh (45 seconds).
+   - A click on **Buy** does not wait for a search in flight (the sniper, a check): that search is
+     sent again after the purchase.
 3. When the purchase goes through, the status line shows *Purchase recorded*. The units are added to
    your stock at their real cost and logged in the journal.
 
 If someone was faster, the purchase fails and costs nothing. The deal is checked again.
+
+Units of a vendor deal bought while you hold the item for resale join the resale stock. **Sell
+vendor deals** never sells an item whose average cost is above the vendor price.
 
 If the game does not answer within 30 seconds, the purchase is kept as **unknown**. Settle it on the
 [Journal](#journal-and-profit) page with **It was bought** or **Not bought**. The chat line *You won

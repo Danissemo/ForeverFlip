@@ -46,6 +46,15 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **The end of a full scan** no longer stalls the game on a large history: forgetting old items
   and sweeping vanished ones run a slice per frame, and the scan is copied into the saved data on
   logout instead of at once.
+- **Faster buying:** after a purchase the deal is worked out from the lots already read, so the next
+  lot is bought on the next click without a new search; a click on Buy no longer waits for (or is
+  disabled by) a search in flight. Before, every purchase searched the item again, and the Buy
+  button of every other deal stayed off until that search ended.
+- **Sell vendor deals never sells at a loss:** units of a vendor deal bought while resale stock of
+  the item is held join that stock; before, the whole stock turned into a vendor deal and its dearer
+  units were sold to a merchant too.
+- **Price checks of items with very many lots** take the cheapest lots of the first pages; they no
+  longer end as "without an answer" (seen with WoW Forever scrolls listed hundreds of times).
 - **Tables scroll with the mouse wheel:** a list longer than its rows (Selling, Bids, Crafting,
   Shopping list, Analytics) showed only its first rows; the first header shows which are on screen.
 - **Check all tries unanswered searches again** by itself, says `(N without an answer)` instead of
