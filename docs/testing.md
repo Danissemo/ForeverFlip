@@ -167,6 +167,8 @@ Check these with 1.2.0-beta.2 (or later); they are the fixes testers of beta.1 s
 | ⬜ | Full bags | Fill the bags and take auction mail with items: ForeverFlip stops with "bags full"; free some space and take it again: the journal has each mail once. |
 | ⬜ | Gear check and the Buy tab | Search something in the game's Buy tab right before checking a gear deal: the check never says "nobody sells" for gear that is listed. |
 | ⬜ | Vendor or auction house | Selling → My items has a Best column: cheap vendor trash says Vendor, valuable goods say AH, with the same values as the tooltip. Post AH-worthy (N) counts fewer items than Post all (N) and never posts an item marked Vendor. |
+| ⬜ | Scan and closing | Press Full scan, close the auction house at once and open it again: the status says it waits again and the scan is read. While waiting, the status shows `server list: N`. `/ff diag` lists how the last requests ended. |
+| ⬜ | Post queue clicks | Press Post AH-worthy once: the prices are read for the whole queue; each next press posts one lot. |
 | ⬜ | Check all | The button at the top says Check all. On Shopping list, Bids and Crafting it is enabled too and counts `Checking <page>: done/total`; afterwards Crafting shows the recipes priced with the checked prices, and Selling → My items the Best column with them. |
 | ⬜ | Tooltips | See the Tooltips row above (rewritten in beta.2). |
 | ⬜ | Bought elsewhere, sold by hand | See the Bought elsewhere and Vendor sale by hand rows above (new in beta.2). |

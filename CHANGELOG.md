@@ -46,6 +46,15 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **The end of a full scan** no longer stalls the game on a large history: forgetting old items
   and sweeping vanished ones run a slice per frame, and the scan is copied into the saved data on
   logout instead of at once.
+- **A full scan survives closing the auction house and `/reload`:** the request is remembered
+  and the wait goes on when the house opens again (before, the answer was ignored while the
+  15-minute pause still ran). While waiting, the status shows how many auctions the server has sent
+  (0 = no answer yet); the timeout says whether nothing came or the list kept changing, and
+  `/ff diag` lists how the last requests ended.
+- **Post all, Post AH-worthy and Post next bought** read the prices of the whole queue on the first
+  click, so each next click posts a lot (before, most clicks only read one price).
+- **Chat text the client hides from addons** (secret values) no longer causes an error
+  (`Trade.lua:200`) or touches the chat.
 - **An expired auction can be posted again at once:** its listing stops counting the units as on
   sale when the "Auction expired" (or "Auction cancelled") mail comes, so Post next bought offers the
   item again; a cancel made by ForeverFlip is not taken off twice when its mail arrives.

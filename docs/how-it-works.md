@@ -74,6 +74,12 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    sniper list are put into the saved data on logout and `/reload` (when the game writes it) and
    when another auction house opens, so they survive a `/reload`.
 
+The request itself is remembered too (`scanPending`) until its answer is read or given up: when the
+auction house closes during the wait (or the UI reloads), the wait goes on when it opens again, and
+an answer that came meanwhile is read from the client's list. Each request ends in `scanLog` (the
+last 20): read, no answer (the list stayed empty), list kept changing, dropped by the server, or
+closed while waiting.
+
 Items that have not appeared in a full scan for 14 days are removed from the saved history. Like the
 rest of the scan, this pass over the history (and the sweep of vanished items) runs a slice per
 frame, so the end of a scan does not stall the game on a large history.
