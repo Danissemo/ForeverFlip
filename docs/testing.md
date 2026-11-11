@@ -42,15 +42,16 @@ python -m unittest discover -s tests -p "test_*.py"
 ### Simulated sessions
 
 `tests/sim.lua` turns the mock into a living market: other players list items, commodities and gear,
-buy the cheap lots and let lots expire. A session runs in 15-minute ticks; each tick ForeverFlip
+buy the cheap lots (yours too) and let lots expire (yours come back by mail). A session runs in 15-minute ticks; each tick ForeverFlip
 makes a full scan, the sniper and the deal checks run, deals are bought, the bought stock is posted,
 own auctions sell, the mail is taken and vendor deals are sold at a merchant. Every page and tooltip
 is drawn after each tick, and these always have to hold:
 
 - every deal has a profit, and the scan counts add up (read, skipped and own
   auctions make the total);
-- the journal agrees with the item statistics, and with the units the market says were bought and
-  sold;
+- the journal agrees with the item statistics, and with the units the market says were bought,
+  sold and returned unsold;
+- what the books count as on sale is really on sale;
 - every position exists in the bags or in your auctions, money never goes below zero, and nothing
   is sold to a vendor at a loss;
 - no Lua error, caught or not.

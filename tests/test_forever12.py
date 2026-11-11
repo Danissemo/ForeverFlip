@@ -430,6 +430,42 @@ class WholeCodeReviewTests(unittest.TestCase):
         fire('PLAYER_LOGOUT')
         assert(F.Data.market(F.db, F.Engine.scope()).last.total == F.Scan.last.total, 'saved on logout')''')
 
+    def test_an_expired_auction_can_be_posted_again(self):
+        run(SETUP + '''local F, T = ForeverFlip, ForeverFlip.Trade
+        local c = F.Data.char(F.db, F.Engine.owner())
+        F.Data.addPosition(c, 'i:30', 'Linen Bag', 3, 3000, 'flip', 5000, now)
+        bags[0] = { [1] = { itemID = 30, stackCount = 3 } }
+        c.listings = { { key = 'i:30', name = 'Linen Bag', ids = { 77, 78 }, open = 3, price = 5000, at = now } }
+        local function listed() for _, b in ipairs(T.toPost()) do if b.key == 'i:30' then return true end end end
+        assert(not listed(), 'on sale: not posted again')
+        T.onFailedPost('Linen Bag', 3)
+        assert(c.listings[1].open == 0 and listed(), 'expired and back: posted again')''')
+
+    def test_an_expired_mail_is_booked_once_when_the_bags_are_full(self):
+        run(SETUP + """local F = ForeverFlip
+        local c = F.Data.char(F.db, F.Engine.owner())
+        local function expired() local n = 0 for _, e in ipairs(c.journal) do if e.kind == 'expired' then n = n + 1 end end return n end
+        inbox = { { sender = 'Auction House', subject = 'Auction expired: Linen Bag', money = 0, items = 1 } }
+        freeBagSlots = 0
+        MailFrame:Show(); fire('MAIL_SHOW'); F.Mail.start(); run(1)
+        assert(expired() == 0 and #inbox == 1, 'bags full: not taken, not booked')
+        fire('MAIL_CLOSED'); freeBagSlots = 5
+        fire('MAIL_SHOW'); F.Mail.start(); run(2)
+        assert(expired() == 1 and #inbox == 0, 'taken later and booked once: ' .. expired())""")
+
+    def test_a_cancel_and_its_mail_take_the_units_off_once(self):
+        run(SETUP + '''local F, T = ForeverFlip, ForeverFlip.Trade
+        local c = F.Data.char(F.db, F.Engine.owner())
+        F.Data.addPosition(c, 'i:30', 'Linen Bag', 4, 4000, 'flip', 5000, now)
+        c.listings = {
+            { key = 'i:30', name = 'Linen Bag', ids = { 77 }, open = 2, price = 5000, at = now },
+            { key = 'i:30', name = 'Linen Bag', ids = { 78 }, open = 2, price = 5000, at = now },
+        }
+        assert(T.cancelAuction({ auctionID = 78, qty = 2 }))
+        T.onFailedPost('Linen Bag', 2)
+        assert(c.listings[1].open == 2, 'the other auction is still on sale: ' .. c.listings[1].open)
+        assert(c.listings[2].open == 0)''')
+
     def test_opening_another_house_shows_its_own_scan(self):
         run(SETUP + '''local F = ForeverFlip
         fullScan(); assert(#F.Deals.list > 0)

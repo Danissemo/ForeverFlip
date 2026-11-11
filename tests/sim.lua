@@ -1,7 +1,7 @@
 -- A living auction house for simulations (tests/test_simulation.py). Loaded after mock.lua and the
 -- addon. Other players list, buy and let lots expire every tick; the player's own purchases, posts,
 -- sales and mail go through the same fake client calls the addon makes.
-sim = { processed = 0, nextAuction = 100000, errors = {}, bought = 0, posted = 0, sold = 0 }
+sim = { processed = 0, nextAuction = 100000, errors = {}, bought = 0, posted = 0, sold = 0, expired = 0 }
 
 -- Deterministic random numbers (the same run for the same seed).
 local seed = 1
@@ -69,6 +69,7 @@ function sim.list(n)
 end
 
 -- Mail for the player.
+local addToBags -- below
 local function mail(subject, item, bid, count, kind, link_)
     inbox[#inbox + 1] = {
         sender = "Auction House",
@@ -115,18 +116,30 @@ function sim.buy(n)
     end
 end
 
--- Lots run out of time.
+-- Lots run out of time. The player's own come back by mail ("Auction expired"); the item is put
+-- into the bags at once, like a purchase.
 function sim.expire()
     for i = #auctions, 1, -1 do
         local a = auctions[i]
         a.timeLeft = (a.timeLeft or 4) - (sim.rand() < 0.3 and 1 or 0)
-        if a.timeLeft <= 0 and a.owner ~= "Me" then
+        if a.timeLeft <= 0 then
             table.remove(auctions, i)
+            if a.owner == "Me" then
+                for k = #owned, 1, -1 do
+                    if owned[k].auctionID == a.id then
+                        table.remove(owned, k)
+                    end
+                end
+                addToBags(a.item, a.count, items[a.item].commodity and nil or a.name)
+                local subject = AUCTION_EXPIRED_MAIL_SUBJECT:format(a.name .. (a.count > 1 and (" (" .. a.count .. ")") or ""))
+                inbox[#inbox + 1] = { sender = "Auction House", subject = subject, money = 0, items = 1 }
+                sim.expired = sim.expired + a.count
+            end
         end
     end
 end
 
-local function addToBags(id, count, name)
+addToBags = function(id, count, name)
     local commodity = items[id].commodity
     for bag = 0, 4 do
         for slot = 1, 16 do
@@ -236,14 +249,14 @@ function sim.serve()
                 local auctionID
                 if c[1] == "PostCommodity" then
                     local a = addAuction(id, price, qty, "Me", name)
-                    a.timeLeft = 4
+                    a.timeLeft = 2
                     auctionID = a.id
                     owned[#owned + 1] =
                         { auctionID = a.id, itemKey = { itemID = id }, quantity = qty, buyoutAmount = price, status = 0 }
                 else
                     for _ = 1, qty do
                         local a = addAuction(id, price, 1, "Me", name)
-                        a.timeLeft = 4
+                        a.timeLeft = 2
                         auctionID = auctionID or a.id
                         owned[#owned + 1] =
                             { auctionID = a.id, itemKey = { itemID = id }, quantity = 1, buyoutAmount = price, status = 0 }
@@ -318,6 +331,7 @@ function sim.mail()
     if #inbox == 0 then
         return
     end
+    mailEvents = true
     MailFrame:Show()
     fire("MAIL_SHOW")
     fire("MAIL_INBOX_UPDATE")
@@ -424,6 +438,31 @@ function sim.check()
     for key, p in pairs(c.positions) do
         if p.qty > (have[key] or 0) then
             bad("position " .. key .. " holds " .. p.qty .. " but only " .. (have[key] or 0) .. " exist")
+        end
+    end
+    -- Every auction that came back is booked once.
+    local expired = 0
+    for _, e in ipairs(c.journal) do
+        if e.kind == "expired" then
+            expired = expired + (e.qty or 0)
+        end
+    end
+    if expired ~= sim.expired then
+        bad("journal has " .. expired .. " units expired, the house returned " .. sim.expired)
+    end
+    -- What the books count as on sale is on sale (else Post next bought skips stock that came back).
+    local onSale, open = {}, {}
+    for _, a in ipairs(auctions) do
+        if a.owner == "Me" then
+            onSale[a.name] = (onSale[a.name] or 0) + a.count
+        end
+    end
+    for _, l in ipairs(c.listings) do
+        open[l.name] = (open[l.name] or 0) + l.open
+    end
+    for name, n in pairs(open) do
+        if n > (onSale[name] or 0) then
+            bad("listings count " .. n .. " " .. name .. " on sale, the house has " .. (onSale[name] or 0))
         end
     end
     return problems

@@ -60,9 +60,9 @@ end
 local c = F.Data.char(F.db, F.Engine.owner())
 local positions = 0
 for _ in pairs(c.positions) do positions = positions + 1 end
-summary = string.format('deals seen %%d, bought %%d units in %%d buys, posted %%d, sold %%d, journal %%d, positions %%d'
+summary = string.format('deals seen %%d, bought %%d units in %%d buys, posted %%d, sold %%d, expired %%d, journal %%d, positions %%d'
     .. (sim.chaosRate > 0 and '; Buy tab browses %%d, reopened %%d, other addon scans %%d' or ''),
-    ticks.deals, sim.bought, ticks.bought, sim.posted, sim.sold, #c.journal, positions,
+    ticks.deals, sim.bought, ticks.bought, sim.posted, sim.sold, sim.expired, #c.journal, positions,
     sim.events.browses, sim.events.reopened, sim.events.otherScans)
 '''
 

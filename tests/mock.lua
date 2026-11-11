@@ -476,6 +476,9 @@ local function dropEmpty(i)
     local m = inbox[i]
     if (m.money or 0) == 0 and (m.items or 0) == 0 then
         table.remove(inbox, i)
+        if fire and mailEvents then
+            fire("MAIL_INBOX_UPDATE")
+        end
     end
 end
 function TakeInboxMoney(i)

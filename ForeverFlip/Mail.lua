@@ -143,6 +143,14 @@ function Mail.record(i)
     end
 end
 
+local function freeSlots()
+    local free = 0
+    for bag = 0, 4 do
+        free = free + (C_Container and C_Container.GetContainerNumFreeSlots(bag) or 0)
+    end
+    return free
+end
+
 -- The game's own mailbox buttons and other mail addons take mail through these functions.
 function Mail.hook()
     if Mail.hooked or not hooksecurefunc then
@@ -152,6 +160,10 @@ function Mail.hook()
     for _, name in ipairs({ "TakeInboxMoney", "AutoLootMailItem", "TakeInboxItem" }) do
         if _G[name] then
             hooksecurefunc(name, function(i)
+                -- With full bags the item stays in the mail: it is booked when it is really taken.
+                if name ~= "TakeInboxMoney" and freeSlots() == 0 then
+                    return
+                end
                 pcall(Mail.record, i)
             end)
         end
@@ -166,14 +178,6 @@ function Mail.count()
         end
     end
     return n
-end
-
-local function freeSlots()
-    local free = 0
-    for bag = 0, 4 do
-        free = free + (C_Container and C_Container.GetContainerNumFreeSlots(bag) or 0)
-    end
-    return free
 end
 
 function Mail.start()
@@ -212,6 +216,11 @@ function Mail.step(now)
         if Mail.isAuction(i) then
             local _, _, _, _, money, _, _, hasItem = GetInboxHeaderInfo(i)
             job.next = now + Mail.PACE
+            if (money or 0) <= 0 and hasItem and freeSlots() == 0 then
+                -- Not booked yet: the mail stays, and is booked when its item is taken.
+                Mail.stop("bags_full")
+                return
+            end
             Mail.record(i)
             if (money or 0) > 0 then
                 TakeInboxMoney(i)

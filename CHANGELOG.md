@@ -46,6 +46,11 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **The end of a full scan** no longer stalls the game on a large history: forgetting old items
   and sweeping vanished ones run a slice per frame, and the scan is copied into the saved data on
   logout instead of at once.
+- **An expired auction can be posted again at once:** its listing stops counting the units as on
+  sale when the "Auction expired" (or "Auction cancelled") mail comes, so Post next bought offers the
+  item again; a cancel made by ForeverFlip is not taken off twice when its mail arrives.
+- **Full bags at the mailbox:** an auction mail with an item is booked when the item is really
+  taken, not again on the next visit.
 - **A browse sent just before a gear check** (the game's Buy tab, another addon) can no longer be
   taken for the check's answer and report that nobody sells the item.
 - **Sales from a full scan:** items whose rows could not be read in time, and scans far smaller than

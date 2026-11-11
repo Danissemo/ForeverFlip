@@ -752,11 +752,28 @@ function T.onVendorSale(key, qty, each)
     return true
 end
 
--- "Auction expired" / "Auction cancelled": the post did not sell.
+-- "Auction expired" / "Auction cancelled": the post did not sell, and the item comes back. Its
+-- listing no longer counts the units as on sale (else Post next bought would skip them until the
+-- listing is forgotten); a cancel ForeverFlip made already took them off, and is only matched.
 function T.onFailedPost(name, count)
+    count = count or 1
     local r = rateOf(name)
-    r.failed = r.failed + (count or 1)
-    F.Data.log(char(), { at = clock(), kind = "expired", name = name, qty = count or 1, amount = 0 })
+    r.failed = r.failed + count
+    local c = char()
+    local lower, left = string.lower(name or ""), count
+    for _, l in ipairs(c.listings) do
+        if left > 0 and string.lower(l.name or "") == lower and (l.cancelled or 0) > 0 then
+            local n = math.min(left, l.cancelled)
+            l.cancelled, left = l.cancelled - n, left - n
+        end
+    end
+    for _, l in ipairs(c.listings) do
+        if left > 0 and string.lower(l.name or "") == lower and (l.open or 0) > 0 then
+            local n = math.min(left, l.open)
+            l.open, left = l.open - n, left - n
+        end
+    end
+    F.Data.log(c, { at = clock(), kind = "expired", name = name, qty = count, amount = 0 })
     F.Engine.changed()
 end
 
@@ -1038,7 +1055,10 @@ function T.cancelAuction(a)
     for _, l in ipairs(c.listings) do
         for _, id in ipairs(l.ids) do
             if id == a.auctionID then
-                l.open = math.max(0, l.open - (a.qty or 1))
+                local n = math.min(l.open, a.qty or 1)
+                l.open = l.open - n
+                -- The "Auction cancelled" mail comes later: it must not take units off again.
+                l.cancelled = (l.cancelled or 0) + n
             end
         end
     end
