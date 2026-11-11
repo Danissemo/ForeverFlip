@@ -53,13 +53,15 @@ function E.hardcore()
     return ok and active == true
 end
 
+-- The realm part of a scope: the realm name, marked on hardcore realms.
+function E.realm()
+    return tostring(GetRealmName and GetRealmName() or "?") .. (E.hardcore() and " (HC)" or "")
+end
+
 -- One auction house per realm and faction, plus the neutral house of the realm.
 E.house = nil -- "Neutral" while a neutral auction house is open
 function E.scope()
-    return tostring(GetRealmName and GetRealmName() or "?")
-        .. (E.hardcore() and " (HC)" or "")
-        .. "-"
-        .. tostring(E.house or UnitFactionGroup and UnitFactionGroup("player") or "?")
+    return E.realm() .. "-" .. tostring(E.house or UnitFactionGroup and UnitFactionGroup("player") or "?")
 end
 
 -- The cut of an auction house: learned from sale invoices, else 5% (15% on a neutral house).
@@ -208,6 +210,7 @@ function E.handle(event, ...)
     elseif event == "AUCTION_HOUSE_SHOW_ERROR" then
         F.Trade.onError()
     elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
+        F.Scan.onDropped()
         F.Deals.onDropped()
     elseif event == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then
         F.AH.throttleReset()
@@ -387,7 +390,8 @@ function E.keyBuyNext()
         return
     end
     local current = UI and UI.selected and F.Deals.get(UI.selected)
-    if not current or T.busy() then
+    local stuck = current and (current.cost > F.Engine.wallet() or T.overLimit(current.cost))
+    if not current or T.busy() or stuck then
         local best = F.Deals.best()
         if not best then
             E.notify("no_deal")

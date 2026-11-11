@@ -361,5 +361,60 @@ class OtherTests(unittest.TestCase):
         assert(C.have(10) == 7)''')
 
 
+class ReviewTests(unittest.TestCase):
+    def test_hardcore_scans_are_merged_and_cuts_learned_for_the_hardcore_house(self):
+        run(SETUP + '''Enum = Enum or {}; Enum.GameRule = { HardcoreRuleset = 7 }
+        C_GameRules = { IsGameRuleActive = function(rule) return rule == 7 end }
+        local F = ForeverFlip
+        fullScan()
+        local snap = F.Share.snapshot(); snap.at = now + 300
+        assert(snap.scope == 'Realm (HC)-Alliance')
+        assert(F.Share.merge(snap, 'Friend', 'GUILD'), 'a scan of the same hardcore realm is merged')
+        assert(F.Engine.realm() == 'Realm (HC)')''')
+
+    def test_a_request_naming_the_holder_with_the_realm_is_served(self):
+        run(SETUP + '''sentMessages = {}
+        C_ChatInfo = { RegisterAddonMessagePrefix = function() end,
+            SendAddonMessage = function(_, text, ch) sentMessages[#sentMessages + 1] = text end }
+        function GetChannelName() return 5 end
+        local S = ForeverFlip.Share
+        fullScan()
+        local at = ForeverFlip.Scan.last.at
+        S.onMessage('ForeverFlip', '!R|' .. UnitName('player') .. '-' .. GetRealmName() .. '|Realm-Alliance|' .. S.enc(at),
+            'CHANNEL', 'Other-Realm')
+        assert(#S.outbox > 0, 'the scan is sent')''')
+
+    def test_the_newest_scan_held_counts_merged_scans_after_a_reload(self):
+        run(SETUP + '''local S = ForeverFlip.Share
+        ForeverFlip.db.sharedSeen = { ['Realm-Alliance@' .. (now - 100)] = now }
+        assert(S.newest('Realm-Alliance') == now - 100)''')
+
+    def test_buy_next_skips_a_selected_deal_that_cannot_be_bought(self):
+        run(SETUP + '''fullScan(); local E, D, UI = ForeverFlip.Engine, ForeverFlip.Deals, ForeverFlip.UI
+        local best = D.best(); assert(best)
+        UI.selected = 'i:30'
+        D.list[#D.list + 1] = { key = 'i:30', cost = money + 1, profit = 1, mode = 'vendor', qty = 1 }
+        E.keyBuyNext()
+        assert(UI.selected == best.key, 'the affordable best deal is taken')''')
+
+    def test_a_gear_check_waits_for_the_sniper_query_in_flight(self):
+        run(SETUP + '''enableBrowse(); fullScan()
+        local D, U, Sn = ForeverFlip.Deals, ForeverFlip.Util, ForeverFlip.Sniper
+        Sn.query = { kind = 'keys', at = GetTime(), read = 0 }
+        assert(not D.request(U.key('gear', 20, 'Northern Shortsword of Nature Protection')),
+            'not started while the sniper waits for its answer')
+        Sn.query = nil; run(1.1)
+        assert(not D.search); assert(D.request(U.key('gear', 20, 'Northern Shortsword of Nature Protection')))''')
+
+    def test_a_dropped_full_scan_request_is_tried_again_soon(self):
+        run(SETUP + '''replicateIgnored = true; local S = ForeverFlip.Scan
+        assert(S.start()); fire('AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED')
+        assert(not S.busy() and S.cooldown() <= 10, S.cooldown())''')
+
+    def test_a_buyback_price_per_unit_is_rounded_down(self):
+        run(SETUP + BUYBACK + '''buyback = { { 10, 5, 2 } }; F.Merchant.learnBuyback()
+        assert(F.AH.vendorPrice(10) == 2)''')
+
+
 if __name__ == '__main__':
     unittest.main()

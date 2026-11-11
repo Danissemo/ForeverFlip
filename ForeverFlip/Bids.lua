@@ -82,19 +82,12 @@ end
 
 -- Exact read of a candidate: the auction with the lowest next bid still worth it.
 function B.check(key)
-    return F.Deals.enqueue(key, function(k, found)
+    return F.Deals.enqueue(key, function(k, _, _, versions)
         local c = B.get(k)
         local item = U.parseKey(k)
-        -- Gear was searched version by version: read the bids of each version found.
-        local keys, seen = {}, {}
-        for _, r in ipairs(found or {}) do
-            local sk = r.searchKey
-            local id = sk and (sk.itemID .. ":" .. (sk.itemLevel or 0) .. ":" .. (sk.itemSuffix or 0))
-            if id and not seen[id] then
-                seen[id] = true
-                keys[#keys + 1] = sk
-            end
-        end
+        -- Gear was searched version by version: read the bids of every version searched (also
+        -- versions whose auctions are all bid-only).
+        local keys = versions or {}
         local ok, rows = true, {}
         if #keys == 0 then
             ok, rows = pcall(F.AH.bidRows, item)

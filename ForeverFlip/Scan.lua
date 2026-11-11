@@ -65,7 +65,7 @@ function S.start()
     if S.cooldown() > 0 then
         return false, "cooldown"
     end
-    if not F.AH.ready() then
+    if not F.AH.ready(true) then
         return false, "throttled"
     end
     -- The job exists before the request: the answer event may come during the call itself.
@@ -113,7 +113,7 @@ function S.auto()
         and S.cooldown() <= 0
         and not F.Trade.busy()
         and not F.Deals.searching()
-        and F.AH.ready()
+        and F.AH.ready(true)
     then
         S.start()
     end
@@ -123,6 +123,17 @@ function S.stop()
     S.job = nil
 end
 
+-- AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED right after our own request: the server threw the request
+-- away, so nothing will answer it. The next try is allowed in 10 seconds.
+function S.onDropped()
+    local j = S.job
+    if j and j.state == "waiting" and not j.other and clock() - (j.at or 0) <= 3 then
+        S.job = nil
+        F.db.lastScan = clock() - S.COOLDOWN + 10
+        F.Engine.notify("scan_timeout")
+    end
+end
+
 -- Another addon called ReplicateItems (Core: E.hookReplicate). The answer comes later, and the
 -- event may never come: the scan waits for the number of auctions to change and settle.
 function S.onOtherScan()
@@ -130,7 +141,14 @@ function S.onOtherScan()
         return
     end
     F.db.lastScan = clock()
-    S.job = { state = "waiting", at = clock(), scope = F.Engine.scope(), base = F.AH.replicateCount(), last = -1 }
+    S.job = {
+        state = "waiting",
+        at = clock(),
+        scope = F.Engine.scope(),
+        base = F.AH.replicateCount(),
+        last = -1,
+        other = true,
+    }
     F.Engine.notify("scan_other")
 end
 

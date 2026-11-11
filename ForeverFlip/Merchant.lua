@@ -148,7 +148,7 @@ function V.learnBuyback(now)
         local id = link and tonumber(link:match("item:(%d+)"))
         local price, quantity = buybackInfo(i)
         if id and U.finite(price) and price >= 0 and U.finite(quantity) and quantity >= 1 then
-            local each = math.floor(price / quantity + 0.5)
+            local each = math.floor(price / quantity)
             local client = F.AH.clientVendorPrice(id)
             local old = seen[id]
             local keep = type(old) == "table"

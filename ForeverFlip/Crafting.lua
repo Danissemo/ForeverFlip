@@ -95,7 +95,7 @@ function C.profits(now)
             if price then
                 local s = F.Market.saleability(h, price, now)
                 perDay = s.known and s.perDay or nil
-                auction = F.Market.net(price, r.n) - F.Market.deposit(vendor, r.n)
+                auction = F.Market.net(price, r.n) - F.Market.deposit(F.AH.clientVendorPrice(r.out), r.n)
             end
             local vendorValue = vendor and vendor * r.n or nil
             if auction and (not vendorValue or auction > vendorValue) then

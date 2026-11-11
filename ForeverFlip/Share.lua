@@ -132,7 +132,7 @@ function S.merge(snap, from, how)
         return nil, "invalid"
     end
     local now = F.Engine.clock()
-    if realmOf(snap.scope) ~= tostring(GetRealmName and GetRealmName() or "?") then
+    if realmOf(snap.scope) ~= F.Engine.realm() then
         return nil, "other_realm"
     end
     if now - snap.at > S.MAX_AGE or snap.at > now + 600 then
@@ -460,6 +460,12 @@ function S.newest(scope)
     if last and last.scope == scope and last.at then
         newest = last.at
     end
+    for id in pairs(F.db and F.db.sharedSeen or {}) do
+        local s, at = tostring(id):match("^(.*)@(%d+)$")
+        if s == scope and tonumber(at) > newest then
+            newest = tonumber(at)
+        end
+    end
     for _, r in ipairs(S.received) do
         if r.scope == scope and (r.at or 0) > newest then
             newest = r.at
@@ -485,10 +491,6 @@ end
 function S.ask()
     local scope = F.Engine.scope()
     S.control("Q", scope, S.newest(scope))
-end
-
-local function myName()
-    return UnitName and UnitName("player") or "?"
 end
 
 -- !Q, !H and !R from other players of the channel.
@@ -541,7 +543,7 @@ function S.onControl(text, sender)
         end
         S.asked[holder .. "@" .. at] = now
         local last = F.Scan.last
-        if holder ~= myName() or not last or last.scope ~= scope or last.at ~= at then
+        if not F.AH.isPlayer(holder) or not last or last.scope ~= scope or last.at ~= at then
             return
         end
         local served = scope .. "@" .. at

@@ -209,6 +209,11 @@ local function send(kind, ids)
     end
 end
 
+-- A query of the sniper sent and not answered yet: a gear search waits for it (Deals).
+function S.inFlight()
+    return S.query ~= nil and not S.query.more and not S.query.answered
+end
+
 -- A gear search needs the browse: the round in flight gives way and starts again after a pause.
 function S.yield()
     if S.query then
@@ -250,7 +255,7 @@ function S.step()
     end
     if q then
         if q.more and F.AH.ready() and #S.candidates == 0 then
-            q.more, q.at = false, t
+            q.more, q.at, q.answered = false, t, false
             pcall(F.AH.browseMore)
         end
         return
@@ -293,6 +298,7 @@ function S.onResults(first)
         S.outsideRead = #rows
         return
     end
+    q.answered = true
     local fresh = {}
     for i = q.read + 1, #rows do
         fresh[#fresh + 1] = rows[i]

@@ -612,7 +612,8 @@ function M.evaluate(rows, ctx)
         if U.finite(market) and market > 0 then
             exit = math.min(exit, U.stepDown(market, kind))
         end
-        local profit = exit > r.unit and M.net(exit, qty) - cost - M.depositRisk(kind, ctx.vendor, qty, ctx.deposit)
+        local profit = exit > r.unit
+                and M.net(exit, qty) - cost - M.depositRisk(kind, ctx.depositVendor or ctx.vendor, qty, ctx.deposit)
             or 0
         if profit > 0 then
             local d = M.demandAt(ctx.history, exit)

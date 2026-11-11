@@ -607,7 +607,7 @@ local function learnCut(inv)
         return
     end
     local ratio = inv.cut / inv.bid
-    local realm = tostring(GetRealmName and GetRealmName() or "?")
+    local realm = F.Engine.realm()
     local scope = ratio > 0.1 and realm .. "-Neutral"
         or realm .. "-" .. tostring(UnitFactionGroup and UnitFactionGroup("player") or "?")
     F.db.cuts = F.db.cuts or {}

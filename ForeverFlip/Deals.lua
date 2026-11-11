@@ -76,6 +76,7 @@ function D.evaluate(g, vendor, history, now)
     local deal, reason = F.Market.evaluate(g.rows, {
         kind = g.kind,
         vendor = vendor,
+        depositVendor = F.AH.clientVendorPrice(g.id),
         held = held,
         itemBudget = room,
         trust = D.trust(g.key, now),
@@ -256,7 +257,8 @@ local function completeRequest(r, rows, complete)
     end
     r.completed = true
     for _, cb in ipairs(r.callbacks or {}) do
-        local ok, err = pcall(cb.run, r.key, rows, complete)
+        -- Gear: the item-key versions searched (bids read each of them).
+        local ok, err = pcall(cb.run, r.key, rows, complete, r.keys)
         if not ok then
             F.Engine.report(err)
         end
@@ -286,6 +288,12 @@ local function startRequest(r)
     D.sent[#D.sent + 1] = now
     r.attempts = (r.attempts or 0) + 1
     local ok
+    if r.item.kind == "gear" and F.AH.canSearchGear() and F.Sniper.inFlight() then
+        -- The sniper's browse is still out: its answer would be read as this one's.
+        D.search = nil
+        D.sent[#D.sent] = nil
+        return false
+    end
     if r.item.kind == "gear" and F.AH.canSearchGear() then
         -- Gear: a browse by name first (its item-key versions), then each version (see AH.lua).
         r.phase, r.keys, r.keyIndex, r.found, r.foundIDs, r.allComplete = "browse", nil, 0, {}, {}, true
@@ -389,6 +397,10 @@ local function nextGearKey(s)
         return
     end
     s.phase, s.at = "keys", clock()
+    if not F.AH.ready() then
+        s.waitKey = true -- sent from D.step once the server is ready
+        return
+    end
     if not pcall(F.AH.searchKey, key) then
         finishSearch(nil, false)
     end
@@ -674,6 +686,13 @@ end
 function D.step()
     local now = clock()
     local s = D.search
+    if s and s.waitKey and F.AH.ready() then
+        s.waitKey, s.at = nil, now
+        if not pcall(F.AH.searchKey, s.keys[s.keyIndex]) then
+            finishSearch(nil, false)
+        end
+    end
+    s = D.search
     if s and now - s.at > 10 then
         finishSearch(nil, false)
     end
