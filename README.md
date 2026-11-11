@@ -43,7 +43,8 @@
 - **Fast sniper:** browse rounds read the lowest price of every item in seconds; hot items and your
   shopping list are re-read 100 at a time; every suspicious price is checked at once.
 - **Vendor deals:** lots below what a vendor pays. Buy, sell to any merchant, keep the difference,
-  with no market risk.
+  with no market risk. The real price a merchant pays is learned from the buyback list, because
+  WoW Forever's server pays less than the game's item data for some items.
 - **Resale:** lots far below the next seller, for items that really sell at the resale price.
   - Sales are tracked auction by auction.
   - Profit counts the auction cut and the deposit risk.
@@ -58,7 +59,8 @@
 
 - **Posting rules:** undercut by a step or a percent, minimum and maximum price, units to keep, hold
   below the minimum. Never below your break-even.
-- **Post next bought / Post all:** one click per item, at the right price and an automatic duration.
+- **Post next bought / Post all:** one click per item, at the right price and the selected duration
+  (24 hours by default, or **Auto**).
 - **Cancel undercut:** cancels undercut auctions one by one, only when the repost still pays.
 - **One-click chores:** take all auction mail, sell all vendor deals at a merchant.
 
@@ -71,12 +73,14 @@
   - gold and stock of all your characters;
   - market lists and the time-of-week price pattern.
 - **History:** a 14-day price chart for any item (right-click), and tooltip prices with their age.
-- **Shared scans:** pool full scans with your guild, group or friends in game, or with the whole
-  community through GitHub ([ForeverFlip Sync](docs/community.md)); full scans are archived unchanged
+- **Shared scans:** pool full scans with every ForeverFlip user of your realm over a hidden channel,
+  with your guild, group or friends, or with the whole community through GitHub ([ForeverFlip Sync](docs/community.md)); full scans are archived unchanged
   in [ForeverFlip-Data](https://github.com/Danissemo/ForeverFlip-Data).
 - **Export:** the journal as CSV.
-- **Comfort:** key bindings, Careful / Balanced / Aggressive presets, `ForeverFlipAPI` for other
-  addons, English and Ukrainian.
+- **Safety:** a spending limit per visit, cheap lots left for others, and tooltip advice: vendor,
+  disenchant or auction house.
+- **Comfort:** key bindings (including "buy the next best deal"), Careful / Balanced / Aggressive
+  presets, `ForeverFlipAPI` for other addons, English and Ukrainian.
 
 ## 📦 Installation
 

@@ -40,8 +40,9 @@ import urllib.request
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import ffscan  # noqa: E402
+from ffscan import scope_file  # noqa: E402
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 DEFAULT_REPO = "Danissemo/ForeverFlip-Data"
 API = "https://api.github.com"
 RAW_URL = "https://raw.githubusercontent.com/{repo}/main/shared/{file}"
@@ -127,9 +128,6 @@ class GitHub:
             body = resp.read()
         return json.loads(body) if body else None
 
-    def login(self) -> str:
-        return self.request("GET", "/user")["login"]
-
     def create_gist(self, description: str, files: dict[str, str]) -> dict:
         return self.request("POST", "/gists", {"description": description, "public": False,
                                                "files": {n: {"content": c} for n, c in files.items()}})
@@ -170,9 +168,8 @@ def issue_body(scan: ffscan.RawScan, digest: str, gist_id: str) -> str:
             f"sha256: {digest}\ngist: {gist_id}\nhelper: {VERSION}\n```\n")
 
 
-def upload_new_scans(game: pathlib.Path, hub: GitHub, state: dict) -> int:
+def upload_new_scans(game: pathlib.Path, hub: GitHub, state: dict) -> None:
     done = set(state.setdefault("uploaded", []))
-    sent = 0
     for path in saved_variable_files(game):
         try:
             scans = ffscan.scans_from_saved_variables(path.read_text(encoding="utf-8", errors="replace"))
@@ -199,10 +196,8 @@ def upload_new_scans(game: pathlib.Path, hub: GitHub, state: dict) -> int:
                 hub.delete_gist(gist["id"])
                 raise
             state.setdefault("pending", []).append({"issue": issue["number"], "gist": gist["id"], "scan": ident})
-            sent += 1
             log(f"Shared the scan of {scan.scope} from {when}: {len(scan.rows)} auctions, "
                 f"{len(packed) // 1024} KB (issue #{issue['number']}).")
-    return sent
 
 
 def follow_uploads(hub: GitHub, state: dict) -> None:
@@ -232,10 +227,6 @@ def my_scopes(game: pathlib.Path) -> set[str]:
         text = path.read_text(encoding="utf-8", errors="replace")
         scopes.update(re.findall(r'\["([^"\]]+-(?:Alliance|Horde|Neutral))"\]\s*=\s*\{', text))
     return scopes
-
-
-def scope_file(scope: str) -> str:
-    return re.sub(r"[^A-Za-z0-9-]", "-", scope) + ".txt"
 
 
 def download_shared(game: pathlib.Path, repo: str) -> int:

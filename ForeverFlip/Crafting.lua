@@ -118,7 +118,18 @@ function C.profits(now)
     return out
 end
 
--- Puts the materials of `count` crafts on the shopping list, each at its current cost.
+-- Units of an item the player already has, in the bags and the bank (the bank as last seen).
+function C.have(id)
+    local count = C_Item and C_Item.GetItemCount or GetItemCount
+    if not count then
+        return 0
+    end
+    local ok, n = pcall(count, id, true)
+    return ok and U.finite(n) and n or 0
+end
+
+-- Puts the materials of `count` crafts on the shopping list, each at its current cost, less what
+-- the bags and the bank already hold.
 function C.shopMaterials(recipeID, count)
     local r = recipes()[recipeID]
     if not r then
@@ -132,7 +143,8 @@ function C.shopMaterials(recipeID, count)
         if kind and kind ~= "gear" and unit then
             local key = U.key(kind, m[1])
             local name = U.itemInfo(m[1])
-            if F.Shopping.add(key, unit, m[2] * (count or 1), name) then
+            local need = m[2] * (count or 1) - C.have(m[1])
+            if need > 0 and F.Shopping.add(key, unit, need, name) then
                 added = added + 1
             end
         end

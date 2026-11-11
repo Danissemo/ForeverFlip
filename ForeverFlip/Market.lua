@@ -464,6 +464,36 @@ end
 
 -- Deposit of one auction: the game charges at least 1 silver (seen on WoW Forever); it is returned
 -- on a sale and lost when the auction expires. Estimated from the vendor price (Classic rule).
+-- What an item is best turned into, for the tooltip (as ForeverForge Auction advises): the vendor
+-- price, the auction house assuming it sells on its third posting (the price after the cut, less
+-- three deposits), or disenchanting (a character who can). { best, value, vendor, vendorHow,
+-- auction, disenchant }; nil when nothing is known.
+M.POSTINGS = 3
+function M.advice(id, key, h)
+    local item = U.parseKey(key)
+    if not item then
+        return nil
+    end
+    local vendor, vendorHow = F.AH.vendorPrice(id, true)
+    local out = { vendor = vendor, vendorHow = vendorHow }
+    local price = h and (M.salePrice(h) or M.usual(h))
+    if U.finite(price) and price > 0 then
+        local depositFn = F.AH.depositFn(id, item.kind, F.Trade.durationFor and F.Trade.durationFor() or 3)
+        local one = depositFn and depositFn(1) or M.deposit(F.AH.clientVendorPrice(id), 1)
+        out.auction = math.floor(M.net(U.stepDown(price, item.kind), 1) - M.POSTINGS * one)
+    end
+    if item.kind == "gear" and F.Disenchant.canDisenchant() then
+        out.disenchant = F.Disenchant.value(id)
+    end
+    for _, k in ipairs({ "vendor", "auction", "disenchant" }) do
+        local v = out[k]
+        if U.finite(v) and v > 0 and (not out.value or v > out.value) then
+            out.best, out.value = k, v
+        end
+    end
+    return out.best and out or nil
+end
+
 function M.deposit(vendor, units)
     return math.max(100, math.floor((vendor or 0) * 0.15 * (units or 1)))
 end
@@ -512,11 +542,20 @@ function M.evaluate(rows, ctx)
 
     if U.finite(ctx.vendor) and ctx.vendor > 0 then
         local qty, cost, used = 0, 0, {}
+        -- Setting leaveLots: the priciest units below the vendor price stay listed for others.
+        local cheap, leave = 0, math.max(0, math.floor(s.leaveLots or 0))
         for _, r in ipairs(rows) do
             if r.unit >= ctx.vendor then
                 break
             end
-            local take = r.qty
+            cheap = cheap + r.qty
+        end
+        local allowed = cheap - leave
+        for _, r in ipairs(rows) do
+            if r.unit >= ctx.vendor or qty >= allowed then
+                break
+            end
+            local take = math.min(r.qty, allowed - qty)
             if kind == "commodity" then
                 take = math.min(take, math.floor((budget - cost) / r.unit))
             elseif cost + r.unit * take > budget then

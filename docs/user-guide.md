@@ -349,8 +349,8 @@ When your own results for an item are poor, ForeverFlip trusts the scan estimate
 so fewer resale deals are suggested for it:
 
 - **Unsold stock:** half after a day without a sale, a quarter after three days.
-- **Low sale rate:** a sale rate below 50% scales the estimate down by the same proportion, to a
-  quarter at most.
+- **Low sale rate:** a sale rate below 50% scales the estimate down by the same proportion, no lower
+  than a quarter.
 
 ## Analytics
 
@@ -427,7 +427,8 @@ per day and the price at the top of the chart. Close the window with **X**.
 
 ## Settings
 
-The Settings page has three tabs: **General** (the table below), **Key bindings** and **Sharing**.
+The Settings page has four tabs: **General** (the table below), **Key bindings**, **Sharing** and
+**Safety**.
 
 **Key bindings:**
 
@@ -438,6 +439,18 @@ The Settings page has three tabs: **General** (the table below), **Key bindings*
 - keys cannot be changed in combat.
 
 **Sharing** is described in [Sharing scans](#sharing-scans).
+
+**Safety:**
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Vendor prices not yet confirmed at a merchant count less, % | 20 | WoW Forever's server pays less than the game's item data says for some items. Until you sold an item to a merchant once, vendor deals count its vendor price this much lower. A vendor deal on such a price shows a yellow `*`. |
+| Gold one auction house visit may spend on deals | 0 | 0 = no limit. Otherwise buying stops for the visit once this much gold was spent. |
+| Cheap units of a vendor deal left for other buyers | 0 | The priciest of the cheap units stay listed, so you do not empty the market. |
+
+The tab also lists the vendor prices learned at merchants that differ from the game's data, how many
+of your own disenchants were recorded, what you spent this visit, and how often the auction house
+throttle got stuck.
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -493,6 +506,7 @@ On the **Settings → Sharing** tab:
 | Player + Send | Sends it to one player (whisper channel; they need ForeverFlip and must accept shared scans). |
 | Export as text / Import text | The scan as a text you can send anywhere, for example in Discord, and import on another account or by a friend. |
 | Keep my full scans for the ForeverFlip Sync helper | Off by default. Keeps every full scan auction by auction for the [community sharing](community.md) through GitHub. |
+| Share full scans with every ForeverFlip user of the realm | On by default. A hidden chat channel (`ForeverFlipPrices`, never shown in chat): after logging in ForeverFlip asks who has a newer scan, one player answers and sends it, and everyone who is behind keeps it. Your new scans are offered the same way. |
 
 The tab also shows the community data the Sync helper wrote, and how many full scans are kept for it.
 
@@ -501,10 +515,17 @@ How a scan is sent and received:
 - **Hidden addon messages** carry the scan, not chat lines, one message every 0.3 seconds. A scan of
   a few thousand items takes a minute or two.
 - **What is accepted:** scans of your own realm, at most 7 days old, each scan once, and never your
-  own scan back.
+  own scan back. An item whose shared price is more than 10 times off the usual price you know is
+  left out.
 - **The list of received scans** is on the same tab.
 
 ## Outside the auction house
+
+### Saved data that was not read
+
+If the game hands ForeverFlip no saved data at login, a window asks what to do. On a first install
+press **Continue**. If you used ForeverFlip before, the game did not read the file: press **Reload**.
+Playing on would replace your history with an empty one at logout.
 
 ### Alerts
 
@@ -587,6 +608,7 @@ window under **AddOns → ForeverFlip**:
 | Binding | Action |
 |---|---|
 | Buy or confirm the selected deal | Confirms a quoted purchase, otherwise buys the selected deal (or checks it first). |
+| Buy the next best deal | Each press moves on: selects the best deal you can afford (and checks it), buys it, confirms a commodity price. |
 | Post next bought (then Post all) | One step of Post next bought; when nothing is left, one step of Post all. |
 | Cancel the next undercut auction | One step of Cancel undercut. |
 | Full scan | Starts a full scan. |

@@ -39,10 +39,25 @@ function E.detectHouse()
     return nil
 end
 
+-- Hardcore realms have their own economy: their prices are kept apart (TSM does the same, with
+-- the same game rule check).
+function E.hardcore()
+    if not (C_GameRules and C_GameRules.IsGameRuleActive and Enum and Enum.GameRule) then
+        return false
+    end
+    local rule = Enum.GameRule.HardcoreRuleset
+    if rule == nil then
+        return false
+    end
+    local ok, active = pcall(C_GameRules.IsGameRuleActive, rule)
+    return ok and active == true
+end
+
 -- One auction house per realm and faction, plus the neutral house of the realm.
 E.house = nil -- "Neutral" while a neutral auction house is open
 function E.scope()
     return tostring(GetRealmName and GetRealmName() or "?")
+        .. (E.hardcore() and " (HC)" or "")
         .. "-"
         .. tostring(E.house or UnitFactionGroup and UnitFactionGroup("player") or "?")
 end
@@ -90,6 +105,7 @@ local events = {
     "AUCTION_HOUSE_PURCHASE_COMPLETED",
     "AUCTION_HOUSE_SHOW_ERROR",
     "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED",
+    "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
     "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED",
     "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
     "AUCTION_HOUSE_BROWSE_FAILURE",
@@ -102,6 +118,11 @@ local events = {
     "MAIL_CLOSED",
     "MAIL_INBOX_UPDATE",
     "MERCHANT_SHOW",
+    "MERCHANT_UPDATE",
+    "LOOT_OPENED",
+    "UNIT_SPELLCAST_START",
+    "UNIT_SPELLCAST_SUCCEEDED",
+    "CHAT_MSG_CHANNEL_NOTICE",
     "TRADE_SKILL_SHOW",
     "TRADE_SKILL_LIST_UPDATE",
     "MERCHANT_CLOSED",
@@ -117,8 +138,15 @@ end
 function E.handle(event, ...)
     if event == "ADDON_LOADED" then
         if ... == "ForeverFlip" then
+            -- The client may fail to read the saved file (other Forever addons report it). Starting
+            -- empty would overwrite the real file at logout, so the player is asked first.
+            E.noSavedData = type(ForeverFlipData) ~= "table"
             ForeverFlipData = F.Data.open(ForeverFlipData)
             F.db = ForeverFlipData
+            if E.noSavedData and F.UI and F.UI.noSavedData then
+                F.UI.noSavedData()
+            end
+            E.hookReplicate()
             F.Locale.apply(F.db.settings.language)
             E.applyCut()
             F.Mail.hook()
@@ -135,6 +163,7 @@ function E.handle(event, ...)
         return
     end
     if event == "AUCTION_HOUSE_SHOW" then
+        E.spent = 0
         E.house = E.detectHouse()
         E.applyCut()
         F.Scan.restore(E.scope())
@@ -143,6 +172,7 @@ function E.handle(event, ...)
         end
         F.Trade.ownedDue = 0
     elseif event == "AUCTION_HOUSE_CLOSED" then
+        F.AH.throttleReset()
         F.Scan.stop()
         F.Trade.checkQueue = nil
         F.Trade.checkingOwned = nil
@@ -175,10 +205,17 @@ function E.handle(event, ...)
         F.Trade.onError()
     elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
         F.Deals.onDropped()
+    elseif event == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then
+        F.AH.throttleReset()
     elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or event == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then
-        F.Sniper.onResults()
+        -- A gear search browses for the item's versions; every other browse feeds the sniper.
+        if not F.Deals.onBrowse() then
+            F.Sniper.onResults(event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+        end
     elseif event == "AUCTION_HOUSE_BROWSE_FAILURE" then
-        F.Sniper.onFailure()
+        if not F.Deals.onBrowseFailure() then
+            F.Sniper.onFailure()
+        end
     elseif event == "AUCTION_HOUSE_AUCTION_CREATED" then
         F.Trade.onAuctionCreated(...)
     elseif event == "AUCTION_HOUSE_POST_WARNING" then
@@ -197,6 +234,10 @@ function E.handle(event, ...)
         return
     elseif event == "PLAYER_MONEY" or event == "PLAYER_ENTERING_WORLD" then
         F.Analytics.recordGold()
+        if event == "PLAYER_ENTERING_WORLD" and not F.Share.joined then
+            -- The game joins its own channels first; joining ours a few seconds later keeps their order.
+            F.Share.later(8, F.Share.join, "join")
+        end
     elseif event == "PLAYER_LOGOUT" then
         F.Analytics.recordGold()
         -- Saves checks and vendor deals found since the scan (SavedVariables are written next).
@@ -219,7 +260,18 @@ function E.handle(event, ...)
             E.recipesAt = E.clock()
             F.Crafting.learn()
         end
+    elseif event == "MERCHANT_UPDATE" then
+        F.Merchant.learnBuyback()
+    elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_SUCCEEDED" then
+        F.Disenchant.onCast(...)
+    elseif event == "LOOT_OPENED" then
+        F.Disenchant.onLoot()
+    elseif event == "CHAT_MSG_CHANNEL_NOTICE" then
+        F.Share.onChannelNotice(...)
     elseif event == "MERCHANT_SHOW" or event == "MERCHANT_CLOSED" then
+        if event == "MERCHANT_SHOW" then
+            F.Merchant.learnBuyback()
+        end
         if F.UI and F.UI.merchant then
             F.UI.merchant(event == "MERCHANT_SHOW")
             F.UI.merchantOffers(event == "MERCHANT_SHOW")
@@ -260,12 +312,30 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
+-- A full scan another addon starts (Auctionator, TSM, auxForever ...) uses the account's 15-minute
+-- window: it is read too. WoW Forever does not always send REPLICATE_ITEM_LIST_UPDATE, so the call
+-- itself is watched (TSM hooks it the same way).
+function E.hookReplicate()
+    if E.replicateHooked or not hooksecurefunc or not C_AuctionHouse or not C_AuctionHouse.ReplicateItems then
+        return
+    end
+    E.replicateHooked = true
+    hooksecurefunc(C_AuctionHouse, "ReplicateItems", function()
+        if not F.AH.replicating then
+            F.Scan.onOtherScan()
+        end
+    end)
+end
+
 local paint, marks = 0, 0
 function E.update(elapsed)
     if not F.db then
         return
     end
     F.AH.pump(GetTime and GetTime() or E.clock())
+    if F.AH.isOpen() then
+        F.AH.ready(true) -- watched every frame, so a stuck "not ready" is noticed
+    end
     if not F.Deals.pending() then
         F.Scan.auto()
     end
@@ -299,6 +369,35 @@ frame:SetScript("OnUpdate", function(_, elapsed)
 end)
 
 -- Key bindings (Bindings.xml). A key press is a hardware event like a click.
+-- Buy the next deal: the best deal ready to buy is selected (checked first when it needs it), and
+-- each press moves it one step: check, buy, confirm.
+function E.keyBuyNext()
+    local T, UI = F.Trade, F.UI
+    if T.op and T.op.state == "quoted" then
+        T.confirm()
+        return
+    end
+    local current = UI and UI.selected and F.Deals.get(UI.selected)
+    if not current or T.busy() then
+        local best = F.Deals.best()
+        if not best then
+            E.notify("no_deal")
+            return
+        end
+        -- Selecting checks the deal when it needs it; the next press buys.
+        if UI and UI.selectDeal then
+            UI.selectDeal(best.key)
+        elseif UI then
+            UI.selected = best.key
+        end
+        local d = F.Deals.get(best.key)
+        if not d or not d.verified or E.clock() - d.verified > F.Deals.FRESH then
+            return
+        end
+    end
+    E.keyBuy()
+end
+
 function E.keyBuy()
     local T, UI = F.Trade, F.UI
     if T.op and T.op.state == "quoted" then

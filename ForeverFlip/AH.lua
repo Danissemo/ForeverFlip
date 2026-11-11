@@ -3,9 +3,15 @@
 --  * an item search row is a bucket of identical auctions; its price is for one item and PlaceBid
 --    buys one auction;
 --  * gear links have an empty suffix field and one ending is split over several item-key
---    versions, so gear is searched like Blizzard's Sell window (every version) and told apart by
---    its full name;
---  * commodities are bought with a quote (StartCommoditiesPurchase) and a confirmation.
+--    versions; gear is told apart by its full name (the link text carries the ending);
+--  * a sell search (SendSellSearchQuery) is never answered (seen by ForeverForge Auction), so gear
+--    is searched in two steps: a browse by name gives its item-key versions, then each version is
+--    searched (SendSearchQuery);
+--  * the throttle check can stay "not ready" for good after a message the server never answered;
+--  * commodities are bought with a quote (StartCommoditiesPurchase) and a confirmation;
+--  * the server pays less than the client's item data says for some items (recipes listed at 2s
+--    sell for 1s 50c; a wand went from 15s to 1c in a patch, seen by ForeverForge): what a merchant
+--    really paid is read from the buyback list (F.Merchant.learnBuyback).
 local F = ForeverFlip
 local U = F.Util
 local A = {}
@@ -77,9 +83,9 @@ function A.pump(now)
     end
 end
 
--- Vendor sell price, remembered between sessions. Uncached items are only queued for loading:
--- GetItemInfo on an uncached item sends a server query of its own.
-function A.vendorPrice(id)
+-- The client's vendor sell price, remembered between sessions. Uncached items are only queued for
+-- loading: GetItemInfo on an uncached item sends a server query of its own.
+function A.clientVendorPrice(id)
     local saved = F.db and F.db.vendor
     local name, _, _, _, _, _, _, _, _, _, price = U.itemInfo(id)
     if not name then
@@ -98,6 +104,31 @@ function A.vendorPrice(id)
     return price > 0 and price or nil
 end
 
+-- What a merchant pays for one, and how it is known:
+--  "seen"     a merchant paid it (buyback list), the most reliable;
+--  "estimate" the client's price less the safety margin (setting vendorMargin, percent), used for
+--             deals, because the server may pay less than the client says;
+--  "client"   the client's price as it is (raw = true: deposits and totals).
+-- nil when the vendor does not buy the item or its data has not loaded.
+function A.vendorPrice(id, raw)
+    local seen = F.db and F.db.vendorSeen and F.db.vendorSeen[id]
+    if type(seen) == "table" and U.finite(seen.p) then
+        if seen.p <= 0 then
+            return nil, "seen"
+        end
+        return seen.p, "seen"
+    end
+    local price = A.clientVendorPrice(id)
+    if not price then
+        return nil
+    end
+    local margin = not raw and F.db and tonumber(F.db.settings.vendorMargin) or 0
+    if margin > 0 then
+        return math.max(1, math.floor(price * (1 - math.min(90, margin) / 100))), "estimate"
+    end
+    return price, "client"
+end
+
 -- True when the vendor price is known, also when it is zero (the vendor does not buy the item).
 function A.vendorKnown(id)
     local saved = F.db and F.db.vendor
@@ -111,17 +142,65 @@ function A.isOpen()
     return AuctionHouseFrame and AuctionHouseFrame:IsShown() or false
 end
 
-function A.ready()
-    return not AH.IsThrottledMessageSystemReady or AH.IsThrottledMessageSystemReady()
+-- Is the server ready for the next auction house message? The client can get stuck on "not ready"
+-- after a message the server never answered, and then nothing would ever be sent again until the
+-- auction house is closed: after A.STUCK seconds of "not ready", watched without a break, one
+-- message goes through (the worst it does is get dropped, which is handled). peek: only watch.
+A.STUCK = 5
+local notReadySince, lastCheck
+function A.ready(peek)
+    if not AH.IsThrottledMessageSystemReady then
+        return true
+    end
+    local t = GetTime and GetTime() or time()
+    local gap = lastCheck and t - lastCheck or math.huge
+    lastCheck = t
+    if AH.IsThrottledMessageSystemReady() then
+        notReadySince = nil
+        return true
+    end
+    if gap > 1 then
+        notReadySince = nil
+    end
+    notReadySince = notReadySince or t
+    if not peek and t - notReadySince >= A.STUCK then
+        notReadySince = t
+        A.forced = (A.forced or 0) + 1
+        return true
+    end
+    return false
+end
+
+-- AUCTION_HOUSE_THROTTLED_SYSTEM_READY, or the auction house closed.
+function A.throttleReset()
+    notReadySince, lastCheck = nil, nil
 end
 
 function A.player()
     return UnitName("player")
 end
 
+-- Is this owner the player? Owner lists name the player "player" (TSM normalises it the same way).
+-- WoW Forever characters have surnames and names are not unique, so a realm part is ignored.
+function A.isPlayer(owner)
+    if type(owner) ~= "string" or owner == "" then
+        return false
+    end
+    if owner == "player" then
+        return true
+    end
+    local me = UnitName("player")
+    return owner == me or owner:match("^([^%-]+)") == me
+end
+
 -- Full scan -------------------------------------------------------------------------------------
 function A.replicate()
-    AH.ReplicateItems()
+    A.replicating = true -- our own call: the ReplicateItems hook ignores it
+    local ok, err = pcall(AH.ReplicateItems)
+    A.replicating = false
+    if not ok then
+        error(err, 0)
+    end
 end
 function A.replicateCount()
     return AH.GetNumReplicateItems() or 0
@@ -171,7 +250,7 @@ function A.replicateRaw(i)
         minBid = minBid,
         bid = bidAmount,
         band = band,
-        own = owner ~= nil and owner == UnitName("player"),
+        own = A.isPlayer(owner),
         link = AH.GetReplicateItemLink and AH.GetReplicateItemLink(i) or nil,
     }
 end
@@ -193,6 +272,36 @@ function A.search(item)
     else
         AH.SendSearchQuery(plainKey(item.id), sorts(), true)
     end
+end
+
+-- Gear in two steps (see the top of the file). Step 1: a browse by the item's own name (without
+-- the ending), which lists its item-key versions.
+function A.canSearchGear()
+    return A.canBrowse()
+end
+function A.gearBrowse(item)
+    local name = U.itemInfo(item.id)
+    AH.SendBrowseQuery({
+        searchString = name or item.name or "",
+        sorts = sorts(),
+        filters = {},
+        itemClassFilters = {},
+    })
+end
+-- The item-key versions of `id` in the browse results so far.
+function A.gearKeys(id)
+    local out = {}
+    local ok, results = pcall(AH.GetBrowseResults)
+    for _, r in ipairs(ok and results or {}) do
+        if type(r.itemKey) == "table" and r.itemKey.itemID == id then
+            out[#out + 1] = r.itemKey
+        end
+    end
+    return out
+end
+-- Step 2: one exact version.
+function A.searchKey(key)
+    AH.SendSearchQuery(key, sorts(), true)
 end
 function A.more(item)
     if item.kind == "commodity" then
@@ -270,12 +379,12 @@ function A.browseResults()
 end
 
 -- Auctions of an exact item search that take a bid: { auctionID, bid = next bid, qty }.
-function A.bidRows(item)
+function A.bidRows(item, searchKey)
     local out = {}
     if item.kind == "commodity" then
         return out
     end
-    local key = plainKey(item.id)
+    local key = type(searchKey) == "table" and searchKey or plainKey(item.id)
     for i = 1, (AH.GetNumItemSearchResults(key) or 0) do
         local r = AH.GetItemSearchResultInfo(key, i)
         if

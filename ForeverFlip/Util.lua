@@ -1,6 +1,6 @@
 ForeverFlip = ForeverFlip or {}
 local F = ForeverFlip
-F.version = "1.1.0"
+F.version = "1.2.0"
 local U = {}
 F.Util = U
 

@@ -430,6 +430,19 @@ function answer()
     assert(s, "no search in flight")
     if s.item.kind == "commodity" then
         fire("COMMODITY_SEARCH_RESULTS_UPDATED", s.item.id)
+    elseif s.phase then
+        -- Gear: the browse for its versions (page by page), then one search per version.
+        local guard = 0
+        while ForeverFlip.Deals.search == s and s.phase == "browse" do
+            browseAnswer()
+            guard = guard + 1
+            assert(guard < 50, "gear browse never ends")
+        end
+        while ForeverFlip.Deals.search == s and s.phase == "keys" do
+            fire("ITEM_SEARCH_RESULTS_UPDATED", s.keys[s.keyIndex])
+            guard = guard + 1
+            assert(guard < 50, "gear versions never end")
+        end
     else
         fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = s.item.id })
     end

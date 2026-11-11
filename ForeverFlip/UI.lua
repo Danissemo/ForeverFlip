@@ -37,7 +37,7 @@ local MESSAGES = {
     bags_full = "The bags are full.",
     scan_done = "Full scan processed.",
     scan_empty = "The auction house returned an empty scan. Try again later.",
-    scan_timeout = "The auction house did not answer the full scan (another addon may have used the 15-minute window). Next try in a minute.",
+    scan_timeout = "The auction house did not answer the full scan in 10 minutes (another addon may have used the 15-minute window). Next try in a minute.",
     scan_other = "Another addon requested a full scan: ForeverFlip reads it too.",
     quote_ready = "Price confirmed. Press Confirm purchase.",
     price_changed = "The price changed. The deal is checked again.",
@@ -58,6 +58,8 @@ local MESSAGES = {
     values = "Check the quantity and the price.",
     confirm = "The game asks for a confirmation: press Post again.",
     cancelled = "Auction cancelled. The item comes back by mail; the deposit is lost.",
+    spend_limit = "The spending limit of this auction house visit is reached (Settings, Safety tab).",
+    no_deal = "No deal to buy right now.",
 }
 
 -- Widgets ---------------------------------------------------------------------------------------------
@@ -674,7 +676,10 @@ end
 
 local MODE_LABELS = { vendor = "vendor", shop = "shopping list", disenchant = "disenchant", bid = "bid" }
 local function estimateText(d, estimate)
-    if d.mode ~= "flip" then
+    if d.mode == "vendor" and d.vendorHow and d.vendorHow ~= "seen" then
+        -- The server may pay less than the client says until a merchant confirmed the price.
+        return L("vendor") .. " |cffffd100*|r"
+    elseif d.mode ~= "flip" then
         return L(MODE_LABELS[d.mode] or d.mode)
     elseif not estimate.known then
         return "-"
@@ -2232,25 +2237,152 @@ function UI.showText(title, value, onImport)
 end
 
 -- Settings page ------------------------------------------------------------------------------------
--- Three tabs: General, Key bindings, Sharing.
+-- Four tabs: General, Key bindings, Sharing, Safety.
 function UI.createSettings(p)
     UI.settingTabs, UI.settingFrames = {}, {}
-    local tabs = { { "general", "General" }, { "keys", "Key bindings" }, { "share", "Sharing" } }
+    local tabs = {
+        { "general", "General" },
+        { "keys", "Key bindings" },
+        { "share", "Sharing" },
+        { "safety", "Safety" },
+    }
     for i, t in ipairs(tabs) do
         local frame = CreateFrame("Frame", nil, p)
         frame:SetPoint("TOPLEFT", p, "TOPLEFT", 0, -30)
         frame:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 0)
         UI.settingFrames[t[1]] = frame
-        local b = button(p, t[2], 150, function()
+        local b = button(p, t[2], 140, function()
             UI.showSettingsTab(t[1])
         end)
-        b:SetPoint("TOPLEFT", p, "TOPLEFT", 8 + (i - 1) * 156, -4)
+        b:SetPoint("TOPLEFT", p, "TOPLEFT", 8 + (i - 1) * 146, -4)
         UI.settingTabs[t[1]] = b
     end
     UI.createGeneralSettings(UI.settingFrames.general)
     UI.createKeySettings(UI.settingFrames.keys)
     UI.createShareSettings(UI.settingFrames.share)
+    UI.createSafetySettings(UI.settingFrames.safety)
     UI.showSettingsTab("general")
+end
+
+-- Safety: the vendor price margin, the spending limit, lots left for others, and what was learned.
+function UI.createSafetySettings(p)
+    local fields = {
+        { "vendorMargin", "Vendor prices not yet confirmed at a merchant count less, %" },
+        { "spendLimit", "Gold one auction house visit may spend on deals (0 = no limit)" },
+        { "leaveLots", "Cheap units of a vendor deal left for other buyers" },
+    }
+    UI.safetyBoxes = {}
+    for i, f in ipairs(fields) do
+        local label = text(p, "GameFontNormal")
+        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -6 - (i - 1) * 23)
+        label:SetWidth(380)
+        label:SetText(L(f[2]))
+        local e = editbox(p, 80)
+        e:SetPoint("LEFT", label, "RIGHT", 10, 0)
+        e.field = f
+        UI.safetyBoxes[i] = e
+    end
+    UI.safetySave = button(p, "Save", 110, function()
+        for _, e in ipairs(UI.safetyBoxes) do
+            local v = tonumber(e:GetText())
+            if v and v >= 0 then
+                if e.field[1] == "vendorMargin" then
+                    v = U.clamp(math.floor(v), 0, 90)
+                end
+                F.db.settings[e.field[1]] = math.floor(v)
+            end
+        end
+        UI.loadSafety()
+        F.Engine.notify("saved")
+    end)
+    UI.safetySave:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -6 - #fields * 23 - 4)
+    UI.safetyText = text(p, "GameFontHighlightSmall")
+    UI.safetyText:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -6 - #fields * 23 - 40)
+    UI.safetyText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -6 - #fields * 23 - 40)
+    UI.safetyText:SetSpacing(3)
+    UI.loadSafety()
+end
+
+function UI.loadSafety()
+    for _, e in ipairs(UI.safetyBoxes or {}) do
+        e:SetText(tostring(F.db.settings[e.field[1]] or 0))
+    end
+end
+
+function UI.refreshSafety()
+    if not UI.safetyText then
+        return
+    end
+    local lines = {}
+    local seen = 0
+    for _ in pairs(F.db.vendorSeen or {}) do
+        seen = seen + 1
+    end
+    local differ = F.Merchant.differences()
+    lines[#lines + 1] = string.format(
+        L("Vendor prices confirmed at merchants: %d; different from the game's item data: %d."),
+        seen,
+        #differ
+    )
+    for i = 1, math.min(5, #differ) do
+        local d = differ[i]
+        local name = U.itemInfo(d.id) or ("item " .. d.id)
+        lines[#lines + 1] = string.format("  %s: %s (%s %s)", name, U.money(d.seen), L("game says"), U.money(d.client))
+    end
+    lines[#lines + 1] = L("Sell an item to any merchant once and its real price is used from then on.")
+    local bands, learned = 0, 0
+    for _, b in pairs(F.db.deSeen or {}) do
+        bands = bands + 1
+        if (b.n or 0) >= F.Disenchant.LEARN then
+            learned = learned + 1
+        end
+    end
+    lines[#lines + 1] = string.format(
+        L("Own disenchants: %d item bands seen, %d used instead of the table (from %d disenchants each)."),
+        bands,
+        learned,
+        F.Disenchant.LEARN
+    )
+    local limit = tonumber(F.db.settings.spendLimit) or 0
+    if limit > 0 then
+        lines[#lines + 1] = string.format(
+            L("Spent on deals this visit: %s of %s."),
+            U.money(F.Engine.spent or 0),
+            U.money(limit * 10000)
+        )
+    end
+    if (F.AH.forced or 0) > 0 then
+        lines[#lines + 1] = string.format(
+            L("The auction house throttle was stuck %d times; ForeverFlip went on after 5 seconds."),
+            F.AH.forced
+        )
+    end
+    UI.safetyText:SetText(table.concat(lines, "\n"))
+end
+
+-- The client did not hand over any saved data. On a first install that is normal; otherwise the
+-- file was not read, and playing on would overwrite it at logout. The player decides.
+function UI.noSavedData()
+    if not StaticPopupDialogs or not StaticPopup_Show then
+        print("ForeverFlip: " .. L("No saved data was loaded. If you used ForeverFlip before, type /reload now."))
+        return
+    end
+    StaticPopupDialogs.FOREVERFLIP_NO_DATA = {
+        text = L(
+            "ForeverFlip found no saved data.\n\nFirst time? Press Continue.\n\nUsed it before? The game did not read the file: press Reload. Playing on would replace your history at logout."
+        ),
+        button1 = L("Reload"),
+        button2 = L("Continue"),
+        OnAccept = function()
+            if ReloadUI then
+                ReloadUI()
+            end
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = false,
+    }
+    StaticPopup_Show("FOREVERFLIP_NO_DATA")
 end
 
 function UI.showSettingsTab(id)
@@ -2269,6 +2401,7 @@ end
 -- Key bindings: click a button, press the key. Right-click clears; Escape cancels.
 UI.BINDINGS = {
     { "FOREVERFLIP_BUY", "Buy or confirm the selected deal" },
+    { "FOREVERFLIP_BUY_NEXT", "Buy the next best deal (check, buy, confirm)" },
     { "FOREVERFLIP_POST", "Post next bought (then Post all)" },
     { "FOREVERFLIP_CANCEL", "Cancel the next undercut auction" },
     { "FOREVERFLIP_SCAN", "Full scan" },
@@ -2422,11 +2555,19 @@ function UI.createShareSettings(p)
         t:SetText(L(label))
         return box
     end
-    UI.shareReceiveBox = toggle(-8, "shareReceive", "Accept full scans shared by guild and group members")
-    UI.shareAutoBox = toggle(-36, "shareAuto", "Send my full scans to the guild after each scan")
-    UI.rawBox = toggle(-64, "rawScans", "Keep my full scans for the ForeverFlip Sync helper (community data)")
+    toggle(-8, "shareReceive", "Accept full scans shared by guild and group members")
+    toggle(-36, "shareAuto", "Send my full scans to the guild after each scan")
+    toggle(-64, "rawScans", "Keep my full scans for the ForeverFlip Sync helper (community data)")
+    local channel = toggle(-92, "shareChannel", "Share full scans with every ForeverFlip user of the realm")
+    channel:HookScript("OnClick", function(self)
+        if self:GetChecked() then
+            F.Share.join()
+        else
+            F.Share.leave()
+        end
+    end)
     local send = text(p, "GameFontNormal")
-    send:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -104)
+    send:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -132)
     send:SetText(L("Send my last scan to:"))
     UI.shareGuild = button(p, "Guild", 100, function()
         local _, why = F.Share.send("GUILD")
@@ -2439,7 +2580,7 @@ function UI.createShareSettings(p)
     end)
     UI.shareGroup:SetPoint("LEFT", UI.shareGuild, "RIGHT", 4, 0)
     local whisper = text(p, "GameFontNormal")
-    whisper:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -136)
+    whisper:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -164)
     whisper:SetText(L("Player:"))
     UI.shareName = editbox(p, 140)
     UI.shareName:SetPoint("LEFT", whisper, "RIGHT", 10, 0)
@@ -2459,7 +2600,7 @@ function UI.createShareSettings(p)
             F.Share.encode(snap)
         )
     end)
-    UI.shareExport:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -170)
+    UI.shareExport:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -198)
     UI.shareImport = button(p, "Import text", 150, function()
         UI.showText(L("Paste a shared scan (Ctrl+V), then press Import."), "", function(textValue)
             local merged, why = F.Share.import(textValue)
@@ -2469,8 +2610,8 @@ function UI.createShareSettings(p)
     end)
     UI.shareImport:SetPoint("LEFT", UI.shareExport, "RIGHT", 6, 0)
     UI.shareText = text(p, "GameFontHighlightSmall")
-    UI.shareText:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -208)
-    UI.shareText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -208)
+    UI.shareText:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -236)
+    UI.shareText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -236)
     UI.shareText:SetSpacing(3)
 end
 
@@ -2581,14 +2722,13 @@ function UI.createGeneralSettings(p)
         F.db.settings.autoScan = self:GetChecked() and true or false
     end)
     scan:SetChecked(F.db.settings.autoScan)
-    UI.autoScanBox = scan
     local scanText = text(p, "GameFontHighlightSmall")
     scanText:SetPoint("LEFT", scan, "RIGHT", 2, 0)
     scanText:SetWidth(250)
     scanText:SetText(L("Full scan every 15 minutes while the auction house is open"))
     -- Two columns of checkboxes, 28 pixels apart.
     local slots = 2
-    local function toggle(_, setting, label)
+    local function toggle(setting, label)
         local box = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
         local column, row = slots % 2, math.floor(slots / 2)
         slots = slots + 1
@@ -2614,21 +2754,13 @@ function UI.createGeneralSettings(p)
         t:SetText(L(label))
         return box
     end
-    UI.sniperBox = toggle(90, "sniper", "Sniper: between scans, re-read the items most often near a deal")
-    UI.alertBox = toggle(118, "alerts", "Sound and screen notice when a deal can be bought")
-    UI.tooltipBox = toggle(146, "tooltipPrices", "Price history from the scans in item tooltips")
-    UI.holdBox = toggle(174, "belowMin", "Keep items in the bags when the market is below their floor")
-    UI.learnBox = toggle(202, "learnBrowsing", "Learn prices and deals from my own searches in the Buy tab")
-    UI.highlightBox = toggle(230, "highlight", "Mark deals in the game's Buy tab")
-    UI.disenchantBox = toggle(258, "disenchant", "Disenchant deals (for a character who knows Disenchant)")
-    UI.settingToggles = {
-        sniper = UI.sniperBox,
-        alerts = UI.alertBox,
-        tooltipPrices = UI.tooltipBox,
-        learnBrowsing = UI.learnBox,
-        highlight = UI.highlightBox,
-        disenchant = UI.disenchantBox,
-    }
+    UI.sniperBox = toggle("sniper", "Sniper: between scans, re-read the items most often near a deal")
+    toggle("alerts", "Sound and screen notice when a deal can be bought")
+    toggle("tooltipPrices", "Price history from the scans in item tooltips")
+    toggle("belowMin", "Keep items in the bags when the market is below their floor")
+    toggle("learnBrowsing", "Learn prices and deals from my own searches in the Buy tab")
+    toggle("highlight", "Mark deals in the game's Buy tab")
+    toggle("disenchant", "Disenchant deals (for a character who knows Disenchant)")
     local lang = text(p, "GameFontNormal")
     lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 30 - math.ceil(slots / 2) * 28 - 8)
     lang:SetText(L("Language (applies after /reload)"))
@@ -2695,7 +2827,7 @@ end
 
 -- Status -------------------------------------------------------------------------------------------
 local PROGRESS = {
-    scan_waiting = "Waiting for the auction house to send the full scan...",
+    scan_waiting = "Waiting for the auction house to send the full scan (%d s of up to %d)...",
     scan_reading = "Reading auctions %d / %d",
     scan_recovering = "Loading item data for the remaining auctions %d / %d",
     scan_finishing = "Evaluating items %d / %d",
@@ -2859,6 +2991,8 @@ function UI.refresh()
             UI.refreshKeys()
         elseif UI.settingsTab == "share" then
             UI.refreshShare()
+        elseif UI.settingsTab == "safety" then
+            UI.refreshSafety()
         end
     end
 end
@@ -3144,6 +3278,12 @@ function UI.age(at)
 end
 
 -- Item tooltips: the item's prices from the full scans.
+local ADVICE = {
+    vendor = "Best: sell to a vendor",
+    auction = "Best: post on the auction house (after cut and deposits)",
+    disenchant = "Best: disenchant",
+}
+
 local function tooltipLines(tooltip)
     if not F.db or not F.db.settings.tooltipPrices or not tooltip.GetItem then
         return
@@ -3237,6 +3377,14 @@ local function tooltipLines(tooltip)
             1,
             1
         )
+    end
+    local advice = F.Market.advice(id, key, h)
+    if advice then
+        local note = ""
+        if advice.best == "vendor" and advice.vendorHow ~= "seen" then
+            note = " |cff999999(" .. L("vendor price not confirmed yet") .. ")|r"
+        end
+        tooltip:AddDoubleLine(L(ADVICE[advice.best]) .. note, U.money(advice.value), 1, 0.82, 0, 1, 1, 1)
     end
     tooltip:Show()
 end

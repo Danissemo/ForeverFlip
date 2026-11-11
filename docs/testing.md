@@ -35,6 +35,7 @@ python -m unittest discover -s tests -p "test_*.py"
 | `test_share.py` | Shared scans: text form, sending, receiving, merging, rejection; key bindings in the settings; statistics display. |
 | `test_sync.py` | Full-scan capture, the SavedVariables reader, FFR1 and FF1 formats, the usual price in Python and Lua, the aggregator. |
 | `test_extras.py` | `ForeverFlipAPI`, aux fallback, CSV export, realm gold, presets. |
+| `test_forever12.py` | 1.2: vendor prices from the buyback list and the margin, the stuck throttle, owner names, gear searched by browse and version, other addons' full scans, the scan wait, disenchant rules and learning, the realm channel, the trust filter, the spending limit, cheap lots left, Buy next, the saved-data guard, hardcore scopes, tooltip advice. |
 | `test_locale.py` | Every `L("...")` string has a Ukrainian translation, and no key is translated twice. |
 
 The CI workflow runs the same tests, checks formatting with StyLua, and builds the archive on every
@@ -92,3 +93,27 @@ list on a live realm. If something goes wrong, note the chat line (`ForeverFlip 
 | ✅ | CSV export | `/ff export` opens the journal as CSV. |
 | ⬜ | Persistence | After `/reload` the last scan and its deals are listed as *from scan*. |
 | ⬜ | Language | `/ff lang en` and `/reload` switch to English. |
+
+### New in 1.2
+
+Do a full game restart after installing 1.2 (Bindings.xml has a new key).
+
+| | Area | Check |
+|---|---|---|
+| ⬜ | Vendor price learned | Sell any item to a merchant. Settings → Safety counts it under "confirmed at merchants"; if it differs from the game's data, it is listed with both prices. |
+| ⬜ | Vendor deal mark | A vendor deal on an item you never sold shows `vendor *`; after selling one to a merchant the `*` is gone at the next scan. |
+| ⬜ | Gear check | Select a gear deal (or press Check prices on My auctions with gear): the status turns to checked within a few seconds, not "no answer". |
+| ⬜ | Gear nobody sells | Check prices on a gear auction only you sell: it shows "only yours" at once. |
+| ⬜ | Full scan wait | When the server is slow, the status counts the seconds (`... (35 s of up to 600)`) and the scan is read when the answer comes. |
+| ⬜ | Other addon's scan | Start a full scan in Auctionator or auxForever: ForeverFlip says it reads it too and processes it. |
+| ⬜ | No freeze | Browse the whole house in another addon (or the game's Buy tab with an empty search): the game does not freeze. |
+| ⬜ | Sniper keeps going | Leave the auction house open with the sniper on for 10 minutes: rounds keep growing; Safety shows how often the throttle got stuck. |
+| ⬜ | Realm channel | `/chatlist` (or the chat channel list) does not show ForeverFlipPrices in any chat window. With a second ForeverFlip user online, a new scan of one appears under Received for the other. |
+| ⬜ | Disenchant learning | Disenchant a green item; after 15 of one band Safety shows a learned band. |
+| ⬜ | Tooltip advice | Item tooltips show "Best: ..." with a value. |
+| ⬜ | Spending limit | Set 1 gold in Safety; buying stops with the limit message once 1 gold was spent this visit. |
+| ⬜ | Leave lots | Set 5 in Safety; a vendor deal of commodities leaves 5 cheap units unbought. |
+| ⬜ | Buy next key | Bind it in Settings → Key bindings. Press: the best deal is selected and checked; press again: it is bought; for a commodity, press again to confirm. |
+| ⬜ | Hardcore | On a hardcore realm the prices are separate from the normal realm of the same name. |
+| ⬜ | Shop materials | With materials in the bags, Shop materials adds only what is missing. |
+| ⬜ | Saved data guard | Rename `ForeverFlip.lua` in SavedVariables while the game is closed, start the game: the window asks Reload / Continue. Put the file back afterwards. |

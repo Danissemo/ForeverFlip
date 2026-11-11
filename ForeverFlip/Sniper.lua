@@ -16,6 +16,12 @@ S.PAUSE = 2.5 -- seconds between two rounds of the whole house
 S.KEYS = 100 -- items per key query
 S.TIMEOUT = 10 -- seconds without an answer before a query is given up
 S.REJUDGE = 120 -- seconds before an unchanged lowest price is judged again
+S.PER_FRAME = 300 -- browse rows of other addons' searches read per frame
+
+-- Browses other addons (or the player) send are read too, but only their new rows, a few hundred
+-- per frame: re-reading every row at each page froze the game while another addon browsed the
+-- whole house (ForeverForge Auction 2.1.14 fixed the same freeze).
+S.backlog, S.backlogAt, S.outsideRead = {}, 1, 0
 
 S.candidates = {} -- keys waiting for an exact check, best first: { key, score }
 S.judged = {} -- key -> { price, at } of the last judgement
@@ -203,8 +209,35 @@ local function send(kind, ids)
     end
 end
 
+-- A gear search needs the browse: the round in flight gives way and starts again after a pause.
+function S.yield()
+    if S.query then
+        S.query = nil
+        S.nextRound = now() + S.PAUSE
+    end
+end
+
+local function readBacklog()
+    local stop = math.min(#S.backlog, S.backlogAt + S.PER_FRAME - 1)
+    if stop < S.backlogAt then
+        return
+    end
+    local part = {}
+    for i = S.backlogAt, stop do
+        part[#part + 1] = S.backlog[i]
+    end
+    S.backlogAt = stop + 1
+    if S.backlogAt > #S.backlog then
+        S.backlog, S.backlogAt = {}, 1
+    end
+    S.read(part)
+end
+
 -- Called every frame.
 function S.step()
+    if #S.backlog > 0 and F.db then
+        readBacklog()
+    end
     if not S.active() then
         S.query = nil
         return
@@ -247,11 +280,17 @@ end
 
 -- AUCTION_HOUSE_BROWSE_RESULTS_UPDATED / _ADDED. Results of a query the player sent in the game's
 -- own Buy tab are read too (lowest prices and candidates), without changing the round.
-function S.onResults()
+function S.onResults(first)
     local q = S.query
     local rows = F.AH.browseResults()
     if not q then
-        S.read(rows)
+        if first or #rows < S.outsideRead then
+            S.outsideRead = 0
+        end
+        for i = S.outsideRead + 1, #rows do
+            S.backlog[#S.backlog + 1] = rows[i]
+        end
+        S.outsideRead = #rows
         return
     end
     local fresh = {}
@@ -282,4 +321,5 @@ end
 -- The auction house closed or the sniper was switched off.
 function S.reset()
     S.query, S.candidates, S.nextRound = nil, {}, nil
+    S.backlog, S.backlogAt, S.outsideRead = {}, 1, 0
 end

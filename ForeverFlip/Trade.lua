@@ -42,6 +42,9 @@ function T.buy(key)
     if deal.cost > F.Engine.wallet() then
         return false, "no_money"
     end
+    if T.overLimit(deal.cost) then
+        return false, "spend_limit"
+    end
     local op = {
         key = deal.key,
         kind = deal.kind,
@@ -134,7 +137,14 @@ function T.cancel()
     end
 end
 
+-- Setting spendLimit (gold): what one auction house visit may spend on deals.
+function T.overLimit(cost)
+    local limit = tonumber(F.db.settings.spendLimit) or 0
+    return limit > 0 and (F.Engine.spent or 0) + (cost or 0) > limit * 10000
+end
+
 local function bought(op)
+    F.Engine.spent = (F.Engine.spent or 0) + (op.cost or 0)
     local c = char()
     local name = displayName(op.key, op.link)
     F.Data.addPosition(c, op.key, name, op.qty, op.cost, op.mode, op.exit, clock())
@@ -525,7 +535,7 @@ function T.onOwned()
     for _, a in ipairs(owned) do
         a.key = F.AH.keyFor(a.id, a.link)
     end
-    T.owned, T.ownedAt = owned, clock()
+    T.owned = owned
     local c = char()
     c.booked = c.booked or {}
     local changed = false

@@ -1,6 +1,8 @@
 -- Saved data (SavedVariables ForeverFlipData).
 --   settings          language, profit floors, spending share
---   vendor[itemID]    vendor sell price (0 = cannot be sold to a vendor)
+--   vendor[itemID]    the client's vendor sell price (0 = cannot be sold to a vendor)
+--   vendorSeen[itemID] what a merchant really paid: { p = copper each, t = when, c = client price }
+--   deSeen[band]      own disenchant results per item band: { n = disenchants, [itemID] = units }
 --   lastScan          time of the last full scan request (one per 15 minutes for the account)
 --   markets[scope]    per auction house: history[key] = { scan = {...}, flow = {...} }, stats
 --   chars[owner]      per character: positions, journal, pending purchases, listings
@@ -17,7 +19,7 @@ D.DEFAULTS = {
     duration = 3, -- 1 = 2 h, 2 = 8 h, 3 = 24 h, 0 = automatic from the item's sales
     autoScan = true, -- full scan every 15 minutes while the auction house is open
     itemShare = 0.3, -- share of the money one item may hold (stock and new resale)
-    sniper = true, -- re-read hot items between full scans (one search per second)
+    sniper = true, -- browse for cheap listings between scans; fall back to hot item searches
     alerts = true, -- sound and screen notice when a deal can be bought
     alertMinProfit = 50, -- copper: smaller deals are listed without a notice
     tooltipPrices = true, -- price history lines in item tooltips
@@ -31,6 +33,10 @@ D.DEFAULTS = {
     shareReceive = true, -- merge full scans shared by guild and group members
     shareAuto = false, -- send each own full scan to the guild
     rawScans = false, -- keep full scans for the ForeverFlip Sync helper (community data)
+    shareChannel = true, -- share full scans with every ForeverFlip user of the realm (hidden channel)
+    vendorMargin = 20, -- percent off the client's vendor price until a merchant's real price is seen
+    spendLimit = 0, -- gold one auction house visit may spend on deals (0 = no limit)
+    leaveLots = 0, -- cheap lots (or commodity units) of a deal left for other buyers
 }
 
 function D.open(saved)
@@ -43,6 +49,8 @@ function D.open(saved)
         end
     end
     db.vendor = type(db.vendor) == "table" and db.vendor or {}
+    db.vendorSeen = type(db.vendorSeen) == "table" and db.vendorSeen or {}
+    db.deSeen = type(db.deSeen) == "table" and db.deSeen or {}
     db.markets = type(db.markets) == "table" and db.markets or {}
     db.chars = type(db.chars) == "table" and db.chars or {}
     return db

@@ -28,8 +28,13 @@ class FastSniperTests(unittest.TestCase):
             if D.searching() then answer() end
             run(0.5);n=n+1;assert(n<20,'cloth never checked')
         end
-        run(0.1);assert(lastCall('RequestMoreBrowseResults'),'then the next page')
-        while browsePendingNow() do browseAnswer();run(0.1) end
+        -- Then the round goes on: the next page, or (a gear check needed the browse) a new round.
+        run(3);assert(lastCall('RequestMoreBrowseResults') or browsePendingNow(),'the round goes on')
+        local guard=0
+        while browsePendingNow() or D.searching() do
+            if D.searching() then answer() else browseAnswer() end
+            run(0.1);guard=guard+1;assert(guard<200)
+        end
         assert(Sn.rounds==1 and Sn.items>=3,Sn.items)''')
 
     def test_unchanged_price_is_not_checked_again_right_away(self):
@@ -66,7 +71,7 @@ class FastSniperTests(unittest.TestCase):
         lua = runtime()
         lua.execute(FAST + '''
         D.setSniper(false);ForeverFlip.db.settings.sniper=true;Sn.reset()
-        C_AuctionHouse.SendBrowseQuery({});browseAnswer()
+        C_AuctionHouse.SendBrowseQuery({});browseAnswer();run(0.1)
         local found=false;for _,c in ipairs(Sn.candidates) do if c.key=='c:10' then found=true end end
         assert(found,'a browse of the game UI is read too')''')
 

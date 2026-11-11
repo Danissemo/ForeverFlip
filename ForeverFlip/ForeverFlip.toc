@@ -2,7 +2,7 @@
 ## Title: ForeverFlip
 ## Notes: Auction house trading assistant: finds lots below vendor price or far below the next seller, verifies them live and helps buy, post and track profit.
 ## Author: ForeverFlip contributors
-## Version: 1.1.0
+## Version: 1.2.0
 ## OptionalDeps: LibAHTab, auxForever, ForeverFlip_Shared
 ## SavedVariables: ForeverFlipData, ForeverFlipRaw
 

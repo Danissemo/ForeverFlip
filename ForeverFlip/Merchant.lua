@@ -115,3 +115,68 @@ function V.buy(offer)
     F.Engine.changed()
     return true
 end
+
+-- What merchants really pay ---------------------------------------------------------------------------
+-- WoW Forever's server pays less than the client's item data says for some items. The buyback list
+-- shows what was paid for each of the last things sold, so every price there is remembered for the
+-- account (F.db.vendorSeen) and used before the client's (F.AH.vendorPrice). The newest sale wins,
+-- so a patch that changes a price is learned at the next sale. Damaged gear sells for less and the
+-- list does not say how damaged it was: for gear a lower price only replaces a higher one when the
+-- client's price changed (a patch), otherwise the highest seen is kept.
+local function buybackInfo(i)
+    if C_MerchantFrame and C_MerchantFrame.GetBuybackItemInfo then
+        local ok, info = pcall(C_MerchantFrame.GetBuybackItemInfo, i)
+        if ok and type(info) == "table" then
+            return info.price, info.quantity or info.stackCount
+        end
+    end
+    if GetBuybackItemInfo then
+        local _, _, price, quantity = GetBuybackItemInfo(i)
+        return price, quantity
+    end
+end
+
+function V.learnBuyback(now)
+    local seen = F.db and F.db.vendorSeen
+    if not seen or not GetNumBuybackItems or not GetBuybackItemLink then
+        return 0
+    end
+    now = now or F.Engine.clock()
+    local learned = 0
+    for i = 1, (GetNumBuybackItems() or 0) do
+        local link = GetBuybackItemLink(i)
+        local id = link and tonumber(link:match("item:(%d+)"))
+        local price, quantity = buybackInfo(i)
+        if id and U.finite(price) and price >= 0 and U.finite(quantity) and quantity >= 1 then
+            local each = math.floor(price / quantity + 0.5)
+            local client = F.AH.clientVendorPrice(id)
+            local old = seen[id]
+            local keep = type(old) == "table"
+                and F.AH.kindOf(id) == "gear"
+                and old.c == client
+                and U.finite(old.p)
+                and old.p > each
+            if not keep and (type(old) ~= "table" or old.p ~= each or old.c ~= client) then
+                seen[id] = { p = each, t = now, c = client }
+                learned = learned + 1
+            elseif type(old) == "table" then
+                old.t = now
+            end
+        end
+    end
+    return learned
+end
+
+-- Learned prices that differ from the client's: { { id, seen, client } }, newest first.
+function V.differences()
+    local out = {}
+    for id, r in pairs(F.db and F.db.vendorSeen or {}) do
+        if type(r) == "table" and r.c and r.p ~= r.c then
+            out[#out + 1] = { id = id, seen = r.p, client = r.c, at = r.t or 0 }
+        end
+    end
+    table.sort(out, function(a, b)
+        return a.at > b.at
+    end)
+    return out
+end

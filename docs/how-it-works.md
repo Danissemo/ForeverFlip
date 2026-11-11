@@ -160,6 +160,12 @@ Take every unit priced below the vendor sell price, within budget. Profit is
 `qty × vendor price − cost`. There is no auction cut, no deposit and no waiting: the units are sold
 to any merchant right away. The deal is kept if profit ≥ **Minimum profit of a vendor deal**.
 
+The vendor price is what a merchant really paid when one was seen in the buyback list (any item you
+sell to a merchant). Until then it is the game's item data less the **Safety** margin (20%), because
+the server pays less than the client says for some items. Gear sold damaged sells for less, so for
+gear a lower buyback price only replaces a higher one after a patch changed the client's price.
+With **Cheap units left for other buyers** set, the priciest of the cheap units are not bought.
+
 ### Resale
 
 Try every prefix of the cheapest listings, up to 40 auctions. For a prefix that ends at listing *i*:
@@ -205,11 +211,15 @@ setting is on.
 1. **Expected materials.** The item's quality (green or blue), item level and class (weapon or
    armor) select a row of the **Classic Era disenchanting table**:
    - green armor gives dust 75% (80% below level 16), essence 20% and sometimes a shard;
-   - weapons swap dust and essence;
+   - weapons swap dust and essence; green weapons of item level 21-30 give Greater Magic Essence;
    - blue items give one shard (and a 0.5% Nexus Crystal from level 56).
-2. **Value.** Each material is priced at its usual auction price after the cut. A material that
-   makes up 10% or more of the outcome must have a price.
-3. **Deal.** Every gear lot below `value − minimum profit` is bought, within the budget.
+2. **Your own disenchants.** When a Disenchant cast starts, the item it is aimed at is noted; the
+   loot window that follows is added to the item's band. After 15 disenchants of a band, their
+   results replace the table for it (Settings → Safety shows how many bands are learned).
+3. **Value.** Each material is priced at its usual auction price after the cut. An essence is worth
+   at most what its other form allows: three lesser make one greater, and a greater splits into
+   three lesser. A material that makes up 10% or more of the outcome must have a price.
+4. **Deal.** Every gear lot below `value − minimum profit` is bought, within the budget.
 
 The table has not been checked on WoW Forever item by item, so the values are estimates. Bought units
 are booked with mode `disenchant` and are kept out of Post next bought.
@@ -547,7 +557,27 @@ These facts were seen in game and the code depends on them:
 - An exact-search row for an **item** is a bucket of identical auctions. Its price is per item,
   `quantity` is the number of auctions, and `PlaceBid` buys **one** auction.
 - Gear links have an empty suffix field, and one ending is split over several item-key versions.
+  The link text carries the full name with the ending.
 - `REPLICATE_ITEM_LIST_UPDATE` is not always sent after a full scan request.
+
+Facts other Forever addons recorded on the live server, used since 1.2 (sources in brackets):
+
+- The server pays less than the client's item data says for some items: recipes listed at 2s sell for
+  1s 50c, and a wand went from 15s to 1c in a patch (ForeverForge). What a merchant really paid is
+  read from the buyback list.
+- `SendSellSearchQuery` is never answered (ForeverForge). Gear is searched with a browse by name and
+  a `SendSearchQuery` per item-key version.
+- The throttle check can stay "not ready" for good after a message the server never answered
+  (ForeverForge). After 5 seconds of "not ready" one message goes through.
+- Since launch the answer to a full scan can take more than 5 minutes (auxForever); ForeverFlip waits
+  up to 10. A full scan refused by the 15-minute account limit is never answered (Price Scanner).
+- Gear and other items are listed in whole silver; the server refuses a copper buyout on them
+  (auxForever, ForeverForge). A buyout equal to the starting bid gives "Internal auction error".
+- Green weapons of item level 21-30 give Greater Magic Essence, never an astral one (ForeverForge,
+  from logged disenchants).
+- Hardcore realms are told apart with `C_GameRules.IsGameRuleActive(Enum.GameRule.HardcoreRuleset)`
+  (TSM).
+- The client may not read an addon's saved data at login (ForeverSell, Forever Auction Master).
 - The minimum deposit is 1 silver.
 - A full scan on a busy realm returns more than 200 000 auctions.
 - A browse of the whole house takes about 8.5 seconds over 16 requests.
@@ -559,4 +589,4 @@ not depend on them strictly:
 
 - the 15% cut of a neutral house; the actual cut is learned from invoices;
 - the auction order of a full scan being creation order; lot matching has a second pass by price;
-- the Classic disenchanting table.
+- the Classic disenchanting table; your own disenchants replace it band by band once 15 were seen.

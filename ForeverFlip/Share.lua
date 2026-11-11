@@ -1,6 +1,17 @@
 -- Sharing full scans with other ForeverFlip users. A shared scan is a summary of a full scan: per
 -- item seen, its usual price, cheapest price and units listed. It travels in hidden addon messages
--- to the guild, the group or one player, or as a text to copy anywhere (export / import).
+-- to the guild, the group or one player, to every ForeverFlip user of the realm over a hidden chat
+-- channel (setting shareChannel), or as a text to copy anywhere (export / import).
+--
+-- The realm channel (like AuctionHouse Forever's) works by asking:
+--   !Q|<scope>|<time>          "my newest scan of this house is from <time>" (after joining)
+--   !H|<scope>|<time>          "I have a scan from <time>" (after a full scan, or to answer a Q)
+--   !R|<holder>|<scope>|<time> "<holder>, please send it"; the holder sends it once on the channel
+--                              and everyone who is behind keeps it
+-- A random short wait before answering lets one player answer for everyone.
+--
+-- Received items far from what the player already knows (more than S.TRUST times off the usual
+-- price) are left out: one player's silly or edited scan cannot move the prices.
 --
 -- A received scan of the player's realm is merged into the price history: today's (or that day's)
 -- record of each item, the time-of-week pattern, and the usual price when it is newer than the
@@ -17,6 +28,9 @@ S.CHUNK = 240 -- payload characters per addon message (a message holds 255)
 S.PACE = 0.3 -- seconds between two messages sent
 S.MAX_AGE = 7 * 86400 -- older scans are not merged
 S.TIMEOUT = 300 -- seconds to wait for the rest of a scan being received
+S.CHANNEL = "ForeverFlipPrices" -- the hidden realm channel
+S.TRUST = 10 -- a shared price more than this many times off the usual price is left out
+S.SAME_SCAN = 600 -- a scan this close to the newest one held adds nothing
 
 S.outbox = {}
 S.inbox = {}
@@ -143,7 +157,9 @@ function S.merge(snap, from, how)
     local day = math.floor(snap.at / 86400)
     local merged = 0
     for _, it in ipairs(snap.items) do
-        if U.finite(it.m) and it.m > 0 then
+        local known = history[it.key] and F.Market.usual(history[it.key])
+        local trusted = not U.finite(known) or known <= 0 or (it.m <= known * S.TRUST and it.m * S.TRUST >= known)
+        if U.finite(it.m) and it.m > 0 and trusted then
             local h = history[it.key]
             if type(h) ~= "table" then
                 h = {}
@@ -159,7 +175,7 @@ function S.merge(snap, from, how)
             merged = merged + 1
         end
     end
-    table.insert(S.received, 1, { from = from, at = snap.at, items = merged, how = how, got = now })
+    table.insert(S.received, 1, { from = from, at = snap.at, scope = snap.scope, items = merged, how = how, got = now })
     while #S.received > 10 do
         table.remove(S.received)
     end
@@ -221,6 +237,9 @@ function S.send(channel, target)
     if channel == "WHISPER" and (not target or target == "") then
         return false, "values"
     end
+    if channel == "CHANNEL" and not target then
+        return false, "error"
+    end
     local snap = S.snapshot()
     if not snap or #snap.items == 0 then
         return false, "no_scan"
@@ -240,8 +259,8 @@ function S.send(channel, target)
     return true, "share_queued"
 end
 
--- Called every frame: one message per S.PACE seconds.
-function S.step(now)
+-- One message per S.PACE seconds (S.step, every frame).
+local function stepOutbox(now)
     if #S.outbox == 0 or now < (S.nextSend or 0) then
         return
     end
@@ -254,10 +273,15 @@ function S.step(now)
     F.Engine.changed()
 end
 
--- After each own full scan: send it to the guild when the setting asks for it.
+-- After each own full scan: send it to the guild when the setting asks for it, and tell the realm
+-- channel that a new scan is there.
 function S.afterScan()
     if F.db.settings.shareAuto and IsInGuild and IsInGuild() and #S.outbox == 0 then
         S.send("GUILD")
+    end
+    local snap = F.Scan.last
+    if snap and snap.at then
+        S.control("H", snap.scope, snap.at)
     end
 end
 
@@ -273,6 +297,10 @@ function S.onMessage(prefix, text, channel, sender)
         return
     end
     if not sender or isSelf(sender) then
+        return
+    end
+    if text:sub(1, 1) == "!" then
+        S.onControl(text, sender)
         return
     end
     local id, seq, total, payload = text:match("^(%w+):(%w+):(%w+):(.*)$")
@@ -313,4 +341,222 @@ function S.import(text)
         return nil, "share_invalid"
     end
     return S.merge(snap, "text", "import")
+end
+
+-- The realm channel ---------------------------------------------------------------------------------
+S.waits = {} -- delayed answers: { at, run, id }
+S.heard = {} -- scope -> newest scan time announced on the channel (by anyone)
+S.asked = {} -- "<holder>@<time>" -> when a request for it was seen or sent
+S.served = {} -- "<scope>@<time>" -> when this player last sent it on the channel
+
+function S.channelID()
+    if not GetChannelName then
+        return nil
+    end
+    local id = GetChannelName(S.CHANNEL)
+    return id and id > 0 and id or nil
+end
+
+local function ownChannel(...)
+    for i = 1, select("#", ...) do
+        local v = select(i, ...)
+        if type(v) == "string" and v:lower():find(S.CHANNEL:lower(), 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+-- The channel never shows in a chat window, and its join and leave notices stay out of chat.
+function S.hide()
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
+        local frame = _G["ChatFrame" .. i]
+        if frame then
+            if ChatFrame_RemoveChannel then
+                pcall(ChatFrame_RemoveChannel, frame, S.CHANNEL)
+            elseif frame.RemoveChannel then
+                pcall(frame.RemoveChannel, frame, S.CHANNEL)
+            end
+        end
+    end
+    if not S.filtered then
+        local add = ChatFrame_AddMessageEventFilter or (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter)
+        if add then
+            local function filter(_, _, ...)
+                return ownChannel(...)
+            end
+            add("CHAT_MSG_CHANNEL_NOTICE", filter)
+            add("CHAT_MSG_CHANNEL_NOTICE_USER", filter)
+            add("CHAT_MSG_CHANNEL", filter)
+            S.filtered = true
+        end
+    end
+end
+
+-- Joins the channel (setting shareChannel) and asks who has a newer scan.
+function S.join()
+    if not F.db or not F.db.settings.shareChannel or not S.canSend() then
+        return false
+    end
+    if not S.channelID() then
+        local join = JoinTemporaryChannel or JoinChannelByName
+        if not join then
+            return false
+        end
+        pcall(join, S.CHANNEL)
+    end
+    S.hide()
+    S.joined = true
+    S.later(3, function()
+        S.ask()
+    end)
+    return true
+end
+
+function S.leave()
+    if S.joined and LeaveChannelByName then
+        pcall(LeaveChannelByName, S.CHANNEL)
+    end
+    S.joined = false
+end
+
+-- CHAT_MSG_CHANNEL_NOTICE: the game re-adds a joined channel to the chat windows.
+function S.onChannelNotice(_, _, _, name)
+    if type(name) == "string" and ownChannel(name) then
+        S.hide()
+    end
+end
+
+function S.later(seconds, run, id)
+    if id then
+        for _, w in ipairs(S.waits) do
+            if w.id == id then
+                return
+            end
+        end
+    end
+    S.waits[#S.waits + 1] = { at = (GetTime and GetTime() or F.Engine.clock()) + seconds, run = run, id = id }
+end
+
+local function runWaits(now)
+    local due = {}
+    for i = #S.waits, 1, -1 do
+        if now >= S.waits[i].at then
+            due[#due + 1] = table.remove(S.waits, i)
+        end
+    end
+    for _, w in ipairs(due) do
+        local ok, err = pcall(w.run)
+        if not ok then
+            F.Engine.report(err)
+        end
+    end
+end
+
+-- The newest scan time of a house the player holds: own scan or a merged shared one.
+function S.newest(scope)
+    local newest = 0
+    local last = F.Scan.last
+    if last and last.scope == scope and last.at then
+        newest = last.at
+    end
+    for _, r in ipairs(S.received) do
+        if r.scope == scope and (r.at or 0) > newest then
+            newest = r.at
+        end
+    end
+    return newest
+end
+
+function S.control(kind, ...)
+    local id = S.channelID()
+    if not id or not F.db or not F.db.settings.shareChannel then
+        return false
+    end
+    local parts = { "!" .. kind }
+    for _, v in ipairs({ ... }) do
+        parts[#parts + 1] = type(v) == "number" and S.enc(v) or esc(tostring(v))
+    end
+    -- Control messages go before the pieces of a scan.
+    table.insert(S.outbox, 1, { channel = "CHANNEL", target = id, text = table.concat(parts, "|") })
+    return true
+end
+
+function S.ask()
+    local scope = F.Engine.scope()
+    S.control("Q", scope, S.newest(scope))
+end
+
+local function myName()
+    return UnitName and UnitName("player") or "?"
+end
+
+-- !Q, !H and !R from other players of the channel.
+function S.onControl(text, sender)
+    if not F.db.settings.shareChannel then
+        return
+    end
+    local fields = {}
+    for v in (text .. "|"):gmatch("([^|]*)|") do
+        fields[#fields + 1] = v
+    end
+    local kind = fields[1]
+    local now = F.Engine.clock()
+    local name = Ambiguate and Ambiguate(sender, "none") or sender
+    if kind == "!Q" then
+        local scope, at = unesc(fields[2] or ""), S.dec(fields[3] or "")
+        local last = F.Scan.last
+        if not at or not last or last.scope ~= scope or not last.at or last.at <= at + S.SAME_SCAN then
+            return
+        end
+        if now - last.at > S.MAX_AGE then
+            return
+        end
+        -- Wait a moment: someone else may announce the same or a newer scan first.
+        S.later(1 + math.random() * 3, function()
+            if (S.heard[scope] or 0) < last.at then
+                S.control("H", scope, last.at)
+            end
+        end, "H" .. scope)
+    elseif kind == "!H" then
+        local scope, at = unesc(fields[2] or ""), S.dec(fields[3] or "")
+        if not at then
+            return
+        end
+        S.heard[scope] = math.max(S.heard[scope] or 0, at)
+        if scope ~= F.Engine.scope() or at <= S.newest(scope) + S.SAME_SCAN or now - at > S.MAX_AGE then
+            return
+        end
+        local ask = name .. "@" .. at
+        S.later(math.random() * 2, function()
+            if not S.asked[ask] or now - S.asked[ask] > 120 then
+                S.asked[ask] = now
+                S.control("R", name, scope, at)
+            end
+        end, "R" .. ask)
+    elseif kind == "!R" then
+        local holder, scope, at = unesc(fields[2] or ""), unesc(fields[3] or ""), S.dec(fields[4] or "")
+        if not at then
+            return
+        end
+        S.asked[holder .. "@" .. at] = now
+        local last = F.Scan.last
+        if holder ~= myName() or not last or last.scope ~= scope or last.at ~= at then
+            return
+        end
+        local served = scope .. "@" .. at
+        if S.served[served] and now - S.served[served] < 120 then
+            return
+        end
+        S.served[served] = now
+        S.send("CHANNEL", S.channelID())
+    end
+end
+
+-- Called every frame: delayed answers, then one message per S.PACE seconds.
+function S.step(now)
+    if #S.waits > 0 then
+        runWaits(now)
+    end
+    stepOutbox(now)
 end

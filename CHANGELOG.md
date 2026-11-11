@@ -6,6 +6,52 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-11
+
+Fixes and features from a study of the WoW Forever auction addons (ForeverForge Auction, auxForever,
+AuctionHouse Forever, Auctioneer (Forever), TheWoWDB, Price Scanner Forever, ForeverSell, Forever
+Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM and Auctionator.
+
+### Fixed
+
+- **Vendor prices.** WoW Forever's server pays less than the client's item data says for some items
+  (a recipe listed at 2s sells for 1s 50c; a wand went from 15s to 1c). What a merchant really paid
+  is now read from the buyback list and used first. Until then, deals count the client's price 20%
+  lower (Settings → Safety) and mark such vendor deals with a yellow `*`.
+- **Gear searches.** The sell search ForeverFlip used for gear is never answered on WoW Forever. Gear
+  is now searched with a browse by name and an exact search of each item-key version. An item nobody
+  sells is known at once instead of after a timeout.
+- **Stuck throttle.** The game can stay "not ready" for good after a message the server never
+  answered; the sniper and the checks then stopped until the auction house was closed. After 5
+  seconds of "not ready", one message goes through.
+- **Full scan wait.** The answer to a full scan can take minutes since launch; ForeverFlip waited 45
+  seconds and gave up. It now waits up to 10 minutes and shows the seconds.
+- **Full scans of other addons** are caught when the call is made, not only by the event Forever does
+  not always send.
+- **Freezes while another addon browses.** Browse results of other addons are read once, a few hundred
+  rows per frame, instead of all rows again on every page.
+- **Disenchanting.** Green weapons of item level 21-30 give Greater Magic Essence, not astral. An
+  essence is valued at most what its other form allows (three lesser make one greater).
+- **Own auctions** are recognised also when the game names the owner `player`.
+
+### Added
+
+- **Realm channel sharing:** full scans are shared with every ForeverFlip user of the realm over a
+  hidden chat channel. A player who logs in asks who has a newer scan, one player answers, everyone
+  behind keeps it. Shared prices more than 10 times off the known usual price are left out (also for
+  guild and group scans).
+- **Learning from your own disenchants:** after 15 disenchants of an item band, their results replace
+  the Classic table for it.
+- **Safety tab** in Settings: the vendor price margin, a spending limit per auction house visit, cheap
+  units of a vendor deal left for other buyers, and what was learned.
+- **Buy the next best deal** key binding: each press selects and checks the best deal you can afford,
+  buys it, and confirms a commodity price.
+- **Tooltip advice:** sell to a vendor, disenchant, or post on the auction house (after the cut and
+  three deposits).
+- **Hardcore realms** keep their own prices.
+- **Shop materials** counts what the bags and the bank already hold.
+- A window asks before going on when the game handed ForeverFlip no saved data at login.
+
 ## [1.1.0] - 2026-11-11
 
 Features found in other auction addons (TSM, Auctionator, Point Blank Sniper, AnS, Journalator,
@@ -160,6 +206,7 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v1.1.0...HEAD
-[1.1.0]: ../../compare/v1.0.0...v1.1.0
+[Unreleased]: ../../compare/v1.2.0...HEAD
+[1.2.0]: ../../compare/v1.1.0...v1.2.0
+[1.1.0]: ../../releases/tag/v1.1.0
 [1.0.0]: ../../releases/tag/v1.0.0

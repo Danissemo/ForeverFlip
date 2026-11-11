@@ -12,6 +12,10 @@ S.COOLDOWN = 900
 S.ROWS = 40 -- cheapest auctions kept per item
 S.RECOVER = 30 -- seconds to wait for item data of rows the game had not loaded
 S.DAYS = 14 -- daily records kept per item (price, cheapest, units listed and sold)
+-- Seconds to wait for the server's answer to a full scan. Since WoW Forever launched the answer
+-- can take minutes (auxForever 0.8.2 saw more than 5 and waits 10; ForeverForge waits 2); a call
+-- refused by the 15-minute account limit is never answered at all.
+S.ANSWER_WAIT = 600
 
 local function clock()
     return F.Engine.clock()
@@ -106,6 +110,17 @@ function S.stop()
     S.job = nil
 end
 
+-- Another addon called ReplicateItems (Core: E.hookReplicate). The answer comes later, and the
+-- event may never come: the scan waits for the number of auctions to change and settle.
+function S.onOtherScan()
+    if S.job or not F.AH.isOpen() then
+        return
+    end
+    F.db.lastScan = clock()
+    S.job = { state = "waiting", at = clock(), scope = F.Engine.scope(), base = F.AH.replicateCount(), last = -1 }
+    F.Engine.notify("scan_other")
+end
+
 function S.onReplicate()
     local j = S.job
     local total = F.AH.replicateCount()
@@ -114,7 +129,7 @@ function S.onReplicate()
         -- server allows one per 15 minutes for the account, so ours waits for the next window.
         if F.AH.isOpen() and U.finite(total) and total > 0 then
             F.db.lastScan = clock()
-            S.job = { state = "waiting", at = clock(), scope = F.Engine.scope(), other = true }
+            S.job = { state = "waiting", at = clock(), scope = F.Engine.scope() }
             beginReading(S.job, total)
             F.Engine.notify("scan_other")
         end
@@ -367,7 +382,7 @@ function S.step()
     if j.state == "waiting" then
         if polled(j, now) then
             beginReading(j, j.last)
-        elseif now - j.at > 45 then
+        elseif now - j.at > S.ANSWER_WAIT then
             -- No answer: try again in a minute instead of waiting the whole 15 minutes.
             S.job = nil
             F.db.lastScan = now - S.COOLDOWN + 60
@@ -599,7 +614,7 @@ function S.progress()
         return nil
     end
     if j.state == "waiting" then
-        return "scan_waiting", 0, 1
+        return "scan_waiting", math.floor(clock() - j.at), S.ANSWER_WAIT
     elseif j.state == "reading" then
         return "scan_reading", j.index, j.total
     elseif j.state == "recovering" then

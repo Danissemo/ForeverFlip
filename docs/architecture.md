@@ -38,11 +38,11 @@ namespace, here written as `F`.
 | `Trade.lua` | `F.Trade` | Buying (quotes, confirmations, outcomes), posting rules and queues, durations, own auctions, undercut checks and cancelling, invoices and sale rate, vendor selling, journal summary. |
 | `Mail.lua` | `F.Mail` | Paced looting of auction house mail; reading every auction mail once for the books. |
 | `Analytics.lua` | `F.Analytics` | Own results, market lists (cached per scan), realm gold and stock, CSV export. |
-| `Merchant.lua` | `F.Merchant` | Merchant → auction house offers and buying from a merchant. |
-| `Disenchant.lua` | `F.Disenchant` | Disenchanting table, material value, disenchant deals. |
+| `Merchant.lua` | `F.Merchant` | Merchant → auction house offers, buying from a merchant, what merchants really pay (buyback list). |
+| `Disenchant.lua` | `F.Disenchant` | Disenchanting table, own disenchant results, material value (essence forms), disenchant deals. |
 | `Crafting.lua` | `F.Crafting` | Recipes from profession windows, merchant prices, recipe profits, materials to the shopping list. |
 | `Bids.lua` | `F.Bids` | Bid candidates, checks, placing bids, won and outbid bids. |
-| `Share.lua` | `F.Share` | Shared scans: snapshot, text form, addon messages, receiving and merging. |
+| `Share.lua` | `F.Share` | Shared scans: snapshot, text form, addon messages, the realm channel (ask / have / request), receiving and merging. |
 | `Raw.lua` | `F.Raw` | Full scans auction by auction for the Sync helper; import of community data. |
 | `Core.lua` | `F.Engine` | Event frame, event dispatch, the per-frame update loop, scope and cut, error reporting, key binding actions, `ForeverFlipAPI`, slash commands. |
 | `UI.lua` | `F.UI` | Auction house tab and pages, history and export windows, mailbox and merchant buttons, merchant panel, item tooltips, Buy tab marks. |
@@ -52,24 +52,32 @@ namespace, here written as `F`.
 ## Runtime flow
 
 ```
-ADDON_LOADED ──► Data.open(ForeverFlipData) ─► Locale.apply ─► Engine.applyCut ─► UI.tooltips
+ADDON_LOADED ──► Data.open(ForeverFlipData) (UI.noSavedData when nothing was read)
+             ─► Engine.hookReplicate ─► Locale.apply ─► Engine.applyCut ─► UI.tooltips
              ─► Mail.hook ─► Share.register ─► Raw.importCommunity (ForeverFlip_Shared) ─► Bids.prune
+PLAYER_ENTERING_WORLD ──► Share.join (realm channel, 8 seconds later)
 AUCTION_HOUSE_SHOW ──► Engine.detectHouse ─► Engine.applyCut ─► Scan.restore(scope) ─► UI.attach
 
 OnUpdate (every frame, Engine.update)
   AH.pump            item data requests, 40 per second
+  AH.ready(peek)     watch the throttle, so a stuck "not ready" is noticed
   Scan.auto          start a full scan when allowed
   Scan.step          read (and capture raw lines) / recover / evaluate a portion of the scan
   Trade.stepChecks   own-auction price checks
   Deals.step         search timeouts, queued requests, automatic checks, sniper candidates
-  Sniper.step        browse rounds and key batches when nothing else waits
+  Sniper.step        other addons' browse rows (300 per frame), browse rounds and key batches
   Trade.step         purchase timeouts
   Mail.step          paced mail looting
-  Share.step         one shared-scan message every 0.3 seconds
+  Share.step         delayed realm-channel answers, one shared-scan message every 0.3 seconds
   UI.highlightBrowse marks in the game's Buy tab, twice a second
   UI.refresh         at most 4 times a second, only when something changed
 
-Events ──► Engine.handle ──► Scan / Deals / Sniper / Trade / Mail / Share / Crafting / UI handlers
+Events ──► Engine.handle ──► Scan / Deals / Sniper / Trade / Mail / Share / Crafting / Merchant /
+                              Disenchant / UI handlers
+  browse results: a gear search waiting for its versions (Deals.onBrowse), else the sniper
+  MERCHANT_SHOW / MERCHANT_UPDATE: Merchant.learnBuyback (what merchants really pay)
+  UNIT_SPELLCAST_START / LOOT_OPENED: Disenchant.onCast / onLoot (own disenchant results)
+C_AuctionHouse.ReplicateItems (hooked): Scan.onOtherScan when another addon starts a full scan
 ```
 
 `F.Engine.changed()` marks the UI dirty. `F.Engine.notify(key)` sets the status message, which the
@@ -77,8 +85,8 @@ UI translates through `MESSAGES` and `F.Locale`.
 
 ### Scope and owner
 
-- `Engine.scope()` = `<realm>-<faction>` identifies an auction house. Scan history and deals are
-  stored per scope.
+- `Engine.scope()` = `<realm>-<faction>` identifies an auction house (` (HC)` follows the realm on
+  hardcore realms). Scan history and deals are stored per scope.
 - `Engine.owner()` = `<realm>-<character>` identifies a character. Positions, journal and
   statistics are stored per owner.
 
@@ -92,6 +100,10 @@ in this order:
    is completed exactly once.
 2. **A background retry slot** (`D.backgroundRetry`), used after a throttled or dropped request.
 3. **Automatic checks and the sniper's candidates,** started only when nothing else is waiting.
+
+Gear is searched in two steps inside one request: a browse by the item's name lists its item-key
+versions (`phase = "browse"`), then each version is searched (`phase = "keys"`) and the rows are
+merged. The sniper's browse round in flight gives way (`F.Sniper.yield`).
 
 No search runs while a full scan or a purchase is in progress. Browse and key queries of the sniper
 (`F.Sniper.query`) are separate from exact searches. They are sent only when no exact search is in

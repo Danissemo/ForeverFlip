@@ -330,6 +330,10 @@ def decode_raw(text: str) -> RawScan:
 
 # --- Summaries ---------------------------------------------------------------------------------
 
+def scope_file(scope: str) -> str:
+    return re.sub(r"[^A-Za-z0-9-]", "-", scope) + ".txt"
+
+
 def enc36(n: float) -> str:
     n = int(math.floor(n or 0))
     if n <= 0:

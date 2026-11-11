@@ -15,9 +15,11 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 |---|---|---|
 | `version` | number | Data format version (currently `1`). |
 | `settings` | table | User settings, see below. |
-| `vendor` | table | `vendor[itemID]` = vendor sell price; `0` means vendors do not buy the item. Shared by all characters. |
+| `vendor` | table | `vendor[itemID]` = the client's vendor sell price; `0` means vendors do not buy the item. Shared by all characters. |
+| `vendorSeen` | table | `vendorSeen[itemID]` = what a merchant really paid, from the buyback list: `{ p = copper each, t = when, c = the client's price then }`. Preferred over `vendor`. |
+| `deSeen` | table | `deSeen[band]` = your own disenchant results per item band (`"2:w:25"` = green weapons up to item level 25): `{ n = disenchants, [itemID] = units }`. |
 | `lastScan` | number | Time of the last full-scan request (the 15-minute cooldown is per account). |
-| `markets` | table | `markets[scope]`, one per auction house, where scope = `<realm>-<faction>` or `<realm>-Neutral`. |
+| `markets` | table | `markets[scope]`, one per auction house, where scope = `<realm>-<faction>` or `<realm>-Neutral`; hardcore realms add ` (HC)` to the realm. |
 | `chars` | table | `chars[owner]`, one per character, where owner = `<realm>-<character>`. |
 | `ui` | table | `ui.section`: the last opened page. |
 | `cuts` | table | `cuts[scope]` = the auction cut learned from invoices (for example `0.05` or `0.15`). |
@@ -59,6 +61,10 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `shareReceive` | `true` | Merge full scans shared by guild and group members. |
 | `shareAuto` | `false` | Send each own full scan to the guild. |
 | `rawScans` | `false` | Keep full scans for the ForeverFlip Sync helper. |
+| `shareChannel` | `true` | Share full scans with every ForeverFlip user of the realm over a hidden channel. |
+| `vendorMargin` | `20` | Percent off the client's vendor price while a merchant has not confirmed it. |
+| `spendLimit` | `0` | Gold one auction house visit may spend on deals; `0` = no limit. |
+| `leaveLots` | `0` | Cheap units of a vendor deal left for other buyers. |
 
 Missing settings are filled in with these defaults at load.
 
@@ -111,7 +117,7 @@ ForeverFlipRaw = {
     format = "FFR1",
     scans = { -- newest first, at most 2
         { scope = "Realm-Alliance", realm = "Realm", faction = "Alliance", at = <time>, count = <auctions>,
-          addon = "1.1.0", seal = <checksum>, rows = "<one line per auction>" },
+          addon = "1.2.0", seal = <checksum>, rows = "<one line per auction>" },
     },
 }
 ```

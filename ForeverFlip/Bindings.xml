@@ -2,6 +2,9 @@
     <Binding name="FOREVERFLIP_BUY" header="FOREVERFLIP" category="ADDONS">
         ForeverFlip.Engine.keyBuy()
     </Binding>
+    <Binding name="FOREVERFLIP_BUY_NEXT" category="ADDONS">
+        ForeverFlip.Engine.keyBuyNext()
+    </Binding>
     <Binding name="FOREVERFLIP_POST" category="ADDONS">
         ForeverFlip.Engine.keyPost()
     </Binding>

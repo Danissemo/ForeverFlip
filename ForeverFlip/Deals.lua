@@ -98,6 +98,9 @@ function D.evaluate(g, vendor, history, now)
     if deal then
         deal.key, deal.kind, deal.id, deal.link = g.key, g.kind, g.id, g.link
         deal.market, deal.vendor = g.market, vendor
+        if deal.mode == "vendor" then
+            deal.vendorHow = select(2, F.AH.vendorPrice(g.id))
+        end
         deal.found = now or clock()
     end
     return deal, reason
@@ -190,6 +193,16 @@ function D.searching()
     return D.search ~= nil
 end
 
+-- The best deal the player can buy now (Buy next key): checked deals first, then by profit.
+function D.best()
+    local wallet = F.Engine.wallet()
+    for _, d in ipairs(D.list) do
+        if d.cost <= wallet and not F.Trade.overLimit(d.cost) then
+            return d
+        end
+    end
+end
+
 local function precise()
     return GetTime and GetTime() or clock()
 end
@@ -272,7 +285,16 @@ local function startRequest(r)
     D.search, D.lastRequest = r, now
     D.sent[#D.sent + 1] = now
     r.attempts = (r.attempts or 0) + 1
-    local ok = pcall(F.AH.search, r.item)
+    local ok
+    if r.item.kind == "gear" and F.AH.canSearchGear() then
+        -- Gear: a browse by name first (its item-key versions), then each version (see AH.lua).
+        r.phase, r.keys, r.keyIndex, r.found, r.foundIDs, r.allComplete = "browse", nil, 0, {}, {}, true
+        F.Sniper.yield()
+        ok = pcall(F.AH.gearBrowse, r.item)
+    else
+        r.phase = nil
+        ok = pcall(F.AH.search, r.item)
+    end
     if not ok and D.search == r then
         D.search = nil
         if r.fast then
@@ -355,10 +377,85 @@ local function finishSearch(rows, complete)
     F.Engine.changed()
 end
 
+-- The next item-key version of a gear search, or the end of it with every version's rows.
+local function nextGearKey(s)
+    s.keyIndex = s.keyIndex + 1
+    local key = s.keys[s.keyIndex]
+    if not key then
+        table.sort(s.found, function(a, b)
+            return a.unit < b.unit
+        end)
+        finishSearch(s.found, s.allComplete)
+        return
+    end
+    s.phase, s.at = "keys", clock()
+    if not pcall(F.AH.searchKey, key) then
+        finishSearch(nil, false)
+    end
+end
+
+-- Browse results while a gear search waits for its versions. Returns true when they were its.
+function D.onBrowse()
+    local s = D.search
+    if not s or s.phase ~= "browse" then
+        return false
+    end
+    local keys = F.AH.gearKeys(s.item.id)
+    if #keys == 0 and not F.AH.browseFull() and s.pages < 3 then
+        s.pages, s.at = s.pages + 1, clock()
+        pcall(F.AH.browseMore)
+        return true
+    end
+    if #keys == 0 then
+        -- A complete browse without the item: nobody sells it. Unknown after three pages.
+        finishSearch({}, F.AH.browseFull())
+        return true
+    end
+    s.keys, s.keyIndex = keys, 0
+    nextGearKey(s)
+    return true
+end
+
+function D.onBrowseFailure()
+    local s = D.search
+    if not s or s.phase ~= "browse" then
+        return false
+    end
+    finishSearch(nil, false)
+    return true
+end
+
+local function sameKey(a, b)
+    return type(a) == "table"
+        and type(b) == "table"
+        and a.itemID == b.itemID
+        and (a.itemSuffix or 0) == (b.itemSuffix or 0)
+        and (a.itemLevel or 0) == (b.itemLevel or 0)
+end
+
 -- Search results arrived (commodity: itemID; item or gear: item key table).
 function D.onResults(itemID, searchKey)
     local s = D.search
-    if not s or s.item.id ~= itemID then
+    if s and s.phase == "keys" and s.item.id == itemID and sameKey(searchKey, s.keys[s.keyIndex]) then
+        local ok, rows, complete = pcall(F.AH.rows, s.item, searchKey)
+        if ok then
+            for _, r in ipairs(rows) do
+                if not r.auctionID or not s.foundIDs[r.auctionID] then
+                    if r.auctionID then
+                        s.foundIDs[r.auctionID] = true
+                    end
+                    r.searchKey = searchKey
+                    s.found[#s.found + 1] = r
+                end
+            end
+            s.allComplete = s.allComplete and complete
+        else
+            s.allComplete = false
+        end
+        nextGearKey(s)
+        return
+    end
+    if not s or s.item.id ~= itemID or s.phase then
         D.learn(itemID, searchKey)
         return
     end
@@ -622,8 +719,8 @@ function D.step()
     D.snipe()
 end
 
--- Sniper: between full scans, the items most often near a deal are read again one by one (one
--- search per second), so a cheap lot is seen seconds after it is listed, not up to 15 minutes later.
+-- Sniper: exact checks of candidates found by browse rounds. Without browse support, cycle through
+-- hot items from the last full scan, with at most one search per second.
 function D.snipe()
     local hot = F.Scan.hot
     if not F.db.settings.sniper or not D.scope then
@@ -691,7 +788,6 @@ function D.alert(d)
         UIErrorsFrame:AddMessage(msg, 1, 0.82, 0)
     end
     print(msg)
-    F.Engine.alerts = (F.Engine.alerts or 0) + 1
     return true
 end
 

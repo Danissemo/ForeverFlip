@@ -46,6 +46,7 @@ from collections import Counter
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import ffscan  # noqa: E402
+from ffscan import scope_file  # noqa: E402
 
 API = "https://api.github.com"
 GIST_RAW = "https://gist.githubusercontent.com/"
@@ -296,10 +297,6 @@ def agreeing_items(scan: ffscan.RawScan, peer: ffscan.RawScan) -> set[str]:
         if units and backed >= units / 2:
             agree.add(key)
     return agree
-
-
-def scope_file(scope: str) -> str:
-    return re.sub(r"[^A-Za-z0-9-]", "-", scope) + ".txt"
 
 
 def add_summary(shared: pathlib.Path, scope: str, at: int, items: dict) -> bool:

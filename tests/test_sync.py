@@ -304,7 +304,6 @@ class AggregatorTests(unittest.TestCase):
         hub.add_upload(make_scan(self.now - 60, market()), 'Newbie', 2)
         hub.add_upload(make_scan(self.now - 900, market()), 'Alice', 3)
         hub.add_upload(make_scan(self.now - 700, market([(1, 5, 1)])), 'Alice', 4)
-        hub.gists[f'{4:020x}']['owner']['login'] = 'Alice'
         hub.add_upload(make_scan(self.now - 30, market()), 'Carol', 5)
         hub.gists[f'{5:020x}']['owner']['login'] = 'Dave'
         self.run_aggregator(hub, self.data, self.now)

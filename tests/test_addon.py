@@ -16,6 +16,9 @@ def runtime(open_ah=True):
         if line.endswith('.lua'):
             lua.execute((ADDON / line).read_text(encoding='utf-8'))
     lua.execute("fire('ADDON_LOADED','ForeverFlip')")
+    # Vendor prices in the tests are what merchants really pay; the safety margin for unconfirmed
+    # prices has its own tests (test_forever12.py).
+    lua.execute("ForeverFlip.db.settings.vendorMargin=0")
     if open_ah:
         lua.execute("fire('AUCTION_HOUSE_SHOW');ForeverFlip.UI.frame:Show()")
     return lua
@@ -367,7 +370,9 @@ class ScanAnswerTests(unittest.TestCase):
         while ForeverFlip.Scan.busy() do run(0.05) end;assert(ForeverFlip.Deals.get('c:10'))''')
 
     def test_no_answer_retries_in_a_minute(self):
-        run(SETUP + '''replicateIgnored=true;assert(ForeverFlip.Scan.start());run(47)
+        run(SETUP + '''replicateIgnored=true;assert(ForeverFlip.Scan.start());run(120)
+        assert(ForeverFlip.Scan.busy(),'a slow answer is waited for (minutes since launch)')
+        run(ForeverFlip.Scan.ANSWER_WAIT-120+2)
         assert(not ForeverFlip.Scan.busy() and ForeverFlip.Engine.message=='scan_timeout')
         local cd=ForeverFlip.Scan.cooldown();assert(cd>0 and cd<=60,cd)''')
 
