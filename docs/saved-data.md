@@ -19,6 +19,8 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `vendorSeen` | table | `vendorSeen[itemID]` = what a merchant really paid, from the buyback list: `{ p = copper each, t = when, c = the client's price then }`. Preferred over `vendor`. |
 | `deSeen` | table | `deSeen[band]` = your own disenchant results per item band (`"2:w:25"` = green weapons up to item level 25): `{ n = disenchants, [itemID] = units }`. |
 | `lastScan` | number | Time of the last full-scan request (the 15-minute cooldown is per account). |
+| `scanPending` | table | The full-scan request still waiting for (or in the middle of) its answer: `{ at, scope, base, baseMark, other, answered }`. Kept over closing the auction house and `/reload`; cleared when the scan is read or given up. |
+| `scanLog` | list | The last 20 full-scan requests: `{ at, ended, outcome, count, other }`; outcome is read, no answer, list kept changing, dropped by the server, empty list, closed while waiting or closed while reading. |
 | `markets` | table | `markets[scope]`, one per auction house, where scope = `<realm>-<faction>` or `<realm>-Neutral`; hardcore realms add ` (HC)` to the realm. |
 | `chars` | table | `chars[owner]`, one per character, where owner = `<realm>-<character>`. |
 | `ui` | table | `ui.section`: the last opened page. |
