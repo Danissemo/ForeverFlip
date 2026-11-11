@@ -560,10 +560,10 @@ SlashCmdList.FOREVERFLIP = function(msg)
     end
     if msg == "bags" then
         -- Why bag items are not on the Sell page (the auction house must be open).
-        local report = F.AH.bagReport()
-        print(string.format("ForeverFlip: " .. L("%d bag items are not on the Sell page."), #report))
-        for i = 1, math.min(30, #report) do
-            print("  " .. report[i].link .. ": " .. report[i].reason)
+        local missing = F.AH.bagReport()
+        print(string.format("ForeverFlip: " .. L("%d bag items are not on the Sell page."), #missing))
+        for i = 1, math.min(30, #missing) do
+            print("  " .. missing[i].link .. ": " .. missing[i].reason)
         end
         return
     end
