@@ -16,6 +16,21 @@ F.Raw = R
 R.FORMAT = "FFR1"
 R.KEEP = 2 -- full scans kept for the helper (each one is several megabytes)
 
+-- Checksum of a scan ("seal"): the helper and the data repository recompute it and refuse a scan
+-- whose lines were changed after the game read them. sync/ffscan.py computes the same numbers.
+local P = 2147483647
+function R.hash(text)
+    local h = 0
+    for k = 1, #text do
+        h = (h * 31 + text:byte(k)) % P
+    end
+    return h
+end
+
+function R.chain(seal, text)
+    return (seal * 1000003 + R.hash(text) + 1) % P
+end
+
 function R.active()
     return F.db and F.db.settings.rawScans or false
 end
@@ -28,6 +43,7 @@ function R.capture(j, i)
     local ok, r = pcall(F.AH.replicateRaw, i)
     if not ok or not r then
         j.raw[#j.raw + 1] = ""
+        j.rawSeal = R.chain(j.rawSeal or 0, "")
         return
     end
     local kind = F.AH.kindOf(r.id)
@@ -35,7 +51,7 @@ function R.capture(j, i)
     if r.link and kind == "gear" then
         name = (U.linkName(r.link) or ""):gsub("[,\n]", " ")
     end
-    j.raw[#j.raw + 1] = r.id
+    local line = r.id
         .. ","
         .. (r.count or "")
         .. ","
@@ -52,6 +68,8 @@ function R.capture(j, i)
         .. (kind and kind:sub(1, 1) or "")
         .. ","
         .. name
+    j.raw[#j.raw + 1] = line
+    j.rawSeal = R.chain(j.rawSeal or 0, line)
 end
 
 -- The scan is processed: its lines become one saved entry.
@@ -70,12 +88,13 @@ function R.finish(j)
         at = j.finishAt,
         count = #j.raw,
         addon = F.version,
+        seal = R.chain(j.rawSeal or 0, j.scope .. "|" .. j.finishAt .. "|" .. #j.raw),
         rows = table.concat(j.raw, "\n"),
     })
     while #ForeverFlipRaw.scans > R.KEEP do
         table.remove(ForeverFlipRaw.scans)
     end
-    j.raw = nil
+    j.raw, j.rawSeal = nil, nil
 end
 
 function R.saved()

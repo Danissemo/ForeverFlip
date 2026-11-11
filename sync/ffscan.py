@@ -16,6 +16,10 @@ from dataclasses import dataclass, field
 
 RAW_FORMAT = "FFR1"
 SUMMARY_VERSION = 1
+SEAL_MOD = 2147483647
+MAX_AGE = 7 * 86400
+MIN_ROWS = 50
+MAX_ROWS = 3_000_000
 BUCKET = math.log(1.02)
 DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
 
@@ -192,6 +196,8 @@ class RawScan:
     faction: str
     addon: str
     rows: list = field(default_factory=list)  # Auction, in scan order (None for unreadable rows)
+    seal: int | None = None  # the checksum the addon computed while reading the scan
+    text: str | None = None  # the auction lines exactly as the addon wrote them
 
 
 def _int(text: str) -> int | None:
@@ -225,16 +231,33 @@ def scans_from_saved_variables(text: str) -> list[RawScan]:
     out = []
     for s in scans:
         if isinstance(s, dict) and s.get("scope") and s.get("at") and isinstance(s.get("rows"), str):
+            rows = parse_rows(s["rows"]) if s.get("count") else []
+            seal = s.get("seal")
             out.append(RawScan(scope=s["scope"], at=int(s["at"]), realm=s.get("realm") or "",
                                faction=s.get("faction") or "", addon=str(s.get("addon") or ""),
-                               rows=parse_rows(s["rows"])))
+                               rows=rows, seal=int(seal) if isinstance(seal, (int, float)) else None,
+                               text=s["rows"]))
     return out
 
 
-def encode_raw(scan: RawScan) -> str:
-    """The file a raw scan is uploaded as: a header line, then one line per auction."""
-    header = "|".join([RAW_FORMAT, scan.scope, str(scan.at), scan.realm, scan.faction, scan.addon, str(len(scan.rows))])
-    lines = [header]
+# --- Seal --------------------------------------------------------------------------------------
+
+def _hash(data: bytes) -> int:
+    h = 0
+    for b in data:
+        h = (h * 31 + b) % SEAL_MOD
+    return h
+
+
+def _chain(seal: int, text: str) -> int:
+    return (seal * 1000003 + _hash(text.encode("utf-8")) + 1) % SEAL_MOD
+
+
+def rows_text(scan: RawScan) -> str:
+    """The auction lines: as the addon wrote them, or written again from the parsed rows."""
+    if scan.text is not None:
+        return scan.text
+    lines = []
     for r in scan.rows:
         if r is None:
             lines.append("")
@@ -247,13 +270,59 @@ def encode_raw(scan: RawScan) -> str:
     return "\n".join(lines)
 
 
+def compute_seal(scan: RawScan) -> int:
+    """The checksum the addon computes while reading a scan (Raw.lua: R.chain over every line, then
+    over "<scope>|<time>|<auctions>"). Any changed line, number or header field changes it."""
+    seal = 0
+    if scan.rows:
+        for line in rows_text(scan).split("\n"):
+            seal = _chain(seal, line)
+    return _chain(seal, f"{scan.scope}|{scan.at}|{len(scan.rows)}")
+
+
+def check(scan: RawScan, now: float) -> str | None:
+    """Why a scan cannot be shared, or None. The helper checks before uploading and the data
+    repository checks again before archiving."""
+    if not re.fullmatch(r"[^|\n]+-(Alliance|Horde|Neutral)", scan.scope):
+        return "bad auction house name"
+    if scan.at > now + 600:
+        return "the scan is from the future"
+    if now - scan.at > MAX_AGE:
+        return "the scan is more than 7 days old"
+    if not MIN_ROWS <= len(scan.rows) <= MAX_ROWS:
+        return "implausible number of auctions"
+    if scan.seal is None:
+        return "the scan has no seal (it was made by a ForeverFlip version before 1.1.0)"
+    if compute_seal(scan) != scan.seal:
+        return "the seal does not match: the scan was changed after the game read it"
+    unreadable = 0
+    for r in scan.rows:
+        if r is None:
+            unreadable += 1
+        elif r.item <= 0 or r.count <= 0 or r.count > 10000 or r.buyout < 0 or r.buyout > 10 ** 12 \
+                or r.kind not in ("c", "i", "g", "") or (r.band is not None and not 0 <= r.band <= 3):
+            return "implausible values"
+    if unreadable > len(scan.rows) // 2:
+        return "most auctions are unreadable"
+    return None
+
+
+def encode_raw(scan: RawScan) -> str:
+    """The file a raw scan is uploaded as: a header line, then one line per auction."""
+    header = "|".join([RAW_FORMAT, scan.scope, str(scan.at), scan.realm, scan.faction, scan.addon,
+                       str(len(scan.rows)), "" if scan.seal is None else str(scan.seal)])
+    return header + "\n" + rows_text(scan) if scan.rows else header
+
+
 def decode_raw(text: str) -> RawScan:
     header, _, body = text.partition("\n")
     parts = header.split("|")
     if len(parts) < 7 or parts[0] != RAW_FORMAT:
         raise ValueError("not a ForeverFlip raw scan")
     scan = RawScan(scope=parts[1], at=int(parts[2]), realm=parts[3], faction=parts[4], addon=parts[5])
-    scan.rows = parse_rows(body) if body else []
+    scan.seal = int(parts[7]) if len(parts) > 7 and parts[7].isdigit() else None
+    scan.rows = parse_rows(body) if int(parts[6]) > 0 else []
+    scan.text = body
     if len(scan.rows) != int(parts[6]):
         raise ValueError(f"expected {parts[6]} auctions, found {len(scan.rows)}")
     return scan
