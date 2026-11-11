@@ -115,7 +115,9 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 | ⬜ | Sniper keeps going | Leave the auction house open with the sniper on for 10 minutes: rounds keep growing; Safety shows how often the throttle got stuck. |
 | ⬜ | Realm channel | `/chatlist` (or the chat channel list) does not show ForeverFlipPrices in any chat window. With a second ForeverFlip user online, a new scan of one appears under Received for the other. |
 | ⬜ | Disenchant learning | Disenchant a green item; after 15 of one band Safety shows a learned band. |
-| ⬜ | Tooltip advice | Item tooltips show "Best: ..." with a value. |
+| ⬜ | Tooltips | An item tooltip starts with `ForeverFlip: <house>`; it shows your stock and auctions on sale, "Sales: not measured yet" until two scans, and Vendor pays / Auction house / Best side by side. Cheap stackable goods do not show a loss on the auction house. |
+| ⬜ | Bought elsewhere | Buy something in the game's Buy tab (or Auctionator), take the mail: Selling → My items lists it as "bought elsewhere", Analytics → Journal has the purchase. |
+| ⬜ | Vendor sale by hand | Sell stock bought through ForeverFlip to a merchant by right-click: the journal books a vendor sale, the stock is gone from Selling. |
 | ⬜ | Spending limit | Set 1 gold in Safety; buying stops with the limit message once 1 gold was spent this visit. |
 | ⬜ | Leave lots | Set 5 in Safety; a vendor deal of commodities leaves 5 cheap units unbought. |
 | ⬜ | Buy next key | Bind it in Settings → Key bindings. Press: the best deal is selected and checked; press again: it is bought; for a commodity, press again to confirm. |
