@@ -39,7 +39,7 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **Deposits** in crafting and resale estimates come from the game's vendor price, which is what the
   auction house charges on.
 - **The neutral auction house** is recognised by the auctioneer first: an Alliance or Horde
-  auctioneer always means the faction house, whatever the zone. The top right corner and the window
+  auctioneer always means the faction house, whatever the zone. The bar beside the money display and the window
   title name the open house (Alliance blue, Horde red, neutral gold with its 15% cut), and opening
   another house shows that house's own scan and deals (deals just checked on the other house no
   longer come along).

@@ -362,13 +362,11 @@ function UI.create()
         UI.checkStatuses()
     end)
     UI.bulkButton:SetPoint("LEFT", UI.sniperButton, "RIGHT", 6, 0)
-    -- Top right corner: which auction house this is (its own prices; a neutral one takes 15%).
+    -- Which auction house this is (its own prices; a neutral one takes 15%): in the middle of the
+    -- bar beside the money display (UI.placeHouse), else in the top right corner.
     UI.houseBadge = text(f, "GameFontNormal")
-    UI.houseBadge:SetPoint("RIGHT", f, "TOPRIGHT", -12, 19)
-    UI.houseBadge:SetJustifyH("RIGHT")
     UI.status = text(f, "GameFontNormal")
-    UI.status:SetPoint("LEFT", UI.bulkButton, "RIGHT", 10, 0)
-    UI.status:SetPoint("RIGHT", UI.houseBadge, "LEFT", -12, 0)
+    UI.placeHouse()
     UI.status:SetWordWrap(false)
     UI.progress = CreateFrame("StatusBar", nil, f)
     UI.progress:SetHeight(3)
@@ -3044,8 +3042,41 @@ function UI.houseName()
     return L("Alliance AH"), "4fa3ff"
 end
 
+-- The house name sits in the middle of the auction house's bottom bar, right of the money display.
+-- Until the frames are laid out (or without that bar) it stays in the top right corner.
+function UI.placeHouse()
+    local badge, f = UI.houseBadge, UI.frame
+    local ah = AuctionHouseFrame
+    local money = type(ah) == "table" and (ah.MoneyFrameBorder or ah.MoneyFrameInset)
+    if type(money) ~= "table" or type(money.GetRight) ~= "function" then
+        money = nil
+    end
+    local moneyRight = money and money:GetRight()
+    local ahRight = money and type(ah.GetRight) == "function" and ah:GetRight()
+    moneyRight, ahRight = tonumber(moneyRight), tonumber(ahRight)
+    local bottom = moneyRight ~= nil and ahRight ~= nil and ahRight > moneyRight + 100
+    if UI.housePlaced == bottom then
+        return
+    end
+    UI.housePlaced = bottom
+    badge:ClearAllPoints()
+    UI.status:ClearAllPoints()
+    UI.status:SetPoint("LEFT", UI.bulkButton, "RIGHT", 10, 0)
+    if bottom then
+        badge:SetPoint("CENTER", money, "RIGHT", (ahRight - moneyRight) / 2, 0)
+        badge:SetJustifyH("CENTER")
+        UI.status:SetPoint("RIGHT", f, "TOPRIGHT", -12, 19)
+    else
+        badge:SetPoint("RIGHT", f, "TOPRIGHT", -12, 19)
+        badge:SetJustifyH("RIGHT")
+        UI.status:SetPoint("RIGHT", badge, "LEFT", -12, 0)
+    end
+    UI.status:SetWordWrap(false)
+end
+
 function UI.refreshHouse()
     if UI.houseBadge then
+        UI.placeHouse()
         local name, color = UI.houseName()
         UI.houseBadge:SetText("|cff" .. color .. name .. "|r")
     end

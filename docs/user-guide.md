@@ -69,7 +69,7 @@ history, because the listings are separate, and counts the 15% cut.
 | **Full scan** | Asks the server for every auction of the house. The button shows a countdown while the 15-minute cooldown runs. |
 | **Sniper: ON / OFF** | Turns the [sniper](#sniper) on or off. |
 | **Check all statuses** | Checks every entry of the current page on the auction house, one search after another. It works on All deals, Vendor deals, Resale, Shopping deals, Bags (Sell my items) and My auctions. While it runs the button shows `Checking <page>: done/total`. Afterwards it shows `Checked ...`, with the number of failed searches if any. |
-| Auction house (top right corner) | Which auction house is open: **Alliance AH** (blue), **Horde AH** (red) or **Neutral AH, 15% cut** (gold, at Booty Bay, Gadgetzan or Everlook). Each house keeps its own scans, prices and deals; the window title says it too. |
+| Auction house (bottom bar, beside the money display) | Which auction house is open: **Alliance AH** (blue), **Horde AH** (red) or **Neutral AH, 15% cut** (gold, at Booty Bay, Gadgetzan or Everlook). Each house keeps its own scans, prices and deals; the window title says it too. |
 | Status line | The current task (`Reading auctions 12000 / 231000`, `Evaluating items ...`), the last message, or the number of deals and how many are checked. The sniper's own figures are in the summary on the left. |
 
 ### Full scan

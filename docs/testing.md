@@ -157,7 +157,7 @@ Check these with 1.2.0-beta.2 (or later); they are the fixes testers of beta.1 s
 | | Area | Check |
 |---|---|---|
 | ⬜ | Sniper gear checks | Leave the sniper on at a house with gear deals for 10 minutes: no error (it was `Deals.lua:692`), gear deals turn checked. |
-| ⬜ | House badge | At a faction auction house the top right corner and the window title name it in blue (Alliance) or red (Horde); in Booty Bay, Gadgetzan or Everlook the neutral house in gold. Go from one to the other and back: each shows its own last scan and deals, none from the other house. |
+| ⬜ | House badge | At a faction auction house the bar beside the money display (at the bottom) and the window title name it in blue (Alliance) or red (Horde); in Booty Bay, Gadgetzan or Everlook the neutral house in gold. Go from one to the other and back: each shows its own last scan and deals, none from the other house. |
 | ⬜ | Full scan answer | Press Full scan: the status counts the waited seconds (`35 / 300 s`), the sniper and checks stay still meanwhile, and the scan is read when the answer comes, also on a small house; the button shows no stale countdown while waiting. |
 | ⬜ | End of a full scan | On a large house the game does not stall when the scan finishes reading. |
 | ⬜ | Sales after a partial scan | When a scan comes back much smaller than the one before, Analytics shows no burst of sales of the missing items. |
