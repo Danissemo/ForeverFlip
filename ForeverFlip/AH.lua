@@ -461,12 +461,73 @@ function A.buyItem(auctionID, price)
 end
 
 -- Selling ----------------------------------------------------------------------------------------
+-- The kind of a bag item when the auction house has not told it yet (A.kindOf asks for the item
+-- key's info, which the game only has for items it has seen on the auction house): the game's own
+-- Sell window asks the item location whether it is a commodity, and gear is what can be equipped.
+local function kindOfBagItem(id, loc)
+    if not AH.GetItemCommodityStatus or not Enum or not Enum.ItemCommodityStatus then
+        return nil
+    end
+    ---@diagnostic disable-next-line: param-type-mismatch
+    local ok, status = pcall(AH.GetItemCommodityStatus, loc)
+    if not ok then
+        return nil
+    end
+    if status == Enum.ItemCommodityStatus.Commodity then
+        return "commodity"
+    elseif status == Enum.ItemCommodityStatus.Item then
+        local equip = C_Item and C_Item.GetItemInfoInstant and select(4, C_Item.GetItemInfoInstant(id))
+        return (type(equip) == "string" and equip ~= "" and equip ~= "INVTYPE_NON_EQUIP_IGNORE") and "gear" or "item"
+    end
+end
+
+-- Bags 0-4, and the reagent bag (herbs, ore, cloth) when the client has one.
+local function bagList()
+    local list = { 0, 1, 2, 3, 4 }
+    local reagent = Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag
+    if reagent and reagent > 4 then
+        list[#list + 1] = reagent
+    end
+    return list
+end
+
+-- /ff bags: why bag items are not on the Sell page. { { link, reason } }, reason one of "bound",
+-- "not_sellable" (the auction house refuses it), "unknown_kind".
+function A.bagReport()
+    local out = {}
+    if not C_Container or not ItemLocation then
+        return out
+    end
+    for _, bag in ipairs(bagList()) do
+        for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            if info and info.itemID then
+                local loc = ItemLocation:CreateFromBagAndSlot(bag, slot)
+                ---@diagnostic disable-next-line: param-type-mismatch
+                local valid = not AH.IsSellItemValid or AH.IsSellItemValid(loc, false)
+                local reason
+                if info.isBound then
+                    reason = "bound"
+                elseif not valid then
+                    reason = "not_sellable"
+                elseif not A.keyFor(info.itemID, info.hyperlink) and not kindOfBagItem(info.itemID, loc) then
+                    reason = "unknown_kind"
+                end
+                if reason then
+                    out[#out + 1] = { link = info.hyperlink or ("item " .. info.itemID), reason = reason }
+                end
+            end
+        end
+    end
+    return out
+end
+
 function A.bagItems()
     local out = {}
     if not C_Container or not ItemLocation then
         return out
     end
-    for bag = 0, 4 do
+    for _, bag in ipairs(bagList()) do
         for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
             local info = C_Container.GetContainerItemInfo(bag, slot)
             if info and info.itemID and not info.isBound then
@@ -474,6 +535,13 @@ function A.bagItems()
                 ---@diagnostic disable-next-line: param-type-mismatch
                 local valid = not AH.IsSellItemValid or AH.IsSellItemValid(loc, false)
                 local key, kind = A.keyFor(info.itemID, info.hyperlink)
+                if valid and not key then
+                    kind = kindOfBagItem(info.itemID, loc)
+                    if kind then
+                        kinds[info.itemID] = kind
+                        key = A.keyFor(info.itemID, info.hyperlink)
+                    end
+                end
                 if valid and key then
                     out[#out + 1] = {
                         bag = bag,

@@ -357,6 +357,7 @@ T.uk = {
     ["open the auction house and use the ForeverFlip tab."] = "відкрийте аукціон і вкладку ForeverFlip.",
     ["saved"] = "Збережено.",
     ["reload"] = "Мову збережено. Введіть /reload.",
+    ["%d bag items are not on the Sell page."] = "Предметів у сумках, яких немає на сторінці продажу: %d.",
     ["Neutral auction house (15% cut)"] = "Нейтральний аукціон (комісія 15%)",
     ["Auction house: %s"] = "Аукціон: %s",
     ["Alliance"] = "Альянс",

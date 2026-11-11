@@ -123,6 +123,7 @@ local events = {
     "AUCTION_HOUSE_POST_WARNING",
     "OWNED_AUCTIONS_UPDATED",
     "ITEM_DATA_LOAD_RESULT",
+    "ITEM_KEY_ITEM_INFO_RECEIVED",
     "CHAT_MSG_SYSTEM",
     "MAIL_SHOW",
     "MAIL_CLOSED",
@@ -237,6 +238,9 @@ function E.handle(event, ...)
         F.Trade.onPostWarning()
     elseif event == "OWNED_AUCTIONS_UPDATED" then
         F.Trade.onOwned()
+    elseif event == "ITEM_KEY_ITEM_INFO_RECEIVED" then
+        -- The auction house now knows the item's kind: the Sell page and the deals may list it.
+        E.changed()
     elseif event == "ITEM_DATA_LOAD_RESULT" then
         local id, ok = ...
         if ok then
@@ -552,6 +556,15 @@ SlashCmdList.FOREVERFLIP = function(msg)
             )
         )
         F.db.diag = { at = last.at, total = last.total, read = last.read, skipped = last.skipped, stats = U.copy(s) }
+        return
+    end
+    if msg == "bags" then
+        -- Why bag items are not on the Sell page (the auction house must be open).
+        local report = F.AH.bagReport()
+        print(string.format("ForeverFlip: " .. L("%d bag items are not on the Sell page."), #report))
+        for i = 1, math.min(30, #report) do
+            print("  " .. report[i].link .. ": " .. report[i].reason)
+        end
         return
     end
     if msg == "export" then

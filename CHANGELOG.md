@@ -47,6 +47,9 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **A late scan event** for the scan just read no longer starts a second reading and a new cooldown;
   a request that failed with an error does not use up the cooldown.
 - **A sale is booked once** when both the auction list and the invoice mail report it.
+- **The Sell page lists every sellable bag item:** items the auction house has not seen yet get
+  their kind from the item itself (as the game's Sell window does), and the reagent bag is read.
+  `/ff bags` tells why an item is left out.
 - **Gear checks** read up to three more pages of a version with many listings; a search of one gear
   version in the game's Buy tab is no longer taken as a full check of the deal.
 

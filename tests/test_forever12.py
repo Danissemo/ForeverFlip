@@ -429,6 +429,29 @@ class SniperGearTests(unittest.TestCase):
         assert(D.get(key) and D.get(key).verified, 'the gear deal is checked')''')
 
 
+class SellPageTests(unittest.TestCase):
+    def test_bag_items_the_auction_house_does_not_know_yet_are_listed(self):
+        run(SETUP + '''local A = ForeverFlip.AH
+        addItem(77, 'Bruiseweed', 10, 'commodity')
+        local info = C_AuctionHouse.GetItemKeyInfo
+        C_AuctionHouse.GetItemKeyInfo = function(key) if key.itemID == 77 then return nil end return info(key) end
+        Enum = Enum or {}
+        Enum.ItemCommodityStatus = { Unknown = 0, Item = 1, Commodity = 2 }
+        C_AuctionHouse.GetItemCommodityStatus = function(loc) return 2 end
+        putBag(0, 1, 77, 10)
+        local found
+        for _, b in ipairs(A.bagItems()) do if b.id == 77 then found = b end end
+        assert(found and found.kind == 'commodity' and found.key == 'c:77')''')
+
+    def test_the_reagent_bag_is_read(self):
+        run(SETUP + '''local A = ForeverFlip.AH
+        Enum = Enum or {}; Enum.BagIndex = { ReagentBag = 5 }
+        putBag(5, 1, 10, 20)
+        local found
+        for _, b in ipairs(A.bagItems()) do if b.bag == 5 then found = b end end
+        assert(found and found.key == 'c:10')''')
+
+
 class ReviewTests(unittest.TestCase):
     def test_hardcore_scans_are_merged_and_cuts_learned_for_the_hardcore_house(self):
         run(SETUP + '''Enum = Enum or {}; Enum.GameRule = { HardcoreRuleset = 7 }
