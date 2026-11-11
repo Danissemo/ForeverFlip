@@ -17,6 +17,8 @@ local MESSAGES = {
     nothing_undercut = "No undercut auction worth reposting. Press Check prices first.",
     bid_placed = "Bid placed. If nobody bids more, the item arrives by mail when the auction ends.",
     bid_won = "Auction won: the item is booked as stock.",
+    hidden = "The item is hidden: it is no longer offered for sale.",
+    unhidden = "The item is back in the list for sale.",
     unknown_item = "Unknown item. Shift-click its link, or type its exact name once the game knows it.",
     checking = "Reading the current price first; press again to post.",
     mail_done = "Auction mail taken.",
@@ -1079,6 +1081,11 @@ function UI.createSell(p)
         function(row)
             UI.sellSelected = row.item
             UI.sellPrice:SetText("")
+            if row.item and UI.sellView == "hidden" then
+                F.Engine.changed()
+                UI.refresh()
+                return
+            end
             if row.item then
                 -- An item a fresh full scan did not see has no lots: a search would get no answer.
                 if not F.Scan.notListed(row.item.key) then
@@ -1094,6 +1101,37 @@ function UI.createSell(p)
             UI.refresh()
         end
     )
+
+    UI.sellView = "sale"
+    UI.sellSaleTab = button(p, "For sale", 130, function()
+        UI.sellView, UI.sellSelected = "sale", nil
+        UI.sellPrice:SetText("")
+        UI.refresh()
+    end)
+    UI.sellSaleTab:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 6, 6)
+    UI.sellHiddenTab = button(p, "Hidden", 130, function()
+        UI.sellView, UI.sellSelected = "hidden", nil
+        UI.sellPrice:SetText("")
+        UI.refresh()
+    end)
+    UI.sellHiddenTab:SetPoint("LEFT", UI.sellSaleTab, "RIGHT", 4, 0)
+    UI.sellHide = button(p, "Hide", 130, function()
+        local item = UI.sellSelected
+        if not item then
+            return
+        end
+        if UI.sellView == "hidden" then
+            F.Trade.unhide(item.key)
+            F.Engine.notify("unhidden")
+        else
+            F.Trade.hide(item.key, item.name or U.linkName(item.link) or nameOf(item.key))
+            F.Engine.notify("hidden")
+        end
+        UI.sellSelected = nil
+        UI.sellPrice:SetText("")
+        UI.refresh()
+    end)
+    UI.sellHide:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -6, 6)
 
     local bar = footer(p, 138)
     UI.sellText = bar.text
@@ -1162,6 +1200,7 @@ function UI.createSell(p)
         F.Engine.notify(why)
         if ok and why == "posted" then
             UI.sellSelected = nil
+            UI.sellPrice:SetText("")
         end
     end)
     UI.postButton:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
@@ -1185,17 +1224,28 @@ function UI.createSell(p)
     UI.sellCheck:SetPoint("RIGHT", UI.postButton, "LEFT", -4, 0)
 end
 
-local function sellItems()
+-- Bag items for sale, or (hidden = true) the hidden items, also those no longer in the bags.
+local function sellItems(hidden)
     local positions = F.Data.char(F.db, F.Engine.owner()).positions
     local items, byKey = {}, {}
     for _, b in ipairs(F.AH.bagItems()) do
-        local merged = byKey[b.key]
-        if merged then
-            merged.count = merged.count + b.count
-        else
-            b.position = positions[b.key]
-            items[#items + 1] = b
-            byKey[b.key] = b
+        if F.Trade.hidden(b.key) == (hidden and true or false) then
+            local merged = byKey[b.key]
+            if merged then
+                merged.count = merged.count + b.count
+            else
+                b.position = positions[b.key]
+                items[#items + 1] = b
+                byKey[b.key] = b
+            end
+        end
+    end
+    if hidden then
+        for _, h in ipairs(F.Trade.hiddenItems()) do
+            if not byKey[h.key] then
+                local item = U.parseKey(h.key)
+                items[#items + 1] = { key = h.key, id = item and item.id, count = 0, name = h.name, away = true }
+            end
         end
     end
     table.sort(items, function(a, b)
@@ -1244,7 +1294,15 @@ function UI.checkStatuses()
 end
 
 function UI.refreshSell()
-    local items = sellItems()
+    local hiddenView = UI.sellView == "hidden"
+    local items = sellItems(hiddenView)
+    local hiddenCount = #F.Trade.hiddenItems()
+    UI.sellSaleTab:SetText(L("For sale") .. " (" .. #sellItems(false) .. ")")
+    UI.sellHiddenTab:SetText(L("Hidden") .. " (" .. hiddenCount .. ")")
+    UI.sellSaleTab:SetEnabled(hiddenView)
+    UI.sellHiddenTab:SetEnabled(not hiddenView)
+    UI.sellHide:SetText(L(hiddenView and "Return to sale" or "Hide"))
+    UI.sellHide:SetEnabled(UI.sellSelected ~= nil)
     local listings = {}
     for _, l in ipairs(F.Data.char(F.db, F.Engine.owner()).listings) do
         listings[l.key] = (listings[l.key] or 0) + l.open
@@ -1254,12 +1312,16 @@ function UI.refreshSell()
         if item then
             r.item, r.key, r.link = item, item.key, item.link
             r.icon:SetTexture(icon(item.id))
-            r.name:SetText(item.link or nameOf(item.key))
-            r.cols[1]:SetText(item.count)
+            r.name:SetText(item.link or item.name or nameOf(item.key))
+            r.cols[1]:SetText(item.away and "-" or item.count)
             local p = item.position
             r.cols[2]:SetText(p and p.qty > 0 and U.money(p.cost / p.qty) or "-")
             r.cols[3]:SetText(listings[item.key] or "-")
-            r.cols[4]:SetText(p and (p.mode == "vendor" and L("sell to a vendor") or L("bought for resale")) or "")
+            if hiddenView then
+                r.cols[4]:SetText(item.away and L("not in the bags") or L("hidden"))
+            else
+                r.cols[4]:SetText(p and (p.mode == "vendor" and L("sell to a vendor") or L("bought for resale")) or "")
+            end
             if UI.sellSelected and UI.sellSelected.key == item.key then
                 r.selected:Show()
                 UI.sellSelected = item
@@ -1274,10 +1336,32 @@ function UI.refreshSell()
     end
     local empty = UI.sellTable.empty
     if #items == 0 then
-        empty:SetText(L("No items in your bags can be sold on the auction house."))
+        empty:SetText(
+            hiddenView
+                    and L(
+                        "No hidden items. Select an item under For sale and press Hide to keep it out of the list and out of Post all."
+                    )
+                or L("No items in your bags can be sold on the auction house.")
+        )
         empty:Show()
     else
         empty:Hide()
+    end
+    if hiddenView then
+        UI.sellText:SetText(
+            UI.sellSelected and L("Return to sale puts the item back in the list and in Post all.")
+                or L(
+                    "Hidden items are not shown for sale and Post all and Post next bought skip them. Select one to return it."
+                )
+        )
+        UI.postButton:Disable()
+        UI.sellCheck:Disable()
+        UI.ruleSave:Disable()
+        UI.refreshPostNext()
+        local all = #F.Trade.toPostAll()
+        UI.postAll:SetText(L("Post all") .. " (" .. all .. ")")
+        UI.postAll:SetEnabled(all > 0 and not F.Trade.posting)
+        return
     end
     for _, b in ipairs(UI.durations) do
         b:SetEnabled(F.db.settings.duration ~= b.value)

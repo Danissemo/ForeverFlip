@@ -232,6 +232,14 @@ out.
 | Listed | Units you already have on the auction house. |
 | Note | Whether the item was bought for resale or as a vendor deal. |
 
+Under the table:
+
+- **For sale (N)** and **Hidden (N)** switch between the items for sale and the items you hid.
+- **Hide** takes the selected item out of the list for sale. Post all and Post next bought skip it
+  from then on. Use it for items you want to keep, such as consumables, tools or keepsakes.
+- In the **Hidden** view, **Return to sale** puts the selected item back. Hidden items that are no
+  longer in your bags stay listed there, so you can still return them.
+
 At the bottom:
 
 - **Selecting an item** reads its current listings at once, fills in the quantity and loads its rule.

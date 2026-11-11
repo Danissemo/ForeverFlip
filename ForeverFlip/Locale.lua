@@ -5,6 +5,17 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["For sale"] = "Продаю",
+    ["Hidden"] = "Приховані",
+    ["Hide"] = "Приховати",
+    ["Return to sale"] = "Повернути",
+    ["hidden"] = "приховано",
+    ["not in the bags"] = "немає в сумках",
+    ["No hidden items. Select an item under For sale and press Hide to keep it out of the list and out of Post all."] = "Прихованих предметів немає. Виберіть предмет у «Продаю» і натисніть «Приховати», щоб прибрати його зі списку та з «Виставити все».",
+    ["Return to sale puts the item back in the list and in Post all."] = "«Повернути» знову додає предмет до списку й до «Виставити все».",
+    ["Hidden items are not shown for sale and Post all and Post next bought skip them. Select one to return it."] = "Приховані предмети не показуються для продажу, а «Виставити все» та «Виставити наступне куплене» їх пропускають. Виберіть предмет, щоб повернути його.",
+    ["The item is hidden: it is no longer offered for sale."] = "Предмет приховано: він більше не пропонується до продажу.",
+    ["The item is back in the list for sale."] = "Предмет повернуто до списку на продаж.",
     ["Nobody listed it at the last full scan (%d min ago)."] = "На останньому повному скані (%d хв тому) його ніхто не виставляв.",
     ["The auction house did not answer the check: nobody seems to sell it."] = "Аукціон не відповів на перевірку: схоже, його ніхто не продає.",
     ["This is a guess: check the price, change it if needed and press Post. Post next bought and Post all skip guessed prices."] = "Це припущення: перевірте ціну, змініть її за потреби й натисніть «Виставити». «Виставити наступне куплене» та «Виставити все» пропускають припущені ціни.",

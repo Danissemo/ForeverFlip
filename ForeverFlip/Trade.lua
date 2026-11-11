@@ -678,7 +678,7 @@ function T.toPost()
     for _, b in ipairs(F.AH.bagItems()) do
         local p = c.positions[b.key]
         local own = p and (p.mode == "vendor" or p.mode == "shop" or p.mode == "disenchant")
-        if p and not own and p.qty > (listed[b.key] or 0) and not seen[b.key] then
+        if p and not own and not T.hidden(b.key) and p.qty > (listed[b.key] or 0) and not seen[b.key] then
             seen[b.key] = true
             b.position = p
             out[#out + 1] = b
@@ -737,6 +737,38 @@ function T.postNext()
     end)
 end
 
+-- Items the player does not want to sell: hidden from the Sell page and skipped by the posting queues.
+local function hiddenList()
+    F.db.hiddenSell = type(F.db.hiddenSell) == "table" and F.db.hiddenSell or {}
+    return F.db.hiddenSell
+end
+
+function T.hide(key, name)
+    hiddenList()[key] = name or key
+    F.Engine.changed()
+end
+
+function T.unhide(key)
+    hiddenList()[key] = nil
+    F.Engine.changed()
+end
+
+function T.hidden(key)
+    return F.db ~= nil and key ~= nil and hiddenList()[key] ~= nil
+end
+
+-- { key, name } of every hidden item, by name.
+function T.hiddenItems()
+    local out = {}
+    for key, name in pairs(hiddenList()) do
+        out[#out + 1] = { key = key, name = name }
+    end
+    table.sort(out, function(a, b)
+        return tostring(a.name) < tostring(b.name)
+    end)
+    return out
+end
+
 -- Every sellable bag item, not only purchases: vendor-deal stock and blocked items are left out,
 -- and each item's "keep" rule stays in the bags.
 function T.toPostAll()
@@ -748,6 +780,7 @@ function T.toPostAll()
         local blocked = F.Shopping and F.Shopping.blocked(b.key)
         if
             not seen[b.key]
+            and not T.hidden(b.key)
             and not (p and p.mode == "vendor")
             and not blocked
             and not (rule and rule.keep and rule.keep >= T.bagCount(b.key))

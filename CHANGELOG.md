@@ -6,6 +6,12 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Hide** on the Sell page takes items you want to keep out of the list for sale and out of the
+  posting queues. A **Hidden** view lists them, including items no longer in the bags, and **Return
+  to sale** brings them back.
+
 ### Changed
 
 - Neutral auction houses are recognised by the zone's map ID, in any client language; the English
@@ -15,6 +21,7 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- The price box of the Sell page kept the last price after posting.
 - An item nobody sells on the auction house and never seen in a scan (recipes, rare drops) got no
   suggested price, and the Sell page kept asking for a price check. Now:
   - the price comes, in this order, from your last post of the item, auxForever, your cost + 25%, or

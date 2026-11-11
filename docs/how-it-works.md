@@ -336,7 +336,8 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
 - **Posting queues** (`postFirst`):
   - **Post next bought:** positions bought for resale, oldest first.
   - **Post all:** every sellable bag item except vendor-deal, shopping and disenchant stock, ignored
-    items and the units of a `keep` rule.
+    items, items hidden on the Sell page (`F.db.hiddenSell`) and the units of a `keep` rule.
+    Post next bought skips hidden items too.
   - Each click either reads a missing price or posts one item. Below the floor, an item is posted at
     the floor (`belowMin = "min"`) or skipped for the session (`"hold"`).
 - **Duration** (`T.durationFor`): 2, 8 or 24 hours from the setting. With **Auto**, it is the
