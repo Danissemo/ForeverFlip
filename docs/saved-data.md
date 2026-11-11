@@ -73,7 +73,7 @@ Missing settings are filled in with these defaults at load.
 | Field | Meaning |
 |---|---|
 | `history[key]` | Per-item history, see below. Items not seen in a full scan for 14 days are removed. |
-| `last` | The last scan, kept until the next scan: `{ at, total, read, skipped, own, stats, deals, pool, hot }`. `deals` are saved deals without their live rows, `pool` holds items still waiting for a vendor price (up to 6000), `hot` is the sniper list. |
+| `last` | The last scan, written on logout and when another house opens, kept until the next scan: `{ at, total, read, skipped, own, stats, deals, pool, hot }`. `deals` are saved deals without their live rows, `pool` holds items still waiting for a vendor price (up to 6000), `hot` is the sniper list. |
 
 ### `history[key]`
 

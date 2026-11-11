@@ -71,9 +71,12 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    (up to 6000) and evaluated again when their data loads. Items that vanished from the house since
    the last scan have all their lots compared too: a sold-out item counts its sales.
 5. **Saving.** The scan statistics, the deals, the items still waiting for a vendor price and the
-   sniper list are saved, so they survive a `/reload`.
+   sniper list are put into the saved data on logout and `/reload` (when the game writes it) and
+   when another auction house opens, so they survive a `/reload`.
 
-Items that have not appeared in a full scan for 14 days are removed from the saved history.
+Items that have not appeared in a full scan for 14 days are removed from the saved history. Like the
+rest of the scan, this pass over the history (and the sweep of vanished items) runs a slice per
+frame, so the end of a scan does not stall the game on a large history.
 
 If another addon requests a full scan, ForeverFlip reads the same result and treats the 15-minute
 window as used. The call itself is watched (`C_AuctionHouse.ReplicateItems` is hooked), because the
@@ -257,7 +260,10 @@ with them, using the same rules.
 - Gear is searched in two steps, because the sell search is never answered on WoW Forever: a browse
   by the item's name lists its item-key versions, then each version is searched and the rows are
   merged and filtered by the full item name. A complete browse without the item means nobody sells
-  it, known at once. (Without browse queries the sell search is still tried.)
+  it, known at once. (Without browse queries the sell search is still tried.) A browse somebody else
+  sent (the game's Buy tab, another addon) during the search, or less than 10 seconds before it, may
+  answer in its place: then the result is "unknown", not "nobody sells it", and the versions found
+  are not taken as all of them.
 - The throttle check (`IsThrottledMessageSystemReady`) can stay "not ready" for good after a message
   the server never answered. It is watched every frame; after 5 seconds of "not ready" one message
   goes through.

@@ -140,6 +140,29 @@ class GearSearchTests(unittest.TestCase):
         browseAnswer()
         assert(got and not got.complete and got.rows == nil, 'unknown, not "nobody sells it"')''')
 
+    def test_a_browse_sent_just_before_ours_is_not_taken_for_its_answer(self):
+        run(SETUP + '''enableBrowse()
+        function hooksecurefunc(t, name, fn)
+            local orig = t[name]
+            t[name] = function(...) local a, b = orig(...); fn(...); return a, b end
+        end
+        ForeverFlip.AH.browseHooked = false; ForeverFlip.AH.hookBrowse()
+        fullScan()
+        local D, U = ForeverFlip.Deals, ForeverFlip.Util
+        local key = U.key('gear', 20, 'Northern Shortsword of Nature Protection')
+        for i = #auctions, 1, -1 do if auctions[i].item == 20 then table.remove(auctions, i) end end
+        C_AuctionHouse.SendBrowseQuery({ searchString = 'Linen' })  -- the player, a moment before
+        local got
+        D.enqueue(key, function(_, rows, complete) got = { rows = rows, complete = complete } end)
+        assert(D.search and D.search.foreign, 'the search knows a browse was out')
+        browseAnswer()
+        assert(got and not got.complete and got.rows == nil, 'unknown, not "nobody sells it"')
+        now = now + 11
+        got = nil
+        D.enqueue(key, function(_, rows, complete) got = { rows = rows, complete = complete } end)
+        answer()
+        assert(got and got.complete and #got.rows == 0, 'later, a browse of its own proves it')''')
+
     def test_without_browse_the_old_search_is_used(self):
         run(SETUP + '''fullScan()
         local D, U = ForeverFlip.Deals, ForeverFlip.Util
@@ -393,6 +416,19 @@ class WholeCodeReviewTests(unittest.TestCase):
         local h = F.Data.market(F.db, F.Engine.scope()).history['i:30']
         assert((F.Market.demandAt(h, 30000).sold or 0) == 0, 'a scan with most auctions missing is partial')
         assert(h.lots, 'the lots stay for the next full scan')''')
+
+    def test_the_end_of_a_scan_forgets_old_items_and_saves_on_logout(self):
+        run(SETUP + '''local F = ForeverFlip
+        local history = F.Data.market(F.db, F.Engine.scope()).history
+        history['i:999'] = { scan = { at = now - 15 * 86400, market = 100 } }
+        history['i:998'] = { scan = { at = now - 2 * 86400, market = 100 } }
+        fullScan()
+        assert(history['i:999'] == nil, 'not seen for 15 days: forgotten')
+        assert(history['i:998'], 'seen two days ago: kept')
+        assert(F.Scan.last.listed['i:30'], 'the units listed are known')
+        assert(F.Data.market(F.db, F.Engine.scope()).last == nil, 'not copied into the saved data yet')
+        fire('PLAYER_LOGOUT')
+        assert(F.Data.market(F.db, F.Engine.scope()).last.total == F.Scan.last.total, 'saved on logout')''')
 
     def test_opening_another_house_shows_its_own_scan(self):
         run(SETUP + '''local F = ForeverFlip

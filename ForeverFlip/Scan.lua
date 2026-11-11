@@ -316,6 +316,7 @@ local function finish(j, done)
         end
         g.market = value
         g.buckets = nil
+        j.listed[key] = g.units or 1
         stats.items = stats.items + 1
         local vendor = F.AH.vendorPrice(g.id)
         if vendor then
@@ -354,23 +355,35 @@ local function finish(j, done)
             return false
         end
     end
-    if j.lots and not j.swept then
-        -- Items that vanished from the house since the last scan: all their lots are gone. Not
-        -- when rows could not be read at all, or when the scan is far smaller than the house's
-        -- last one (a partial answer): then a missing item proves nothing.
-        j.swept = true
-        local previous = F.Data.market(F.db, j.scope).last
-        local partial = (j.unreadable or 0) > j.total * 0.005
-            or (type(previous) == "table" and (previous.total or 0) > 0 and j.total < previous.total * 0.6)
-        for key, h in pairs(partial and {} or history) do
+    if not j.tidyKeys then
+        -- One pass over the whole history, a slice per frame: items that vanished from the house
+        -- since the last scan (all their lots are gone), and items not seen for 14 days (forgotten,
+        -- so the saved file does not grow forever). The keys are taken first, so nothing added
+        -- meanwhile upsets the walk.
+        local previous = S.last and S.last.scope == j.scope and S.last or market.last
+        j.sweep = j.lots
+            and not (
+                (j.unreadable or 0) > j.total * 0.005
+                or (type(previous) == "table" and (previous.total or 0) > 0 and j.total < previous.total * 0.6)
+            )
+        j.tidyKeys, j.tidyAt = {}, 1
+        for key in pairs(history) do
+            j.tidyKeys[#j.tidyKeys + 1] = key
+        end
+        if done() then
+            return false
+        end
+    end
+    local keys = j.tidyKeys
+    while j.tidyAt <= #keys do
+        local key = keys[j.tidyAt]
+        j.tidyAt = j.tidyAt + 1
+        local h = history[key]
+        if type(h) == "table" and j.sweep and h.lots and not j.groups[key] and (h.lotsAt or now) < now then
+            -- Not when rows could not be read at all, or the scan is far smaller than the house's
+            -- last one (a partial answer): then a missing item proves nothing.
             local item = U.parseKey(key)
-            if
-                type(h) == "table"
-                and h.lots
-                and not j.groups[key]
-                and (h.lotsAt or now) < now
-                and not (item and j.unread and j.unread[item.id])
-            then
+            if not (item and j.unread and j.unread[item.id]) then
                 local sold = S.trackLots(h, {}, now)
                 local today = h.days and h.days[#h.days]
                 if sold > 0 and today and today.d == math.floor(now / 86400) then
@@ -378,6 +391,12 @@ local function finish(j, done)
                 end
                 h.lots, h.lotsAt = nil, nil
             end
+        end
+        if h ~= nil and S.stale(h, now) then
+            history[key] = nil
+        end
+        if done() then
+            return false
         end
     end
     return true
@@ -396,16 +415,6 @@ function S.trackLots(h, seq, now)
         h.lots, h.lotsAt = M.packLots(seq), now
     end
     return sold
-end
-
--- Units of every item listed in the scan, by key (kept in memory only). On WoW Forever the scan does
--- not name sellers, so the player's own lots may be counted too.
-function S.listedKeys(j)
-    local listed = {}
-    for key, g in pairs(j.groups or {}) do
-        listed[key] = g.units or 1
-    end
-    return listed
 end
 
 -- Units of an item in a recent full scan (up to 20 minutes old) of this auction house; nil when
@@ -497,7 +506,7 @@ function S.step()
                 end
             end
             j.state, j.cursor, j.finishAt = "finishing", 1, now
-            j.deals, j.waitVendor, j.hot = {}, {}, {}
+            j.deals, j.waitVendor, j.hot, j.listed = {}, {}, {}, {}
             j.stats = { items = 0, vendorKnown = 0, belowVendor = 0, collecting = 0 }
         end
         return
@@ -515,7 +524,8 @@ function S.step()
             own = j.own,
             stats = j.stats,
             waitVendor = j.waitVendor,
-            listed = S.listedKeys(j),
+            -- Units of every item listed in the scan, by key (kept in memory only).
+            listed = j.listed,
             -- The scan named the player's own lots (and left them out of `listed`).
             ownersKnown = j.own > 0,
         }
@@ -527,8 +537,8 @@ function S.step()
         end
         F.Deals.replace(j.deals, j.scope)
         F.Bids.finish(j, F.Data.market(F.db, j.scope).history)
-        S.prune(j.scope, j.finishAt)
-        S.save()
+        -- The scan is put into the saved data on logout and when another house opens (S.save), not
+        -- here: the game writes saved data only then, and copying it is the costliest end step.
         F.Engine.notify("scan_done")
         F.Share.afterScan()
     end
@@ -649,14 +659,19 @@ function S.restore(scope)
     return true
 end
 
--- Forgets items not seen in a full scan for 14 days, so the saved file does not grow forever.
+-- An item not seen in a full scan (or a shared one) for 14 days is forgotten.
+function S.stale(h, now)
+    local seen = type(h) == "table"
+            and math.max(h.scan and h.scan.at or 0, type(h.shared) == "table" and h.shared.at or 0)
+        or 0
+    return now - seen > 14 * 86400
+end
+
+-- Forgets every stale item at once (the end of a scan does it a slice per frame).
 function S.prune(scope, now)
     local history = F.Data.market(F.db, scope).history
     for key, h in pairs(history) do
-        local seen = type(h) == "table"
-                and math.max(h.scan and h.scan.at or 0, type(h.shared) == "table" and h.shared.at or 0)
-            or 0
-        if now - seen > 14 * 86400 then
+        if S.stale(h, now) then
             history[key] = nil
         end
     end

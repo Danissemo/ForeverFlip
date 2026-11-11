@@ -22,6 +22,16 @@ F.db.settings.sniper = true
 F.db.settings.vendorMargin = 0
 enableBrowse(200)
 enableTimeLeft()
+if %(chaos)s > 0 then
+    -- Real hooks: the addon sees the browses and full scans it did not send.
+    function hooksecurefunc(t, name, fn)
+        local orig = t[name]
+        t[name] = function(...) local a, b, c = orig(...); fn(...); return a, b, c end
+    end
+    F.AH.browseHooked = false; F.AH.hookBrowse()
+    F.Engine.replicateHooked = false; F.Engine.hookReplicate()
+end
+sim.chaosRate = %(chaos)s
 sim.seed(%(seed)d)
 sim.setup(%(commodities)d, %(items)d, %(gear)d)
 sim.list(%(start)d)
@@ -32,7 +42,9 @@ for tick = 1, %(ticks)d do
     sim.list(%(perTick)d); sim.buy(%(buyers)d); sim.expire()
     now = now + 901
     -- a full scan, then the sniper and the checks run for a while
-    fullScan()
+    if not (sim.chaosRate > 0 and tick %% 3 == 0 and sim.otherScan()) then
+        fullScan()
+    end
     sim.play(20)
     ticks.deals = ticks.deals + #F.Deals.list
     ticks.bought = ticks.bought + sim.buyDeals(4)
@@ -48,17 +60,19 @@ end
 local c = F.Data.char(F.db, F.Engine.owner())
 local positions = 0
 for _ in pairs(c.positions) do positions = positions + 1 end
-summary = string.format('deals seen %%d, bought %%d units in %%d buys, posted %%d, sold %%d, journal %%d, positions %%d',
-    ticks.deals, sim.bought, ticks.bought, sim.posted, sim.sold, #c.journal, positions)
+summary = string.format('deals seen %%d, bought %%d units in %%d buys, posted %%d, sold %%d, journal %%d, positions %%d'
+    .. (sim.chaosRate > 0 and '; Buy tab browses %%d, reopened %%d, other addon scans %%d' or ''),
+    ticks.deals, sim.bought, ticks.bought, sim.posted, sim.sold, #c.journal, positions,
+    sim.events.browses, sim.events.reopened, sim.events.otherScans)
 '''
 
 
-def session(seed, ticks=10, commodities=15, items=8, gear=6, start=500, per_tick=80, buyers=60):
+def session(seed, ticks=10, commodities=15, items=8, gear=6, start=500, per_tick=80, buyers=60, chaos=0):
     lua = runtime()
     lua.execute((HERE / 'sim.lua').read_text(encoding='utf-8'))
     began = time.perf_counter()
     lua.execute(SESSION % dict(seed=seed, ticks=ticks, commodities=commodities, items=items, gear=gear,
-                               start=start, perTick=per_tick, buyers=buyers))
+                               start=start, perTick=per_tick, buyers=buyers, chaos=chaos))
     took = time.perf_counter() - began
     g = lua.globals()
     problems = [g.problems[i] for i in range(1, len(g.problems) + 1)]
@@ -80,6 +94,10 @@ class SimulationTests(unittest.TestCase):
 
     def test_session_seed_2(self):
         self.run_seed(2)
+
+    def test_session_with_the_player_and_other_addons_meanwhile(self):
+        summary = self.run_seed(6, chaos=0.05)
+        self.assertNotIn('other addon scans 0', summary, 'another addon scanned')
 
     def test_session_seed_3_busy_market(self):
         self.run_seed(3, ticks=8, per_tick=200, buyers=150, start=1500)
@@ -127,7 +145,7 @@ class ReloadAndHouseTests(unittest.TestCase):
     def test_a_reload_keeps_scan_deals_stock_and_journal(self):
         lua = runtime()
         lua.execute((HERE / 'sim.lua').read_text(encoding='utf-8'))
-        lua.execute(SESSION % dict(seed=4, ticks=5, commodities=12, items=6, gear=4, start=400, perTick=80, buyers=60))
+        lua.execute(SESSION % dict(seed=4, ticks=5, commodities=12, items=6, gear=4, start=400, perTick=80, buyers=60, chaos=0))
         lua.execute("fire('PLAYER_LOGOUT')")
         before = lua.eval("""(function()
             local F = ForeverFlip; local c = F.Data.char(F.db, F.Engine.owner())
@@ -151,7 +169,7 @@ class ReloadAndHouseTests(unittest.TestCase):
     def test_switching_houses_keeps_each_house_apart(self):
         lua = runtime()
         lua.execute((HERE / 'sim.lua').read_text(encoding='utf-8'))
-        lua.execute(SESSION % dict(seed=5, ticks=3, commodities=10, items=5, gear=3, start=300, perTick=60, buyers=40))
+        lua.execute(SESSION % dict(seed=5, ticks=3, commodities=10, items=5, gear=3, start=300, perTick=60, buyers=40, chaos=0))
         result = lua.eval("""(function()
             local F = ForeverFlip
             local allianceScan, allianceDeals = F.Scan.last.at, #F.Deals.list

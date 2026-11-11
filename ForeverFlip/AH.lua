@@ -323,12 +323,20 @@ function A.hookBrowse()
         if AH[name] then
             hooksecurefunc(AH, name, function()
                 if not A.ownBrowse then
+                    A.foreignAt = F.Engine.clock()
                     F.Deals.onForeignBrowse()
                 end
             end)
         end
     end
 end
+-- True when somebody else sent a browse a moment ago: its answer may still be on the way, and would
+-- arrive after (and be read as) the answer to a browse sent now.
+A.FOREIGN_WAIT = 10
+function A.foreignRecent()
+    return A.foreignAt ~= nil and F.Engine.clock() - A.foreignAt < A.FOREIGN_WAIT
+end
+
 -- The item-key versions of `id` in the browse results so far.
 function A.gearKeys(id)
     local out = {}

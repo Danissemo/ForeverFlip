@@ -36,7 +36,7 @@ python -m unittest discover -s tests -p "test_*.py"
 | `test_sync.py` | Full-scan capture, the SavedVariables reader, FFR1 and FF1 formats, the usual price in Python and Lua, the aggregator. |
 | `test_extras.py` | `ForeverFlipAPI`, aux fallback, CSV export, realm gold, presets. |
 | `test_forever12.py` | 1.2: vendor prices from the buyback list and the margin, the stuck throttle, owner names, gear searched by browse and version, other addons' full scans, the scan wait, disenchant rules and learning, the realm channel, the trust filter, the spending limit, cheap lots left, Buy next, the saved-data guard, hardcore scopes, tooltip advice. |
-| `test_simulation.py` | Simulated play sessions (see below), a `/reload` with the saved data written and read back as text, switching between a faction and a neutral house, and a full scan of 100 000 auctions read in small frames. |
+| `test_simulation.py` | Simulated play sessions (see below), with and without the player and other addons acting meanwhile, a `/reload` with the saved data written and read back as text, switching between a faction and a neutral house, and a full scan of 100 000 auctions read in small frames. |
 | `test_locale.py` | Every `L("...")` string has a Ukrainian translation, and no key is translated twice. |
 
 ### Simulated sessions
@@ -55,7 +55,12 @@ is drawn after each tick, and these always have to hold:
   is sold to a vendor at a loss;
 - no Lua error, caught or not.
 
-Seeds 1 to 3 run in the suite; for more, call `session(seed)` from `test_simulation.py` in a loop.
+With `chaos` above 0 the player searches in the game's Buy tab meanwhile (browses ForeverFlip did
+not send), the auction house is closed and opened again now and then, and every third scan is
+started by another addon.
+
+Seeds 1 to 3 and one session with chaos run in the suite; for more, call `session(seed)` (or
+`session(seed, chaos=0.05)`) from `test_simulation.py` in a loop.
 
 The CI workflow runs the same tests, checks formatting with StyLua, and builds the archive on every
 push and pull request. Locally, the `pre-commit` hook runs StyLua and the tests before every commit

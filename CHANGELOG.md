@@ -43,6 +43,11 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   title name the open house (Alliance blue, Horde red, neutral gold with its 15% cut), and opening
   another house shows that house's own scan and deals (deals just checked on the other house no
   longer come along).
+- **The end of a full scan** no longer stalls the game on a large history: forgetting old items
+  and sweeping vanished ones run a slice per frame, and the scan is copied into the saved data on
+  logout instead of at once.
+- **A browse sent just before a gear check** (the game's Buy tab, another addon) can no longer be
+  taken for the check's answer and report that nobody sells the item.
 - **Sales from a full scan:** items whose rows could not be read in time, and scans far smaller than
   the house's last one (a partial answer), no longer count their missing lots as sold.
 - **A late scan event** for the scan just read no longer starts a second reading and a new cooldown;

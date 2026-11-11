@@ -267,6 +267,7 @@ function sim.play(seconds)
             answer()
         end
         sim.serve()
+        sim.chaos()
     end
 end
 
@@ -444,4 +445,42 @@ function sim.drawAll()
             fn(GameTooltip)
         end
     end
+end
+
+-- Things the player and other addons do meanwhile: a search in the game's Buy tab (another browse
+-- the addon did not send), closing and opening the auction house again.
+sim.chaosRate = 0
+sim.events = { browses = 0, reopened = 0, otherScans = 0 }
+function sim.chaos()
+    if sim.rand() < sim.chaosRate then
+        local g = sim.goods[sim.rand(1, #sim.goods)]
+        C_AuctionHouse.SendBrowseQuery({ searchString = items[g.id].name, sorts = {}, filters = {} })
+        sim.events.browses = sim.events.browses + 1
+        if sim.rand() < 0.5 then
+            browseAnswer()
+        end
+    end
+    if sim.rand() < sim.chaosRate / 20 then
+        fire("AUCTION_HOUSE_CLOSED")
+        run(0.5)
+        fire("AUCTION_HOUSE_SHOW")
+        sim.events.reopened = sim.events.reopened + 1
+    end
+end
+
+-- A full scan another addon starts (ForeverFlip reads it as its own, Scan.onOtherScan).
+function sim.otherScan()
+    if ForeverFlip.Scan.cooldown() > 0 or ForeverFlip.Scan.busy() then
+        return false
+    end
+    C_AuctionHouse.ReplicateItems()
+    fire("REPLICATE_ITEM_LIST_UPDATE")
+    local n = 0
+    while ForeverFlip.Scan.busy() do
+        run(0.05)
+        n = n + 1
+        assert(n < 100000, "the other addon's scan never ends")
+    end
+    sim.events.otherScans = sim.events.otherScans + 1
+    return true
 end

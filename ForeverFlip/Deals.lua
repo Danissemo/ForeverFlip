@@ -301,6 +301,8 @@ local function startRequest(r)
     if r.item.kind == "gear" and F.AH.canSearchGear() then
         -- Gear: a browse by name first (its item-key versions), then each version (see AH.lua).
         r.phase, r.keys, r.keyIndex, r.found, r.foundIDs, r.allComplete = "browse", nil, 0, {}, {}, true
+        -- A browse somebody else sent just before may answer in place of this one.
+        r.foreign = F.AH.foreignRecent()
         F.Sniper.yield()
         ok = pcall(F.AH.gearBrowse, r.item)
     else
@@ -433,6 +435,11 @@ function D.onBrowse()
         return true
     end
     s.keys, s.keyIndex = keys, 0
+    if s.foreign then
+        -- The versions may come from somebody else's browse: some may be missing, so the rows
+        -- found cannot prove there is nothing cheaper.
+        s.allComplete = false
+    end
     nextGearKey(s)
     return true
 end
