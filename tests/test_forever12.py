@@ -166,7 +166,7 @@ class FullScanTests(unittest.TestCase):
     def test_waiting_shows_the_seconds(self):
         run(SETUP + '''replicateIgnored = true; assert(ForeverFlip.Scan.start()); run(30)
         local key, done, total = ForeverFlip.Scan.progress()
-        assert(key == 'scan_waiting' and done >= 29 and done <= 31 and total == 600)''')
+        assert(key == 'scan_waiting' and done >= 29 and done <= 31 and total == ForeverFlip.Scan.ANSWER_WAIT)''')
 
 
 class DisenchantTests(unittest.TestCase):

@@ -13,9 +13,10 @@ S.ROWS = 40 -- cheapest auctions kept per item
 S.RECOVER = 30 -- seconds to wait for item data of rows the game had not loaded
 S.DAYS = 14 -- daily records kept per item (price, cheapest, units listed and sold)
 -- Seconds to wait for the server's answer to a full scan. Since WoW Forever launched the answer
--- can take minutes (auxForever 0.8.2 saw more than 5 and waits 10; ForeverForge waits 2); a call
--- refused by the 15-minute account limit is never answered at all.
-S.ANSWER_WAIT = 600
+-- can take minutes (ForeverForge waits 2, auxForever 0.8.2 waits 10), but a call refused by the
+-- 15-minute account limit (another addon used the window) is never answered: waiting 10 minutes
+-- for it was too long in game. 3 minutes, then a new try a minute later.
+S.ANSWER_WAIT = 180
 
 local function clock()
     return F.Engine.clock()

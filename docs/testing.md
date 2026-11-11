@@ -109,7 +109,7 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 | ⬜ | Gear check | Select a gear deal (or press Check prices on Selling → My auctions with gear): the status turns to checked within a few seconds, not "no answer". |
 | ⬜ | Gear nobody sells | Check prices on a gear auction only you sell: it shows "only yours" at once. |
 | ⬜ | Gear bids | On Deals → Bids, a gear auction with only a bid (no buyout) can be checked and bid on. |
-| ⬜ | Full scan wait | When the server is slow, the status counts the seconds (`... (35 s of up to 600)`) and the scan is read when the answer comes. |
+| ⬜ | Full scan wait | When the server is slow, the status counts the seconds (`Waiting for the full scan: 35 / 180 s`) and the scan is read when the answer comes. |
 | ⬜ | Other addon's scan | Start a full scan in Auctionator or auxForever: ForeverFlip says it reads it too and processes it. |
 | ⬜ | No freeze | Browse the whole house in another addon (or the game's Buy tab with an empty search): the game does not freeze. |
 | ⬜ | Sniper keeps going | Leave the auction house open with the sniper on for 10 minutes: rounds keep growing; Safety shows how often the throttle got stuck. |
