@@ -10,7 +10,9 @@
     "SOUNDKIT",
     "UIErrorsFrame",
     "AuxForeverAPI",
-    "ForeverFlipAPI"
+    "ForeverFlipAPI",
+    "ForeverFlipRaw",
+    "ForeverFlipShared"
   ],
   "workspace.ignoreDir": [
     ".git",

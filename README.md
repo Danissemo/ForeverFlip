@@ -71,8 +71,9 @@
   - gold and stock of all your characters;
   - market lists and the time-of-week price pattern.
 - **History:** a 14-day price chart for any item (right-click), and tooltip prices with their age.
-- **Shared scans:** pool full scans with your guild, group or friends for more history and fresher
-  prices.
+- **Shared scans:** pool full scans with your guild, group or friends in game, or with the whole
+  community through GitHub ([ForeverFlip Sync](docs/community.md)); full scans are archived unchanged
+  in [ForeverFlip-Data](https://github.com/Danissemo/ForeverFlip-Data).
 - **Export:** the journal as CSV.
 - **Comfort:** key bindings, Careful / Balanced / Aggressive presets, `ForeverFlipAPI` for other
   addons, English and Ukrainian.
@@ -135,6 +136,7 @@ The Key Bindings window has four bindings:
 | [How it works](docs/how-it-works.md) | Scans, the sniper, sales tracking, deal maths, limits and safety rules |
 | [Architecture](docs/architecture.md) | Modules, load order, events and data flow |
 | [Saved data](docs/saved-data.md) | Layout of the `ForeverFlipData` SavedVariables file |
+| [Community scans](docs/community.md) | The ForeverFlip Sync helper and the community data repository |
 | [API](docs/api.md) | `ForeverFlipAPI` for other addons |
 | [Testing](docs/testing.md) | Automated tests and the in-game checklist |
 

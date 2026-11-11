@@ -492,6 +492,9 @@ On the **Settings → Sharing** tab:
 | Send my last scan to: Guild / Group | Sends your last full scan once. |
 | Player + Send | Sends it to one player (whisper channel; they need ForeverFlip and must accept shared scans). |
 | Export as text / Import text | The scan as a text you can send anywhere, for example in Discord, and import on another account or by a friend. |
+| Keep my full scans for the ForeverFlip Sync helper | Off by default. Keeps every full scan auction by auction for the [community sharing](community.md) through GitHub. |
+
+The tab also shows the community data the Sync helper wrote, and how many full scans are kept for it.
 
 How a scan is sent and received:
 

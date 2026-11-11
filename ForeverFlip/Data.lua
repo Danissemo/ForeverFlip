@@ -30,6 +30,7 @@ D.DEFAULTS = {
     disenchant = true, -- disenchant deals (only for a character who knows Disenchant)
     shareReceive = true, -- merge full scans shared by guild and group members
     shareAuto = false, -- send each own full scan to the guild
+    rawScans = false, -- keep full scans for the ForeverFlip Sync helper (community data)
 }
 
 function D.open(saved)

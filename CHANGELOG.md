@@ -8,6 +8,15 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- **Community scans through GitHub.**
+  - With **Settings → Sharing → Keep my full scans for the ForeverFlip Sync helper**, every full scan
+    is kept auction by auction (`ForeverFlipRaw`, the last 2).
+  - The new **ForeverFlip Sync** helper (`sync/`) uploads them unchanged to the
+    [ForeverFlip-Data](https://github.com/Danissemo/ForeverFlip-Data) repository, where they are
+    archived by day.
+  - The helper downloads the community summaries of your realms into the **ForeverFlip_Shared**
+    addon, which ForeverFlip merges at login. See [docs/community.md](docs/community.md).
+
 - **Shared scans.** Settings → Sharing sends your last full scan to the guild, the group or one
   player, and can send every scan to the guild automatically. Received scans of your realm add days
   to the price history, fill the weekly pattern, and give a fresh usual price when your own scan is

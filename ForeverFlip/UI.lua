@@ -2424,8 +2424,9 @@ function UI.createShareSettings(p)
     end
     UI.shareReceiveBox = toggle(-8, "shareReceive", "Accept full scans shared by guild and group members")
     UI.shareAutoBox = toggle(-36, "shareAuto", "Send my full scans to the guild after each scan")
+    UI.rawBox = toggle(-64, "rawScans", "Keep my full scans for the ForeverFlip Sync helper (community data)")
     local send = text(p, "GameFontNormal")
-    send:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -80)
+    send:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -104)
     send:SetText(L("Send my last scan to:"))
     UI.shareGuild = button(p, "Guild", 100, function()
         local _, why = F.Share.send("GUILD")
@@ -2438,7 +2439,7 @@ function UI.createShareSettings(p)
     end)
     UI.shareGroup:SetPoint("LEFT", UI.shareGuild, "RIGHT", 4, 0)
     local whisper = text(p, "GameFontNormal")
-    whisper:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -112)
+    whisper:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -136)
     whisper:SetText(L("Player:"))
     UI.shareName = editbox(p, 140)
     UI.shareName:SetPoint("LEFT", whisper, "RIGHT", 10, 0)
@@ -2458,7 +2459,7 @@ function UI.createShareSettings(p)
             F.Share.encode(snap)
         )
     end)
-    UI.shareExport:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -146)
+    UI.shareExport:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -170)
     UI.shareImport = button(p, "Import text", 150, function()
         UI.showText(L("Paste a shared scan (Ctrl+V), then press Import."), "", function(textValue)
             local merged, why = F.Share.import(textValue)
@@ -2468,8 +2469,8 @@ function UI.createShareSettings(p)
     end)
     UI.shareImport:SetPoint("LEFT", UI.shareExport, "RIGHT", 6, 0)
     UI.shareText = text(p, "GameFontHighlightSmall")
-    UI.shareText:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -184)
-    UI.shareText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -184)
+    UI.shareText:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -208)
+    UI.shareText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -208)
     UI.shareText:SetSpacing(3)
 end
 
@@ -2482,6 +2483,17 @@ function UI.refreshShare()
     local s = F.Share.sending
     if #F.Share.outbox > 0 and s then
         lines[#lines + 1] = string.format(L("Sending %d items: %d messages left."), s.items, #F.Share.outbox)
+    end
+    local community = F.Raw.community
+    if community and community.generated then
+        lines[#lines + 1] =
+            string.format(L("Community data: %d scans, updated %s."), community.scans, UI.age(community.generated))
+    else
+        lines[#lines + 1] = L("Community data: none. Run the ForeverFlip Sync helper to get it.")
+    end
+    if F.db.settings.rawScans then
+        local saved = F.Raw.saved()
+        lines[#lines + 1] = string.format(L("Full scans kept for the helper: %d."), #saved)
     end
     if #F.Share.received > 0 then
         lines[#lines + 1] = L("Received:")

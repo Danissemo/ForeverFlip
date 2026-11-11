@@ -5,6 +5,10 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["Keep my full scans for the ForeverFlip Sync helper (community data)"] = "Зберігати мої повні скани для помічника ForeverFlip Sync (дані спільноти)",
+    ["Community data: %d scans, updated %s."] = "Дані спільноти: сканів %d, оновлено %s.",
+    ["Community data: none. Run the ForeverFlip Sync helper to get it."] = "Даних спільноти немає. Запустіть помічник ForeverFlip Sync, щоб їх отримати.",
+    ["Full scans kept for the helper: %d."] = "Повних сканів збережено для помічника: %d.",
     ["Bought (col)"] = "Купл.",
     ["Sold (col)"] = "Прод.",
     ["Stock (col)"] = "Склад",

@@ -83,6 +83,7 @@ local function beginReading(j, total)
     j.read, j.skipped, j.own = 0, 0, 0
     j.player = F.AH.player()
     j.lots = F.AH.canTrackLots()
+    j.raw = F.Raw.active() and {} or nil
 end
 
 -- Automatic full scan: as soon as the 15-minute cooldown ends while the auction house is open
@@ -379,6 +380,7 @@ function S.step()
         while j.index < j.total do
             local i = j.index
             j.index = i + 1
+            F.Raw.capture(j, i)
             if not ingest(j, i) then
                 j.deferred[#j.deferred + 1] = i
             end
@@ -430,6 +432,7 @@ function S.step()
             ownersKnown = j.own > 0,
         }
         S.job = nil
+        F.Raw.finish(j)
         S.setHot(j.hot)
         if F.Analytics then
             F.Analytics.invalidate()

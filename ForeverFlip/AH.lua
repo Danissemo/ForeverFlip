@@ -153,6 +153,29 @@ function A.replicateRow(i)
     }
 end
 
+-- Every field of a full-scan auction, also before the game has loaded the item (raw scans).
+function A.replicateRaw(i)
+    local _, _, count, _, _, _, _, minBid, _, buyout, bidAmount, _, _, owner, _, _, id = AH.GetReplicateItemInfo(i)
+    if not id then
+        return nil
+    end
+    local band
+    if AH.GetReplicateItemTimeLeft then
+        local ok, left = pcall(AH.GetReplicateItemTimeLeft, i)
+        band = ok and U.finite(left) and math.max(0, math.min(3, left - 1)) or nil
+    end
+    return {
+        id = id,
+        count = count,
+        buyout = buyout,
+        minBid = minBid,
+        bid = bidAmount,
+        band = band,
+        own = owner ~= nil and owner == UnitName("player"),
+        link = AH.GetReplicateItemLink and AH.GetReplicateItemLink(i) or nil,
+    }
+end
+
 -- The full scan tells how long each auction has left: sales can be tracked lot by lot.
 function A.canTrackLots()
     return AH.GetReplicateItemTimeLeft ~= nil

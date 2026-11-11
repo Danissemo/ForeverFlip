@@ -58,6 +58,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `disenchant` | `true` | Disenchant deals (only for a character who knows Disenchant). |
 | `shareReceive` | `true` | Merge full scans shared by guild and group members. |
 | `shareAuto` | `false` | Send each own full scan to the guild. |
+| `rawScans` | `false` | Keep full scans for the ForeverFlip Sync helper. |
 
 Missing settings are filled in with these defaults at load.
 
@@ -99,6 +100,29 @@ Missing settings are filled in with these defaults at load.
 | `rates` | `rates[lower-case item name]` = `{ sold, failed }` posts, from auction mail. |
 | `recipes` | `recipes[recipeID]` = `{ name, out = itemID, n = units made, r = { { itemID, count }, ... } }`, read from profession windows. |
 | `bids` | `bids[auctionID]` = open bid `{ key, name, qty, amount, value, at }`. |
+
+## `ForeverFlipRaw`
+
+A second SavedVariables table in the same file, written only with **Keep my full scans for the
+ForeverFlip Sync helper** on:
+
+```lua
+ForeverFlipRaw = {
+    format = "FFR1",
+    scans = { -- newest first, at most 2
+        { scope = "Realm-Alliance", realm = "Realm", faction = "Alliance", at = <time>, count = <auctions>,
+          addon = "1.1.0", rows = "<one line per auction>" },
+    },
+}
+```
+
+Each line of `rows` is `itemID,count,buyout,minBid,bid,timeLeftBand,own,kind,name`; see
+[Community scans](community.md) and the data repository for the meaning of the fields.
+
+## `ForeverFlipShared`
+
+Not saved by the game: a global set by the **ForeverFlip_Shared** addon, which the Sync helper writes.
+It has the form `{ generated = <time>, scans = { "FF1|...", ... } }` and is merged at login.
 
 ## Compatibility
 

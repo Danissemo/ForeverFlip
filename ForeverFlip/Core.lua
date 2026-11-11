@@ -123,6 +123,7 @@ function E.handle(event, ...)
             E.applyCut()
             F.Mail.hook()
             F.Share.register()
+            F.Raw.importCommunity()
             F.Bids.prune()
             if F.UI and F.UI.tooltips then
                 F.UI.tooltips()

@@ -9,7 +9,28 @@ permissions:
   contents: write
 
 jobs:
+  helper:
+    name: Build the Sync helper
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Build ForeverFlipSync.exe
+        run: |
+          python -m pip install pyinstaller
+          pyinstaller --onefile --console --name ForeverFlipSync --paths sync sync/foreverflip_sync.py
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: helper
+          path: dist/ForeverFlipSync.exe
+
   release:
+    needs: helper
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -40,10 +61,16 @@ jobs:
             found && !/^\[[^]]*\]: / { print }
           ' CHANGELOG.md > release-notes.md
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: helper
+          path: dist
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 \
+          (cd dist && sha256sum ForeverFlipSync.exe > ForeverFlipSync.exe.sha256)
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.exe dist/*.sha256 \
             --title "ForeverFlip ${GITHUB_REF_NAME#v}" \
             --notes-file release-notes.md

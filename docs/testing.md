@@ -33,6 +33,7 @@ python -m unittest discover -s tests -p "test_*.py"
 | `test_sorting.py` | Column sorting of every table, both directions, cached lists untouched. |
 | `test_ingame_round2.py` | Own auctions nobody else sells, no answer, sniper summary, Buy tab marks per row. |
 | `test_share.py` | Shared scans: text form, sending, receiving, merging, rejection; key bindings in the settings; statistics display. |
+| `test_sync.py` | Full-scan capture, the SavedVariables reader, FFR1 and FF1 formats, the usual price in Python and Lua, the aggregator. |
 | `test_extras.py` | `ForeverFlipAPI`, aux fallback, CSV export, realm gold, presets. |
 | `test_locale.py` | Every `L("...")` string has a Ukrainian translation, and no key is translated twice. |
 

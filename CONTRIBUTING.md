@@ -13,6 +13,9 @@ python -m unittest discover -s tests -p "test_*.py"
 stylua --check ForeverFlip
 ```
 
+The `sync/` folder (the Sync helper and the community aggregator) uses only the Python standard
+library; its tests run with the others.
+
 For in-game testing, link or copy the `ForeverFlip` folder into `Interface/AddOns` of your client and
 use `/reload` after each change.
 
