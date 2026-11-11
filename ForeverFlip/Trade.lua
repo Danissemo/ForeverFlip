@@ -303,6 +303,14 @@ local function rememberPrice(k, rows)
     end
 end
 
+-- The cheapest unit of a check up to 5 minutes old (Check price, Check all), nil without one.
+function T.freshCheapest(key)
+    local check = key and T.prices[key]
+    if check and clock() - check.at <= 300 and check.rows[1] then
+        return check.rows[1].unit
+    end
+end
+
 function T.checkPrice(key, callback, fast)
     if not callback and not fast then
         return F.Deals.enqueue(key, rememberPrice, rememberPrice, fast)
@@ -885,7 +893,7 @@ end
 -- house has no price for it yet. Returns way, value, advice (F.Market.advice).
 function T.bestWay(key, id)
     local h = F.Data.market(F.db, F.Engine.scope()).history[key]
-    local advice = F.Market.advice(id, key, type(h) == "table" and h or nil)
+    local advice = F.Market.advice(id, key, type(h) == "table" and h or nil, T.freshCheapest(key))
     if not advice then
         return "unknown", nil, nil
     end

@@ -358,7 +358,9 @@ function UI.create()
         UI.refresh()
     end)
     UI.sniperButton:SetPoint("LEFT", UI.scanButton, "RIGHT", 6, 0)
-    UI.bulkButton = button(f, "Check all statuses", 160, function()
+    -- Check all: every entry of the open page is searched on the auction house again (one search
+    -- after another), and the page shows what was found.
+    UI.bulkButton = button(f, "Check all", 160, function()
         UI.checkStatuses()
     end)
     UI.bulkButton:SetPoint("LEFT", UI.sniperButton, "RIGHT", 6, 0)
@@ -1444,6 +1446,22 @@ function UI.statusTargets()
                 keys[#keys + 1] = a.key
             end
         end
+    elseif UI.section == "shop" then
+        -- The items on the shopping list are checked as deals: a lot under the list's maximum
+        -- price becomes a shopping deal, one no longer there is dropped.
+        verifyDeals = true
+        for _, key in ipairs(F.Shopping.keys()) do
+            keys[#keys + 1] = key
+        end
+    elseif UI.section == "bids" then
+        verifyDeals = function(key, complete)
+            return F.Bids.check(key, complete)
+        end
+        for _, c in ipairs(F.Bids.candidates) do
+            keys[#keys + 1] = c.key
+        end
+    elseif UI.section == "crafting" then
+        keys = F.Crafting.keys()
     else
         return nil, keys, false
     end
@@ -2942,13 +2960,16 @@ local BATCH_SCOPES = {
     ["deals:shop"] = "Shopping deals",
     sell = "Bags",
     auctions = "My auctions",
+    shop = "Shopping list",
+    bids = "Bids",
+    crafting = "Crafting",
 }
 
 function UI.refreshStatus()
     UI.refreshHouse()
     UI.sniperButton:SetText(L(F.db.settings.sniper and "Sniper: ON" or "Sniper: OFF"))
     UI.sniperBox:SetChecked(F.db.settings.sniper)
-    UI.bulkButton:SetText(L("Check all statuses"))
+    UI.bulkButton:SetText(L("Check all"))
     local scope, keys = UI.statusTargets()
     local batchDone, batchTotal, batchActive, batchFailed = F.Deals.batchProgress()
     UI.bulkButton:SetEnabled(
@@ -3043,34 +3064,53 @@ function UI.houseName()
 end
 
 -- The house name sits in the middle of the auction house's bottom bar, right of the money display.
--- Until the frames are laid out (or without that bar) it stays in the top right corner.
+-- The money display is looked up among the auction frame's fields (its name differs between client
+-- versions); without it the name goes to the bar's usual place: the bar is the 26 points under
+-- ForeverFlip's frame, and the money display takes about its first 165 points.
+local function moneyDisplay(ah)
+    if type(ah) ~= "table" then
+        return nil
+    end
+    for _, name in ipairs({ "MoneyFrameBorder", "MoneyFrameInset", "MoneyFrame" }) do
+        local f = ah[name]
+        if type(f) == "table" and type(f.GetRight) == "function" then
+            return f
+        end
+    end
+    for name, f in pairs(ah) do
+        if type(name) == "string" and name:find("Money") and type(f) == "table" and type(f.GetRight) == "function" then
+            return f
+        end
+    end
+end
+
 function UI.placeHouse()
     local badge, f = UI.houseBadge, UI.frame
     local ah = AuctionHouseFrame
-    local money = type(ah) == "table" and (ah.MoneyFrameBorder or ah.MoneyFrameInset)
-    if type(money) ~= "table" or type(money.GetRight) ~= "function" then
-        money = nil
-    end
-    local moneyRight = money and money:GetRight()
-    local ahRight = money and type(ah.GetRight) == "function" and ah:GetRight()
-    moneyRight, ahRight = tonumber(moneyRight), tonumber(ahRight)
-    local bottom = moneyRight ~= nil and ahRight ~= nil and ahRight > moneyRight + 100
-    if UI.housePlaced == bottom then
+    local money = moneyDisplay(ah)
+    local moneyRight = money and tonumber(money:GetRight())
+    local ahRight = money and type(ah.GetRight) == "function" and tonumber(ah:GetRight())
+    local place = (moneyRight and ahRight and ahRight > moneyRight + 100) and "money" or (ah and "bar" or "corner")
+    if UI.housePlaced == place then
         return
     end
-    UI.housePlaced = bottom
+    UI.housePlaced = place
     badge:ClearAllPoints()
     UI.status:ClearAllPoints()
     UI.status:SetPoint("LEFT", UI.bulkButton, "RIGHT", 10, 0)
-    if bottom then
+    if place == "money" then
         badge:SetPoint("CENTER", money, "RIGHT", (ahRight - moneyRight) / 2, 0)
-        badge:SetJustifyH("CENTER")
-        UI.status:SetPoint("RIGHT", f, "TOPRIGHT", -12, 19)
+    elseif place == "bar" then
+        badge:SetPoint("CENTER", f, "BOTTOM", 85, -13)
     else
         badge:SetPoint("RIGHT", f, "TOPRIGHT", -12, 19)
         badge:SetJustifyH("RIGHT")
         UI.status:SetPoint("RIGHT", badge, "LEFT", -12, 0)
+        UI.status:SetWordWrap(false)
+        return
     end
+    badge:SetJustifyH("CENTER")
+    UI.status:SetPoint("RIGHT", f, "TOPRIGHT", -12, 19)
     UI.status:SetWordWrap(false)
 end
 

@@ -55,10 +55,34 @@ function C.rememberMerchantPrice(id, unit)
     end
 end
 
+-- The auction price of an item: a fresh check (Check all on this page) before the scan's usual price.
 local function usual(history, id)
     local kind = F.AH.kindOf(id)
-    local h = kind and kind ~= "gear" and history[U.key(kind, id)]
-    return h and F.Market.usual(h) or nil, h
+    local key = kind and kind ~= "gear" and U.key(kind, id)
+    local h = key and history[key]
+    local live = key and F.Trade.freshCheapest(key)
+    return live or (h and F.Market.usual(h)) or nil, h
+end
+
+-- Keys of every material and product of the saved recipes (what Check all reads on this page).
+function C.keys()
+    local out, seen = {}, {}
+    for _, r in pairs(recipes()) do
+        local ids = { r.out }
+        for _, m in ipairs(r.r or {}) do
+            ids[#ids + 1] = m[1]
+        end
+        for _, id in ipairs(ids) do
+            local kind = F.AH.kindOf(id)
+            local key = kind and kind ~= "gear" and U.key(kind, id)
+            if key and not seen[key] then
+                seen[key] = true
+                out[#out + 1] = key
+            end
+        end
+    end
+    table.sort(out)
+    return out
 end
 
 -- Cost of one unit of a material: the cheaper of the auction house and a merchant.

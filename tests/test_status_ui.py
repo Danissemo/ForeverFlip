@@ -97,7 +97,7 @@ class CategoryStatusTests(unittest.TestCase):
         assert(UI.status:GetText():find('1/1') and UI.status:GetText():find('1 failed'),UI.status:GetText())
         assert(UI.bulkButton:IsEnabled(),'completed batches may be started again')
         F.Locale.apply('uk');UI.refresh()
-        assert(UI.bulkButton:GetText()=='Перевірити всі статуси')
+        assert(UI.bulkButton:GetText()=='Перевірити все')
         ''')
         runtime(open_ah=False).execute('''
         ForeverFlip.Locale.apply('uk');fire('AUCTION_HOUSE_SHOW')

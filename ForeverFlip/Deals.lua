@@ -607,7 +607,10 @@ end
 
 -- A click captures the complete current category before sending anything. Each accepted key has
 -- one completion callback, including a vanished deal, a timeout, and a cancelled request.
-function D.startBatch(scope, keys, verifyDeals)
+-- `mode`: true = deal checks (a deal is kept, updated or dropped), false = price checks (Check
+-- price), or a function(key, complete) that sends a page's own check and returns true when accepted.
+function D.startBatch(scope, keys, mode)
+    local verifyDeals = mode == true
     if D.clearing or not F.AH.isOpen() or D.batch and D.batch.active then
         return false
     end
@@ -644,7 +647,9 @@ function D.startBatch(scope, keys, verifyDeals)
             F.Engine.changed()
         end
         local accepted
-        if verifyDeals then
+        if type(mode) == "function" then
+            accepted = mode(key, complete)
+        elseif verifyDeals then
             accepted = D.enqueue(key, complete, complete, true)
         else
             accepted = F.Trade.checkPrice(key, complete, true)

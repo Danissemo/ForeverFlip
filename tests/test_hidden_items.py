@@ -78,3 +78,52 @@ class BestWayTests(unittest.TestCase):
         UI.postAuction:Click()
         local q = lastCall('SendSearchQuery') or lastCall('PostCommodity') or lastCall('PostItem')
         assert(not lastCall('PostItem'), 'the vendor item is not posted')""")
+
+
+class CheckAllTests(unittest.TestCase):
+    """Check all on every page with a list: each entry is searched again and the page shows it."""
+
+    DRIVE = """
+    local function finish()
+        local n = 0
+        while select(3, F.Deals.batchProgress()) do
+            if F.Deals.search then answer() end
+            run(1.1); n = n + 1; assert(n < 200, 'the batch never ends')
+        end
+    end
+    """
+
+    def test_crafting_reads_materials_and_products_and_prices_with_them(self):
+        run(HIDE + self.DRIVE + """F.Data.char(F.db, F.Engine.owner()).recipes = { [1] = { name = 'Bag', out = 30, n = 1, r = { { 10, 2 } } } }
+        local keys = F.Crafting.keys()
+        assert(#keys == 2 and keys[1] == 'c:10' and keys[2] == 'i:30', table.concat(keys, ','))
+        UI.show('crafting'); UI.refresh()
+        assert(UI.bulkButton:GetText() == 'Check all' and UI.bulkButton:IsEnabled())
+        UI.bulkButton:Click(); finish()
+        local live = F.Trade.freshCheapest('c:10')
+        assert(live, 'the material was checked')
+        local history = F.Data.market(F.db, F.Engine.scope()).history
+        assert(F.Crafting.materialCost(history, 10) <= live, 'the recipe is priced with the check')""")
+
+    def test_shopping_list_finds_shopping_deals(self):
+        run(HIDE + self.DRIVE + """F.Shopping.add('c:10', 1000000, 5, 'Linen Cloth')
+        UI.show('shop'); UI.refresh()
+        assert(UI.bulkButton:IsEnabled(), 'the shopping list can be checked')
+        UI.bulkButton:Click(); finish()
+        local done, total = F.Deals.batchProgress()
+        assert(total == 1 and done == 1, done .. '/' .. total)""")
+
+    def test_bids_page_checks_every_candidate(self):
+        run(HIDE + self.DRIVE + """F.Bids.candidates = { { key = 'i:30', id = 30, count = 1, value = 100000, bid = 100, profit = 1000 } }
+        UI.show('bids'); UI.refresh()
+        assert(UI.bulkButton:IsEnabled(), 'bids can be checked')
+        UI.bulkButton:Click(); finish()
+        local done, total = F.Deals.batchProgress()
+        assert(total == 1 and done == 1, done .. '/' .. total)""")
+
+    def test_a_fresh_check_moves_the_best_column(self):
+        run(HIDE + """F.db.settings.vendorMargin = 0
+        F.Data.market(F.db, F.Engine.scope()).history['i:30'] = { scan = { at = now, market = 2100 } }
+        assert(T.bestWay('i:30', 30) == 'vendor')
+        T.prices['i:30'] = { rows = { { unit = 90000, qty = 1 } }, at = now }
+        assert(T.bestWay('i:30', 30) == 'auction', 'the live price says the auction house pays more')""")

@@ -77,6 +77,9 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **Selling → My items: vendor or auction house.** A **Best** column tells, for each item, whether a
   merchant pays at least what the auction house leaves after the cut and deposits, or the auction
   house pays more; **Post AH-worthy** posts only the latter, next to **Post all**.
+- **Check all** (was Check all statuses) works on every page with a list: also the Shopping list
+  (shopping deals are found), Bids and Crafting (every material and product). Prices of a fresh
+  check are used by the page for 5 minutes: the Best column, the recipe profits.
 - **Realm channel sharing:** full scans are shared with every ForeverFlip user of the realm over a
   hidden chat channel. A player who logs in asks who has a newer scan, one player answers, everyone
   behind keeps it. Shared prices more than 10 times off the known usual price are left out (also for

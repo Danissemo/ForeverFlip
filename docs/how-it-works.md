@@ -270,7 +270,7 @@ with them, using the same rules.
 - **Automatic checks** (setting on by default): when nothing else runs, the best deal that has not
   been checked in 5 minutes is checked. The same deal is not retried within 2 minutes. Automatic
   checks pause while the selected deal is freshly checked, to leave you time to click Buy.
-- **Check all statuses** captures the whole current page before sending anything, so it is not
+- **Check all** captures the whole current page before sending anything, so it is not
   affected by paging or later updates. Each item gets exactly one result: checked, gone, timed out
   or cancelled.
 

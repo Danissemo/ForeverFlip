@@ -81,8 +81,18 @@ function B.get(key)
 end
 
 -- Exact read of a candidate: the auction with the lowest next bid still worth it.
-function B.check(key)
-    return F.Deals.enqueue(key, function(k)
+function B.check(key, done)
+    return F.Deals.enqueue(key, function(k, ...)
+        B.read(k)
+        if done then
+            done(k, ...)
+        end
+    end, done and ("bidall:" .. key) or ("bid:" .. key))
+end
+
+-- The answer of a candidate's search: its best bid, or the candidate is dropped.
+function B.read(k)
+    do
         local c = B.get(k)
         local item = U.parseKey(k)
         -- Gear was searched version by version: read the bids of every version searched (also
@@ -122,7 +132,7 @@ function B.check(key)
             end
         end
         F.Engine.changed()
-    end, "bid:" .. key)
+    end
 end
 
 function B.offer(key)

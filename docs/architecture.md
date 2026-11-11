@@ -97,7 +97,7 @@ UI translates through `MESSAGES` and `F.Locale`.
 Only one exact search is in flight at a time (`F.Deals.search`). Requests come from three sources,
 in this order:
 
-1. **The player's requests:** clicks, Check price, Check all statuses, own-auction checks. They form
+1. **The player's requests:** clicks, Check price, Check all, own-auction checks. They form
    a FIFO queue (`D.requests`). A repeated key shares the running query, and every distinct callback
    is completed exactly once.
 2. **A background retry slot** (`D.backgroundRetry`), used after a throttled or dropped request.

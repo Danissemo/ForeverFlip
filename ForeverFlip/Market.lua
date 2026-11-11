@@ -470,14 +470,15 @@ end
 -- { best, value, vendor, vendorHow, auction, tries, disenchant }; nil when nothing is known.
 M.POSTINGS = 3
 M.STACK = 20
-function M.advice(id, key, h)
+-- `live` (optional): the cheapest price of a fresh check, used instead of the scan's prices.
+function M.advice(id, key, h, live)
     local item = U.parseKey(key)
     if not item then
         return nil
     end
     local vendor, vendorHow = F.AH.vendorPrice(id, true)
     local out = { vendor = vendor, vendorHow = vendorHow }
-    local price = h and (M.salePrice(h) or M.usual(h))
+    local price = live or h and (M.salePrice(h) or M.usual(h))
     if U.finite(price) and price > 0 then
         local depositFn = F.AH.depositFn(id, item.kind, F.Trade.durationFor and F.Trade.durationFor() or 3)
         -- Commodities are posted as a stack and pay one deposit for it: per unit it is the deposit
