@@ -6,16 +6,16 @@ how the numbers are calculated, read [How it works](how-it-works.md).
 
 - [The ForeverFlip tab](#the-foreverflip-tab)
 - [Top bar](#top-bar)
-- [Deals pages](#deals-pages)
+- [Deals pages](#deals-pages) (Deals)
 - [Buying](#buying)
 - [Shopping list and ignored items](#shopping-list-and-ignored-items)
-- [Bids](#bids)
-- [Sell my items](#sell-my-items)
-- [My auctions](#my-auctions)
-- [Statistics by item](#statistics-by-item)
-- [Analytics](#analytics)
+- [Bids](#bids) (Deals → Bids)
+- [Sell my items](#sell-my-items) (Selling → My items)
+- [My auctions](#my-auctions) (Selling → My auctions)
+- [Statistics by item](#statistics-by-item) (Analytics → By item)
+- [Analytics](#analytics) (Analytics → Overview)
 - [Crafting](#crafting)
-- [Journal and profit](#journal-and-profit)
+- [Journal and profit](#journal-and-profit) (Analytics → Journal and profit)
 - [Price history window](#price-history-window)
 - [Settings](#settings)
 - [Sharing scans](#sharing-scans)
@@ -118,16 +118,18 @@ the 150 items most often near a deal, one per second.
 
 ## Deals pages
 
-There are four deal pages:
+**Deals** has five tabs; the first four list deals:
 
-- **All deals:** every deal, best first.
-- **Sell to vendor (no risk):** lots priced below the vendor sell price. You buy them and sell them
-  to any merchant. Profit is certain as long as the lot is still there.
+- **All:** every deal, best first.
+- **To vendor:** lots priced below what a vendor pays. You buy them and sell them to any merchant.
+  Profit is certain as long as the lot is still there and the vendor price is confirmed (a yellow
+  `*` marks a vendor price not yet seen at a merchant, see [Settings](#settings), Safety).
 - **Resale:** lots priced well below the next seller, for items that are measured to sell at the
   resale price. You buy them and post them again on the auction house.
-- **Shopping deals:** lots at or below the price on your [shopping list](#shopping-list-and-ignored-items).
+- **From the list:** lots at or below the price on your [shopping list](#shopping-list-and-ignored-items).
+- **Bids:** see [Bids](#bids).
 
-**Disenchant** deals appear under All deals for a character who knows Disenchant: green and blue
+**Disenchant** deals appear under All for a character who knows Disenchant: green and blue
 weapons and armor priced below the expected value of their materials.
 
 ### Columns
@@ -214,7 +216,7 @@ The **Shopping list** page holds items you want to buy and the most you pay for 
 - **Add an entry:** Shift-click an item link into the **Item** field (or type the exact name of an item
   the game knows). Enter **Up to, each** and, optionally, a **Quantity**, then click **Add**.
 - **What it does:** the full scan, the sniper and your own searches find lots at or below that price.
-  They appear under **Shopping deals** and are bought like any other deal.
+  They appear under **Deals → From the list** and are bought like any other deal.
 - **Which deal wins:** if the same item also has a vendor deal or a resale with more profit, that
   deal is shown instead.
 - **What you buy:** items bought from the shopping list are for your own use. They are kept out of
@@ -226,7 +228,7 @@ click **Remove** to delete an entry or to stop ignoring an item.
 
 ## Bids
 
-Items (not stackable goods) can carry a bid. The **Bids** page lists auctions found by the last full
+Items (not stackable goods) can carry a bid. **Deals → Bids** lists auctions found by the last full
 scan that end within 30 minutes and whose next bid is well below what the item is worth. An item's
 worth is its vendor price, or its usual auction price after the cut if it sells.
 
@@ -699,9 +701,9 @@ The result of `/ff diag` helps too.
    watches the house between scans.
 2. Buy the **ready** vendor deals and react to alerts (bind the Buy key to be quick).
 3. Check the **Resale** page after a few scans. Buy deals with a good return and a good Est./day.
-4. Use **Sell my items → Post next bought** (or Post all) to list your purchases.
-5. Every so often, run **My auctions → Check prices**, then **Cancel undercut**, and repost when the
-   items are back.
+4. Use **Selling → My items → Post next bought** (or Post all) to list your purchases.
+5. Every so often, run **Selling → My auctions → Check prices**, then **Cancel undercut**, and repost
+   when the items are back.
 6. At a mailbox, **Take auction mail**. At a merchant, **Sell vendor deals**.
-7. Look at **Analytics**, **Statistics** (Sell %) and **Crafting** to see what actually makes money,
-   and drop or ignore what does not.
+7. Look at **Analytics** (Overview, and By item for the Sell %) and **Crafting** to see what actually
+   makes money, and drop or ignore what does not.

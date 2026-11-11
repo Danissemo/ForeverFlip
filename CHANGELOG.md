@@ -25,14 +25,20 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   answered; the sniper and the checks then stopped until the auction house was closed. After 5
   seconds of "not ready", one message goes through.
 - **Full scan wait.** The answer to a full scan can take minutes since launch; ForeverFlip waited 45
-  seconds and gave up. It now waits up to 10 minutes and shows the seconds.
+  seconds and gave up. It now waits up to 10 minutes and shows the seconds. Searches and the sniper
+  wait only for the first minute, so a request the 15-minute limit refused does not stop them. A
+  request the server dropped is tried again in 10 seconds.
 - **Full scans of other addons** are caught when the call is made, not only by the event Forever does
   not always send.
 - **Freezes while another addon browses.** Browse results of other addons are read once, a few hundred
   rows per frame, instead of all rows again on every page.
 - **Disenchanting.** Green weapons of item level 21-30 give Greater Magic Essence, not astral. An
   essence is valued at most what its other form allows (three lesser make one greater).
-- **Own auctions** are recognised also when the game names the owner `player`.
+- **Own auctions** are recognised also when the game names the owner `player` or adds the realm; a
+  player with the same name on another realm is somebody else (names are not unique on Forever).
+- **Bids on gear** are read for every item-key version, also versions with bid-only auctions.
+- **Deposits** in crafting and resale estimates come from the game's vendor price, which is what the
+  auction house charges on.
 
 ### Added
 
@@ -51,6 +57,14 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **Hardcore realms** keep their own prices.
 - **Shop materials** counts what the bags and the bank already hold.
 - A window asks before going on when the game handed ForeverFlip no saved data at login.
+
+### Changed
+
+- **Six menu entries** instead of thirteen: Deals (All, To vendor, Resale, From the list, Bids),
+  Selling (My items, My auctions), Shopping list, Crafting, Analytics (Overview, By item, Journal
+  and profit) and Settings. Pages of an entry are tabs above the page; each entry opens the tab used
+  last. The summary of the scan and the sniper below the menu has room for one figure per line.
+- Settings has a fourth tab, **Safety**.
 
 ## [1.1.0] - 2026-11-11
 

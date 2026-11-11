@@ -101,10 +101,14 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 
 | | Area | Check |
 |---|---|---|
+| ⬜ | Menu | Six entries on the left. Deals, Selling and Analytics show tabs above the page; no tab label is cut off; the bottom of every page stays inside the window (look at Analytics → Overview and Selling → My auctions). An entry opens the tab used last. |
+| ⬜ | Summary | Below the menu, the scan and sniper figures are one per line and end above the money display, in English and Ukrainian. |
+| ⬜ | Scan wait does not stop the sniper | Start a full scan when another addon has just used the 15-minute window: after a minute of waiting, the sniper rounds and checks go on while the status still counts the seconds. |
 | ⬜ | Vendor price learned | Sell any item to a merchant. Settings → Safety counts it under "confirmed at merchants"; if it differs from the game's data, it is listed with both prices. |
 | ⬜ | Vendor deal mark | A vendor deal on an item you never sold shows `vendor *`; after selling one to a merchant the `*` is gone at the next scan. |
-| ⬜ | Gear check | Select a gear deal (or press Check prices on My auctions with gear): the status turns to checked within a few seconds, not "no answer". |
+| ⬜ | Gear check | Select a gear deal (or press Check prices on Selling → My auctions with gear): the status turns to checked within a few seconds, not "no answer". |
 | ⬜ | Gear nobody sells | Check prices on a gear auction only you sell: it shows "only yours" at once. |
+| ⬜ | Gear bids | On Deals → Bids, a gear auction with only a bid (no buyout) can be checked and bid on. |
 | ⬜ | Full scan wait | When the server is slow, the status counts the seconds (`... (35 s of up to 600)`) and the scan is read when the answer comes. |
 | ⬜ | Other addon's scan | Start a full scan in Auctionator or auxForever: ForeverFlip says it reads it too and processes it. |
 | ⬜ | No freeze | Browse the whole house in another addon (or the game's Buy tab with an empty search): the game does not freeze. |
@@ -118,3 +122,17 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 | ⬜ | Hardcore | On a hardcore realm the prices are separate from the normal realm of the same name. |
 | ⬜ | Shop materials | With materials in the bags, Shop materials adds only what is missing. |
 | ⬜ | Saved data guard | Rename `ForeverFlip.lua` in SavedVariables while the game is closed, start the game: the window asks Reload / Continue. Put the file back afterwards. |
+
+### Beta testing
+
+Beta releases (`vX.Y.Z-beta.N`, marked **Pre-release** on the
+[releases page](https://github.com/Danissemo/ForeverFlip/releases)) are for players who want to help
+test before a release. Install one like a normal release (replace the `ForeverFlip` folder; your saved
+data is kept), restart the game, and go through the table of the version above.
+
+Report what you find in an [issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose):
+
+- the row of the table and what happened instead;
+- a screenshot when something looks wrong;
+- for an error: type `/reload` and copy the `errors` section of
+  `WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua`, plus the output of `/ff diag`.

@@ -93,6 +93,11 @@
    - bind keys under **Key Bindings → AddOns → ForeverFlip**;
    - open each profession window once, so the Crafting page knows your recipes.
 
+> [!NOTE]
+> Want to help test the next version? Beta builds are on the
+> [releases page](https://github.com/Danissemo/ForeverFlip/releases), marked **Pre-release**. See
+> [Beta testing](docs/testing.md#beta-testing) for what to check and how to report.
+
 > [!TIP]
 > To update, replace the `ForeverFlip` folder. Your data lives in
 > `WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua` and is kept.
@@ -108,10 +113,10 @@
 
 1. Open the auction house and click the **ForeverFlip** tab.
 2. Click **Full scan**, or wait for the automatic one, and let the progress bar finish.
-3. Open **Sell to vendor (no risk)** and click a deal. It is checked live; when it says **ready**,
+3. Open **Deals → To vendor** and click a deal. It is checked live; when it says **ready**,
    click **Buy**. For stackable goods, also click **Confirm purchase** once the game quotes the price.
 4. Sell vendor deals at any merchant with **Sell vendor deals**. Post resale purchases with
-   **Sell my items → Post next bought**.
+   **Selling → My items → Post next bought**.
 
 Resale deals need sales data, so they start to appear after two or three full scans (30–45 minutes
 with the auction house open).

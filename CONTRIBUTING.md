@@ -89,6 +89,10 @@ If you add a game API call, add a fake for it to `mock.lua`, based on behaviour 
    git push origin v1.2.3
    ```
 
+For a beta, set the version to `x.y.z-beta.N` in both files and tag `vx.y.z-beta.N`: the workflow
+publishes it as a pre-release, with the changelog notes of `x.y.z` and a note for testers. Set the
+version back to `x.y.z` for the release itself.
+
 The `Release` workflow checks that the tag matches the TOC version, runs the tests, builds
 `ForeverFlip-x.y.z.zip` and `ForeverFlipSync.exe` and publishes a GitHub release (GitHub shows the
 SHA-256 of each file). The release notes
