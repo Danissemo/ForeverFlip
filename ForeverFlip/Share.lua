@@ -462,8 +462,9 @@ function S.newest(scope)
     end
     for id in pairs(F.db and F.db.sharedSeen or {}) do
         local s, at = tostring(id):match("^(.*)@(%d+)$")
-        if s == scope and tonumber(at) > newest then
-            newest = tonumber(at)
+        local t = tonumber(at) or 0
+        if s == scope and t > newest then
+            newest = t
         end
     end
     for _, r in ipairs(S.received) do
