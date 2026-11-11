@@ -153,7 +153,7 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 
 ### Fixed since 1.2.0-beta.1
 
-Check these with 1.2.0-beta.2 (or later); they are the fixes testers of beta.1 should look at again.
+Fixed in 1.2.0-beta.2; testers of beta.1 should look at these again.
 
 | | Area | Check |
 |---|---|---|
@@ -167,6 +167,15 @@ Check these with 1.2.0-beta.2 (or later); they are the fixes testers of beta.1 s
 | ⬜ | Expired auction | Let an auction of bought stock expire (or cancel it in the game's own window), take the mail: Post next bought offers the item again at once. |
 | ⬜ | Full bags | Fill the bags and take auction mail with items: ForeverFlip stops with "bags full"; free some space and take it again: the journal has each mail once. |
 | ⬜ | Gear check and the Buy tab | Search something in the game's Buy tab right before checking a gear deal: the check never says "nobody sells" for gear that is listed. |
+| ⬜ | Tooltips | See the Tooltips row above (rewritten in beta.2). |
+| ⬜ | Bought elsewhere, sold by hand | See the Bought elsewhere and Vendor sale by hand rows above (new in beta.2). |
+
+### New since 1.2.0-beta.2
+
+Check these with 1.2.0-beta.3 (or later).
+
+| | Area | Check |
+|---|---|---|
 | ⬜ | Vendor or auction house | Selling → My items has a Best column: cheap vendor trash says Vendor, valuable goods say AH, with the same values as the tooltip. Post AH-worthy (N) counts fewer items than Post all (N) and never posts an item marked Vendor. |
 | ⬜ | Scan and closing | Press Full scan, close the auction house at once and open it again: the status says it waits again and the scan is read. While waiting, the status shows `server list: N`. `/ff diag` lists how the last requests ended. |
 | ⬜ | Buying lot after lot | Check a gear or item deal with several lots, press Buy: each next press buys the next lot at once (no "checking" in between). With the sniper on, Buy works while it searches. |
@@ -175,8 +184,14 @@ Check these with 1.2.0-beta.2 (or later); they are the fixes testers of beta.1 s
 | ⬜ | Check all without an answer | Check all on My items with an item only you sell: the search is tried twice, the status says `(1 without an answer)` and the chat names the item. |
 | ⬜ | Post queue clicks | Press Post AH-worthy once: the prices are read for the whole queue; each next press posts one lot. |
 | ⬜ | Check all | The button at the top says Check all. On Shopping list, Bids and Crafting it is enabled too and counts `Checking <page>: done/total`; afterwards Crafting shows the recipes priced with the checked prices, and Selling → My items the Best column with them. |
-| ⬜ | Tooltips | See the Tooltips row above (rewritten in beta.2). |
-| ⬜ | Bought elsewhere, sold by hand | See the Bought elsewhere and Vendor sale by hand rows above (new in beta.2). |
+| ⬜ | House name | The open house is named in the middle of the bottom bar, right of the money display; the summary on the left no longer repeats it. |
+| ⬜ | A click goes first | Start Check all on My items, then select another item and press Check price: its price is read next, not after the whole batch. With the sniper on, Check price starts at once. |
+| ⬜ | Price offer | Press Buy on a commodity deal and then select another deal: the price offer is dropped (Confirm cannot buy the first item). The status line shows each step: asking for the price, Confirm with the price, buying. An offer nobody confirms ends after a minute. |
+| ⬜ | Price field | Select an item, wait for its price, press Check price again: a filled-in price follows the new check. Type your own price: it stays, Post turns on at once, and nothing is filled in while you type. |
+| ⬜ | Selected item | Select an item on My items, scroll it out of view and move it to another bag slot: Post still posts that item. |
+| ⬜ | Post and cancel twice | Press Post twice quickly: the second waits for the first. Cancel undercut on the same auction twice quickly cancels it once. |
+| ⬜ | Mail the game refuses | When the game will not hand over an auction mail, Take auction mail stops with a message instead of trying forever. |
+| ⬜ | Shared scan and Analytics | When another ForeverFlip user's scan arrives, or Analytics opens after a scan on a large house, the game does not stall; Analytics shows the previous lists (or "Working out the market lists...") for a moment. |
 
 ### Beta testing
 
@@ -184,7 +199,8 @@ Beta releases (`vX.Y.Z-beta.N`, marked **Pre-release** on the
 [releases page](https://github.com/Danissemo/ForeverFlip/releases)) are for players who want to help
 test before a release. Install one like a normal release (replace the `ForeverFlip` folder; your saved
 data is kept), restart the game, and go through the table of the version above. If you tested
-1.2.0-beta.1, check [Fixed since 1.2.0-beta.1](#fixed-since-120-beta1) again.
+an earlier beta, check what changed since: [Fixed since 1.2.0-beta.1](#fixed-since-120-beta1) and
+[New since 1.2.0-beta.2](#new-since-120-beta2).
 
 Report a bug in an [issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose) (the bug
 report form asks for the version and the log); questions and general impressions are welcome in

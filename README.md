@@ -97,8 +97,9 @@
 > Want to help test the next version? Beta builds are on the
 > [releases page](https://github.com/Danissemo/ForeverFlip/releases), marked **Pre-release**. See
 > [Beta testing](docs/testing.md#beta-testing) for how to report, and the
-> [in-game checklist](docs/testing.md#in-game-checklist) for what to check (testers of 1.2.0-beta.1:
-> [fixed since then](docs/testing.md#fixed-since-120-beta1)).
+> [in-game checklist](docs/testing.md#in-game-checklist) for what to check (testers of an earlier beta:
+> [fixed since beta.1](docs/testing.md#fixed-since-120-beta1),
+> [new since beta.2](docs/testing.md#new-since-120-beta2)).
 
 > [!TIP]
 > To update, replace the `ForeverFlip` folder. Your data lives in
