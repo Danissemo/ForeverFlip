@@ -103,13 +103,13 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 |---|---|---|
 | ⬜ | Menu | Six entries on the left. Deals, Selling and Analytics show tabs above the page; no tab label is cut off; the bottom of every page stays inside the window (look at Analytics → Overview and Selling → My auctions). An entry opens the tab used last. |
 | ⬜ | Summary | Below the menu, the scan and sniper figures are one per line and end above the money display, in English and Ukrainian. |
-| ⬜ | Scan wait does not stop the sniper | Start a full scan when another addon has just used the 15-minute window: after a minute of waiting, the sniper rounds and checks go on while the status still counts the seconds. |
+| ⬜ | Scan answer | While the status counts the seconds of waiting, the sniper's rounds stay still; the scan is read when the answer comes (usually well before 300 s). |
 | ⬜ | Vendor price learned | Sell any item to a merchant. Settings → Safety counts it under "confirmed at merchants"; if it differs from the game's data, it is listed with both prices. |
 | ⬜ | Vendor deal mark | A vendor deal on an item you never sold shows `vendor *`; after selling one to a merchant the `*` is gone at the next scan. |
 | ⬜ | Gear check | Select a gear deal (or press Check prices on Selling → My auctions with gear): the status turns to checked within a few seconds, not "no answer". |
 | ⬜ | Gear nobody sells | Check prices on a gear auction only you sell: it shows "only yours" at once. |
 | ⬜ | Gear bids | On Deals → Bids, a gear auction with only a bid (no buyout) can be checked and bid on. |
-| ⬜ | Full scan wait | When the server is slow, the status counts the seconds (`Waiting for the full scan: 35 / 180 s`) and the scan is read when the answer comes. |
+| ⬜ | Full scan wait | When the server is slow, the status counts the seconds (`Waiting for the full scan: 35 / 300 s`) and the scan is read when the answer comes. |
 | ⬜ | Other addon's scan | Start a full scan in Auctionator or auxForever: ForeverFlip says it reads it too and processes it. |
 | ⬜ | No freeze | Browse the whole house in another addon (or the game's Buy tab with an empty search): the game does not freeze. |
 | ⬜ | Sniper keeps going | Leave the auction house open with the sniper on for 10 minutes: rounds keep growing; Safety shows how often the throttle got stuck. |

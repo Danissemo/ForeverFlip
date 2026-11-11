@@ -25,9 +25,8 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   answered; the sniper and the checks then stopped until the auction house was closed. After 5
   seconds of "not ready", one message goes through.
 - **Full scan wait.** The answer to a full scan can take minutes since launch; ForeverFlip waited 45
-  seconds and gave up. It now waits up to 3 minutes and shows the seconds. Searches and the sniper
-  wait only for the first minute, so a request the 15-minute limit refused does not stop them. A
-  request the server dropped is tried again in 10 seconds.
+  seconds and gave up. It now waits up to 5 minutes and shows the seconds; searches and the sniper
+  wait for the answer. A request the server dropped is tried again in 10 seconds.
 - **Full scans of other addons** are caught when the call is made, not only by the event Forever does
   not always send.
 - **Freezes while another addon browses.** Browse results of other addons are read once, a few hundred

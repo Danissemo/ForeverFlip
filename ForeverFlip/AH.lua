@@ -209,6 +209,20 @@ end
 function A.replicateCount()
     return AH.GetNumReplicateItems() or 0
 end
+-- A short mark of the replicated list: its size and a few auctions (first, middle, last). A new
+-- answer of the same size is told apart from the list of the previous scan by it.
+function A.replicateMark()
+    local n = A.replicateCount()
+    if n <= 0 then
+        return "0"
+    end
+    local parts = { tostring(n) }
+    for _, i in ipairs({ 0, math.floor(n / 2), n - 1 }) do
+        local ok, _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, id = pcall(AH.GetReplicateItemInfo, i)
+        parts[#parts + 1] = ok and (tostring(id) .. "x" .. tostring(count) .. "@" .. tostring(buyout)) or "?"
+    end
+    return table.concat(parts, ":")
+end
 -- One auction of the full scan: buyout is for the whole stack.
 function A.replicateRow(i)
     local _, _, count, _, _, _, _, minBid, increment, buyout, bidAmount, _, _, owner, _, _, id, complete =

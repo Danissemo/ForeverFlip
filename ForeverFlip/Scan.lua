@@ -14,9 +14,9 @@ S.RECOVER = 30 -- seconds to wait for item data of rows the game had not loaded
 S.DAYS = 14 -- daily records kept per item (price, cheapest, units listed and sold)
 -- Seconds to wait for the server's answer to a full scan. Since WoW Forever launched the answer
 -- can take minutes (ForeverForge waits 2, auxForever 0.8.2 waits 10), but a call refused by the
--- 15-minute account limit (another addon used the window) is never answered: waiting 10 minutes
--- for it was too long in game. 3 minutes, then a new try a minute later.
-S.ANSWER_WAIT = 180
+-- 15-minute account limit (another addon used the window) is never answered. 5 minutes, then a
+-- new try a minute later.
+S.ANSWER_WAIT = 300
 
 local function clock()
     return F.Engine.clock()
@@ -43,17 +43,11 @@ function S.busy()
     return S.job ~= nil
 end
 
--- Does the scan hold back searches and posts? While it is read and evaluated, and in the first
--- S.QUIET seconds of waiting for the answer (usually enough). After that searches go on while it
--- waits: a request the account's 15-minute limit refused is never answered, and the sniper would
--- otherwise stand still for the whole S.ANSWER_WAIT.
-S.QUIET = 60
+-- Does the scan hold back searches and posts? For the whole scan, also while it waits for the
+-- answer. Letting the sniper go on after a minute of waiting was tried: in game the answer then did
+-- not come at all (auxForever holds its sniper back for the same reason).
 function S.blocking()
-    local j = S.job
-    if not j then
-        return false
-    end
-    return j.state ~= "waiting" or clock() - (j.at or 0) < S.QUIET
+    return S.job ~= nil
 end
 
 function S.start()
@@ -71,7 +65,14 @@ function S.start()
     end
     -- The job exists before the request: the answer event may come during the call itself.
     local base = F.AH.replicateCount()
-    S.job = { state = "waiting", at = clock(), scope = F.Engine.scope(), base = base, last = -1 }
+    S.job = {
+        state = "waiting",
+        at = clock(),
+        scope = F.Engine.scope(),
+        base = base,
+        baseMark = F.AH.replicateMark(),
+        last = -1,
+    }
     local before = F.db.lastScan
     F.db.lastScan = clock()
     local ok = pcall(F.AH.replicate)
@@ -91,9 +92,13 @@ local function polled(j, now)
         return false
     end
     j.polled = now
+    -- The answer has come when the list differs from the one before the request (size or a few
+    -- auctions: a small house can come back with the same number of auctions) and has stopped
+    -- changing for a second.
     local n = F.AH.replicateCount()
-    local ready = n > 0 and n ~= j.base and n == j.last
-    j.last = n
+    local mark = F.AH.replicateMark()
+    local ready = n > 0 and mark ~= j.baseMark and mark == j.lastMark
+    j.last, j.lastMark = n, mark
     return ready
 end
 
@@ -149,6 +154,7 @@ function S.onOtherScan()
         at = clock(),
         scope = F.Engine.scope(),
         base = F.AH.replicateCount(),
+        baseMark = F.AH.replicateMark(),
         last = -1,
         other = true,
     }

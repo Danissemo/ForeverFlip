@@ -107,9 +107,8 @@ Gear is searched in two steps inside one request: a browse by the item's name li
 versions (`phase = "browse"`), then each version is searched (`phase = "keys"`) and the rows are
 merged. The sniper's browse round in flight gives way (`F.Sniper.yield`).
 
-No search runs while a purchase is in progress, while a full scan is read and evaluated, or in the
-first minute (`S.QUIET`) of waiting for a full scan's answer; after that minute searches go on while
-the scan still waits (`F.Scan.blocking`). Browse and key queries of the sniper
+No search runs while a purchase or a full scan is in progress, also while the scan waits for its
+answer (`F.Scan.blocking`): queries sent meanwhile kept the answer from coming in game. Browse and key queries of the sniper
 (`F.Sniper.query`) are separate from exact searches. They are sent only when no exact search is in
 flight or queued and no candidate is waiting.
 

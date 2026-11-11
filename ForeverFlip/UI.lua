@@ -37,7 +37,7 @@ local MESSAGES = {
     bags_full = "The bags are full.",
     scan_done = "Full scan processed.",
     scan_empty = "The auction house returned an empty scan. Try again later.",
-    scan_timeout = "The auction house did not answer the full scan in 3 minutes (another addon may have used the 15-minute window). Next try in a minute.",
+    scan_timeout = "The auction house did not answer the full scan in 5 minutes (another addon may have used the 15-minute window). Next try in a minute.",
     scan_other = "Another addon requested a full scan: ForeverFlip reads it too.",
     quote_ready = "Price confirmed. Press Confirm purchase.",
     price_changed = "The price changed. The deal is checked again.",
@@ -2920,6 +2920,7 @@ function UI.refreshStatus()
     if key then
         UI.status:SetText(string.format(L(PROGRESS[key]), done, total))
         UI.progress:SetValue(total > 0 and done / total or 0)
+        UI.scanButton:SetText(L("Full scan"))
         UI.scanButton:Disable()
         return
     end

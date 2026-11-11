@@ -429,6 +429,24 @@ class SniperGearTests(unittest.TestCase):
         assert(D.get(key) and D.get(key).verified, 'the gear deal is checked')''')
 
 
+class ScanAnswerTests(unittest.TestCase):
+    def test_an_answer_of_the_same_size_is_noticed_without_the_event(self):
+        run(SETUP + '''local S = ForeverFlip.Scan
+        fullScan()
+        now = now + 901; ForeverFlip.db.lastScan = 0
+        assert(S.start())
+        -- The server's answer: the same number of auctions, one price changed (the fake client
+        -- keeps references, so the change made now is what the answer holds).
+        auctions[1].buyout = auctions[1].buyout + 5
+        run(3)
+        assert(S.job == nil or S.job.state ~= 'waiting', 'the new list was noticed by polling')''')
+
+    def test_searches_wait_for_the_whole_scan(self):
+        run(SETUP + '''local S = ForeverFlip.Scan
+        replicateIgnored = true; assert(S.start()); run(90)
+        assert(S.blocking(), 'the sniper and checks wait while the answer is awaited')''')
+
+
 class HouseBadgeTests(unittest.TestCase):
     def test_the_corner_names_the_open_auction_house(self):
         run(SETUP + '''local F, UI = ForeverFlip, ForeverFlip.UI

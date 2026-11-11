@@ -51,10 +51,9 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    the call itself. WoW Forever does not always send `REPLICATE_ITEM_LIST_UPDATE`, so the job also
    polls the number of replicated auctions once a second. The scan counts as arrived when that
    number has changed and has stopped growing. Since launch the answer can take minutes, so the
-   job waits up to 3 minutes (`S.ANSWER_WAIT`), showing the seconds; with no answer it gives up
-   and the next attempt is allowed a minute later. A request refused by the account's 15-minute
-   limit is never answered, so searches and the sniper wait only for the first minute
-   (`S.QUIET`) and then go on while the scan waits.
+   job waits up to 5 minutes (`S.ANSWER_WAIT`), showing the seconds; with no answer it gives up
+   and the next attempt is allowed a minute later. Searches and the sniper wait for the answer: when
+   they went on meanwhile, the answer did not come in game.
 2. **Reading.** Rows are read in portions under a time budget per frame. Bid-only auctions and your
    own auctions are skipped. Rows whose item is not in the game cache are deferred; the item data is
    requested at most 40 items per second (`AH.lua`), and the deferred rows are retried for up to
@@ -581,7 +580,7 @@ Facts other Forever addons recorded on the live server, used since 1.2 (sources 
 - The throttle check can stay "not ready" for good after a message the server never answered
   (ForeverForge). After 5 seconds of "not ready" one message goes through.
 - Since launch the answer to a full scan can take more than 5 minutes (auxForever); ForeverFlip waits
-  up to 10; ForeverFlip waits 3. A full scan refused by the 15-minute account limit is never
+  up to 10; ForeverFlip waits 5. A full scan refused by the 15-minute account limit is never
   answered (Price Scanner).
 - Gear and other items are listed in whole silver; the server refuses a copper buyout on them
   (auxForever, ForeverForge). A buyout equal to the starting bid gives "Internal auction error".
