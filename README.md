@@ -31,7 +31,8 @@
 
 > [!CAUTION]
 > Download ForeverFlip only from the [Releases](https://github.com/Danissemo/ForeverFlip/releases) page
-> of this repository. Each archive comes with its SHA-256 checksum.
+> of this repository. GitHub shows the SHA-256 of every file on the release page; compare it with
+> `certutil -hashfile ForeverFlip-<version>.zip SHA256` (Windows) or `sha256sum` (Linux, macOS).
 
 ## ✨ Feature highlights
 
@@ -212,8 +213,8 @@ stylua --check ForeverFlip
 python tools/build.py
 ```
 
-`tools/build.py` checks the TOC and the version, runs the tests and writes `dist/ForeverFlip-<version>.zip`
-with its checksum.
+`tools/build.py` checks the TOC and the version, runs the tests, writes `dist/ForeverFlip-<version>.zip`
+and prints its SHA-256.
 
 ## 🤝 Contributing
 

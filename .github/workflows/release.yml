@@ -70,7 +70,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          (cd dist && sha256sum ForeverFlipSync.exe > ForeverFlipSync.exe.sha256)
-          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.exe dist/*.sha256 \
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.exe \
             --title "ForeverFlip ${GITHUB_REF_NAME#v}" \
             --notes-file release-notes.md

@@ -10,7 +10,7 @@ and can be unpacked straight into Interface/AddOns. Before packaging the script 
 * the TOC version matches F.version in Util.lua;
 * the automated tests pass (unless --skip-tests is given).
 
-It prints the archive path and its SHA-256 checksum.
+It prints the archive path and its SHA-256 checksum (GitHub shows the same one on the release page).
 """
 
 from __future__ import annotations
@@ -102,7 +102,6 @@ def main() -> None:
         run_tests()
     archive = package(version, files, ROOT / args.output)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    (archive.parent / (archive.name + ".sha256")).write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
     print(f"{archive.relative_to(ROOT)}  sha256 {digest}")
 
 

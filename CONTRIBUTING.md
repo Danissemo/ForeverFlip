@@ -69,7 +69,8 @@ If you add a game API call, add a fake for it to `mock.lua`, based on behaviour 
    ```
 
 The `Release` workflow checks that the tag matches the TOC version, runs the tests, builds
-`ForeverFlip-x.y.z.zip` with its SHA-256 checksum and publishes a GitHub release. The release notes
+`ForeverFlip-x.y.z.zip` and `ForeverFlipSync.exe` and publishes a GitHub release (GitHub shows the
+SHA-256 of each file). The release notes
 come from that version's section of the changelog.
 
 To build an archive locally:
