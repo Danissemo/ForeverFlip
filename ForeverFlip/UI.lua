@@ -523,7 +523,9 @@ local function icon(id)
 end
 
 local function nameOf(key, link)
-    if link then
+    -- A link with an empty name (the item not loaded yet) would show as "|...".
+    local shown = U.linkName(link)
+    if shown and shown ~= "" then
         return link
     end
     local item = U.parseKey(key)
@@ -2561,7 +2563,7 @@ function UI.refreshUndercuts()
             end
             r.plan, r.key, r.link = plan, a.key, a.link
             r.icon:SetTexture(icon(a.id))
-            r.name:SetText(a.link or nameOf(a.key or ("i:" .. a.id)))
+            r.name:SetText(nameOf(a.key or ("i:" .. a.id), a.link))
             r.cols[1]:SetText(a.qty)
             r.cols[2]:SetText(U.money(a.price or 0))
             r.cols[3]:SetText(U.money(plan.cheapest))
@@ -2655,7 +2657,7 @@ function UI.refreshAuctions()
         if a then
             r.auction, r.key, r.link = a, a.key, a.link
             r.icon:SetTexture(icon(a.id))
-            r.name:SetText(a.link or nameOf(a.key or ("i:" .. a.id)))
+            r.name:SetText(nameOf(a.key or ("i:" .. a.id), a.link))
             r.cols[1]:SetText(a.qty)
             r.cols[2]:SetText(U.money(a.price or 0))
             local status, cheapest = F.Trade.ownedStatus(a)

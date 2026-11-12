@@ -728,10 +728,17 @@ function T.onOwned()
     if not ok then
         return
     end
+    local unnamed = false
     for _, a in ipairs(owned) do
         a.key = F.AH.keyFor(a.id, a.link)
+        unnamed = unnamed or a.key == nil
     end
     T.owned = owned
+    -- Read again a few times while the items load (each try asks for their data).
+    T.unnamedTries = unnamed and (T.unnamedTries or 0) + 1 or 0
+    if unnamed and T.unnamedTries <= 5 then
+        T.ownedDue = math.min(T.ownedDue or math.huge, clock() + 3)
+    end
     local c = char()
     c.booked = c.booked or {}
     local changed = false

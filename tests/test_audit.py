@@ -587,3 +587,15 @@ class AntiUndercutTests(unittest.TestCase):
         run(self.PLAN + '''local plan = T.fightPlans()[1]
         assert(T.fight(plan, 'undercut') and T.rounds('i:30') == 1)
         assert(#T.fightPlans() == 0, 'a cancelled auction leaves the list')''')
+
+
+class EmptyLinkNameTests(unittest.TestCase):
+    def test_an_own_auction_with_an_empty_link_name_is_named(self):
+        run(BASE + '''addItem(82, 'Sharp Throwing Axe', 1200, 'gear')
+        owned = {{auctionID = 9, itemKey = {itemID = 82}, itemLink = '|cffffffff|Hitem:82::|h[]|h|r', quantity = 1, buyoutAmount = 5400, status = 0, timeLeftSeconds = 14400}}
+        fire('OWNED_AUCTIONS_UPDATED')
+        local a = F.Trade.owned[1]
+        assert(a.key and a.key:find('sharp throwing axe', 1, true), tostring(a.key))
+        UI.show('auctions'); UI.refresh()
+        local shown = UI.auctionTable.rows[1].name:GetText()
+        assert(shown and shown:find('Sharp Throwing Axe', 1, true), tostring(shown))''')

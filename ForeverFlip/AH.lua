@@ -45,8 +45,14 @@ function A.keyFor(id, link)
         return nil
     end
     if kind == "gear" then
+        -- The game hands out links with an empty name ("[]") while the item is not loaded (own
+        -- auctions, in game): the item's own name then, and its data is asked for.
         local name = U.linkName(link)
-        if not name then
+        if not name or name == "" then
+            name = U.itemInfo(id)
+        end
+        if not name or name == "" then
+            A.requestItem(id)
             return nil
         end
         return U.key(kind, id, name), kind
