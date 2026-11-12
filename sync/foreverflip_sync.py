@@ -9,9 +9,7 @@ The game gives addons no network access, so this small program runs next to the 
    goes, unchanged, into a secret gist of your GitHub account, and an issue in the community data
    repository points to it; the repository checks it again, archives it and closes the issue. The
    gist is deleted afterwards. Any GitHub account can upload (scopes "gist" and "public_repo").
-   Without a GitHub sign-in the scan goes anonymously to the upload relay (its address is read from
-   relay.json in the data repository); the repository collects it from there and checks it the
-   same way. The helper then reads the repository's registry to tell what became of it.
+   Sharing needs a GitHub sign-in: the window's "Sign in with GitHub" button (or --login).
 2. Download. The community summaries of your realms are downloaded and written into the
    ForeverFlip_Shared addon, which ForeverFlip reads at the next /reload or login. No account needed.
 
@@ -21,7 +19,9 @@ Usage:
     python foreverflip_sync.py --download-only # never upload
     python foreverflip_sync.py --console --upload # share scans from the command line
 
-The token is read from FF_GITHUB_TOKEN, from the config file, or from the GitHub CLI (gh auth token).
+Signing in: the window's "Sign in with GitHub" button, or --login in a console (GitHub's device flow:
+enter the code shown at github.com/login/device). The token is kept encrypted for this Windows user.
+It is also read from FF_GITHUB_TOKEN, the config file, or the GitHub CLI (gh auth token).
 """
 
 from __future__ import annotations
@@ -46,13 +46,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import ffscan  # noqa: E402
 from ffscan import scope_file  # noqa: E402
 from game_location import locate_game, GameNotFound, AmbiguousGame  # noqa: E402
+import github_login  # noqa: E402
 
 VERSION = "1.2.0"
 DEFAULT_REPO = "Danissemo/ForeverFlip-Data"
 API = "https://api.github.com"
 RAW_URL = "https://raw.githubusercontent.com/{repo}/main/shared/{file}"
-REPO_FILE = "https://raw.githubusercontent.com/{repo}/main/{path}"
-FOLLOW_FOR = 2 * 86400  # how long the helper looks for the result of an anonymous upload
 LOG_SINK = None
 
 
@@ -96,9 +95,19 @@ def saved_variable_files(game: pathlib.Path) -> list[pathlib.Path]:
 
 
 def find_token(config: dict) -> str | None:
-    token = os.environ.get("FF_GITHUB_TOKEN") or config.get("token")
+    return token_source(config)[0]
+
+
+def token_source(config: dict) -> tuple[str | None, str | None]:
+    """The GitHub token for uploads and where it came from: "environment", "helper" (signed in from
+    the helper), "config" or "gh" (the GitHub CLI)."""
+    if os.environ.get("FF_GITHUB_TOKEN"):
+        return os.environ["FF_GITHUB_TOKEN"], "environment"
+    token = github_login.load_token(config_dir())
     if token:
-        return token
+        return token, "helper"
+    if config.get("token"):
+        return config["token"], "config"
     for gh in ("gh", r"C:\Program Files\GitHub CLI\gh.exe"):
         try:
             out = subprocess.run([gh, "auth", "token"], capture_output=True, text=True, timeout=20,
@@ -106,8 +115,23 @@ def find_token(config: dict) -> str | None:
         except (OSError, subprocess.SubprocessError):
             continue
         if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip()
-    return None
+            return out.stdout.strip(), "gh"
+    return None, None
+
+
+def console_login(config: dict) -> int:
+    """Signs in from a console: shows the code, waits for the approval, keeps the token."""
+    try:
+        device = github_login.start(github_login.client_id(config), f"ForeverFlipSync/{VERSION}")
+        log(f"Open {device['verification_uri']} and enter the code {device['user_code']}.")
+        token = github_login.wait_for_token(github_login.client_id(config), device,
+                                            agent=f"ForeverFlipSync/{VERSION}")
+        github_login.save_token(config_dir(), token)
+        log(f"Signed in to GitHub as {github_login.whoami(token)}. Scans can be shared now.")
+        return 0
+    except (github_login.LoginError, urllib.error.URLError, OSError, ValueError) as exc:
+        log(f"Not signed in: {describe(exc)}.")
+        return 1
 
 
 # --- GitHub ---------------------------------------------------------------------------------------
@@ -202,118 +226,6 @@ def mark_uploaded(state: dict, ident: str) -> None:
     state["uploaded"] = sorted(done)[-500:]
 
 
-def relay_address(repo: str, config: dict | None = None) -> str | None:
-    """The upload relay: the config's "relay", else the address the data repository publishes."""
-    given = (config or {}).get("relay")
-    if given:
-        return str(given).rstrip("/")
-    url = REPO_FILE.format(repo=repo, path="relay.json")
-    req = urllib.request.Request(url, headers={"User-Agent": f"ForeverFlipSync/{VERSION}"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            value = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return None
-        raise
-    address = value.get("url") if isinstance(value, dict) else None
-    return address.rstrip("/") if isinstance(address, str) and address.startswith("https://") else None
-
-
-def send_anonymously(relay: str, scan: ffscan.RawScan, packed: bytes, digest: str) -> dict:
-    req = urllib.request.Request(relay + "/upload", data=packed, method="POST")
-    for name, value in (("Content-Type", "application/gzip"), ("User-Agent", f"ForeverFlipSync/{VERSION}"),
-                        ("X-FF-Scope", scan.scope), ("X-FF-Time", str(scan.at)), ("X-FF-Seal", str(scan.seal)),
-                        ("X-FF-Auctions", str(len(scan.rows))), ("X-FF-Sha256", digest), ("X-FF-Helper", VERSION)):
-        req.add_header(name, value)
-    try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        try:
-            reason = json.loads(exc.read().decode("utf-8")).get("reason")
-        except (ValueError, OSError, AttributeError):
-            reason = None
-        if reason and exc.code < 500 and exc.code != 429:
-            raise ValueError(f"the relay refused it: {reason}") from exc
-        raise
-
-
-def upload_anonymously(game: pathlib.Path, relay: str, state: dict, paths=None, checkpoint=None) -> None:
-    for scan, ident, when in shareable_scans(game, state, paths):
-        packed = gzip.compress(ffscan.encode_raw(scan).encode("utf-8"), mtime=0)
-        digest = hashlib.sha256(packed).hexdigest()
-        try:
-            answer = send_anonymously(relay, scan, packed, digest)
-        except ValueError as exc:
-            log(f"Not sharing the scan of {scan.scope} from {when}: {exc}.")
-            state.setdefault("rejected", {})[ident] = str(exc)
-            mark_uploaded(state, ident)  # the same file would be refused again
-            continue
-        state.setdefault("pending", []).append({"sha256": digest, "scan": ident, "relay": True,
-                                                "sent": int(time.time())})
-        mark_uploaded(state, ident)
-        if checkpoint:
-            checkpoint()
-        log(f"Shared the scan of {scan.scope} from {when} anonymously: {len(scan.rows)} auctions, "
-            f"{len(packed) // 1024} KB{' (sent before)' if answer.get('already') else ''}. "
-            f"It is checked within the hour.")
-
-
-def registry_lines(repo: str, path: str) -> list[dict]:
-    url = REPO_FILE.format(repo=repo, path=path)
-    req = urllib.request.Request(url, headers={"User-Agent": f"ForeverFlipSync/{VERSION}"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            text = resp.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return []
-        raise
-    out = []
-    for line in text.splitlines():
-        try:
-            out.append(json.loads(line))
-        except ValueError:
-            continue
-    return out
-
-
-RESULT_TEXT = {
-    "pending": "archived; it is published once another player's scan confirms it",
-    "confirmed": "confirmed and published in the community prices",
-    "unconfirmed": "archived, but no other scan confirmed it within a day",
-    "disputed": "archived, but its prices are too far from the community's to publish",
-}
-
-
-def follow_anonymous(repo: str, state: dict) -> None:
-    """Tells what the data repository decided about anonymous uploads."""
-    waiting = [p for p in state.get("pending", []) if p.get("relay")]
-    if not waiting:
-        return
-    scans = {e.get("sha256"): e for e in registry_lines(repo, "registry/scans.jsonl")}
-    refused = {e.get("sha256"): e for e in registry_lines(repo, "registry/refused.jsonl")}
-    keep = []
-    for item in state.get("pending", []):
-        if not item.get("relay"):
-            keep.append(item)
-            continue
-        entry, no = scans.get(item["sha256"]), refused.get(item["sha256"])
-        recent = time.time() - item.get("sent", 0) < FOLLOW_FOR
-        if no:
-            log(f"Scan {item['scan']}: refused, {no.get('reason')}.")
-        elif entry and entry.get("status") != "pending":
-            log(f"Scan {item['scan']}: {RESULT_TEXT.get(entry.get('status'), entry.get('status'))}.")
-        else:
-            if entry and not item.get("archived"):
-                log(f"Scan {item['scan']}: {RESULT_TEXT['pending']}.")
-                item["archived"] = True
-            if recent:
-                keep.append(item)
-    state["pending"] = keep
-
-
 def upload_new_scans(game: pathlib.Path, hub: GitHub, state: dict, paths=None, checkpoint=None) -> None:
     for scan, ident, when in shareable_scans(game, state, paths):
         packed, parts = package(scan)
@@ -339,9 +251,8 @@ def follow_uploads(hub: GitHub, state: dict) -> None:
     """Reports what the data repository decided and deletes the gists it has read."""
     waiting = []
     for item in state.get("pending", []):
-        if item.get("relay"):
-            waiting.append(item)  # anonymous uploads are followed through the registry
-            continue
+        if not item.get("issue"):
+            continue  # nothing to follow without an issue
         issue = hub.issue(item["issue"])
         if issue["state"] != "closed":
             waiting.append(item)
@@ -412,23 +323,17 @@ def run_once(game: pathlib.Path, repo: str, state: dict, token: str | None, uplo
              paths=None, download=True, checkpoint=None, config=None) -> int | None:
     errors = []
     if upload:
-        try:
-            if token:
-                hub = GitHub(repo, token)
+        if token:
+            hub = GitHub(repo, token)
+            try:
                 follow_uploads(hub, state)
                 upload_new_scans(game, hub, state, paths=paths, checkpoint=checkpoint)
-            else:
-                relay = relay_address(repo, config)
-                state["anonymous"] = bool(relay)
-                if relay:
-                    upload_anonymously(game, relay, state, paths=paths, checkpoint=checkpoint)
-                elif not state.get("warned"):
-                    log("Anonymous sharing is not available yet; sign in to GitHub (gh auth login) to share. "
-                        "Community downloads still work.")
-                    state["warned"] = True
-            follow_anonymous(repo, state)
-        except (urllib.error.URLError, OSError, ValueError) as exc:
-            errors.append(f"Sharing: {describe(exc)}")
+            except (urllib.error.URLError, OSError, ValueError) as exc:
+                errors.append(f"Sharing: {describe(exc)}")
+        elif not state.get("warned"):
+            log("Sharing needs a GitHub sign-in: press Sign in with GitHub (or run with --login). "
+                "Community downloads still work.")
+            state["warned"] = True
     count = None
     if download:
         try:
@@ -509,6 +414,9 @@ def arguments(argv=None):
     mode.add_argument("--gui", action="store_true", help="open the desktop window")
     mode.add_argument("--console", action="store_true", help="use console mode")
     parser.add_argument("--paused", action="store_true", help="open the window with automatic sync paused")
+    account = parser.add_mutually_exclusive_group()
+    account.add_argument("--login", action="store_true", help="sign in to GitHub (device code), then exit")
+    account.add_argument("--logout", action="store_true", help="forget the GitHub sign-in, then exit")
     parser.add_argument("--self-test", action="store_true", help="check the packaged TLS and GUI runtime without syncing")
     parser.add_argument("--self-test-network", action="store_true", help="also test a public community-index download")
     parser.add_argument("--self-test-report", type=pathlib.Path, help="write the self-test result as JSON")
@@ -549,6 +457,13 @@ def main(argv=None) -> int:
     config = load_json(folder / "config.json", {})
     if not isinstance(config, dict):
         config = {}
+    if args.login:
+        return console_login(config)
+    if args.logout:
+        github_login.forget(folder)
+        log("Signed out: the helper's GitHub sign-in was removed. To revoke it on GitHub too, see "
+            "Settings > Applications > Authorized OAuth Apps.")
+        return 0
     if not args.once and not args.console and (args.gui or os.name == "nt"):
         import sync_gui
         return sync_gui.launch(args, config, folder, sys.modules[__name__])
@@ -568,8 +483,7 @@ def main(argv=None) -> int:
     upload = not args.download_only and (args.upload or bool(config.get('upload', False)))
     token = find_token(config) if upload else None
     session = SyncSession(game, repo, state, state_path, token, upload, config)
-    sharing = "sharing (GitHub) and downloads" if token else "anonymous sharing and downloads" if upload else "downloads only"
-    log(f"ForeverFlip Sync {VERSION}: {game}; {sharing}.")
+    log(f"ForeverFlip Sync {VERSION}: {game}; {'sharing and downloads' if token else 'downloads only'}.")
     while True:
         failed = False
         try:
@@ -585,10 +499,10 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     # The packaged GUI has no console. Explicit command-line runs may attach to their terminal.
-    if os.name == 'nt' and sys.stdout is None and any(a in sys.argv for a in ('--console', '--once', '--help')):
+    if os.name == 'nt' and sys.stdout is None and any(a in sys.argv for a in ('--console', '--once', '--help', '--login', '--logout')):
         import ctypes
         attached = ctypes.windll.kernel32.AttachConsole(-1)
-        if not attached and '--console' in sys.argv:
+        if not attached and ('--console' in sys.argv or '--login' in sys.argv):
             attached = ctypes.windll.kernel32.AllocConsole()
         if attached:
             sys.stdout = open('CONOUT$', 'w', encoding='utf-8', buffering=1)

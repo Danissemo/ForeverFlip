@@ -21,19 +21,13 @@ A scan is published (its summary added to `shared/<realm>-<faction>.txt`) once i
 
 A scan that finds no such scan within 24 hours stays in the archive, marked unconfirmed.
 
-Players without a GitHub account upload through the relay (relay/worker.js, a Cloudflare Worker that
-only stores the file). Every run collects the relay's waiting scans with RELAY_KEY and checks them
-like the others; their uploader is "anon-" and 12 hex digits (a keyed hash of their address), which
-the uploader limits and the ban list apply to. They are never trusted.
-
 Before a confirmed scan is published, its prices are compared with the community's history (the
 published summaries of the last 3 days): an item more than twice or less than half its usual price
 there is left out, and a scan with more than a quarter of its compared items out of line is not
-published at all ("disputed"). A relay scan confirmed only by other relay scans publishes only items
-the history already prices: one person with two addresses cannot add new items.
+published at all ("disputed").
 
 Usage (in the workflow): python aggregate.py --data <data repository checkout>
-Environment: GITHUB_TOKEN, GITHUB_REPOSITORY; RELAY_URL and RELAY_KEY when the relay is set up.
+Environment: GITHUB_TOKEN, GITHUB_REPOSITORY.
 """
 
 from __future__ import annotations
@@ -71,45 +65,11 @@ WAIT = 24 * 3600  # how long a scan waits for a confirming scan
 MIN_ACCOUNT_AGE = 7 * 86400
 MAX_PER_DAY = 48  # uploads per uploader in 24 hours
 MIN_GAP = 10 * 60  # between two uploads of one uploader for the same auction house
-ANONYMOUS = re.compile(r"anon-[0-9a-f]{12}")
 HISTORY_DAYS = 3  # summaries the prices of a new scan are compared with
 HISTORY_RATIO = 2.0  # a usual price more than twice or less than half the community's is out of line
 HISTORY_MIN_ITEMS = 20  # items in common needed to judge a whole scan
 HISTORY_MAX_OFF = 0.25  # share of out-of-line items that disputes a whole scan
-REFUSED_KEEP = 500
 
-
-def anonymous(uploader: str) -> bool:
-    return bool(ANONYMOUS.fullmatch(uploader or ""))
-
-
-class Relay:
-    """The upload relay's collection side (relay/worker.js)."""
-
-    def __init__(self, url: str, key: str):
-        self.url, self.key = url.rstrip("/"), key
-
-    def call(self, method: str, path: str) -> bytes:
-        req = urllib.request.Request(self.url + path, method=method)
-        req.add_header("Authorization", f"Bearer {self.key}")
-        req.add_header("User-Agent", "ForeverFlip-aggregator")
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            return resp.read()
-
-    def pending(self) -> list[dict]:
-        out, cursor = [], ""
-        while True:
-            page = json.loads(self.call("GET", "/pending" + (f"?cursor={urllib.parse.quote(cursor)}" if cursor else "")))
-            out += page.get("scans") or []
-            cursor = page.get("cursor") or ""
-            if not cursor:
-                return out
-
-    def download(self, ident: str) -> bytes:
-        return self.call("GET", "/scan/" + ident)
-
-    def delete(self, ident: str) -> None:
-        self.call("DELETE", "/scan/" + ident)
 
 
 class Hub:
@@ -208,16 +168,6 @@ def save_registry(data: pathlib.Path, entries: list[dict]) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     text = "".join(json.dumps(e, sort_keys=True) + "\n" for e in sorted(entries, key=lambda e: (e["at"], e["name"])))
     (folder / "scans.jsonl").write_text(text, encoding="utf-8")
-
-
-def note_refused(data: pathlib.Path, sha256: str, uploader: str, reason: str, now: float) -> None:
-    """Relay uploads have no issue to answer in: their refusals are listed for the helper to read."""
-    path = data / "registry" / "refused.jsonl"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    lines.append(json.dumps({"sha256": sha256, "uploader": uploader, "reason": reason, "received": int(now)},
-                            sort_keys=True))
-    path.write_text("\n".join(lines[-REFUSED_KEEP:]) + "\n", encoding="utf-8")
 
 
 def load_uploaders(data: pathlib.Path) -> dict:
@@ -323,33 +273,6 @@ def archive_scan(hub, scan: ffscan.RawScan, packed: bytes, digest: str, uploader
         "issue": None, "received": int(now), "status": status, "peers": [], "compared": [], "items": 0,
     }
 
-
-def accept_relayed(hub, relay: Relay, item: dict, entries: list[dict], uploaders: dict,
-                   now: float) -> tuple[dict, ffscan.RawScan, bytes]:
-    """Checks one scan from the relay and archives it; raises ValueError with the reason to refuse."""
-    uploader = str(item.get("uploader") or "")
-    if not anonymous(uploader):
-        raise ValueError("the relay gave no anonymous uploader")
-    if uploader in uploaders["banned"]:
-        raise ValueError("uploads from this player are not accepted")
-    if int(item.get("bytes") or 0) > MAX_BYTES:
-        raise ValueError("the file is too large")
-    packed = relay.download(item["id"])
-    if len(packed) > MAX_BYTES:
-        raise ValueError("the file is too large")
-    digest = hashlib.sha256(packed).hexdigest()
-    if digest != item.get("sha256"):
-        raise ValueError("the file does not match its SHA-256 (it was changed or cut on the way)")
-    try:
-        scan = ffscan.decode_raw(gzip.decompress(packed).decode("utf-8"))
-    except (OSError, EOFError, UnicodeDecodeError, ValueError) as exc:
-        raise ValueError("the file is not a gzip-compressed scan") from exc
-    if scan.scope != item.get("scope") or scan.at != item.get("at"):
-        raise ValueError("the details sent with the file do not match the scan")
-    why = ffscan.check(scan, now) or limits(entries, uploader, scan, digest, now)
-    if why:
-        raise ValueError(why)
-    return archive_scan(hub, scan, packed, digest, uploader, now, "pending"), scan, packed
 
 
 # --- Confirmation ---------------------------------------------------------------------------------
@@ -480,14 +403,12 @@ def confirm_pending(entries: list[dict], load, shared: pathlib.Path, now: float)
                  and abs(e["at"] - entry["at"]) <= PEER_WINDOW and e["name"] not in entry["compared"]]
         keys: set[str] = set()
         scan = None
-        named = False  # confirmed by a scan of a GitHub account
         for peer in peers:
             entry["compared"].append(peer["name"])
             scan = scan or load(entry)
             other = load(peer)
             if overlap(lots(scan), lots(other)) >= MIN_OVERLAP:
                 entry["peers"].append(peer["name"])
-                named = named or not anonymous(peer["uploader"])
                 keys |= agreeing_items(scan, other)
         if entry["peers"]:
             history = community_history(shared, entry["scope"], entry["at"])
@@ -498,8 +419,6 @@ def confirm_pending(entries: list[dict], load, shared: pathlib.Path, now: float)
                 report.append(f"disputed {entry['name']}: {len(off)} of {compared} prices far from the community's")
                 continue
             keys -= off
-            if anonymous(entry["uploader"]) and not named:
-                keys &= set(history)
             entry["status"] = "confirmed"
             publish(shared, entry, scan, keys)
             report.append(f"confirmed {entry['name']} by {', '.join(entry['peers'])}: {entry['items']} items")
@@ -527,7 +446,7 @@ STATUS_TEXT = {
 }
 
 
-def process(hub, data: pathlib.Path, now: float, relay: Relay | None = None) -> list[str]:
+def process(hub, data: pathlib.Path, now: float) -> list[str]:
     """Handles the open upload issues and the waiting scans; returns a report."""
     shared = data / "shared"
     shared.mkdir(parents=True, exist_ok=True)
@@ -566,31 +485,6 @@ def process(hub, data: pathlib.Path, now: float, relay: Relay | None = None) -> 
                             f"{entry['auctions']} auctions. {STATUS_TEXT[entry['status']]}")
         hub.close(number, completed=True)
 
-    if relay is not None:
-        try:
-            waiting = relay.pending()
-        except (urllib.error.URLError, OSError, ValueError) as exc:
-            waiting = []
-            report.append(f"relay postponed: {exc}")
-        for item in waiting:
-            ident = str(item.get("id") or "")
-            try:
-                entry, scan, _ = accept_relayed(hub, relay, item, entries, uploaders, now)
-            except ValueError as exc:
-                note_refused(data, str(item.get("sha256") or ""), str(item.get("uploader") or ""), str(exc), now)
-                report.append(f"refused relay {ident}: {exc}")
-            except (urllib.error.URLError, OSError) as exc:
-                report.append(f"relay {ident} postponed: {exc}")  # kept on the relay for the next run
-                continue
-            else:
-                entries.append(entry)
-                loaded[entry["name"]] = scan
-                report.append(f"archived relay {ident} as {entry['archive']}/{entry['name']} (pending)")
-            try:
-                relay.delete(ident)
-            except (urllib.error.URLError, OSError) as exc:
-                report.append(f"relay {ident} not removed: {exc}")
-
     report += confirm_pending(entries, load, shared, now)
     save_registry(data, entries)
     write_index(shared)
@@ -603,10 +497,7 @@ def main() -> None:
     parser.add_argument("--data", required=True, help="checkout of the data repository")
     args = parser.parse_args()
     hub = Hub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
-    relay = None
-    if os.environ.get("RELAY_URL") and os.environ.get("RELAY_KEY"):
-        relay = Relay(os.environ["RELAY_URL"], os.environ["RELAY_KEY"])
-    for line in process(hub, pathlib.Path(args.data), time.time(), relay):
+    for line in process(hub, pathlib.Path(args.data), time.time()):
         print(line)
 
 

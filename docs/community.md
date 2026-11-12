@@ -51,25 +51,27 @@ responsive while parsing and network work run in the background.
 1. In game: **Settings → Sharing → Keep my full scans for the ForeverFlip Sync helper**. Up to
    eight full scans are retained until the helper acknowledges them. They can occupy several
    megabytes each and are written when the game saves, including `/reload` and logout.
-2. Enable **Share my full scans**, then press **Sync now**. No account is needed: the helper checks
-   each scan and sends it anonymously to the [upload relay](../relay/README.md). Within the hour the
-   data repository collects it, checks it again and archives it; the helper then shows what became
-   of it (archived, confirmed, refused and why).
-3. Optional: sign in once with the [GitHub CLI](https://cli.github.com) (`gh auth login`, an account
-   at least seven days old, permissions **gist** and **public_repo**). Signed in, the helper uploads
-   through your account instead: a secret gist and a **Scan upload: ...** issue in the data
-   repository, answered within minutes. Scans of an account can confirm new items that anonymous
-   scans alone cannot (see [Safeguards](#safeguards)). Existing `FF_GITHUB_TOKEN` or `config.json`
-   credentials also work; the window never displays them. If you sign in after opening the window,
-   the next manual sync uses it; restarting is not required.
+2. In the helper, press **Sign in with GitHub**. It shows a short code, copies it and opens
+   github.com/login/device: enter the code there and approve. Sharing needs a GitHub account at
+   least seven days old and the permissions **gist** and **public_repo** (to post the scan and the
+   issue that points to it). The helper keeps the sign-in encrypted for your Windows user (DPAPI)
+   in `%APPDATA%\ForeverFlipSync`; **Sign out** removes it. To revoke the access on GitHub too, see
+   **Settings → Applications → Authorized OAuth Apps**. In a console, `--login` and `--logout` do
+   the same.
+3. **Share my full scans** turns on with the sign-in (it is not available before). Each new scan is
+   checked, uploaded to a secret gist of your account, and announced by a **Scan upload: ...**
+   issue in the data repository. The repository checks it again and archives it within minutes;
+   the helper shows its answer and deletes the gist.
+
+A sign-in of the [GitHub CLI](https://cli.github.com) (`gh auth login`), `FF_GITHUB_TOKEN` or a
+`token` in `config.json` also works; the window shows which one is used and never displays it.
 
 A failed upload is not acknowledged as sent. Completed uploads are saved immediately, even if a
 later download fails, and invalid scans are tracked separately from successful uploads. A sharing
 failure does not prevent an independent attempt to download community prices.
 
 The helper keeps configuration and state in `%APPDATA%\ForeverFlipSync`. Uploads are public: the
-archived file names the realm and faction, and the GitHub account, or for an anonymous upload an
-`anon-...` id (a keyed hash of your address; the address is not stored). The sharing checkbox is
+issue and archived file identify the GitHub account, realm and faction. The sharing checkbox is
 remembered and applies to command-line runs too, unless an explicit command-line override is used.
 
 ### Command-line options
@@ -82,6 +84,8 @@ remembered and applies to command-line runs too, unless an explicit command-line
 | `--download-only` | Never upload, regardless of the saved sharing setting |
 | `--upload` | Enable sharing explicitly for this run |
 | `--paused` | Open the window with automatic sync paused |
+| `--login` | Sign in to GitHub with a device code, then exit |
+| `--logout` | Remove the helper's GitHub sign-in, then exit |
 | `--game <path>` | Forever client folder, parent installation folder, executable or addon subfolder |
 | `--repo <owner/name>` | Another community data repository |
 | `--interval <seconds>` | Console check interval, default 60 seconds |
@@ -143,22 +147,16 @@ layers make a changed scan useless instead.
    less than half the community's price is left out, and a scan with more than a quarter of its
    compared items out of line is not published at all (*disputed*). Prices cannot be pushed far by
    a few scans, however well they agree with each other.
-5. **Anonymous uploads** go through the [relay](../relay/README.md), which only stores them; the
-   data repository checks them like the others. They are never trusted, and an anonymous scan
-   confirmed only by other anonymous scans publishes only items the history already prices: one
-   person with several addresses cannot add invented items. Refusals are listed in
-   `registry/refused.jsonl` for the helper to report.
-6. **Uploader rules** (`registry/uploaders.json` in the data repository):
+5. **Uploader rules** (`registry/uploaders.json` in the data repository):
    - accounts younger than 7 days cannot upload;
    - at most 48 uploads a day per account, and not two scans of one house less than 10 minutes apart;
    - the same file once;
-   - the maintainer can ban an account or an `anon-...` id, or mark an account trusted; scans of
-     trusted accounts are published without waiting for confirmation (and the history check);
-   - the relay keeps at most 4 waiting scans per anonymous player.
-7. **Checks of the contents:** the format, an auction house name ending in Alliance, Horde or
+   - the maintainer can ban an account or mark it trusted; scans of trusted accounts are published
+     without waiting for confirmation (and the history check).
+6. **Checks of the contents:** the format, an auction house name ending in Alliance, Horde or
    Neutral, a time at most 7 days old and not in the future, 50 to 3,000,000 auctions, plausible
    stack sizes and prices, and at most half of the auctions unreadable.
-8. **In the addon:** two players' copies of the same server scan (within 2 minutes) count once, and
+7. **In the addon:** two players' copies of the same server scan (within 2 minutes) count once, and
    only scans of your own realm are merged, each once, at most 7 days old. Deals always come from
    your own scans and live checks, never from shared data alone.
 
@@ -173,5 +171,5 @@ layers make a changed scan useless instead.
 | `sync/sync_gui.py` | Desktop window and background worker |
 | `tools/build_sync_helper.py` | Windows executable packaging and frozen-runtime verification |
 | `sync/aggregate.py` | The aggregator, run by the data repository's workflow on every upload issue and every 30 minutes |
-| `relay/worker.js` | The upload relay for players without a GitHub account (Cloudflare Worker); set-up in [`relay/README.md`](../relay/README.md) |
+| `sync/github_login.py` | Signing in to GitHub from the helper (device flow) and keeping the token encrypted |
 | `tests/test_sync.py` | Tests of all of the above, including the addon reading what Python writes |

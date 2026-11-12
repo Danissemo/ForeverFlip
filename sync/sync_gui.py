@@ -8,9 +8,13 @@ import queue
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog, messagebox, ttk
 
+import github_login
 from game_location import AmbiguousGame, GameNotFound, normalize_game
+
+SOURCES = {'helper': '', 'gh': ' (GitHub CLI)', 'environment': ' (FF_GITHUB_TOKEN)', 'config': ' (config.json)'}
 
 
 class SyncWindow:
@@ -20,6 +24,9 @@ class SyncWindow:
         self.game = self.session = None
         self.busy = self.closing = False
         self.next_check = 0.0
+        self.account = None  # (login, source) once signed in to GitHub
+        self.login_running = self.login_cancel = False
+        self.account_text = tk.StringVar(value='Checking the GitHub sign-in...')
         self.auto = tk.BooleanVar(value=not args.paused and config.get('automatic', True))
         self.share = tk.BooleanVar(value=not args.download_only and (args.upload or bool(config.get('upload', False))))
         self.status = tk.StringVar(value='Finding your Forever installation...')
@@ -48,8 +55,10 @@ class SyncWindow:
         self.auto_button.pack(side='left')
         self.share_button = ttk.Checkbutton(modes, text='Share my full scans', variable=self.share, command=self.options_changed)
         self.share_button.pack(side='left', padx=(20, 0))
-        if args.download_only:
-            self.share_button.state(['disabled'])
+        self.login_button = ttk.Button(modes, text='Sign in with GitHub', command=self.sign_in_or_out)
+        self.login_button.pack(side='right')
+        ttk.Label(modes, textvariable=self.account_text).pack(side='right', padx=(0, 10))
+        self.refresh_share_state()
         controls = ttk.Frame(main)
         controls.grid(row=5, column=0, columnspan=2, sticky='ew', pady=(16, 8))
         controls.columnconfigure(0, weight=1)
@@ -73,14 +82,13 @@ class SyncWindow:
         core.LOG_SINK = lambda line: self.events.put(('log', line))
         self.set_busy(True)
         root.after(50, self.discover)
+        root.after(60, self.check_account)
         root.after(100, self.poll)
 
     def set_busy(self, value):
         self.busy = value
-        for button in (self.choose_button, self.share_button):
-            button.state(['disabled'] if value else ['!disabled'])
-        if self.args.download_only:
-            self.share_button.state(['disabled'])
+        self.choose_button.state(['disabled'] if value else ['!disabled'])
+        self.refresh_share_state()
         self.locations.configure(state='disabled' if value else 'readonly')
         self.sync_button.state(['disabled'] if value or not self.game else ['!disabled'])
         if value:
@@ -88,6 +96,75 @@ class SyncWindow:
         else:
             self.progress.stop()
             self.progress['value'] = 0
+
+    # --- GitHub sign-in ---------------------------------------------------------------------------
+
+    def refresh_share_state(self):
+        """Sharing needs a GitHub sign-in: the checkbox is usable only then."""
+        usable = self.account is not None and not self.busy and not self.args.download_only
+        self.share_button.state(['!disabled'] if usable else ['disabled'])
+        if self.login_running:
+            self.login_button.configure(text='Cancel sign-in')
+        elif self.account and self.account[1] == 'helper':
+            self.login_button.configure(text='Sign out')
+        else:
+            self.login_button.configure(text='Sign in with GitHub')
+        self.login_button.state(['disabled'] if self.account and self.account[1] != 'helper' else ['!disabled'])
+        if self.account:
+            self.account_text.set(f'Signed in as {self.account[0]}{SOURCES.get(self.account[1], "")}')
+        elif not self.login_running:
+            self.account_text.set('Not signed in: sign in to share your scans')
+
+    def check_account(self):
+        def work():
+            token, source = self.core.token_source(self.config)
+            if not token:
+                self.events.put(('account', None))
+                return
+            try:
+                login = github_login.whoami(token, f'ForeverFlipSync/{self.core.VERSION}')
+            except Exception:
+                login = 'GitHub'  # offline: the sign-in is kept, its name is read later
+            self.events.put(('account', (login, source)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def sign_in_or_out(self):
+        if self.login_running:
+            self.login_cancel = True
+            return
+        if self.account and self.account[1] == 'helper':
+            github_login.forget(self.folder)
+            self.account, self.session = None, None
+            self.core.log('Signed out of GitHub. To revoke the access on GitHub too: Settings > Applications > '
+                          'Authorized OAuth Apps.')
+            self.check_account()  # another sign-in (the GitHub CLI) may still be there
+            self.refresh_share_state()
+            return
+        cid = github_login.client_id(self.config)
+        if not cid:
+            messagebox.showinfo('Sign in with GitHub', 'Signing in from the helper is not set up in this build yet.',
+                                parent=self.root)
+            return
+        self.login_running, self.login_cancel = True, False
+        self.account_text.set('Asking GitHub for a code...')
+        self.refresh_share_state()
+        agent = f'ForeverFlipSync/{self.core.VERSION}'
+
+        def work():
+            try:
+                device = github_login.start(cid, agent)
+                self.events.put(('login_code', device))
+                token = github_login.wait_for_token(cid, device, cancelled=lambda: self.login_cancel or self.closing,
+                                                    agent=agent)
+                github_login.save_token(self.folder, token)
+                try:
+                    login = github_login.whoami(token, agent)
+                except Exception:
+                    login = 'GitHub'
+                self.events.put(('signed_in', login))
+            except Exception as error:
+                self.events.put(('login_error', self.core.describe(error)))
+        threading.Thread(target=work, daemon=True).start()
 
     def discover(self):
         def work():
@@ -138,8 +215,9 @@ class SyncWindow:
         if self.busy or not self.game or self.closing:
             return
         self.set_busy(True)
-        self.status.set('Syncing scans and community prices...' if self.share.get() else 'Getting community prices...')
-        game, share = self.game, self.share.get()
+        share = self.share.get() and self.account is not None
+        self.status.set('Syncing scans and community prices...' if share else 'Getting community prices...')
+        game = self.game
 
         def work():
             try:
@@ -180,16 +258,39 @@ class SyncWindow:
                 self.status.set(str(value))
                 if isinstance(value, AmbiguousGame):
                     self.locations.configure(values=[str(p) for p in value.candidates])
+            elif kind == 'account':
+                self.account = value
+                self.refresh_share_state()
+            elif kind == 'login_code':
+                code, url = value['user_code'], value['verification_uri']
+                self.refresh_share_state()
+                try:
+                    self.root.clipboard_clear()
+                    self.root.clipboard_append(code)
+                except tk.TclError:
+                    pass
+                self.account_text.set(f'Enter the code {code} at {url.replace("https://", "")}')
+                self.core.log(f'Sign in: enter the code {code} at {url} (copied; the page is opening) and approve.')
+                webbrowser.open(url)
+            elif kind == 'signed_in':
+                self.login_running = False
+                self.account, self.session = (value, 'helper'), None
+                self.core.log(f'Signed in to GitHub as {value}. Your scans are shared from now on.')
+                if not self.args.download_only and not self.share.get():
+                    self.share.set(True)
+                    self.options_changed()
+                self.refresh_share_state()
+            elif kind == 'login_error':
+                self.login_running = False
+                self.core.log(f'Not signed in: {value}.')
+                self.refresh_share_state()
             elif kind in ('synced', 'error'):
                 self.set_busy(False)
                 if kind == 'synced':
                     self.last_sync.set('Last sync: '+time.strftime('%H:%M:%S'))
                     self.status.set('Up to date' if value is None or value > 0 else 'No community prices yet')
-                    if self.share.get() and self.session and not self.session.token:
-                        if self.session.state.get('anonymous'):
-                            self.status.set(self.status.get()+' — scans shared anonymously')
-                        else:
-                            self.status.set('Prices checked — anonymous sharing is not available yet; sign in to GitHub to share')
+                    if self.share.get() and self.account is None:
+                        self.status.set('Prices checked — sign in to GitHub to share your scans')
                     if not self.auto.get():
                         self.status.set(self.status.get()+' — automatic sync paused')
                 else:
