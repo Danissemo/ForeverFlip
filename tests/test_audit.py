@@ -342,22 +342,56 @@ class ScanPartsTests(unittest.TestCase):
         while S.busy() do run(0.5); n = n + 1; assert(n < 400) end
         assert(S.last.total == full, 'the whole list: ' .. S.last.total .. ' of ' .. full)''')
 
+    def test_a_list_still_growing_at_the_end_of_the_wait_gets_more_time(self):
+        run(BASE + '''local S = F.Scan
+        for i = 1, 60 do addAuction(10, 100 + i, 1) end
+        fullScan()
+        local full = S.last.total
+        now = now + 901; F.db.lastScan = 0
+        local real = C_AuctionHouse.GetNumReplicateItems
+        local started = now
+        -- A part every 30 seconds until 6 minutes, then the whole list.
+        C_AuctionHouse.GetNumReplicateItems = function()
+            if now - started >= 360 then return real() end
+            return 10 + math.floor((now - started) / 30)
+        end
+        assert(S.start())
+        local n = 0
+        while S.busy() do run(1); n = n + 1; assert(n < 900) end
+        assert(S.last.total == full, 'waited past 5 minutes for the rest: ' .. S.last.total)''')
+
+    def test_a_part_of_another_addons_scan_waits_for_the_rest(self):
+        run(BASE + '''local S = F.Scan
+        for i = 1, 60 do addAuction(10, 100 + i, 1) end
+        fullScan()
+        local full = S.last.total
+        now = now + 901
+        local real = C_AuctionHouse.GetNumReplicateItems
+        C_AuctionHouse.GetNumReplicateItems = function() return 1024 end
+        fire('REPLICATE_ITEM_LIST_UPDATE')
+        assert(S.job and S.job.state == 'waiting', 'a part is not read')
+        C_AuctionHouse.GetNumReplicateItems = real
+        local n = 0
+        while S.busy() do run(1); n = n + 1; assert(n < 900) end
+        assert(S.last.total == full)''')
+
     def test_a_partial_answer_does_not_lower_the_measure_of_the_next(self):
         run(BASE + '''local S = F.Scan
         for i = 1, 60 do addAuction(10, 100 + i, 1) end
         fullScan()
         local full = S.last.total
         assert(F.Data.market(F.db, F.Engine.scope()).peak.total == full, 'a complete scan sets the measure')
-        -- The server only ever sends a tenth: read at the end of the wait, marked partial.
+        -- The server only ever sends a tenth: never read; the last complete scan stays.
         local real = C_AuctionHouse.GetNumReplicateItems
+        local before = S.last
         now = now + 901; F.db.lastScan = 0
         assert(S.start())
         C_AuctionHouse.GetNumReplicateItems = function() return math.floor(full / 10) end
-        run(S.SHORT - 10)
-        assert(S.job and S.job.state == 'waiting', 'a part is not read after a few quiet seconds')
+        run(S.SHORT + 10)
+        assert(S.job and S.job.state == 'waiting', 'a part is not read, however quiet')
         local n = 0
-        while S.busy() do run(1); n = n + 1; assert(n < 600) end
-        assert(S.last.partial and S.last.total == math.floor(full / 10), 'read but marked partial')
+        while S.busy() do run(1); n = n + 1; assert(n < 900) end
+        assert(S.last == before and F.Engine.message == 'scan_partial', 'not used: ' .. tostring(F.Engine.message))
         assert(S.reference(F.Engine.scope()) == full, 'the measure stays the complete list')
         -- The next answer of the same small size is again held back.
         now = now + 901; F.db.lastScan = 0

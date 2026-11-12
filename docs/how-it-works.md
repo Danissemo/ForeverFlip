@@ -318,9 +318,13 @@ with them, using the same rules.
   is reported and the deal is checked again; the wallet is still watched 3 minutes (`T.late`), and
   a purchase the server takes that late is booked then.
 - **The full scan answer comes in parts** (1024, 2048, 24576 ... auctions, with pauses of seconds
-  between them). It is read once the list has not changed for 5 seconds (`S.SETTLE`); a list that
-  is a whole number of 1024-auction parts, or under 75% of the largest complete scan of the day,
-  waits for 60 quiet seconds (`S.SHORT`) or the end of the wait, and is then read as partial. Reading after one quiet second read a part in game (1024 of 300 000 auctions).
+  between them). It is read once the list has not changed for 5 seconds (`S.SETTLE`) and is
+  complete. A list that is a whole number of 1024-auction parts, or under 75% of the largest
+  complete scan of the day, is a part and is never read, however quiet: the rest is waited for. A
+  list still growing at the end of the 5-minute wait gets more time, up to 10 minutes
+  (`S.GROW_WAIT`). A part left at the end is not used at all (`scan_partial`): its missing lots
+  would read as bought and its items as gone, so the deals and sales of the last complete scan
+  stay. A part of another addon's scan is waited for the same way. Reading after one quiet second read a part in game (1024 of 300 000 auctions).
 - An item search with no answer in 10 seconds is tried again at once by name (a browse lists its
   exact item keys, then each is searched, as for gear), and that item is searched by name from then
   on (`Deals.byName`).

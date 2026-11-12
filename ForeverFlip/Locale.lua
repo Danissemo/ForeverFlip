@@ -434,6 +434,7 @@ T.uk = {
     ["Bought per day at %s or more: %s."] = "Купують за день по %s і дорожче: %s.",
     ["  seen: %d buys, %d in part / %d whole lots"] = "  помічено: %d покупок, %d частково / %d цілими лотами",
     ["Stop"] = "Стоп",
+    ["The server sent only a part of the full scan list and stopped. A part is not used (its missing lots would read as bought): the deals and sales of the last complete scan stay. Next try 15 minutes after this one."] = "Сервер надіслав лише частину списку повного скану й зупинився. Частина не використовується (її відсутні лоти виглядали б купленими): угоди й продажі останнього повного скану лишаються. Наступна спроба через 15 хвилин після цієї.",
     ["Sure"] = "Надійність",
     ["Sure %s: %d%% chance real buyers take %d at this price in %d h (%d bought at 95%% of it or more in %.1f h watched; %d%% real buyers)."] = "Надійність %s: %d%% шанс, що справжні покупці візьмуть %d за цією ціною за %d год (%d куплено за 95%% від неї чи дорожче за %.1f год спостереження; %d%% справжніх покупців).",
     ["Sure %s: only lots that disappeared are known yet (%d near this price in %.1f h), no purchase confirmed: at most %d%% until two full scans track the lots."] = "Надійність %s: поки відомі лише лоти, що зникли (%d біля цієї ціни за %.1f год), жодної підтвердженої покупки: не більше %d%%, доки два повні скани не простежать лоти.",

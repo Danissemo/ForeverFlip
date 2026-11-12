@@ -43,6 +43,7 @@ local MESSAGES = {
     scan_empty = "The auction house returned an empty scan. Try again later.",
     scan_timeout = "The server sent no full scan in 5 minutes (the list stayed empty; another addon or another character of the account may have used the 15-minute window). Next try 15 minutes after this one: an earlier call would start the server's wait again.",
     scan_unsettled = "The full scan list kept changing for 5 minutes and was not read. Next try 15 minutes after this one.",
+    scan_partial = "The server sent only a part of the full scan list and stopped. A part is not used (its missing lots would read as bought): the deals and sales of the last complete scan stay. Next try 15 minutes after this one.",
     scan_dropped = "The server threw the full scan request away (too many requests). Next try in 10 seconds.",
     stopped = "Stopped: no check, scan or sale is running now.",
     scan_paused = "The auction house closed while waiting for the full scan: the wait goes on when you open it again.",

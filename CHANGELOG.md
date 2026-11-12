@@ -73,6 +73,10 @@ All notable changes are listed here. The format follows
   working data, refresh time-dependent analytics and align crafting shopping limits with costs.
 - Return today's minimum from the public price API only when the daily record is from today.
 
+- **Only complete full scans are used.** A part of the server's list is never read, however long
+  it stays quiet: the rest is waited for, up to 10 minutes while the list still grows. A part left
+  at the end is dropped with a message, and the deals and sales of the last complete scan stay.
+  A part of another addon's scan (Auctionator, TSM) is waited for the same way.
 - **Full scans read a part of the house as the whole.** The server sends its list in parts of
   1024 auctions; a part that paused for five seconds was taken as the answer, and each such scan
   lowered the size the next one was measured against (185 344 auctions, then 122 880, 88 064 …

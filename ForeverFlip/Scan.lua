@@ -21,6 +21,10 @@ S.DAYS = 14 -- daily records kept per item (price, cheapest, units listed and so
 -- 15-minute account limit (another addon used the window) is never answered. 5 minutes, then the
 -- next try once 15 minutes passed since that call (S.COOLDOWN), never sooner.
 S.ANSWER_WAIT = 300
+-- Only complete lists are read. A list still growing at the end of the wait gets more time, up to
+-- S.GROW_WAIT from the call; a part left at the end is not used at all (scan_partial): its missing
+-- lots read as bought, and its items as gone from the house.
+S.GROW_WAIT = 600
 
 local function clock()
     return F.Engine.clock()
@@ -216,7 +220,8 @@ local function polled(j, now)
     if quiet < S.SETTLE then
         return false
     end
-    return not S.isShort(j.scope, n) or quiet >= S.SHORT or now - j.at >= S.ANSWER_WAIT - 5
+    -- A part of the answer is never read: the rest is waited for (S.step ends the wait).
+    return not S.isShort(j.scope, n)
 end
 
 local function beginReading(j, total)
@@ -305,8 +310,22 @@ function S.onReplicate()
         end
         if F.AH.isOpen() and U.finite(total) and total > 0 then
             F.db.lastScan = clock()
-            S.job = { state = "waiting", at = clock(), scope = F.Engine.scope() }
-            beginReading(S.job, total)
+            if S.isShort(F.Engine.scope(), total) then
+                -- A part of another addon's scan: the rest is waited for like our own.
+                S.job = {
+                    state = "waiting",
+                    at = clock(),
+                    scope = F.Engine.scope(),
+                    baseMark = -1,
+                    last = total,
+                    seen = total,
+                    other = true,
+                }
+                remember(S.job)
+            else
+                S.job = { state = "waiting", at = clock(), scope = F.Engine.scope() }
+                beginReading(S.job, total)
+            end
             F.Engine.notify("scan_other")
         end
         return
@@ -790,8 +809,17 @@ function S.step()
         F.Engine.changed()
     end
     if j.state == "waiting" then
+        local growing = j.quietSince and now - j.quietSince < S.SHORT and (j.seen or 0) > 0
         if polled(j, now) then
             beginReading(j, j.last)
+        elseif now - j.at > S.ANSWER_WAIT and growing and now - j.at <= S.GROW_WAIT then
+            return -- the list still grows: the rest is on its way
+        elseif now - j.at > S.ANSWER_WAIT and (j.seen or 0) > 0 and S.isShort(j.scope, j.last or j.seen) then
+            -- Only a part came: not used. The deals and sales of the last complete scan stay.
+            S.job = nil
+            F.db.lastScan = j.at
+            settle("partial, not used", j.last or j.seen)
+            F.Engine.notify("scan_partial")
         elseif now - j.at > S.ANSWER_WAIT then
             -- No answer: the next try waits the whole window counted from this call. Trying sooner
             -- starts the server's 15 minutes again and keeps the answer away. Whether the server
