@@ -233,7 +233,7 @@ class WindowTests(unittest.TestCase):
         self.assertIn('1.2.0 available', w.addon_text.get())
         self.assertFalse(w.update_button.instate(['disabled']))
         w.show_addon({'installed': '1.2.0-beta.4', 'release': None})
-        self.assertIn('1.2.0-beta.4 (beta): up to date', w.addon_text.get())
+        self.assertIn('1.2.0-beta.4 (beta) — up to date', w.addon_text.get())
         self.assertTrue(w.update_button.instate(['disabled']))
         w.show_addon({'installed': '1.2.0', 'release': None, 'result': {'restart': True}})
         self.assertIn('restart the game', w.addon_text.get())

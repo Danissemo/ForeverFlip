@@ -40,6 +40,9 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- The Sync helper's window is redrawn: one card of settings rows (game, GitHub, sharing, addon,
+  prices), pill switches, an overall status in the header, the sign-in code shown large, and the
+  activity log behind **Show activity**.
 - ForeverFlip Sync opens a desktop window on Windows, with remembered game selection, manual
   and automatic sync, opt-in sharing and a background worker. Command-line mode remains available.
 - Game discovery accepts installation parents, executables and addon folders, checks Forever
