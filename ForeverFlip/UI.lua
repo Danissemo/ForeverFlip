@@ -3887,47 +3887,234 @@ function UI.tooltips()
     end
 end
 
--- Merchant panel: items this vendor sells below their auction house value (vendor -> AH).
+-- Merchant window ----------------------------------------------------------------------------------
+-- A ForeverFlip tab beside Merchant and Buyback: what to sell to this merchant (one button sells it
+-- all) and what to buy here for the auction house. The Merchant tab gets a button that sells the
+-- same list at once.
+local MERCHANT_SELL_ROWS, MERCHANT_BUY_ROWS = 9, 5
+
+local function merchantRow(parent, y, withButton)
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetHeight(withButton and 28 or 18)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, y)
+    row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -8, y)
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetSize(withButton and 22 or 16, withButton and 22 or 16)
+    row.icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.text = text(row, "GameFontHighlightSmall")
+    row.text:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
+    row.text:SetJustifyH("LEFT")
+    row.text:SetWordWrap(withButton and true or false)
+    row.value = text(row, "GameFontHighlightSmall")
+    row.value:SetJustifyH("RIGHT")
+    if withButton then
+        row.buy = button(row, "Buy", 64, function(self)
+            local ok, why = F.Merchant.buy(self.offer)
+            if not ok and why then
+                F.Engine.notify(why)
+            end
+            UI.merchant(true)
+        end)
+        row.buy:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        row.text:SetPoint("RIGHT", row.buy, "LEFT", -4, 0)
+    else
+        row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        row.text:SetPoint("RIGHT", row.value, "LEFT", -6, 0)
+    end
+    return row
+end
+
+local function sellAll()
+    local stacks, money = F.Trade.sellAllToVendor()
+    if stacks > 0 then
+        print("ForeverFlip: " .. string.format(L("sold %d stacks to the vendor for %s"), stacks, U.money(money)))
+    end
+    UI.merchant(true)
+end
+
+function UI.merchantSelect(on)
+    local view, tab = UI.merchantView, UI.merchantTab
+    if not view then
+        return
+    end
+    if on then
+        view:Show()
+    else
+        view:Hide()
+    end
+    if PanelTemplates_SelectTab and PanelTemplates_DeselectTab and tab then
+        if on then
+            PanelTemplates_SelectTab(tab)
+            for i = 1, 2 do
+                local t = _G["MerchantFrameTab" .. i]
+                if t then
+                    PanelTemplates_DeselectTab(t)
+                end
+            end
+        else
+            PanelTemplates_DeselectTab(tab)
+            local selected = rawget(MerchantFrame, "selectedTab") or 1 -- set by the game's tab code
+            for i = 1, 2 do
+                local t = _G["MerchantFrameTab" .. i]
+                if t then
+                    if i == selected then
+                        PanelTemplates_SelectTab(t)
+                    else
+                        PanelTemplates_DeselectTab(t)
+                    end
+                end
+            end
+        end
+    end
+    if on then
+        UI.merchant(true)
+    end
+end
+
+local function createMerchantTab()
+    local ok, tab = pcall(CreateFrame, "Button", "ForeverFlipMerchantTab", MerchantFrame, "PanelTabButtonTemplate")
+    if not ok then
+        tab = CreateFrame("Button", "ForeverFlipMerchantTab", MerchantFrame, "CharacterFrameTabButtonTemplate")
+    end
+    tab:SetText("ForeverFlip")
+    local last = _G["MerchantFrameTab2"] or _G["MerchantFrameTab1"]
+    if last then
+        tab:SetPoint("LEFT", last, "RIGHT", ok and 3 or -16, 0)
+    else
+        tab:SetPoint("TOPLEFT", MerchantFrame, "BOTTOMLEFT", 180, 2)
+    end
+    if PanelTemplates_TabResize then
+        pcall(PanelTemplates_TabResize, tab, 0)
+    end
+    if PanelTemplates_DeselectTab then
+        PanelTemplates_DeselectTab(tab)
+    end
+    tab:SetScript("OnClick", function()
+        UI.merchantSelect(true)
+    end)
+    for i = 1, 2 do
+        local t = _G["MerchantFrameTab" .. i]
+        if t and t.HookScript then
+            t:HookScript("OnClick", function()
+                UI.merchantSelect(false)
+            end)
+        end
+    end
+    UI.merchantTab = tab
+
+    -- The view covers the merchant's item pages while the tab is selected.
+    local view = CreateFrame("Frame", nil, MerchantFrame)
+    view:SetPoint("TOPLEFT", MerchantFrame, "TOPLEFT", 8, -60)
+    view:SetPoint("BOTTOMRIGHT", MerchantFrame, "BOTTOMRIGHT", -8, 30)
+    if view.SetFrameLevel and MerchantFrame.GetFrameLevel then
+        view:SetFrameLevel((MerchantFrame:GetFrameLevel() or 1) + 30)
+    end
+    if view.EnableMouse then
+        view:EnableMouse(true)
+    end
+    local bg = view:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.06, 0.05, 0.04, 0.97)
+    view:Hide()
+    UI.merchantView = view
+
+    local sellTitle = text(view, "GameFontNormal")
+    sellTitle:SetPoint("TOPLEFT", view, "TOPLEFT", 8, -8)
+    sellTitle:SetText(L("Sell to this merchant"))
+    view.sellRows = {}
+    for i = 1, MERCHANT_SELL_ROWS do
+        view.sellRows[i] = merchantRow(view, -26 - (i - 1) * 18, false)
+    end
+    view.sellNote = text(view, "GameFontDisableSmall")
+    view.sellNote:SetPoint("TOPLEFT", view, "TOPLEFT", 8, -28 - MERCHANT_SELL_ROWS * 18)
+    view.sellNote:SetPoint("TOPRIGHT", view, "TOPRIGHT", -8, -28 - MERCHANT_SELL_ROWS * 18)
+    view.sellNote:SetJustifyH("LEFT")
+    view.sellAll = button(view, "Sell all", 150, sellAll)
+    view.sellAll:SetPoint("TOPRIGHT", view, "TOPRIGHT", -8, -44 - MERCHANT_SELL_ROWS * 18)
+    local line = view:CreateTexture(nil, "ARTWORK")
+    line:SetColorTexture(1, 0.82, 0, 0.25)
+    line:SetHeight(1)
+    line:SetPoint("TOPLEFT", view, "TOPLEFT", 6, -74 - MERCHANT_SELL_ROWS * 18)
+    line:SetPoint("TOPRIGHT", view, "TOPRIGHT", -6, -74 - MERCHANT_SELL_ROWS * 18)
+    local buyTitle = text(view, "GameFontNormal")
+    local buyTop = -82 - MERCHANT_SELL_ROWS * 18
+    buyTitle:SetPoint("TOPLEFT", view, "TOPLEFT", 8, buyTop)
+    buyTitle:SetText(L("Buy here, sell on the auction house"))
+    local offers = { rows = {} }
+    for i = 1, MERCHANT_BUY_ROWS do
+        offers.rows[i] = merchantRow(view, buyTop - 20 - (i - 1) * 30, true)
+    end
+    view.buyNote = text(view, "GameFontDisableSmall")
+    view.buyNote:SetPoint("TOPLEFT", view, "TOPLEFT", 8, buyTop - 24)
+    UI.offerPanel = view -- the buy rows (UI.offerPanel.rows)
+    view.rows = offers.rows
+
+    -- The Merchant tab: one button sells the list at once.
+    UI.merchantButton = button(MerchantFrame, "Sell to vendor", 180, sellAll)
+    UI.merchantButton:SetPoint("TOPRIGHT", MerchantFrame, "TOPRIGHT", -40, -28)
+end
+
 function UI.merchantOffers(open)
+    -- Part of the ForeverFlip tab (UI.merchant).
+    if open then
+        UI.merchant(true)
+    end
+end
+
+function UI.merchant(open)
     if not MerchantFrame then
         return
     end
-    local panel = UI.offerPanel
-    if not panel then
-        panel = CreateFrame("Frame", nil, MerchantFrame)
-        panel:SetSize(320, 250)
-        panel:SetPoint("TOPLEFT", MerchantFrame, "TOPRIGHT", 4, -30)
-        local bg = panel:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetColorTexture(0.05, 0.05, 0.06, 0.92)
-        panel.title = text(panel, "GameFontNormal")
-        panel.title:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -8)
-        panel.title:SetText(L("ForeverFlip: buy here, sell on the auction house"))
-        panel.rows = {}
-        for i = 1, 7 do
-            local row = CreateFrame("Frame", nil, panel)
-            row:SetSize(304, 30)
-            row:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -28 - (i - 1) * 31)
-            row.text = text(row, "GameFontHighlightSmall")
-            row.text:SetPoint("LEFT", row, "LEFT", 0, 0)
-            row.text:SetWidth(220)
-            row.text:SetWordWrap(true)
-            row.buy = button(row, "Buy", 80, function(self)
-                local ok, why = F.Merchant.buy(self.offer)
-                if not ok and why then
-                    F.Engine.notify(why)
-                end
-                UI.merchantOffers(true)
-            end)
-            row.buy:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-            panel.rows[i] = row
-        end
-        UI.offerPanel = panel
+    if not UI.merchantTab then
+        createMerchantTab()
     end
-    local offers = open and F.Merchant.offers() or {}
-    for i, row in ipairs(panel.rows) do
+    if not open then
+        UI.merchantSelect(false)
+        UI.merchantButton:Hide()
+        return
+    end
+    local list = F.Trade.vendorSellList()
+    local total = 0
+    for _, v in ipairs(list) do
+        total = total + v.price
+    end
+    if #list > 0 then
+        UI.merchantButton:SetText(string.format(L("Sell to vendor (%d): %s"), #list, U.money(total)))
+        UI.merchantButton:Show()
+    else
+        UI.merchantButton:Hide()
+    end
+    local view = UI.merchantView
+    for i, row in ipairs(view.sellRows) do
+        local v = list[i]
+        if v then
+            row.icon:SetTexture(icon(v.id))
+            local name = v.link or (v.id and U.itemInfo(v.id)) or v.key
+            row.text:SetText(name .. (v.count > 1 and (" x" .. v.count) or ""))
+            row.value:SetText(U.money(v.price))
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+    if #list == 0 then
+        view.sellNote:SetText(
+            L(
+                "Nothing to sell here: no item in the bags is worth more to a merchant (hidden items and items with a keep rule are left out)."
+            )
+        )
+    elseif #list > MERCHANT_SELL_ROWS then
+        view.sellNote:SetText(string.format(L("and %d more; hidden items are kept"), #list - MERCHANT_SELL_ROWS))
+    else
+        view.sellNote:SetText(L("Hidden items and items with a keep rule are kept."))
+    end
+    view.sellAll:SetText(#list > 0 and string.format(L("Sell all: %s"), U.money(total)) or L("Sell all"))
+    view.sellAll:SetEnabled(#list > 0)
+    local offers = F.Merchant.offers()
+    for i, row in ipairs(view.rows) do
         local o = offers[i]
         if o then
+            row.icon:SetTexture(icon(tonumber(o.link and o.link:match("item:(%d+)")) or 0))
             row.text:SetText(
                 string.format(
                     L("%s: %s here, %s on AH, +%s each, ~%.1f/day"),
@@ -3945,31 +4132,10 @@ function UI.merchantOffers(open)
             row:Hide()
         end
     end
-    if #offers > 0 then
-        panel:Show()
+    if #offers == 0 then
+        view.buyNote:Show()
     else
-        panel:Hide()
+        view.buyNote:Hide()
     end
-end
-
--- Merchant: one button sells every item bought as a vendor deal.
-function UI.merchant(open)
-    if not MerchantFrame then
-        return
-    end
-    if not UI.merchantButton then
-        UI.merchantButton = button(MerchantFrame, "Sell vendor deals", 190, function()
-            local n = F.Trade.sellToVendor()
-            print("ForeverFlip: " .. string.format(L("sold %d stacks to the vendor"), n))
-            UI.merchant(true)
-        end)
-        UI.merchantButton:SetPoint("TOPRIGHT", MerchantFrame, "TOPRIGHT", -40, -28)
-    end
-    local n = open and #F.Trade.vendorItems() or 0
-    if n > 0 then
-        UI.merchantButton:SetText(L("Sell vendor deals") .. " (" .. n .. ")")
-        UI.merchantButton:Show()
-    else
-        UI.merchantButton:Hide()
-    end
+    view.buyNote:SetText(L("Nothing here sells for more on the auction house."))
 end

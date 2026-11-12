@@ -165,7 +165,7 @@ local function GetItemInfo(id)
     if not it or not it.cached then
         return nil
     end
-    return it.name, link(id), 2, 20, 20, "", "", 1, "", 134400, it.vendor
+    return it.name, link(id), 2, 20, 20, "", "", it.commodity and 200 or 1, "", 134400, it.vendor
 end
 requestedItems = {}
 C_Item = {

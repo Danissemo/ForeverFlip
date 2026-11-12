@@ -118,7 +118,8 @@
 2. Click **Full scan**, or wait for the automatic one, and let the progress bar finish.
 3. Open **Deals → To vendor** and click a deal. It is checked live; when it says **ready**,
    click **Buy**. For stackable goods, also click **Confirm purchase** once the game quotes the price.
-4. Sell vendor deals at any merchant with **Sell vendor deals**. Post resale purchases with
+4. Sell vendor deals, and everything else a merchant pays the most for, at any merchant with
+   **Sell to vendor**. Post resale purchases with
    **Selling → My items → Post next bought**.
 
 Resale deals need sales data, so they start to appear after two or three full scans (30–45 minutes

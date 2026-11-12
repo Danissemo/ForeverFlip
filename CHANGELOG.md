@@ -63,6 +63,12 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **Selling is more compact:** the rule fields moved into a panel opened with **Rule...**, Check
   price is a small refresh button beside the price, and the list shows 12 rows. Check all is
   narrower.
+- **Merchant: a ForeverFlip tab and Sell to vendor.** One button on the Merchant tab sells everything
+  a merchant pays the most for (Best = Vendor on Selling, and vendor-deal stock), except hidden
+  items, items with a keep rule and resale stock. The ForeverFlip tab beside Merchant and Buyback
+  lists it, with Sell all, and the items to buy here for the auction house (the side panel is gone).
+- **Buying at a merchant** goes one stack per purchase and only as much as the bags hold: buying
+  several items that do not stack (throwing weapons) ended in "Internal Bag Error".
 - **Vendor deals are back:** the vendor-price safety margin is 0% by default (it was 20%, and the
   saved 20% is reset once). Every merchant price checked in game matched the client's, and the
   margin left 1 of 74 items listed below their vendor price.

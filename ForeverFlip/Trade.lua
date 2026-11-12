@@ -1254,6 +1254,87 @@ function T.vendorItems()
     return out
 end
 
+-- Everything to sell at a merchant, stack by stack: vendor-deal stock (never at a loss), and every
+-- bag item whose Best is "vendor" (Selling page: a merchant pays at least what the auction house
+-- leaves). Left out: hidden items, items with a "keep" rule, and stock bought for resale (it goes to
+-- the auction house). { bag, slot, key, id, count, price, link }, dearest first.
+function T.vendorSellList()
+    local c = char()
+    local out, seen = {}, {}
+    for _, v in ipairs(T.vendorItems()) do
+        seen[v.bag .. ":" .. v.slot] = true
+        local item = U.parseKey(v.key)
+        v.id = item and item.id
+        v.price = (item and F.AH.vendorPrice(item.id, true) or 0) * v.count
+        out[#out + 1] = v
+    end
+    for _, b in ipairs(F.AH.bagItems()) do
+        local p = c.positions[b.key]
+        local rule = T.rule(b.key)
+        if
+            not seen[b.bag .. ":" .. b.slot]
+            and not T.hidden(b.key)
+            and not (rule and rule.keep)
+            and not (p and p.qty > 0)
+            and not b.locked
+            and T.bestWay(b.key, b.id) == "vendor"
+        then
+            local price = F.AH.vendorPrice(b.id, true)
+            if price and price > 0 then
+                out[#out + 1] = {
+                    bag = b.bag,
+                    slot = b.slot,
+                    key = b.key,
+                    id = b.id,
+                    count = b.count,
+                    link = b.link,
+                    price = price * b.count,
+                }
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.price ~= b.price then
+            return a.price > b.price
+        end
+        return a.key < b.key
+    end)
+    return out
+end
+
+-- Sells the whole list (T.vendorSellList) to the open merchant. Returns stacks sold and money.
+function T.sellAllToVendor()
+    if not MerchantFrame or not MerchantFrame:IsShown() then
+        return 0, 0
+    end
+    local c = char()
+    local stacks, money = 0, 0
+    for _, v in ipairs(T.vendorSellList()) do
+        C_Container.UseContainerItem(v.bag, v.slot)
+        stacks, money = stacks + 1, money + v.price
+        local p = c.positions[v.key]
+        if p and p.qty > 0 then
+            -- Stock (a vendor deal): booked as its sale, and the buyback entry is only matched.
+            F.Merchant.expectSale(v.id, v.count)
+            local name = p.name or v.key
+            local cost = F.Data.sale(c, v.key, name, v.count, v.price, clock())
+            F.Data.log(c, {
+                at = clock(),
+                kind = "vendor",
+                key = v.key,
+                name = name,
+                qty = v.count,
+                amount = v.price,
+                profit = v.price - cost,
+            })
+        end
+    end
+    if stacks > 0 then
+        F.Engine.changed()
+    end
+    return stacks, money
+end
+
 function T.sellToVendor()
     local c = char()
     local sold = 0

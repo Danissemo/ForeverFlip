@@ -229,3 +229,41 @@ class PostFeedbackTests(unittest.TestCase):
         F.Data.market(F.db, F.Engine.scope()).history['i:30'] = { scan = { at = now, market = 90000 } }
         UI.show('sell'); UI.refresh()
         assert(D.pending('i:30'), 'the price of the AH-worthy item is being read already')''')
+
+
+class MerchantTests(unittest.TestCase):
+    def test_items_that_do_not_stack_are_bought_one_call_each_and_only_what_fits(self):
+        run(BASE + '''addItem(70, 'Weighted Throwing Axe', 50, 'item')
+        local offer = { index = 1, key = 'i:70', link = link(70), unit = 270, qty = 9, exit = 900 }
+        freeBagSlots = 5
+        local ok, bought = F.Merchant.buy(offer)
+        assert(ok and bought == 5, 'only what the bags hold: ' .. tostring(bought))
+        assert(#merchantBought == 5 and merchantBought[1][2] == 1, 'one item per call (no Internal Bag Error)')''')
+
+    def test_the_sell_list_holds_what_a_merchant_pays_most_for_except_hidden_and_kept(self):
+        run(BASE + '''F.db.settings.vendorMargin = 0
+        addItem(71, 'Murloc Fin', 28, 'commodity'); addItem(72, 'Healing Potion', 75, 'commodity')
+        addItem(73, 'Silk Cloth', 150, 'commodity'); addItem(74, 'Wool Cloth', 33, 'commodity')
+        putBag(0, 1, 71, 4); putBag(0, 2, 72, 1); putBag(0, 3, 73, 2); putBag(0, 4, 74, 5)
+        local history = F.Data.market(F.db, F.Engine.scope()).history
+        for _, k in ipairs({ 'c:71', 'c:72', 'c:73' }) do history[k] = { scan = { at = now, market = 20 } } end
+        history['c:74'] = { scan = { at = now, market = 5000 } } -- the auction house pays more
+        T.hide('c:72', 'Healing Potion')
+        T.setRule('c:73', { keep = 2 })
+        local keys = {}
+        for _, v in ipairs(T.vendorSellList()) do keys[#keys + 1] = v.key end
+        assert(table.concat(keys, ',') == 'c:71', table.concat(keys, ','))
+        MerchantFrame:Show()
+        local stacks, money = T.sellAllToVendor()
+        assert(stacks == 1 and money == 112 and soldToVendor[1].itemID == 71)''')
+
+    def test_the_merchant_tab_and_button_sell_the_list(self):
+        run(BASE + '''F.db.settings.vendorMargin = 0
+        addItem(71, 'Murloc Fin', 28, 'commodity'); putBag(0, 1, 71, 4)
+        F.Data.market(F.db, F.Engine.scope()).history['c:71'] = { scan = { at = now, market = 20 } }
+        MerchantFrame:Show(); fire('MERCHANT_SHOW')
+        assert(UI.merchantButton:IsShown() and UI.merchantButton:GetText():find('Sell to vendor %(1%)'), UI.merchantButton:GetText())
+        UI.merchantTab:Click()
+        assert(UI.merchantView:IsShown() and UI.merchantView.sellRows[1]:IsShown())
+        UI.merchantView.sellAll:Click()
+        assert(#soldToVendor == 1, 'one click sells it all')''')

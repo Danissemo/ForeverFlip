@@ -626,15 +626,22 @@ own mailbox or with another mail addon:
 
 ### Merchant
 
-At a merchant, ForeverFlip adds two things:
+At a merchant, ForeverFlip adds a **ForeverFlip** tab beside Merchant and Buyback, and one button
+on the Merchant tab:
 
-- **Sell vendor deals (N)** sells every item in your bags that was bought as a vendor deal, and
-  books the sales in the journal.
-- **ForeverFlip: buy here, sell on the auction house** is a panel listing the items this merchant
-  sells for less than they fetch on the auction house. For each item it shows the price here, the
-  expected auction price, the profit per unit (after the cut and deposit) and the measured sales per
-  day. **Buy** purchases the suggested quantity: no more than about one day of sales, and within
-  your budget. The items are booked as stock for resale.
+- **Sell to vendor (N): total** (top of the Merchant tab) sells, in one click, everything a merchant
+  pays the most for: every bag item whose **Best** on Selling → My items is **Vendor**, and the
+  stock bought as vendor deals (never at a loss; those sales are booked in the journal). Left out:
+  **Hidden** items, items with a **keep** rule, items without an auction price yet, and stock bought
+  for resale (it goes to the auction house).
+- The **ForeverFlip** tab lists the same items under **Sell to this merchant**, each with what the
+  merchant pays, and **Sell all** sells them.
+- Below, **Buy here, sell on the auction house** lists the items this merchant sells for less than
+  they fetch on the auction house: the price here, the expected auction price, the profit per unit
+  (after the cut and deposit) and the measured sales per day. **Buy N** purchases the suggested
+  quantity (no more than about one day of sales, within your budget and what your bags hold), one
+  stack per purchase, so items that do not stack are bought one by one. They are booked as stock for
+  resale.
 
 The merchant's prices are remembered for the [Crafting](#crafting) page.
 
@@ -731,6 +738,6 @@ The result of `/ff diag` helps too.
 4. Use **Selling → My items → Post next bought** (or Post all) to list your purchases.
 5. Every so often, run **Selling → My auctions → Check prices**, then **Cancel undercut**, and repost
    when the items are back.
-6. At a mailbox, **Take auction mail**. At a merchant, **Sell vendor deals**.
+6. At a mailbox, **Take auction mail**. At a merchant, **Sell to vendor**.
 7. Look at **Analytics** (Overview, and By item for the Sell %) and **Crafting** to see what actually
    makes money, and drop or ignore what does not.

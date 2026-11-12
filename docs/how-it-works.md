@@ -407,7 +407,7 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
 - **Item statistics:** bought, spent, sold, earned, profit, unit-days held, last sale.
 - **Sales to a merchant by hand** (`Merchant.watchBuyback`): the buyback list is compared each time
   it changes; a new entry of an item in stock is booked as a vendor sale at the price paid. Sales of
-  the Sell vendor deals button are booked by it and only matched.
+  the Sell to vendor button are booked by it and only matched.
 - **Journal:** buy, sell, vendor, expired and fail entries, the latest 500.
 - **Invoices** (`Mail.record`, `Trade.onInvoice`). Every auction mail is read once, when its money or
   items are taken. That happens through the Take auction mail button, or through the game's

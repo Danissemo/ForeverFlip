@@ -99,21 +99,51 @@ function V.offers(now)
 end
 
 -- Buys the suggested quantity of one offer (a click) and books it as stock for resale.
+-- Free bag slots, and the units of one stack of the item (1 for items that do not stack).
+local function freeSlots()
+    local free = 0
+    for bag = 0, 4 do
+        free = free + (C_Container and C_Container.GetContainerNumFreeSlots(bag) or 0)
+    end
+    return free
+end
+
+local function stackOf(index, link)
+    local max = tonumber(GetMerchantItemMaxStack and GetMerchantItemMaxStack(index))
+    local id = link and tonumber(link:match("item:(%d+)"))
+    local itemStack = id and tonumber((select(8, U.itemInfo(id))))
+    local stack = max and itemStack and math.min(max, itemStack) or max or itemStack or math.huge
+    return math.max(1, stack)
+end
+
+-- Buys the offer in calls of at most one stack each: one call for more than a stack ends in
+-- "Internal Bag Error", and items that do not stack need a bag slot each. Never more than the
+-- free bag slots hold. Returns true and the units bought, or false and a reason.
 function V.buy(offer)
     if not offer or not BuyMerchantItem then
         return false
     end
-    local cost = math.ceil(offer.unit * offer.qty)
+    local stack = stackOf(offer.index, offer.link)
+    local qty = math.min(offer.qty, freeSlots() * stack)
+    if qty < 1 then
+        return false, "bags_full"
+    end
+    local cost = math.ceil(offer.unit * qty)
     if cost > F.Engine.wallet() then
         return false, "no_money"
     end
-    BuyMerchantItem(offer.index, offer.qty)
+    local left = qty
+    while left > 0 do
+        local n = math.min(left, stack)
+        BuyMerchantItem(offer.index, n)
+        left = left - n
+    end
     local c = F.Data.char(F.db, F.Engine.owner())
     local name = U.linkName(offer.link) or offer.name or offer.key
-    F.Data.addPosition(c, offer.key, name, offer.qty, cost, "flip", offer.exit, F.Engine.clock())
-    F.Data.log(c, { at = F.Engine.clock(), kind = "buy", key = offer.key, name = name, qty = offer.qty, amount = cost })
+    F.Data.addPosition(c, offer.key, name, qty, cost, "flip", offer.exit, F.Engine.clock())
+    F.Data.log(c, { at = F.Engine.clock(), kind = "buy", key = offer.key, name = name, qty = qty, amount = cost })
     F.Engine.changed()
-    return true
+    return true, qty
 end
 
 -- What merchants really pay ---------------------------------------------------------------------------

@@ -532,7 +532,7 @@ class DealTabTests(unittest.TestCase):
         merchantItems={{id=60,price=100},{id=61,price=100},{id=60,price=50,extended=true}}
         local offers=ForeverFlip.Merchant.offers(now)
         assert(#offers==1 and offers[1].key=='c:60' and offers[1].exit==499 and offers[1].qty==48)
-        fire('MERCHANT_SHOW');assert(ForeverFlip.UI.offerPanel:IsShown())
+        fire('MERCHANT_SHOW');ForeverFlip.UI.merchantTab:Click();assert(ForeverFlip.UI.offerPanel:IsShown(),'the ForeverFlip tab of the merchant')
         ForeverFlip.UI.offerPanel.rows[1].buy:Click()
         assert(merchantBought[1][1]==1 and merchantBought[1][2]==48)
         local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
