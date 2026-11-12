@@ -53,6 +53,9 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Undercuts: "Unsold" showed a unit's worth divided by the stack size** (an 80-unit stack read
+  80 times too low); it shows what one unit brings posted again.
+
 - Times read the same on every page ("40 min", "3.5 h", "2.1 days") and are translated; the
   Undercuts page showed whole hours in English. Sure is cached by its data, so the tooltip shares
   it with the deals.

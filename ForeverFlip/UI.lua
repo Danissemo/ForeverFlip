@@ -3505,7 +3505,7 @@ local function situationLines(plan)
         lines[#lines + 1] = string.format(
             L("%s a unit coming back is worth %s posted again"),
             gold("Unsold"),
-            U.money(math.floor(plan.fallback / math.max(1, a.qty or 1)))
+            U.money(math.floor(plan.fallback)) -- already the worth of one unit
         )
     end
     return lines
