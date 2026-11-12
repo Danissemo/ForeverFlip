@@ -8,7 +8,8 @@ The game gives addons no network access, so this small program runs next to the 
    checksum the addon computed while reading it) does not match because it was changed. A good scan
    goes, unchanged, into a secret gist of your GitHub account, and an issue in the community data
    repository points to it; the repository checks it again, archives it and closes the issue. The
-   gist is deleted afterwards. Any GitHub account can upload (scopes "gist" and "public_repo").
+   gist is deleted afterwards. Any GitHub account can upload, signed in through the ForeverFlip
+   Sync GitHub App (permissions: the player's gists, issues of the data repository).
    Sharing needs a GitHub sign-in: the window's "Sign in with GitHub" button (or --login).
 2. Download. The community summaries of your realms are downloaded and written into the
    ForeverFlip_Shared addon, which ForeverFlip reads at the next /reload or login. No account needed.
@@ -530,7 +531,7 @@ def main(argv=None) -> int:
     if args.logout:
         github_login.forget(folder)
         log("Signed out: the helper's GitHub sign-in was removed. To revoke it on GitHub too, see "
-            "Settings > Applications > Authorized OAuth Apps.")
+            "Settings > Applications > Authorized GitHub Apps.")
         return 0
     if not args.once and not args.console and (args.gui or os.name == "nt"):
         import sync_gui

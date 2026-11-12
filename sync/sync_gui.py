@@ -197,7 +197,7 @@ class SyncWindow:
             github_login.forget(self.folder)
             self.account, self.session = None, None
             self.core.log('Signed out of GitHub. To revoke the access on GitHub too: Settings > Applications > '
-                          'Authorized OAuth Apps.')
+                          'Authorized GitHub Apps.')
             self.check_account()  # another sign-in (the GitHub CLI) may still be there
             self.refresh_share_state()
             return

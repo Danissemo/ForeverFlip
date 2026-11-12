@@ -73,11 +73,12 @@ A folder that is a developer's checkout (a link or a `.git` folder inside) is ne
    eight full scans are retained until the helper acknowledges them. They can occupy several
    megabytes each and are written when the game saves, including `/reload` and logout.
 2. In the helper, press **Sign in with GitHub**. It shows a short code, copies it and opens
-   github.com/login/device: enter the code there and approve. Sharing needs a GitHub account at
-   least seven days old and the permissions **gist** and **public_repo** (to post the scan and the
-   issue that points to it). The helper keeps the sign-in encrypted for your Windows user (DPAPI)
-   in `%APPDATA%\ForeverFlipSync`; **Sign out** removes it. To revoke the access on GitHub too, see
-   **Settings → Applications → Authorized OAuth Apps**. In a console, `--login` and `--logout` do
+   github.com/login/device: enter the code there and approve the **ForeverFlip Sync** app. Sharing
+   needs a GitHub account at least seven days old. The app may only create gists of your account
+   (the upload) and issues in the community data repository (the note that points to it); it
+   cannot touch your other repositories. The helper keeps the sign-in encrypted for your Windows
+   user (DPAPI) in `%APPDATA%\ForeverFlipSync`; **Sign out** removes it. To revoke the access on
+   GitHub too, see **Settings → Applications → Authorized GitHub Apps**. In a console, `--login` and `--logout` do
    the same.
 3. **Share my full scans** turns on with the sign-in (it is not available before). Each new scan is
    checked, uploaded to a secret gist of your account, and announced by a **Scan upload: ...**

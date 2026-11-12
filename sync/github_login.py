@@ -1,9 +1,11 @@
 """Signing in to GitHub from the Sync helper, without the GitHub CLI.
 
 GitHub's device flow (the one the GitHub CLI uses): the helper asks GitHub for a short code, the
-player enters it at github.com/login/device and approves, and the helper receives a token for the
-"gist" and "public_repo" scopes that uploads need. Only the OAuth app's public client ID is built
-in; there is no client secret.
+player enters it at github.com/login/device and approves, and the helper receives a token of the
+ForeverFlip Sync GitHub App. The app's permissions are narrow: the player's gists (the upload) and
+issues of the repositories it is installed on, which is only the community data repository (the
+issue that points to the upload). Only the app's public client ID is built in; there is no client
+secret. The app's tokens do not expire: Sign out, or revoke the app on GitHub, ends them.
 
 The token is kept in the helper's folder, encrypted with Windows DPAPI: only the same Windows user
 on the same computer can read it. Elsewhere the file is readable by its owner only.
@@ -19,9 +21,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-# The ForeverFlip Sync OAuth app (public; set when the app is registered). config.json may give
-# another as "client_id".
-CLIENT_ID = ""
+# The ForeverFlip Sync GitHub App (github.com/apps/foreverflip-sync); its client ID is public.
+# config.json may give another as "client_id". A GitHub App ignores scopes: its permissions are set
+# on the app; the scopes are kept for an OAuth app given in the config.
+CLIENT_ID = "Iv23likzV28dBrdSnmFE"
 SCOPES = "gist public_repo"
 DEVICE_URL = "https://github.com/login/device/code"
 TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -49,7 +52,7 @@ def _post(url: str, fields: dict, agent: str) -> dict:
 def start(cid: str, agent: str = "ForeverFlipSync") -> dict:
     """Asks GitHub for a device code: {device_code, user_code, verification_uri, interval, expires_in}."""
     if not cid:
-        raise LoginError("signing in from the helper is not set up yet (no OAuth app client ID)")
+        raise LoginError("signing in from the helper is not set up yet (no GitHub App client ID)")
     answer = _post(DEVICE_URL, {"client_id": cid, "scope": SCOPES}, agent)
     if "device_code" not in answer:
         raise LoginError(answer.get("error_description") or answer.get("error") or "GitHub gave no code")
