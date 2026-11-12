@@ -30,6 +30,14 @@ All notable changes are listed here. The format follows
   working data, refresh time-dependent analytics and align crafting shopping limits with costs.
 - Return today's minimum from the public price API only when the daily record is from today.
 
+- **My auctions: pending was ten times too high.** The game reports a sold auction with the price of
+  the whole sale, not of one unit; it was multiplied by the quantity again (22g pending where
+  Auctionator showed 1g 98s). The sale was booked with the same error. A sold auction now keeps
+  its unit price and its total apart, and matches Auctionator.
+- **My auctions footer.** The Cancel undercut button is gone (undercuts are answered on Selling →
+  Undercuts; the key binding still works); Refresh and Check prices moved to the left, and the
+  progress of Check prices shows in the status line at the top instead of over the buttons.
+
 - The tooltip line "On sale by you" divided the price of one unit by the quantity again (164 Fish
   Bowls at 53c each read as 0c).
 
