@@ -857,7 +857,7 @@ function UI.create()
         end
     end
     UI.summary = text(left, "GameFontHighlightSmall")
-    UI.summary:SetSpacing(4)
+    UI.summary:SetSpacing(1)
 
     -- Right: one page per category.
     local right = inset(f, "auctionhouse-background-index")
@@ -978,8 +978,8 @@ function UI.layoutMenu(group, id)
         end
     end
     UI.summary:ClearAllPoints()
-    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 9, y - 12)
-    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -6, y - 12)
+    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 9, y - 8)
+    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -4, y - 8)
 end
 
 -- The tabs of the shown group share the page's width; before the window is laid out the width is
@@ -3928,13 +3928,11 @@ function UI.refreshSummary()
         return
     end
     local s = last.stats
-    -- One figure per line: with six menu entries the panel has room for them.
+    -- One short line per figure, so none wraps in the narrow menu.
     UI.summary:SetText(
         UI.houseLine()
             .. string.format(
-                L(
-                    "Last scan %d min ago\nAuctions: %d\nItems: %d\nVendor price known: %d\nBelow vendor price: %d\nCollecting sales data: %d"
-                ),
+                L("Scan: %d min ago\nAuctions: %d\nItems: %d\nVendor price: %d\nBelow vendor: %d\nSales data: %d"),
                 math.floor((F.Engine.clock() - last.at) / 60),
                 last.total,
                 s.items,
@@ -3949,14 +3947,14 @@ end
 -- Sniper figures for the summary on the left.
 function UI.sniperSummary()
     if not F.db.settings.sniper then
-        return "\n\n" .. L("Sniper: off")
+        return "\n" .. L("Sniper: off")
     end
     if not F.Sniper.active() then
-        return "\n\n" .. string.format(L("Sniper: %d checks"), F.Deals.snipes or 0)
+        return "\n" .. string.format(L("Sniper: %d checks"), F.Deals.snipes or 0)
     end
-    return "\n\n"
+    return "\n"
         .. string.format(
-            L("Sniper: %d rounds\nPrices read: %d\nCandidates: %d\nChecks: %d"),
+            L("Sniper: %d rounds\nRead %d · found %d · checks %d"),
             F.Sniper.rounds,
             F.Sniper.items,
             F.Sniper.found,
