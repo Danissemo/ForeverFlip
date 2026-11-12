@@ -52,6 +52,7 @@ local MESSAGES = {
     bought = "Purchase recorded.",
     buy_failed = "The purchase failed (someone was faster). The deal is checked again.",
     buy_unknown = "No answer from the auction house. Settle the purchase in the Journal.",
+    buy_no_answer = "The purchase did not go through (no money was spent). The deal is checked again: press Buy when it is ready.",
     posted = "Auction created.",
     post_sent = "Posting... waiting for the auction house to confirm.",
     buy_dropped = "The auction house threw the purchase away (too many messages): press Buy again.",

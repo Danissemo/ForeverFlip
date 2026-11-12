@@ -181,9 +181,20 @@ class TradeTests(unittest.TestCase):
         run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false
         local D,T,U=ForeverFlip.Deals,ForeverFlip.Trade,ForeverFlip.Util
         local key=U.key('gear',20,'Northern Shortsword of Nature Protection')
-        D.verify(key);answer();assert(T.buy(key));run(31)
+        C_AuctionHouse.PlaceBid=function() end -- the game sends nothing back
+        D.verify(key);answer();assert(T.buy(key));run(11)
         local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
-        assert(not T.op and #c.unknown==1);T.settle(1,true);assert(c.positions[key].qty==1 and #c.unknown==0)''')
+        assert(not T.op and ForeverFlip.Engine.message=='buy_no_answer','no money spent: it did not go through')
+        assert(not c.positions[key] and not (c.unknown and #c.unknown>0),'nothing booked')''')
+
+    def test_a_commodity_purchase_without_answer_is_settled_in_the_journal(self):
+        run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false
+        local D,T=ForeverFlip.Deals,ForeverFlip.Trade
+        C_AuctionHouse.ConfirmCommoditiesPurchase=function() end
+        D.verify('c:10');answer();assert(T.buy('c:10'));fire('COMMODITY_PRICE_UPDATED',60,900)
+        assert(T.confirm());run(31)
+        local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
+        assert(not T.op and #c.unknown==1);T.settle(1,true);assert(c.positions['c:10'].qty==15 and #c.unknown==0)''')
 
     def test_vanished_deal_is_removed_after_verification(self):
         run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false

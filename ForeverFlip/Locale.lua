@@ -382,6 +382,7 @@ T.uk = {
     ["Market"] = "Ринок",
     ["and %d more"] = "і ще %d",
     ["Hidden items are kept."] = "Приховані предмети залишаються.",
+    ["The purchase did not go through (no money was spent). The deal is checked again: press Buy when it is ready."] = "Покупка не відбулася (гроші не списано). Угоду перевіряємо знову: натисніть «Купити», коли вона буде готова.",
     ["reload"] = "Мову збережено. Введіть /reload.",
     ["The game kept refusing an auction mail: taking mail stopped. Take it by hand."] = "Гра постійно відмовляла в листі аукціону: збір пошти зупинено. Заберіть його вручну.",
     ["Buying: waiting for the auction house..."] = "Покупка: чекаємо на аукціон...",

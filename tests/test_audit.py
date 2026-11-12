@@ -199,8 +199,8 @@ class ItemAnswerTests(unittest.TestCase):
         T.checkPrice('i:30', function() end, true)
         run(11)
         assert(D.byName[30], 'remembered')
-        T.checkPrice('i:30', function() end, true); run(1)
-        assert(D.search and D.search.phase == 'browse', 'searched by name, like gear')''')
+        run(1)
+        assert(D.search and D.search.key == 'i:30' and D.search.phase == 'browse', 'tried again at once by name, like gear')''')
 
 
 class PostFeedbackTests(unittest.TestCase):

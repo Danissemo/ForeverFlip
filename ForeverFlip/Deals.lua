@@ -896,10 +896,19 @@ function D.step()
     end
     s = D.search
     if s and now - s.at > 10 then
-        if s.item.kind == "item" and not s.phase then
+        if s.item.kind == "item" and not s.phase and F.AH.canSearchGear() and not s.byNameTried then
+            -- No answer to the plain search: tried again at once by name (a browse lists the
+            -- item's exact keys, then each is searched), as gear is. Remembered for next time.
             D.byName[s.item.id] = true
+            s.byNameTried = true
+            D.search = nil
+            s.readyAt = precise()
+            table.insert(D.requests, 1, s)
+            D.queued[s.key] = s
+            retryChanged()
+        else
+            finishSearch(nil, false)
         end
-        finishSearch(nil, false)
     end
     if D.search or F.Trade.busy() or F.Scan.blocking() or not F.AH.isOpen() then
         return

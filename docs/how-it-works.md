@@ -265,6 +265,13 @@ with them, using the same rules.
 - While the Selling page is open, or a freshly checked deal is selected (45 seconds, `D.HOLD`), the
   sniper and the automatic checks wait (`Deals.holding`): a purchase or a post sent while their
   messages are in flight is often thrown away by the server.
+- Buy (and Post) is enabled only while no search waits for its answer and the server is ready: the
+  game queues a message behind an unanswered one, and on WoW Forever some are never answered, so a
+  purchase sent then would never leave. With no money spent 10 seconds after an item purchase, it
+  is reported as not gone through and the deal is checked again.
+- An item search with no answer in 10 seconds is tried again at once by name (a browse lists its
+  exact item keys, then each is searched, as for gear), and that item is searched by name from then
+  on (`Deals.byName`).
 - An item purchase is confirmed by the first of: the purchase event, the chat line "You won an
   auction" (hidden from addons on newer clients) or its price leaving the wallet (`PLAYER_MONEY`). A
   purchase the server throws away (`AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED` right after it) is

@@ -32,9 +32,18 @@ end
 
 -- Buying ----------------------------------------------------------------------------------------
 -- T.op = { state = "quote" | "quoted" | "awaiting", key, kind, id, qty, cost, unit, auctionID, deal }
--- A search in flight does not stop a purchase: buying goes first (Deals.yieldToPurchase).
+-- A purchase goes out only while no search waits for its answer and the server is ready: the game
+-- queues a message behind an unanswered one, and on WoW Forever some are never answered, so a
+-- purchase sent then never left (no money spent, no answer). Background searches rest while a
+-- checked deal is selected (Deals.holding), so the way is free within a second or two.
 function T.canBuy(deal)
-    return deal and deal.verified and clock() - deal.verified <= F.Deals.FRESH and not T.busy() and F.AH.isOpen()
+    return deal
+        and deal.verified
+        and clock() - deal.verified <= F.Deals.FRESH
+        and not T.busy()
+        and not F.Deals.searching()
+        and F.AH.ready(true)
+        and F.AH.isOpen()
 end
 
 function T.buy(key)
@@ -48,8 +57,6 @@ function T.buy(key)
     if T.overLimit(deal.cost) then
         return false, "spend_limit"
     end
-    -- A search waiting for its answer (the sniper, a check) steps aside and is sent again later.
-    F.Deals.yieldToPurchase()
     F.Engine.message = nil
     local op = {
         key = deal.key,
@@ -258,7 +265,16 @@ end
 -- journal (the chat line "You won an auction" tells).
 function T.step()
     local op = T.op
-    if op and op.state == "awaiting" and clock() - op.at > 30 then
+    if
+        op
+        and op.state == "awaiting"
+        and op.money
+        and clock() - op.at > 10
+        and F.Engine.wallet() > op.money - (op.cost or 0)
+    then
+        -- The price never left the wallet: the purchase did not go through. Checked again.
+        failed(op, "buy_no_answer")
+    elseif op and op.state == "awaiting" and clock() - op.at > 30 then
         local c = char()
         c.unknown = c.unknown or {}
         c.unknown[#c.unknown + 1] = {
@@ -511,10 +527,8 @@ function T.post(item, qty, price, duration)
     if T.postingNow() or not F.AH.isOpen() then
         return false, "busy"
     end
-    -- A post sent while another message waits for the server is often dropped: a search in flight
-    -- steps aside (it is sent again later), and a busy server is said so.
-    F.Deals.yieldToPurchase()
-    if not F.AH.ready() then
+    -- Like a purchase, a post waits for a search in flight and for the server (see T.canBuy).
+    if F.Deals.searching() or not F.AH.ready() then
         return false, "post_busy"
     end
     if not U.finite(qty) or qty < 1 or qty > item.count or not U.finite(price) or price < 1 then

@@ -63,6 +63,13 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **Selling is more compact:** the rule fields moved into a panel opened with **Rule...**, Check
   price is a small refresh button beside the price, and the list shows 12 rows. Check all is
   narrower.
+- **A purchase or a post goes out only on a free way to the server:** Buy is enabled while no search
+  waits for its answer and the server is ready (the background rests while a checked deal is
+  selected). A purchase sent behind an unanswered search never left the game (no money spent, "no
+  answer" after 30 seconds). An item purchase whose price has not left the wallet after 10 seconds
+  is reported as not gone through, and the deal is checked again.
+- **Items whose plain search gets no answer** (recipes, WoW Forever scrolls) are searched again by
+  name at once, in the same check.
 - **Buying and posting go through at once:** the sniper and the automatic checks wait while the
   Selling page is open or a freshly checked deal is selected, so the server is free for the click
   (with the sniper on, posts were refused as busy and purchases thrown away). An item purchase is
