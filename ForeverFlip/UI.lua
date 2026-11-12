@@ -115,43 +115,32 @@ local function inset(parent, atlas)
 end
 
 -- Entry of the left list, styled like the auction house category list.
--- The side menu entries are the auction house's own category buttons (the Buy tab's Weapons, Armor
--- ...): the game's AuctionHouseFilterButtonTemplate, 136 by 20, or the same art if a client lacks it.
+-- The side menu entries look like the auction house's own category buttons (the Buy tab's Weapons,
+-- Armor ...): the same art at the same size, 136 by 20.
 local NAV_WIDTH, NAV_HEIGHT, NAV_STEP = 136, 20, 21
 local function category(parent, label, onClick)
-    local ok, row = pcall(CreateFrame, "Button", nil, parent, "AuctionHouseFilterButtonTemplate")
-    if not ok or not row then
-        row = CreateFrame("Button", nil, parent)
-        local normal = row:CreateTexture(nil, "BACKGROUND")
-        normal:SetAtlas("auctionhouse-nav-button")
-        normal:SetAllPoints()
-        local highlight = row:CreateTexture(nil, "HIGHLIGHT")
-        highlight:SetAtlas("auctionhouse-nav-button-highlight")
-        highlight:SetAllPoints()
-    end
+    -- Built from the art itself: the game's filter-button template carries clear buttons and
+    -- arrows of its own on WoW Forever.
+    local row = CreateFrame("Button", nil, parent)
+    local normal = row:CreateTexture(nil, "BACKGROUND")
+    normal:SetAtlas("auctionhouse-nav-button")
+    normal:SetAllPoints()
+    local highlight = row:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAtlas("auctionhouse-nav-button-highlight")
+    highlight:SetAllPoints()
     row:SetSize(NAV_WIDTH, NAV_HEIGHT)
-    local selected = type(row.SelectedTexture) == "table" and row.SelectedTexture or nil
-    if not selected then
-        selected = row:CreateTexture(nil, "ARTWORK")
-        selected:SetAtlas("auctionhouse-nav-button-select")
-        selected:SetAllPoints()
-    end
+    local selected = row:CreateTexture(nil, "ARTWORK")
+    selected:SetAtlas("auctionhouse-nav-button-select")
+    selected:SetAllPoints()
     selected:Hide()
     row.selected = selected
-    local t = type(row.Text) == "table" and row.Text or (row.GetFontString and row:GetFontString()) or nil
-    if type(t) ~= "table" or not t.SetText then
-        t = text(row, "GameFontNormalSmall")
-    end
-    t:ClearAllPoints()
+    local t = text(row, "GameFontNormalSmall")
     t:SetPoint("LEFT", row, "LEFT", 8, 0)
     t:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     t:SetJustifyH("LEFT")
     t:SetText(L(label))
     row.label = t
-    -- The template's own handlers expect the game's category data: ours replace them.
     row:SetScript("OnClick", onClick)
-    row:SetScript("OnEnter", nil)
-    row:SetScript("OnLeave", nil)
     return row
 end
 
