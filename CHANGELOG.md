@@ -8,6 +8,12 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- Buy prepares an item/gear deal's server search context when selected or hovered, so the first
+  enabled click buys instead of only requesting another check. The button waits for in-flight
+  searches, and hovering reserves the connection from background searches and owned refreshes.
+  Failed preparation invalidates the old ready mark; existing throttle recovery remains usable.
+  Commodity confirmation and one hardware click per auction are preserved.
+
 - Recipe and other non-equipment price checks reuse exact item keys from owned auctions and
   browse results, avoiding silent zero-level queries. Item and commodity added-page events are
   processed, stalled cached keys are invalidated, and one multi-version request cannot consume

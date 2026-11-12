@@ -121,6 +121,12 @@ advance pagination. A request has a 30-second cumulative reply-wait budget acros
 intentional waits between versions do not consume it. Expired requests return unknown, and
 unresponsive cached keys are invalidated before later retries.
 
+Deal selection and Buy hover call `Trade.prepareBuy` to restore an item/gear's search context
+before its hardware purchase callback. `Trade.readyToBuy` gates the button on actual connection
+availability. Hovering extends the brief selection hold; owned-auction refreshes also yield.
+`AH.available` observes readiness (including the existing stuck-throttle allowance) without
+consuming it during rendering. Preparation callbacks never replay protected purchase actions.
+
 An already sent query cannot be cancelled by clearing a Lua field: its reply must still be
 drained, or time out, before another request owns the connection. Only an unsent gear-version
 step (`waitKey`) can be parked in the queue; it resumes with the same keys and accumulated rows.

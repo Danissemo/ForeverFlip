@@ -254,6 +254,16 @@ function A.ready(peek)
     return false
 end
 
+-- Observe whether a click could send, including the existing stuck-client recovery.
+-- Painting a button must not spend that allowance before its click can use it.
+function A.available()
+    if A.ready(true) then
+        return true
+    end
+    local t = GetTime and GetTime() or time()
+    return notReadySince ~= nil and t - notReadySince >= A.STUCK
+end
+
 -- AUCTION_HOUSE_THROTTLED_SYSTEM_READY, or the auction house closed.
 function A.throttleReset()
     notReadySince, lastCheck = nil, nil

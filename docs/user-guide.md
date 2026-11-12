@@ -185,8 +185,8 @@ by itself.
 
 ## Buying
 
-1. Click a deal. If it has not been checked in the last 5 minutes, it is checked now. Wait for
-   **ready**.
+1. Click a deal. If its price is stale or an item/gear deal is no longer the server's current
+   search, ForeverFlip prepares it now. Wait for **Buy** to become enabled.
 2. Click **Buy** (or press the [Buy key](#key-bindings)).
    - **Stackable goods (commodities)** are bought by quantity. The game first quotes the total price.
      The button reads **Buy (2 clicks)**: the first click asks the price, the same button then
@@ -201,9 +201,10 @@ by itself.
      purchase. After a purchase the deal is worked out again from the lots its check read, without
      the lot just bought: the next click buys the next lot at once, with no new search, while the
      check is fresh (5 minutes).
-   - While a checked deal is selected, Check all and the next steps of gear searches wait, so the
-     way to the server is free when you click. If a search was still on its way, the click says so
-     and everything else waits 5 seconds: click again a moment later.
+   - Selection briefly pauses background searches. Keeping the pointer on **Buy** extends that
+     pause and also defers periodic owned-auction refreshes. Hovering restores the selected item's
+     search if needed, and the button waits for any already-sent search to finish. Once enabled,
+     one click sends the purchase of one item/gear auction. Preparing never buys by itself.
 3. When the purchase goes through, the status line shows *Purchase recorded*. The units are added to
    your stock at their real cost and logged in the journal.
 

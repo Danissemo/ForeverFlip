@@ -220,10 +220,16 @@ function D.searching()
     return D.search ~= nil and not D.search.waitKey
 end
 
--- A checked deal the player selected moments ago (D.SELECTED_HOLD): they are about to buy it.
+-- A recent selection (D.SELECTED_HOLD), or the pointer on Buy: leave the connection for purchasing.
 local function selectedHold(ui)
     local selected = D.get(ui.selected)
-    if not selected or not selected.verified then
+    if not selected then
+        return false
+    end
+    if ui.buyHoverKey == ui.selected then
+        return true
+    end
+    if not selected.verified then
         return false
     end
     return clock() - math.max(selected.verified, ui.selectedAt or 0) <= D.SELECTED_HOLD

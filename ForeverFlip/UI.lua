@@ -1239,6 +1239,9 @@ function UI.show(id)
         page, filter, id = "deals", "all", "deals:all"
     end
     UI.section = page
+    if page ~= "deals" then
+        UI.buyHoverKey = nil
+    end
     if page == "settings" then
         UI.setSettingsFrame(filter ~= "" and filter or "general")
     end
@@ -1460,6 +1463,21 @@ function UI.createDeals(p)
     end)
     UI.confirmButton:Hide()
     UI.buyButton = button(bar, "Buy", 170, buyClick)
+    UI.buyButton:SetMotionScriptsWhileDisabled(true)
+    UI.buyButton:SetScript("OnEnter", function()
+        UI.buyHoverKey = UI.selected
+        if UI.selected then
+            F.Trade.prepareBuy(UI.selected)
+        end
+        F.Engine.changed()
+        UI.refresh()
+    end)
+    local function leaveBuy()
+        UI.buyHoverKey = nil
+        F.Engine.changed()
+    end
+    UI.buyButton:SetScript("OnLeave", leaveBuy)
+    UI.buyButton:SetScript("OnHide", leaveBuy)
     UI.buyButton:SetPoint("RIGHT", UI.cancelButton, "LEFT", -4, 0)
     UI.checkButton = button(bar, "Check price", 116, function()
         if UI.selected then
@@ -1487,10 +1505,9 @@ function UI.selectDeal(key)
     if op and op.key ~= key and (op.state == "quote" or op.state == "quoted") then
         F.Trade.cancel() -- Confirm must never buy an item other than the selected one
     end
-    UI.selected, UI.selectedAt = key, F.Engine.clock()
-    local d = key and F.Deals.get(key)
-    if d and (not d.verified or F.Engine.clock() - d.verified > F.Deals.FRESH) then
-        F.Deals.verify(key)
+    UI.selected, UI.selectedAt, UI.buyHoverKey = key, F.Engine.clock(), nil
+    if key then
+        F.Trade.prepareBuy(key)
     end
     F.Engine.changed()
     UI.refresh()
@@ -1824,8 +1841,14 @@ function UI.refreshDeals()
         UI.buyButton:SetText(L("Asking the price..."))
         UI.buyButton:SetEnabled(false)
     else
-        UI.buyButton:SetText(d and d.kind == "commodity" and L("Buy (2 clicks)") or L("Buy"))
-        UI.buyButton:SetEnabled(d ~= nil and F.Trade.canBuy(d) and true or false)
+        local ready = d and F.Trade.readyToBuy(d)
+        UI.buyButton:SetText(
+            d and F.Deals.pending(d.key) and L("checking...")
+                or d and F.Trade.canBuy(d) and not ready and L("queued")
+                or d and d.kind == "commodity" and L("Buy (2 clicks)")
+                or L("Buy")
+        )
+        UI.buyButton:SetEnabled(ready and true or false)
     end
 end
 

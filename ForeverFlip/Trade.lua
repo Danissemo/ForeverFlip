@@ -40,6 +40,37 @@ function T.canBuy(deal)
     return deal and deal.verified and clock() - deal.verified <= F.Deals.FRESH and not T.busy() and F.AH.isOpen()
 end
 
+-- Selection and mouse movement may prepare read-only data; buying still needs a click.
+function T.prepareBuy(key)
+    local deal = F.Deals.get(key)
+    if not deal or T.busy() or not F.AH.isOpen() then
+        return false
+    end
+    if
+        deal.verified
+        and clock() - deal.verified <= F.Deals.FRESH
+        and (deal.kind == "commodity" or F.AH.searchedLast(deal.id))
+    then
+        return true
+    end
+    deal.verified = nil -- a failed preparation cannot leave the earlier ready mark usable
+    F.Engine.message = nil
+    F.Deals.verify(key)
+    F.Engine.changed()
+    return false
+end
+
+-- The button is actionable only once the query/quote connection is available.
+function T.readyToBuy(deal)
+    return T.canBuy(deal)
+        and not T.postingNow()
+        and not F.Deals.pending(deal.key)
+        and not F.Deals.searching()
+        and not F.Sniper.inFlight()
+        and F.AH.available()
+        and (deal.kind == "commodity" or F.AH.searchedLast(deal.id))
+end
+
 -- The way to the server is free: no search waits for its answer and the throttle is ready. When it
 -- is not, background work rests for a few seconds so the next click goes through.
 function T.wayFree()
@@ -67,7 +98,7 @@ function T.buy(key)
     if deal.kind ~= "commodity" and deal.id and not F.AH.searchedLast(deal.id) then
         -- Another item was searched since this lot was read: the server would drop the purchase.
         -- The lot is read again (it goes first), and the next click buys.
-        F.Deals.verify(deal.key)
+        T.prepareBuy(deal.key)
         return false, "buy_recheck"
     end
     F.Engine.message = nil
@@ -353,6 +384,7 @@ function T.step()
         and not F.Deals.pending()
         and not F.Scan.blocking()
         and not T.busy()
+        and not F.Deals.buyHolding()
         and F.AH.ready()
     then
         T.ownedDue = clock() + 60
