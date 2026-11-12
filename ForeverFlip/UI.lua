@@ -1502,7 +1502,7 @@ function UI.createSell(p)
         end
         local price = U.parseMoney(UI.sellPrice:GetText())
         local qty = tonumber(UI.sellQty:GetText())
-        local ok, why = F.Trade.post(item, qty, price, F.Trade.durationFor(item.key, qty))
+        local ok, why = F.Trade.post(item, qty, price, F.Trade.durationFor(item.key, qty, price))
         F.Engine.notify(why)
         if ok and why == "post_sent" then
             UI.sellSelected = nil

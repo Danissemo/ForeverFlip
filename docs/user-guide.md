@@ -277,8 +277,12 @@ At the bottom:
 - **Price each**, **Quantity** and **Duration** fields, and **Post** to create the auction for the
   selected item.
   - The price field accepts `1g 20s 5c`, `20s`, `1.5g` or a bare number of silver.
-  - Duration is 2, 8 or 24 hours, or **Auto**: the shortest duration the item's measured sales fill
-    (a shorter post costs a smaller deposit), else 24 hours.
+  - Duration is 2, 8 or 24 hours, or **Auto**: the shortest duration that holds three times the
+    time your lot is expected to take to sell (a shorter post costs a smaller deposit, an expired one
+    loses it). That time is your own: the days your sold units of the item took, once 3 were sold;
+    until then the market's: the other sellers' units at or below your price (from a fresh check,
+    else all units of the last scan) plus yours, over the units sold per day near that price. With
+    sales not measured, measured from one pair of scans only or older than 3 hours: 24 hours.
 - The text above the fields says what buyers paid lately (the middle of the sales seen between full
   scans) and how many units a day sell at the suggested price.
 - The small **refresh** button right of the price reads the current listings of the selected item

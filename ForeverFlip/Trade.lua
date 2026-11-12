@@ -516,23 +516,56 @@ function T.suggest(item)
 end
 
 -- Posting duration (1 = 2 h, 2 = 8 h, 3 = 24 h). Setting 0 = automatic: the shortest duration that
--- the measured sales of the item fill (a shorter post costs a smaller deposit); 24 h otherwise.
-function T.durationFor(key, qty)
+-- holds three times the time the lot is expected to take to sell (a shorter post costs a smaller
+-- deposit, and an expired one loses it):
+--   * your own sales of the item, once 3 units were sold (from the invoices: days from purchase to
+--     sale, per unit), else
+--   * the market: the units ahead of yours in the queue (other sellers' lots at or below your
+--     price, from a fresh check, else every unit the last scan listed) plus yours, over the units
+--     measured sold per day near that price.
+-- 24 hours when the sales are not measured, measured from fewer than two pairs of scans, or older
+-- than 3 hours.
+T.SAFETY = 3
+function T.durationFor(key, qty, price)
     local d = F.db and F.db.settings.duration
     if d == 1 or d == 2 or d == 3 then
         return d
     end
-    local usual, h = usualOf(key or "")
-    if usual and h then
-        local s = M.saleability(h, usual, clock())
-        if s.known and s.perDay > 0 then
-            local days = (qty or 1) / s.perDay
-            if days <= 2 / 24 then
-                return 1
-            elseif days <= 8 / 24 then
-                return 2
-            end
+    if not key then
+        return 3
+    end
+    qty = qty or 1
+    local hours
+    local own = char().stats[key]
+    if own and (own.sold or 0) >= 3 and U.finite(own.days) and own.days > 0 then
+        hours = own.days / own.sold * 24
+    else
+        local usual, h = usualOf(key)
+        local at = price or usual
+        if not at or not h then
+            return 3
         end
+        local s = M.saleability(h, at, clock())
+        if not s.known or s.stale or (s.pairs or 0) < 2 or not s.perDay or s.perDay <= 0 then
+            return 3
+        end
+        local ahead = 0
+        local check = T.prices[key]
+        if check and clock() - check.at <= 300 then
+            for _, r in ipairs(check.rows) do
+                if r.unit <= at then
+                    ahead = ahead + (r.qty or 1)
+                end
+            end
+        else
+            ahead = U.finite(h.units) and h.units or 0
+        end
+        hours = (ahead + qty) / s.perDay * 24
+    end
+    if hours * T.SAFETY <= 2 then
+        return 1
+    elseif hours * T.SAFETY <= 8 then
+        return 2
     end
     return 3
 end
@@ -950,7 +983,7 @@ local function postFirst(list, quantity)
                 end
                 local qty = price and quantity(item) or 0
                 if qty >= 1 then
-                    return T.post(item, qty, price, T.durationFor(item.key, qty))
+                    return T.post(item, qty, price, T.durationFor(item.key, qty, price))
                 end
                 T.held[item.key] = true
             end

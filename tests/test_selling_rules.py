@@ -62,14 +62,30 @@ class UndercutTests(unittest.TestCase):
 
 
 class DurationTests(unittest.TestCase):
-    def test_auto_duration_follows_sales(self):
+    def test_auto_duration_holds_three_times_the_time_to_sell_the_queue(self):
         run(SELL + '''F.db.settings.duration=0
         local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
         h.sales={hours=24,pairs=5,at=now,b={}};F.Market.bucketAdd(h.sales.b,150,240)
-        h.scan.market=150
-        assert(T.durationFor('c:10',5)==1 and T.durationFor('c:10',50)==2 and T.durationFor('c:10',500)==3)
-        F.db.settings.duration=2;assert(T.durationFor('c:10',500)==2)''')
-
+        h.scan.market=150;h.units=0
+        local per=F.Market.saleability(h,150,now).perDay
+        local function units(hours) return math.max(1,math.floor(per*hours/24)) end
+        -- nobody ahead: the time is only our units
+        assert(T.durationFor('c:10',units(0.5),150)==1,'sold in 30 minutes: 2 hours hold three times that')
+        assert(T.durationFor('c:10',units(2),150)==2,'sold in 2 hours: 8 hours')
+        assert(T.durationFor('c:10',units(3),150)==3,'sold in 3 hours: 8 hours are not three times that')
+        -- other sellers' lots at or below the price are ahead in the queue
+        T.prices['c:10']={rows={{unit=140,qty=units(1)},{unit=200,qty=9999}},at=now}
+        assert(T.durationFor('c:10',units(0.5),150)==2,'an hour of others ahead: not 2 hours')
+        -- old or thin data: 24 hours
+        T.prices['c:10']=nil;h.sales.at=now-4*3600
+        assert(T.durationFor('c:10',1,150)==3,'sales older than 3 hours')
+        h.sales.at=now;h.sales.pairs=1
+        assert(T.durationFor('c:10',1,150)==3,'one pair of scans is too thin')
+        -- the player's own sales win once 3 units were sold
+        local c=F.Data.char(F.db,F.Engine.owner())
+        c.stats['c:10']={sold=4,days=4*0.01,bought=4,spent=0,earned=0,profit=0}
+        assert(T.durationFor('c:10',1,150)==1,'own sales: about 15 minutes each')
+        F.db.settings.duration=2;assert(T.durationFor('c:10',500,150)==2,'a fixed duration stays')''')
 
 if __name__ == '__main__':
     unittest.main()

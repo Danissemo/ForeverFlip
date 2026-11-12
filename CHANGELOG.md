@@ -83,6 +83,10 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   counts them.
 - **Gear I can't use:** a button at the merchant sells the equipment your class can never use, bound
   or not (unbound pieces only when the auction house would not pay more).
+- **Auto duration is careful:** it counts the other sellers' units ahead of yours, keeps three
+  times the expected time to sell (2 hours only for a sale expected within 40 minutes, 8 hours
+  within 2.7 hours), takes 24 hours when the sales data is old or thin, and uses your own sales of
+  the item once 3 were sold. Before, every sale of the market counted as yours and lots expired.
 - **A slow purchase is not reported as failed too early:** an item purchase waits 30 seconds for
   its money to leave the wallet (it was 10, and in game the money left later, after "did not go
   through"); after that the wallet is still watched 3 minutes and a late purchase is booked then.
