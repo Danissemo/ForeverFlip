@@ -51,21 +51,25 @@ responsive while parsing and network work run in the background.
 1. In game: **Settings → Sharing → Keep my full scans for the ForeverFlip Sync helper**. Up to
    eight full scans are retained until the helper acknowledges them. They can occupy several
    megabytes each and are written when the game saves, including `/reload` and logout.
-2. Sign in once with the [GitHub CLI](https://cli.github.com): `gh auth login`. Any account at
-   least seven days old can contribute. Sharing needs the **gist** and **public_repo** permissions.
-   Existing `FF_GITHUB_TOKEN` or `config.json` credentials also work; the window never displays them.
-3. Enable **Share my full scans**, then press **Sync now**. If you signed in after opening the
-   window, the next manual sync refreshes the sign-in state; restarting is not required.
-4. The helper checks each scan, uploads its compressed contents to a secret gist, and opens a
-   **Scan upload: ...** issue in the data repository. After the repository finishes checking and
-   archiving it, the helper shows its answer and removes the temporary gist.
+2. Enable **Share my full scans**, then press **Sync now**. No account is needed: the helper checks
+   each scan and sends it anonymously to the [upload relay](../relay/README.md). Within the hour the
+   data repository collects it, checks it again and archives it; the helper then shows what became
+   of it (archived, confirmed, refused and why).
+3. Optional: sign in once with the [GitHub CLI](https://cli.github.com) (`gh auth login`, an account
+   at least seven days old, permissions **gist** and **public_repo**). Signed in, the helper uploads
+   through your account instead: a secret gist and a **Scan upload: ...** issue in the data
+   repository, answered within minutes. Scans of an account can confirm new items that anonymous
+   scans alone cannot (see [Safeguards](#safeguards)). Existing `FF_GITHUB_TOKEN` or `config.json`
+   credentials also work; the window never displays them. If you sign in after opening the window,
+   the next manual sync uses it; restarting is not required.
 
 A failed upload is not acknowledged as sent. Completed uploads are saved immediately, even if a
 later download fails, and invalid scans are tracked separately from successful uploads. A sharing
 failure does not prevent an independent attempt to download community prices.
 
 The helper keeps configuration and state in `%APPDATA%\ForeverFlipSync`. Uploads are public: the
-issue and archived file identify the GitHub account, realm and faction. The sharing checkbox is
+archived file names the realm and faction, and the GitHub account, or for an anonymous upload an
+`anon-...` id (a keyed hash of your address; the address is not stored). The sharing checkbox is
 remembered and applies to command-line runs too, unless an explicit command-line override is used.
 
 ### Command-line options
@@ -134,16 +138,27 @@ layers make a changed scan useless instead.
    within 25%, or the cheap lots that set the price are listed in both). An invented cheap lot is in
    nobody else's scan, so its item is left out. A scan that nobody confirms within 24 hours stays in
    the archive marked *unconfirmed* and never reaches the summaries.
-4. **Uploader rules** (`registry/uploaders.json` in the data repository):
+4. **Agreement with the community's history.** Before a confirmed scan is published, its usual
+   prices are compared with the published summaries of the last 3 days. An item more than twice or
+   less than half the community's price is left out, and a scan with more than a quarter of its
+   compared items out of line is not published at all (*disputed*). Prices cannot be pushed far by
+   a few scans, however well they agree with each other.
+5. **Anonymous uploads** go through the [relay](../relay/README.md), which only stores them; the
+   data repository checks them like the others. They are never trusted, and an anonymous scan
+   confirmed only by other anonymous scans publishes only items the history already prices: one
+   person with several addresses cannot add invented items. Refusals are listed in
+   `registry/refused.jsonl` for the helper to report.
+6. **Uploader rules** (`registry/uploaders.json` in the data repository):
    - accounts younger than 7 days cannot upload;
    - at most 48 uploads a day per account, and not two scans of one house less than 10 minutes apart;
    - the same file once;
-   - the maintainer can ban an account or mark it trusted; scans of trusted accounts are published
-     without waiting for confirmation.
-5. **Checks of the contents:** the format, an auction house name ending in Alliance, Horde or
+   - the maintainer can ban an account or an `anon-...` id, or mark an account trusted; scans of
+     trusted accounts are published without waiting for confirmation (and the history check);
+   - the relay keeps at most 4 waiting scans per anonymous player.
+7. **Checks of the contents:** the format, an auction house name ending in Alliance, Horde or
    Neutral, a time at most 7 days old and not in the future, 50 to 3,000,000 auctions, plausible
    stack sizes and prices, and at most half of the auctions unreadable.
-6. **In the addon:** two players' copies of the same server scan (within 2 minutes) count once, and
+8. **In the addon:** two players' copies of the same server scan (within 2 minutes) count once, and
    only scans of your own realm are merged, each once, at most 7 days old. Deals always come from
    your own scans and live checks, never from shared data alone.
 
@@ -158,4 +173,5 @@ layers make a changed scan useless instead.
 | `sync/sync_gui.py` | Desktop window and background worker |
 | `tools/build_sync_helper.py` | Windows executable packaging and frozen-runtime verification |
 | `sync/aggregate.py` | The aggregator, run by the data repository's workflow on every upload issue and every 30 minutes |
+| `relay/worker.js` | The upload relay for players without a GitHub account (Cloudflare Worker); set-up in [`relay/README.md`](../relay/README.md) |
 | `tests/test_sync.py` | Tests of all of the above, including the addon reading what Python writes |

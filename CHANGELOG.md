@@ -22,6 +22,16 @@ All notable changes are listed here. The format follows
   unverified; live checks (including negative results) and items already bought supersede old
   scan rows. An unaffordable first lot is reported as budget-limited.
 
+### Added
+
+- **Sharing scans without a GitHub account.** The Sync helper sends scans anonymously to an upload
+  relay (a Cloudflare Worker that only stores files, `relay/`); the data repository collects and
+  checks them like GitHub uploads. Signing in to GitHub stays optional.
+- **Community-history check of shared scans.** A confirmed scan's prices are compared with the
+  summaries of the last 3 days: items more than twice or less than half the community's price are
+  left out, and a scan mostly out of line is not published ("disputed"). An anonymous scan confirmed
+  only by anonymous scans publishes only items the community already prices.
+
 ### Changed
 
 - ForeverFlip Sync opens a desktop window on Windows, with remembered game selection, manual

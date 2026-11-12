@@ -149,7 +149,7 @@ class SyncWindow:
                     if not isinstance(state, dict):
                         state = {}
                     self.session = self.core.SyncSession(game, self.args.repo or self.config.get('repo') or self.core.DEFAULT_REPO,
-                                                         state, state_path, None, share)
+                                                         state, state_path, None, share, self.config)
                 self.session.refresh_credentials(self.config, force=force)
                 if not self.core.saved_variable_files(game):
                     self.core.log('No saved ForeverFlip scan yet. Make a full scan in game, then /reload.')
@@ -186,7 +186,10 @@ class SyncWindow:
                     self.last_sync.set('Last sync: '+time.strftime('%H:%M:%S'))
                     self.status.set('Up to date' if value is None or value > 0 else 'No community prices yet')
                     if self.share.get() and self.session and not self.session.token:
-                        self.status.set('Prices checked — sign in to GitHub to share scans')
+                        if self.session.state.get('anonymous'):
+                            self.status.set(self.status.get()+' — scans shared anonymously')
+                        else:
+                            self.status.set('Prices checked — anonymous sharing is not available yet; sign in to GitHub to share')
                     if not self.auto.get():
                         self.status.set(self.status.get()+' — automatic sync paused')
                 else:

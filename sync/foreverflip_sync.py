@@ -9,6 +9,9 @@ The game gives addons no network access, so this small program runs next to the 
    goes, unchanged, into a secret gist of your GitHub account, and an issue in the community data
    repository points to it; the repository checks it again, archives it and closes the issue. The
    gist is deleted afterwards. Any GitHub account can upload (scopes "gist" and "public_repo").
+   Without a GitHub sign-in the scan goes anonymously to the upload relay (its address is read from
+   relay.json in the data repository); the repository collects it from there and checks it the
+   same way. The helper then reads the repository's registry to tell what became of it.
 2. Download. The community summaries of your realms are downloaded and written into the
    ForeverFlip_Shared addon, which ForeverFlip reads at the next /reload or login. No account needed.
 
@@ -48,6 +51,8 @@ VERSION = "1.2.0"
 DEFAULT_REPO = "Danissemo/ForeverFlip-Data"
 API = "https://api.github.com"
 RAW_URL = "https://raw.githubusercontent.com/{repo}/main/shared/{file}"
+REPO_FILE = "https://raw.githubusercontent.com/{repo}/main/{path}"
+FOLLOW_FOR = 2 * 86400  # how long the helper looks for the result of an anonymous upload
 LOG_SINK = None
 
 
@@ -165,7 +170,8 @@ def issue_body(scan: ffscan.RawScan, digest: str, gist_id: str) -> str:
             f"sha256: {digest}\ngist: {gist_id}\nhelper: {VERSION}\n```\n")
 
 
-def upload_new_scans(game: pathlib.Path, hub: GitHub, state: dict, paths=None, checkpoint=None) -> None:
+def shareable_scans(game: pathlib.Path, state: dict, paths=None):
+    """The kept full scans not shared yet that pass the checks: (scan, ident, when)."""
     done = set(state.setdefault("uploaded", []))
     for path in saved_variable_files(game) if paths is None else paths:
         try:
@@ -187,30 +193,155 @@ def upload_new_scans(game: pathlib.Path, hub: GitHub, state: dict, paths=None, c
                 while len(rejected) > 500:
                     del rejected[next(iter(rejected))]
                 continue
-            packed, parts = package(scan)
-            digest = hashlib.sha256(packed).hexdigest()
-            gist = hub.create_gist(f"ForeverFlip scan of {scan.scope}, {when}", parts)
+            yield scan, ident, when
+
+
+def mark_uploaded(state: dict, ident: str) -> None:
+    done = set(state.setdefault("uploaded", []))
+    done.add(ident)
+    state["uploaded"] = sorted(done)[-500:]
+
+
+def relay_address(repo: str, config: dict | None = None) -> str | None:
+    """The upload relay: the config's "relay", else the address the data repository publishes."""
+    given = (config or {}).get("relay")
+    if given:
+        return str(given).rstrip("/")
+    url = REPO_FILE.format(repo=repo, path="relay.json")
+    req = urllib.request.Request(url, headers={"User-Agent": f"ForeverFlipSync/{VERSION}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            value = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+    address = value.get("url") if isinstance(value, dict) else None
+    return address.rstrip("/") if isinstance(address, str) and address.startswith("https://") else None
+
+
+def send_anonymously(relay: str, scan: ffscan.RawScan, packed: bytes, digest: str) -> dict:
+    req = urllib.request.Request(relay + "/upload", data=packed, method="POST")
+    for name, value in (("Content-Type", "application/gzip"), ("User-Agent", f"ForeverFlipSync/{VERSION}"),
+                        ("X-FF-Scope", scan.scope), ("X-FF-Time", str(scan.at)), ("X-FF-Seal", str(scan.seal)),
+                        ("X-FF-Auctions", str(len(scan.rows))), ("X-FF-Sha256", digest), ("X-FF-Helper", VERSION)):
+        req.add_header(name, value)
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            reason = json.loads(exc.read().decode("utf-8")).get("reason")
+        except (ValueError, OSError, AttributeError):
+            reason = None
+        if reason and exc.code < 500 and exc.code != 429:
+            raise ValueError(f"the relay refused it: {reason}") from exc
+        raise
+
+
+def upload_anonymously(game: pathlib.Path, relay: str, state: dict, paths=None, checkpoint=None) -> None:
+    for scan, ident, when in shareable_scans(game, state, paths):
+        packed = gzip.compress(ffscan.encode_raw(scan).encode("utf-8"), mtime=0)
+        digest = hashlib.sha256(packed).hexdigest()
+        try:
+            answer = send_anonymously(relay, scan, packed, digest)
+        except ValueError as exc:
+            log(f"Not sharing the scan of {scan.scope} from {when}: {exc}.")
+            state.setdefault("rejected", {})[ident] = str(exc)
+            mark_uploaded(state, ident)  # the same file would be refused again
+            continue
+        state.setdefault("pending", []).append({"sha256": digest, "scan": ident, "relay": True,
+                                                "sent": int(time.time())})
+        mark_uploaded(state, ident)
+        if checkpoint:
+            checkpoint()
+        log(f"Shared the scan of {scan.scope} from {when} anonymously: {len(scan.rows)} auctions, "
+            f"{len(packed) // 1024} KB{' (sent before)' if answer.get('already') else ''}. "
+            f"It is checked within the hour.")
+
+
+def registry_lines(repo: str, path: str) -> list[dict]:
+    url = REPO_FILE.format(repo=repo, path=path)
+    req = urllib.request.Request(url, headers={"User-Agent": f"ForeverFlipSync/{VERSION}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            text = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return []
+        raise
+    out = []
+    for line in text.splitlines():
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+RESULT_TEXT = {
+    "pending": "archived; it is published once another player's scan confirms it",
+    "confirmed": "confirmed and published in the community prices",
+    "unconfirmed": "archived, but no other scan confirmed it within a day",
+    "disputed": "archived, but its prices are too far from the community's to publish",
+}
+
+
+def follow_anonymous(repo: str, state: dict) -> None:
+    """Tells what the data repository decided about anonymous uploads."""
+    waiting = [p for p in state.get("pending", []) if p.get("relay")]
+    if not waiting:
+        return
+    scans = {e.get("sha256"): e for e in registry_lines(repo, "registry/scans.jsonl")}
+    refused = {e.get("sha256"): e for e in registry_lines(repo, "registry/refused.jsonl")}
+    keep = []
+    for item in state.get("pending", []):
+        if not item.get("relay"):
+            keep.append(item)
+            continue
+        entry, no = scans.get(item["sha256"]), refused.get(item["sha256"])
+        recent = time.time() - item.get("sent", 0) < FOLLOW_FOR
+        if no:
+            log(f"Scan {item['scan']}: refused, {no.get('reason')}.")
+        elif entry and entry.get("status") != "pending":
+            log(f"Scan {item['scan']}: {RESULT_TEXT.get(entry.get('status'), entry.get('status'))}.")
+        else:
+            if entry and not item.get("archived"):
+                log(f"Scan {item['scan']}: {RESULT_TEXT['pending']}.")
+                item["archived"] = True
+            if recent:
+                keep.append(item)
+    state["pending"] = keep
+
+
+def upload_new_scans(game: pathlib.Path, hub: GitHub, state: dict, paths=None, checkpoint=None) -> None:
+    for scan, ident, when in shareable_scans(game, state, paths):
+        packed, parts = package(scan)
+        digest = hashlib.sha256(packed).hexdigest()
+        gist = hub.create_gist(f"ForeverFlip scan of {scan.scope}, {when}", parts)
+        try:
+            issue = hub.create_issue(f"Scan upload: {scan.scope} {scan.at}", issue_body(scan, digest, gist["id"]))
+        except (urllib.error.URLError, OSError):
             try:
-                issue = hub.create_issue(f"Scan upload: {scan.scope} {scan.at}", issue_body(scan, digest, gist["id"]))
+                hub.delete_gist(gist["id"])
             except (urllib.error.URLError, OSError):
-                try:
-                    hub.delete_gist(gist["id"])
-                except (urllib.error.URLError, OSError):
-                    pass
-                raise
-            state.setdefault("pending", []).append({"issue": issue["number"], "gist": gist["id"], "scan": ident})
-            done.add(ident)
-            state["uploaded"] = sorted(done)[-500:]
-            if checkpoint:
-                checkpoint()
-            log(f"Shared the scan of {scan.scope} from {when}: {len(scan.rows)} auctions, "
-                f"{len(packed) // 1024} KB (issue #{issue['number']}).")
+                pass
+            raise
+        state.setdefault("pending", []).append({"issue": issue["number"], "gist": gist["id"], "scan": ident})
+        mark_uploaded(state, ident)
+        if checkpoint:
+            checkpoint()
+        log(f"Shared the scan of {scan.scope} from {when}: {len(scan.rows)} auctions, "
+            f"{len(packed) // 1024} KB (issue #{issue['number']}).")
 
 
 def follow_uploads(hub: GitHub, state: dict) -> None:
     """Reports what the data repository decided and deletes the gists it has read."""
     waiting = []
     for item in state.get("pending", []):
+        if item.get("relay"):
+            waiting.append(item)  # anonymous uploads are followed through the registry
+            continue
         issue = hub.issue(item["issue"])
         if issue["state"] != "closed":
             waiting.append(item)
@@ -278,19 +409,26 @@ def describe(exc: BaseException) -> str:
 
 
 def run_once(game: pathlib.Path, repo: str, state: dict, token: str | None, upload: bool,
-             paths=None, download=True, checkpoint=None) -> int | None:
+             paths=None, download=True, checkpoint=None, config=None) -> int | None:
     errors = []
     if upload:
-        if token:
-            hub = GitHub(repo, token)
-            try:
+        try:
+            if token:
+                hub = GitHub(repo, token)
                 follow_uploads(hub, state)
                 upload_new_scans(game, hub, state, paths=paths, checkpoint=checkpoint)
-            except (urllib.error.URLError, OSError, ValueError) as exc:
-                errors.append(f"Sharing: {describe(exc)}")
-        elif not state.get("warned"):
-            log("Sharing needs GitHub sign-in (gh auth login) or FF_GITHUB_TOKEN. Community downloads still work.")
-            state["warned"] = True
+            else:
+                relay = relay_address(repo, config)
+                state["anonymous"] = bool(relay)
+                if relay:
+                    upload_anonymously(game, relay, state, paths=paths, checkpoint=checkpoint)
+                elif not state.get("warned"):
+                    log("Anonymous sharing is not available yet; sign in to GitHub (gh auth login) to share. "
+                        "Community downloads still work.")
+                    state["warned"] = True
+            follow_anonymous(repo, state)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            errors.append(f"Sharing: {describe(exc)}")
     count = None
     if download:
         try:
@@ -304,9 +442,10 @@ def run_once(game: pathlib.Path, repo: str, state: dict, token: str | None, uplo
 
 
 class SyncSession:
-    def __init__(self, game, repo, state, state_path, token, upload):
+    def __init__(self, game, repo, state, state_path, token, upload, config=None):
         self.game, self.repo, self.state = game, repo, state
         self.state_path, self.token, self.upload = state_path, token, upload
+        self.config = config or {}
         self.last_seen = {}
         self.next_download = self.next_follow = self.retry_at = 0.0
 
@@ -342,7 +481,7 @@ class SyncSession:
         try:
             count = run_once(self.game, self.repo, self.state, self.token, self.upload,
                              paths=None if force else changed, download=download,
-                             checkpoint=lambda: save_json(self.state_path, self.state))
+                             checkpoint=lambda: save_json(self.state_path, self.state), config=self.config)
         except (urllib.error.URLError, OSError, ValueError, SyncError):
             self.retry_at = time.monotonic() + 30
             raise
@@ -428,8 +567,9 @@ def main(argv=None) -> int:
         state = {}
     upload = not args.download_only and (args.upload or bool(config.get('upload', False)))
     token = find_token(config) if upload else None
-    session = SyncSession(game, repo, state, state_path, token, upload)
-    log(f"ForeverFlip Sync {VERSION}: {game}; {'sharing and downloads' if token else 'downloads only'}.")
+    session = SyncSession(game, repo, state, state_path, token, upload, config)
+    sharing = "sharing (GitHub) and downloads" if token else "anonymous sharing and downloads" if upload else "downloads only"
+    log(f"ForeverFlip Sync {VERSION}: {game}; {sharing}.")
     while True:
         failed = False
         try:
