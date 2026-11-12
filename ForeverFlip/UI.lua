@@ -10,7 +10,7 @@ local UI = {}
 F.UI = UI
 
 local ROW = 20
-local LEFT_WIDTH = 148 -- the Buy tab's category buttons (136) and a margin of 6 each side
+local LEFT_WIDTH = 168 -- the Buy tab's category list (AuctionHouseFrame.CategoriesList): 168 by 438
 
 local MESSAGES = {
     nothing_to_post = "Nothing bought for resale is waiting in the bags.",
@@ -118,30 +118,86 @@ end
 -- Entry of the left list, styled like the auction house category list.
 -- The side menu entries look like the auction house's own category buttons (the Buy tab's Weapons,
 -- Armor ...): the same art at the same size, 136 by 20.
-local NAV_WIDTH, NAV_HEIGHT, NAV_STEP = 136, 20, 21
-local function category(parent, label, onClick)
+local NAV_WIDTH, NAV_HEIGHT, NAV_STEP = 137, 21, 21
+local NAV_X, NAV_Y = 6, -6 -- the list's ScrollBox (3, -6) and its ScrollTarget (3, 0)
+
+local function atlasExists(name)
+    if C_Texture and C_Texture.GetAtlasInfo then
+        local ok, info = pcall(C_Texture.GetAtlasInfo, name)
+        return ok and info ~= nil
+    end
+    return true
+end
+
+local function place(texture, atlas, fallback, width, height, point, x, y)
+    texture:SetAtlas(atlasExists(atlas) and atlas or fallback)
+    texture:ClearAllPoints()
+    texture:SetSize(width, height)
+    texture:SetPoint(point, x, y)
+end
+
+-- A top entry: the art of the Buy tab's Weapons, Armor ...; a sub-entry: that of One-Handed,
+-- Two-Handed ... (white text, the art moved right).
+local function styleEntry(row, sub)
+    if sub then
+        place(row.normal, "auctionhouse-nav-button-secondary", "auctionhouse-nav-button", 133, 32, "TOPLEFT", 1, 0)
+        place(
+            row.selected,
+            "auctionhouse-nav-button-secondary-select",
+            "auctionhouse-nav-button-select",
+            122,
+            21,
+            "TOPLEFT",
+            10,
+            0
+        )
+        place(
+            row.highlight,
+            "auctionhouse-nav-button-select",
+            "auctionhouse-nav-button-highlight",
+            122,
+            21,
+            "TOPLEFT",
+            10,
+            0
+        )
+        row.highlight:SetBlendMode("ADD")
+        row.label:SetFontObject(GameFontHighlightSmall)
+        row.label:SetPoint("LEFT", row, "LEFT", 18, 0)
+    else
+        place(row.normal, "auctionhouse-nav-button", "auctionhouse-nav-button", 136, 32, "TOPLEFT", -2, 0)
+        place(row.selected, "auctionhouse-nav-button-select", "auctionhouse-nav-button-select", 132, 21, "LEFT", 0, 0)
+        place(
+            row.highlight,
+            "auctionhouse-nav-button-highlight",
+            "auctionhouse-nav-button-highlight",
+            132,
+            21,
+            "LEFT",
+            0,
+            0
+        )
+        row.highlight:SetBlendMode("BLEND")
+        row.label:SetFontObject(GameFontNormalSmall)
+        row.label:SetPoint("LEFT", row, "LEFT", 8, 0)
+    end
+end
+
+local function category(parent, label, onClick, sub)
     -- Built from the art itself: the game's filter-button template carries clear buttons and
     -- arrows of its own on WoW Forever.
     local row = CreateFrame("Button", nil, parent)
-    local normal = row:CreateTexture(nil, "BACKGROUND")
-    normal:SetAtlas("auctionhouse-nav-button")
-    normal:SetAllPoints()
-    local highlight = row:CreateTexture(nil, "HIGHLIGHT")
-    highlight:SetAtlas("auctionhouse-nav-button-highlight")
-    highlight:SetAllPoints()
-    row.normal, row.highlight = normal, highlight
     row:SetSize(NAV_WIDTH, NAV_HEIGHT)
-    local selected = row:CreateTexture(nil, "ARTWORK")
-    selected:SetAtlas("auctionhouse-nav-button-select")
-    selected:SetAllPoints()
-    selected:Hide()
-    row.selected = selected
+    row.normal = row:CreateTexture(nil, "BACKGROUND")
+    row.highlight = row:CreateTexture(nil, "HIGHLIGHT")
+    row.selected = row:CreateTexture(nil, "ARTWORK")
+    row.selected:Hide()
     local t = text(row, "GameFontNormalSmall")
-    t:SetPoint("LEFT", row, "LEFT", 8, 0)
     t:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     t:SetJustifyH("LEFT")
     t:SetText(L(label))
     row.label = t
+    styleEntry(row, sub)
     row:SetScript("OnClick", onClick)
     return row
 end
@@ -437,30 +493,12 @@ function UI.copyNativeLook()
         return false
     end
     ---@cast native Button
-    local width, height = native:GetSize()
-    local entries = {}
     for _, c in ipairs(UI.categories or {}) do
-        entries[#entries + 1] = c
-        for _, sub in ipairs(c.subs or {}) do
-            entries[#entries + 1] = sub
-        end
-    end
-    for _, c in ipairs(entries) do
         copyTexture(c.normal, nativeTexture(native, "Normal"))
         copyTexture(c.highlight, nativeTexture(native, "Highlight"))
         local nativeSelected = rawget(native, "SelectedTexture")
         if nativeSelected then
             copyTexture(c.selected, nativeSelected)
-        end
-        if
-            not rawget(c, "isSub")
-            and U.finite(width)
-            and width >= NAV_WIDTH - 20
-            and width <= LEFT_WIDTH - 8
-            and U.finite(height)
-            and height >= 18
-        then
-            c:SetSize(width, height)
         end
     end
     copyPanel(UI.leftPanel, list)
@@ -740,8 +778,8 @@ end
 function UI.create()
     local f = CreateFrame("Frame", "ForeverFlipFrame", AuctionHouseFrame or UIParent)
     if AuctionHouseFrame then
-        f:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPLEFT", 4, -60)
-        f:SetPoint("BOTTOMRIGHT", AuctionHouseFrame, "BOTTOMRIGHT", -4, 26)
+        f:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPLEFT", 4, -73)
+        f:SetPoint("BOTTOMRIGHT", AuctionHouseFrame, "BOTTOMRIGHT", -4, 27)
     else
         f:SetSize(800, 500)
     end
@@ -759,7 +797,7 @@ function UI.create()
             F.Engine.notify(why)
         end
     end)
-    UI.scanButton:SetPoint("TOPLEFT", f, "TOPLEFT", 82, 30)
+    UI.scanButton:SetPoint("TOPLEFT", f, "TOPLEFT", 82, 35)
     UI.sniperButton = button(f, "Sniper: ON", 116, function()
         F.Deals.setSniper(not F.db.settings.sniper)
         UI.refresh()
@@ -791,13 +829,20 @@ function UI.create()
     left:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
     left:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
     left:SetWidth(LEFT_WIDTH)
+    left.art:ClearAllPoints()
+    left.art:SetPoint("TOPLEFT", left, "TOPLEFT", 3, -3)
+    left.art:SetSize(138, 433)
+    local marble = rawget(left, "Bg")
+    if type(marble) == "table" and marble.Hide then
+        marble:Hide()
+    end
     UI.leftPanel = left
     UI.categories = {}
     for i, group in ipairs(UI.GROUPS) do
         local c = category(left, group.label, function()
             UI.show(group.current or group.pages[1][1])
         end)
-        c:SetPoint("TOPLEFT", left, "TOPLEFT", 6, -6 - (i - 1) * NAV_STEP)
+        c:SetPoint("TOPLEFT", left, "TOPLEFT", NAV_X, NAV_Y - (i - 1) * NAV_STEP)
         c.group = group
         UI.categories[i] = c
         c.subs = {}
@@ -805,9 +850,7 @@ function UI.create()
             for _, entry in ipairs(group.pages) do
                 local sub = category(left, entry[2], function()
                     UI.show(entry[1])
-                end)
-                sub:SetSize(NAV_WIDTH - 12, NAV_HEIGHT)
-                sub.label:SetFontObject(GameFontHighlightSmall)
+                end, true)
                 sub.id, sub.isSub = entry[1], true
                 sub:Hide()
                 c.subs[#c.subs + 1] = sub
@@ -819,7 +862,7 @@ function UI.create()
 
     -- Right: one page per category.
     local right = inset(f, "auctionhouse-background-index")
-    right:SetPoint("TOPLEFT", left, "TOPRIGHT", 4, 0)
+    right:SetPoint("TOPLEFT", left, "TOPRIGHT", 0, 0)
     right:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
     UI.right = right
     UI.pages = {}
@@ -909,10 +952,10 @@ end
 
 function UI.layoutMenu(group, id)
     local left = UI.leftPanel
-    local y = -6
+    local y = NAV_Y
     for _, c in ipairs(UI.categories) do
         c:ClearAllPoints()
-        c:SetPoint("TOPLEFT", left, "TOPLEFT", 6, y)
+        c:SetPoint("TOPLEFT", left, "TOPLEFT", NAV_X, y)
         y = y - NAV_STEP
         if c.group == group then
             c.selected:Show()
@@ -922,7 +965,7 @@ function UI.layoutMenu(group, id)
         for _, sub in ipairs(c.subs) do
             if c.group == group then
                 sub:ClearAllPoints()
-                sub:SetPoint("TOPLEFT", left, "TOPLEFT", 18, y)
+                sub:SetPoint("TOPLEFT", left, "TOPLEFT", NAV_X, y)
                 y = y - NAV_STEP
                 if sub.id == id then
                     sub.selected:Show()
@@ -3853,14 +3896,14 @@ function UI.placeHouse()
     elseif place == "bar" then
         badge:SetPoint("CENTER", f, "BOTTOM", 85, -13)
     else
-        badge:SetPoint("RIGHT", f, "TOPRIGHT", -12, 19)
+        badge:SetPoint("RIGHT", f, "TOPRIGHT", -12, 24)
         badge:SetJustifyH("RIGHT")
         UI.status:SetPoint("RIGHT", badge, "LEFT", -12, 0)
         UI.status:SetWordWrap(false)
         return
     end
     badge:SetJustifyH("CENTER")
-    UI.status:SetPoint("RIGHT", f, "TOPRIGHT", -12, 19)
+    UI.status:SetPoint("RIGHT", f, "TOPRIGHT", -12, 24)
     UI.status:SetWordWrap(false)
 end
 

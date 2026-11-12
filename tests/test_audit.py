@@ -459,7 +459,7 @@ class NativeLookTests(unittest.TestCase):
         local c = UI.categories[1]
         assert(c.normal:GetAtlas() == 'native-button' and c.highlight:GetAtlas() == 'native-highlight')
         local w, h = c:GetSize()
-        assert(w == 140 and h == 22, 'the size of the buttons of the game')
+        assert(w == 137 and h == 21, 'the size of the Buy tab buttons (137 by 21), kept')
         assert(UI.leftPanel.art:GetAtlas() == 'native-background' and UI.right.art:GetAtlas() == 'native-results')''')
 
 
@@ -476,3 +476,18 @@ class DumpTests(unittest.TestCase):
         local w = UI.exportFrame
         assert(w and w:IsShown(), 'a box to copy')
         assert(w.box:GetText():find('dump of the auction house window', 1, true), w.box:GetText():sub(1, 200))''')
+
+
+class NativeMenuLayoutTests(unittest.TestCase):
+    def test_the_menu_has_the_buy_tabs_sizes(self):
+        run(BASE + '''UI.show('bids')
+        local deals = UI.categories[1]
+        local w, h = deals:GetSize()
+        assert(w == 137 and h == 21, 'top entries 137 by 21')
+        assert(deals.normal:GetAtlas() == 'auctionhouse-nav-button')
+        local nw, nh = deals.normal:GetSize()
+        assert(nw == 136 and nh == 32, 'the art keeps its own size')
+        local sub = deals.subs[1]
+        assert(sub.normal:GetAtlas() == 'auctionhouse-nav-button-secondary', 'sub-entries have the secondary art')
+        local sw = sub:GetSize()
+        assert(sw == 137, 'sub-entries are as wide as the top ones')''')
