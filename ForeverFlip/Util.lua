@@ -110,7 +110,11 @@ function U.money(copper)
         return "?"
     end
     local shown = {}
-    for i, p in ipairs(parts(copper)) do
+    local all = parts(copper)
+    if #all > 2 then
+        all[3] = nil -- gold and silver: the copper is left out
+    end
+    for i, p in ipairs(all) do
         shown[i] = U.coins and (p[2] .. COIN[p[1]]) or string.format(LETTER[p[1]], p[2])
     end
     return (copper < 0 and "-" or "") .. table.concat(shown, " ")

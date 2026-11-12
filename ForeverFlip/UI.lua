@@ -115,7 +115,7 @@ end
 -- Entry of the left list, styled like the auction house category list.
 local function category(parent, label, onClick)
     local row = CreateFrame("Button", nil, parent)
-    row:SetHeight(21)
+    row:SetHeight(26)
     local normal = row:CreateTexture(nil, "BACKGROUND")
     normal:SetTexture("Interface\\AuctionFrame\\UI-AuctionFrame-FilterBg")
     normal:SetTexCoord(0, 0.53125, 0, 0.625)
@@ -128,8 +128,8 @@ local function category(parent, label, onClick)
     selected:Hide()
     row.selected = selected
     row:SetHighlightTexture("Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight", "ADD")
-    local t = text(row, "GameFontNormalSmall")
-    t:SetPoint("LEFT", row, "LEFT", 8, 0)
+    local t = text(row, "GameFontNormal")
+    t:SetPoint("LEFT", row, "LEFT", 10, 0)
     t:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     t:SetText(L(label))
     row.label = t
@@ -440,14 +440,14 @@ function UI.create()
         local c = category(left, group.label, function()
             UI.show(group.current or group.pages[1][1])
         end)
-        c:SetPoint("TOPLEFT", left, "TOPLEFT", 8, -8 - (i - 1) * 23)
-        c:SetPoint("TOPRIGHT", left, "TOPRIGHT", -8, -8 - (i - 1) * 23)
+        c:SetPoint("TOPLEFT", left, "TOPLEFT", 8, -8 - (i - 1) * 29)
+        c:SetPoint("TOPRIGHT", left, "TOPRIGHT", -8, -8 - (i - 1) * 29)
         c.group = group
         UI.categories[i] = c
     end
     UI.summary = text(left, "GameFontHighlightSmall")
-    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -8 - #UI.GROUPS * 23 - 12)
-    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -8 - #UI.GROUPS * 23 - 12)
+    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -8 - #UI.GROUPS * 29 - 12)
+    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -8 - #UI.GROUPS * 29 - 12)
     UI.summary:SetSpacing(4)
 
     -- Right: one page per category.
@@ -4017,10 +4017,51 @@ local function sellGear()
     UI.merchant(true)
 end
 
+-- The merchant's item pages (buttons, page arrows, repair buttons) are drawn above the ForeverFlip
+-- view: they are hidden while it is open, and the game shows them again on its own tabs.
+local MERCHANT_PARTS = {
+    "MerchantPrevPageButton",
+    "MerchantNextPageButton",
+    "MerchantPageText",
+    "MerchantRepairItemButton",
+    "MerchantRepairAllButton",
+    "MerchantGuildBankRepairButton",
+    "MerchantRepairText",
+    "MerchantBuyBackItem",
+    "MerchantSellAllJunkButton",
+}
+local function merchantPages(show)
+    local names = {}
+    for i = 1, (MERCHANT_ITEMS_PER_PAGE or 12) do
+        names[#names + 1] = "MerchantItem" .. i
+    end
+    for _, name in ipairs(MERCHANT_PARTS) do
+        names[#names + 1] = name
+    end
+    for _, name in ipairs(names) do
+        local f = _G[name]
+        if f and f.Hide then
+            if show then
+                f:Show()
+            else
+                f:Hide()
+            end
+        end
+    end
+    if show and MerchantFrame_Update then
+        pcall(MerchantFrame_Update) -- the game decides again what its tab shows
+    end
+end
+
 function UI.merchantSelect(on, closing)
     local view, tab = UI.merchantView, UI.merchantTab
     if not view then
         return
+    end
+    if on then
+        merchantPages(false)
+    elseif view:IsShown() and not closing then
+        merchantPages(true)
     end
     if on then
         view:Show()

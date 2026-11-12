@@ -400,7 +400,8 @@ class CoinTests(unittest.TestCase):
         run('''local U = ForeverFlip.Util
         U.coins = true
         local shown = U.money(123456)
-        assert(shown:find('12|T', 1, true) and shown:find('UI-GoldIcon', 1, true) and shown:find('34|T', 1, true) and shown:find('56|T', 1, true), shown)
+        assert(shown:find('12|T', 1, true) and shown:find('UI-GoldIcon', 1, true) and shown:find('34|T', 1, true) and not shown:find('CopperIcon', 1, true), 'gold and silver, the copper left out: ' .. shown)
+        assert(U.money(2650):find('26|T', 1, true) and U.money(2650):find('50|T', 1, true), 'silver and copper')
         assert(U.plainMoney(123456) == '12g 34s 56c', U.plainMoney(123456))
         assert(U.parseMoney(U.plainMoney(123456)) == 123456)
         assert(U.money(-250):sub(1, 1) == '-')''')
