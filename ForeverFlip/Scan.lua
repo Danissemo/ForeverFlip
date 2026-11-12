@@ -169,13 +169,20 @@ S.SHORT = 60
 -- one had been taken (in game: 28 672, 30 720, 73 728 of about 250 000 auctions, read one after the
 -- other).
 S.PEAK_AGE = 86400
-function S.reference(scope)
-    local market = F.Data.market(F.db, scope)
-    local best = 0
+-- The largest complete list of the last day, or nil.
+function S.freshPeak(market)
     local peak = market.peak
     if type(peak) == "table" and U.finite(peak.total) and clock() - (peak.at or 0) <= S.PEAK_AGE then
-        best = peak.total
+        return peak.total
     end
+end
+-- A whole number of the server's 1024-auction parts: the answer is certainly not complete.
+function S.isPart(n)
+    return U.finite(n) and n > 0 and n % S.PART == 0
+end
+function S.reference(scope)
+    local market = F.Data.market(F.db, scope)
+    local best = S.freshPeak(market) or 0
     local last = S.last and S.last.scope == scope and S.last or market.last
     local total = type(last) == "table" and not last.partial and last.total or nil
     if U.finite(total) and total > best then
@@ -194,7 +201,7 @@ function S.isShort(scope, n)
     if not U.finite(n) or n <= 0 then
         return false
     end
-    if n % S.PART == 0 then
+    if S.isPart(n) then
         return true
     end
     local ref = S.reference(scope)
@@ -223,7 +230,7 @@ local function polled(j, now)
     -- A whole number of the server's parts is never read: the rest is waited for (S.step ends the
     -- wait). A list only smaller than the day's largest (the house can shrink, by night or after
     -- many auctions ended) is read once it stayed the same for S.SHORT seconds.
-    if n % S.PART == 0 then
+    if S.isPart(n) then
         return false
     end
     return not S.isShort(j.scope, n) or quiet >= S.SHORT
@@ -239,7 +246,7 @@ local function beginReading(j, total)
     F.AH.refreshPlayer()
     -- Only a whole number of the server's parts is a part; a smaller house read after a quiet
     -- minute is the house as it is.
-    j.partial = (U.finite(total) and total > 0 and total % S.PART == 0) or nil
+    j.partial = S.isPart(total) or nil
     j.lots = F.AH.canTrackLots() and not j.partial
     j.raw = F.Raw.active() and {} or nil
 end
@@ -906,9 +913,7 @@ function S.step()
             -- The largest complete list of the last day: a smaller one never lowers it (each part
             -- read as complete lowered the bar for the next, 185 344 down to 36 864 in game).
             local market = F.Data.market(F.db, j.scope)
-            local peak = market.peak
-            local fresh = type(peak) == "table" and U.finite(peak.total) and clock() - (peak.at or 0) <= S.PEAK_AGE
-            if not fresh or j.total >= peak.total then
+            if j.total >= (S.freshPeak(market) or 0) then
                 market.peak = { total = j.total, at = j.finishAt }
             end
         end

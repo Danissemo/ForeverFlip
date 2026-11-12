@@ -53,6 +53,10 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- Times read the same on every page ("40 min", "3.5 h", "2.1 days") and are translated; the
+  Undercuts page showed whole hours in English. Sure is cached by its data, so the tooltip shares
+  it with the deals.
+
 - **Buy all to vendor skipped good deals** when the auction house was busy for a moment right
   after a check; only a check that went stale is sent again now. The run also ends by itself when
   you leave To vendor or click nothing for a minute: it held Check all and the sniper until the

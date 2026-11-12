@@ -23,6 +23,16 @@ end
 --   "i:<itemID>"          plain item (bags, recipes, ...), one auction per purchase
 --   "g:<itemID>:<name>"   gear: on WoW Forever one item ID has several endings ("of the Wolf")
 --                         that only the full name tells apart; the name is stored in lower case.
+-- A Lua pattern for one of the game's message templates ("You won an auction for %s"): the %s
+-- becomes a capture, everything else matches literally. nil when the template is missing.
+function U.globalPattern(template)
+    if type(template) ~= "string" then
+        return nil
+    end
+    local s = template:gsub("%%s", "\1"):gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"):gsub("\1", "(.+)")
+    return "^" .. s .. "$"
+end
+
 function U.key(kind, id, name)
     if kind == "commodity" then
         return "c:" .. id

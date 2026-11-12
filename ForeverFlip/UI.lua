@@ -1602,15 +1602,8 @@ end
 -- The Buy all to vendor button: what the next click does, and how many deals are left.
 function UI.refreshRun()
     local shown = UI.filter == "vendor"
-    local function show(f, on)
-        if on then
-            f:Show()
-        else
-            f:Hide()
-        end
-    end
-    show(UI.runButton, shown)
-    show(UI.runStop, shown and F.Trade.run ~= nil)
+    UI.runButton:SetShown(shown)
+    UI.runStop:SetShown(shown and F.Trade.run ~= nil)
     if not shown then
         return
     end
@@ -1670,7 +1663,8 @@ local function dealStatus(d)
 end
 
 -- Return on the money and, for resale, how long the bought units take to sell at the estimate.
-local function dealOutlook(d, estimate)
+-- The second line of a deal UI.dealDetail does not lay out itself (shopping list, disenchant).
+local function dealOutlook(d)
     local roi = d.cost > 0 and d.profit / d.cost or 0
     if d.mode == "shop" and d.resell then
         return string.format(
@@ -1683,19 +1677,6 @@ local function dealOutlook(d, estimate)
         return L("Bought for your own use: it stays out of Post next bought.")
     elseif d.mode == "disenchant" then
         return L("Estimate from the Classic disenchanting table and the usual material prices.")
-    end
-    if d.mode == "vendor" then
-        return string.format(L("Return %d%%; sold to a vendor at once, no risk."), math.floor(roi * 100 + 0.5))
-    end
-    local perDay = estimate and estimate.known and estimate.perDay or d.perDay
-    if perDay and perDay > 0 then
-        return string.format(
-            L("Return %d%%; at ~%.1f a day the %d units sell in about %.1f days."),
-            math.floor(roi * 100 + 0.5),
-            perDay,
-            d.qty,
-            d.qty / perDay
-        )
     end
     return string.format(L("Return %d%%."), math.floor(roi * 100 + 0.5))
 end
@@ -1811,14 +1792,16 @@ end
 
 -- The sales an estimate rests on, in words: units, buys, how sure, prices (UI.saleEvidenceLine).
 function UI.saleEvidenceLine(h, floor)
-    local e = F.Market.saleEvidence(h, floor)
+    local seen = "|cffffd100" .. L("Seen") .. "|r"
+    local e = h and F.Market.saleEvidence(h, floor)
     if not e then
-        return L("No purchase seen at this price yet.")
+        return seen .. " " .. L("No purchase seen at this price yet.")
     end
     local line = string.format(
-        L("Seen bought: %d in %d buys (%d from lots bought in part, %d whole lots), %s to %s, median %s."),
-        math.floor(e.units + 0.5),
+        L("%s %d purchases, %d units (%d from lots bought in part, %d whole lots)  ·  paid %s - %s, median %s"),
+        seen,
         e.buys,
+        math.floor(e.units + 0.5),
         math.floor(e.sure + 0.5),
         math.floor(e.lots + 0.5),
         U.money(e.low),
@@ -1861,15 +1844,6 @@ local function dealSentence(d)
             U.money(d.profit)
         )
     end
-    if d.mode == "vendor" then
-        return string.format(
-            L("Buy %d for %s and sell to any vendor for %s. Profit: %s."),
-            d.qty,
-            U.money(d.cost),
-            U.money(d.exit * d.qty),
-            U.money(d.profit)
-        )
-    end
     return string.format(
         L("Buy %d for %s; list at %s each. Profit after the %d%% cut: +%s."),
         d.qty,
@@ -1880,11 +1854,13 @@ local function dealSentence(d)
     )
 end
 
--- A span of hours in words: "40 min", "3.5 h", "2.1 days" (UI.duration takes seconds).
-function UI.hoursText(hours)
-    if not U.finite(hours) or hours < 0 then
+-- A span of time in words: "40 min", "3.5 h", "2.1 days".
+function UI.duration(seconds)
+    if not U.finite(seconds) or seconds < 0 then
         return "?"
-    elseif hours < 1 then
+    end
+    local hours = seconds / 3600
+    if hours < 1 then
         return string.format(L("%d min"), math.max(1, math.floor(hours * 60 + 0.5)))
     elseif hours < 48 then
         return string.format(L("%.1f h"), hours)
@@ -1930,7 +1906,7 @@ function UI.dealDetail(d, estimate, h, now)
         return lines
     end
     if d.mode ~= "flip" then
-        return { dealSentence(d), dealOutlook(d, estimate) }
+        return { dealSentence(d), dealOutlook(d) }
     end
     local lines = {
         string.format(
@@ -1954,7 +1930,7 @@ function UI.dealDetail(d, estimate, h, now)
         if estimate.perDay > 0 then
             line = line
                 .. "  ·  "
-                .. string.format(L("%d sell in about %s"), d.qty, UI.hoursText(d.qty / estimate.perDay * 24))
+                .. string.format(L("%d sell in about %s"), d.qty, UI.duration(d.qty / estimate.perDay * 86400))
         end
         if estimate.age then
             line = line
@@ -1968,22 +1944,7 @@ function UI.dealDetail(d, estimate, h, now)
             .. " "
             .. L("Sale estimate unavailable: collect two full scans with usable price data.")
     end
-    local e = h and F.Market.saleEvidence(h, floor)
-    if e then
-        lines[#lines + 1] = string.format(
-            L("%s %d purchases, %d units (%d from lots bought in part, %d whole lots)  ·  paid %s - %s, median %s"),
-            gold("Seen"),
-            e.buys,
-            math.floor(e.units + 0.5),
-            math.floor(e.sure + 0.5),
-            math.floor(e.lots + 0.5),
-            U.money(e.low),
-            U.money(e.high),
-            U.money(e.median)
-        )
-    else
-        lines[#lines + 1] = gold("Seen") .. " " .. L("No purchase seen at this price yet.")
-    end
+    lines[#lines + 1] = UI.saleEvidenceLine(h, floor)
     local sure = UI.sureSentence(d, now)
     if sure then
         lines[#lines + 1] = sure
@@ -3358,17 +3319,6 @@ function UI.createUndercuts(p)
     UI.fightNext:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
 end
 
-function UI.duration(seconds)
-    seconds = math.max(0, math.floor(seconds or 0))
-    if seconds >= 86400 then
-        return string.format(L("%.1f days"), seconds / 86400)
-    end
-    if seconds >= 3600 then
-        return string.format("%d h", math.floor(seconds / 3600))
-    end
-    return string.format("%d min", math.max(1, math.floor(seconds / 60)))
-end
-
 local function percent(p)
     return string.format("%d%%", math.floor((p or 0) * 100 + 0.5))
 end
@@ -3510,9 +3460,6 @@ end
 -- What the selected undercut is about, one line each: the auction, its sales, rivals, the unsold.
 local function situationLines(plan)
     local a = plan.auction
-    local gold = function(s)
-        return "|cffffd100" .. L(s) .. "|r"
-    end
     local lines = {
         string.format(
             L("%s %d at %s, %s left  ·  %d cheaper units ahead, the cheapest at %s"),
@@ -5912,8 +5859,7 @@ local function tooltipLines(tooltip)
                     grey(U.money(e.low) .. " - " .. U.money(e.high))
                 )
             end
-            local trust = F.Deals.trust(key, now)
-            local sure = F.Market.confidence(h, at, 1, now, trust)
+            local sure = F.Deals.sureAt(key, at, 1, now)
             if sure then
                 tipLine(tooltip, "  " .. L("Sure to sell one at this price in 2 days"), UI.sureText(sure))
             end

@@ -143,28 +143,30 @@ function D.sure(d, now)
     if not d then
         return nil
     end
-    now = now or clock()
-    local c = D.sureCache[d.key]
-    if c and c.deal == d and now - c.at < D.SURE_KEEP then
-        return c.sure, c.parts
-    end
-    local sure, parts = D.sureNow(d, now)
-    D.sureCache[d.key] = { deal = d, at = now, sure = sure, parts = parts }
-    return sure, parts
-end
-
-function D.sureNow(d, now)
     if d.mode == "vendor" then
         return 1
     end
     if d.mode ~= "flip" or not U.finite(d.exit) then
         return nil
     end
-    now = now or clock()
-    local h = F.Data.market(F.db, F.Engine.scope()).history[d.key]
     local p = F.Data.char(F.db, F.Engine.owner()).positions[d.key]
-    local held = p and p.qty or 0
-    return F.Market.confidence(h, d.exit, (d.qty or 1) + held, now, D.trust(d.key, now))
+    return D.sureAt(d.key, d.exit, (d.qty or 1) + (p and p.qty or 0), now)
+end
+
+-- Sure of selling `qty` of an item at `price`, kept D.SURE_KEEP seconds for the same price,
+-- quantity and sales data (it changes with a scan; the tooltip and the deals share it).
+function D.sureAt(key, price, qty, now)
+    now = now or clock()
+    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
+    local data = type(h) == "table" and (h.sales and h.sales.at or h.flow and h.flow.at) or 0
+    local stamp = price .. ":" .. qty .. ":" .. tostring(data)
+    local c = D.sureCache[key]
+    if c and c.stamp == stamp and now - c.at < D.SURE_KEEP then
+        return c.sure, c.parts
+    end
+    local sure, parts = F.Market.confidence(h, price, qty, now, D.trust(key, now))
+    D.sureCache[key] = { stamp = stamp, at = now, sure = sure, parts = parts }
+    return sure, parts
 end
 
 local function order(a, b)
@@ -279,7 +281,7 @@ end
 -- The search of the selected item itself never waits (`key`): the player is waiting for it, and
 -- holding it behind its own selection stopped Check all for good (seen in game).
 function D.buyHolding(key)
-    if clock() < (D.holdUntil or 0) then
+    if clock() < (D.holdUntil or 0) or F.Trade.run then
         return true
     end
     local ui = F.UI
@@ -291,6 +293,10 @@ function D.buyHolding(key)
     end
     return selectedHold(ui)
 end
+
+-- The pages where the player posts and cancels: background searches rest there (D.holding), and
+-- only their own checks run (D.batchPaused).
+D.SELLING = { sell = true, auctions = true, undercuts = true }
 
 -- Check all of another page rests while the player posts or cancels (the Selling pages) or works in
 -- the game's own Buy or Sell page: every search of it held the way to the server, and the Post
@@ -311,12 +317,7 @@ function D.batchPaused()
     -- Only checks of other pages rest there: the selling pages' own checks (Bags, My auctions,
     -- Undercuts) are what the player waits for on them (a check started on Undercuts stood still
     -- for good once the player looked at My auctions, seen in game).
-    local section = ui.section
-    local selling = { sell = true, auctions = true, undercuts = true }
-    if selling[section] then
-        return not selling[batch.scope]
-    end
-    return false
+    return D.SELLING[ui.section] and not D.SELLING[batch.scope] or false
 end
 
 -- Background work (the sniper, automatic checks) waits while the player is about to buy or post:
@@ -327,8 +328,8 @@ function D.holding()
     if F.Engine.interacting() then
         return true
     end
-    if clock() < (D.holdUntil or 0) then
-        return true -- a purchase or post found the way busy: it is cleared for the next click
+    if clock() < (D.holdUntil or 0) or F.Trade.run then
+        return true -- a click found the way busy, or Buy all to vendor runs
     end
     local ui = F.UI
     if not ui or not ui.frame or not ui.frame:IsShown() then
@@ -336,7 +337,7 @@ function D.holding()
     end
     -- The Undercuts page too: its answers cancel auctions, and a cancel sent while a search of
     -- the sniper waited found the way busy (Answer next took three clicks in game).
-    if ui.section == "sell" or ui.section == "auctions" or ui.section == "undercuts" then
+    if D.SELLING[ui.section] then
         return true
     end
     return ui.section == "deals" and selectedHold(ui)

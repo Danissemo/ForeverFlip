@@ -778,6 +778,11 @@ end
 M.SURE_HOURS = 48
 M.SURE_PRIOR = 0.1
 M.SURE_PRIOR_HOURS = 24
+-- Weight of sales data `age` seconds old: whole for 6 hours, then half every 2 days.
+function M.freshness(age)
+    return 0.5 ^ (math.max(0, (age or 0) - 6 * 3600) / (48 * 3600))
+end
+
 -- Before lots were tracked over two scans, only the older measure is there: units that
 -- disappeared near the price (h.flow), which also counts expired, cancelled and reposted lots.
 -- It gives a number too, with every unit counted as a whole lot (real = 1/2), never above
@@ -797,7 +802,7 @@ local function flowConfidence(h, price, qty, now, trust)
     local tail = F.Trade.saleChances(d.sold * 0.5 * trust, d.hours, M.SURE_HOURS, M.SURE_PRIOR, M.SURE_PRIOR_HOURS)
     local p = tail(math.max(1, qty or 1))
     local age = U.finite(now) and U.finite(f.at) and math.max(0, now - f.at) or 0
-    local fresh = 0.5 ^ (math.max(0, age - 6 * 3600) / (48 * 3600))
+    local fresh = M.freshness(age)
     return math.min(M.FLOW_SURE_MAX, p * fresh),
         {
             p = p,
@@ -822,12 +827,8 @@ function M.confidence(h, price, qty, now, trust)
     if not U.finite(price) or price <= 0 then
         return nil
     end
-    local floor, units = 0.95 * price, 0
-    for b, n in pairs(type(s.b) == "table" and s.b or {}) do
-        if b % 2 == 0 and U.finite(s.b[b + 1]) and s.b[b + 1] >= floor then
-            units = units + n
-        end
-    end
+    local floor = 0.95 * price
+    local units = qtyAbove(type(s.b) == "table" and s.b or {}, floor)
     local sure, lots = math.max(0, s.sure or 0), math.max(0, s.lots or 0)
     local real = (sure + lots) > 0 and (sure + lots / 2) / (sure + lots) or 1
     trust = U.finite(trust) and math.max(0, trust) or 1
@@ -843,7 +844,7 @@ function M.confidence(h, price, qty, now, trust)
     local p = tail(math.max(1, math.ceil(((qty or 1) + ahead) / m)))
     local sweep = 1 - math.min(1, (s.sweeps or 0) / math.max(1, s.pairs or 1)) / 2
     local age = U.finite(now) and U.finite(s.at) and math.max(0, now - s.at) or 0
-    local fresh = 0.5 ^ (math.max(0, age - 6 * 3600) / (48 * 3600))
+    local fresh = M.freshness(age)
     return p * sweep * fresh,
         {
             p = p,

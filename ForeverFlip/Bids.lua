@@ -279,7 +279,7 @@ end
 function B.outbid(name)
     local id, b = openBid(name, false)
     if id then
-        b.outbid, b.leading = b.outbid or F.Engine.clock(), false
+        b.outbid = b.outbid or F.Engine.clock()
         B.liveDue = 0 -- the next bid the house takes is asked for at once
         F.Engine.changed()
         return true
@@ -295,13 +295,14 @@ B.LIVE_EVERY = 60
 B.BAND_MAX = { [0] = 1800, [1] = 7200, [2] = 43200, [3] = 172800 }
 
 function B.step()
-    local c = char()
-    local running = next(c.bids or {}) ~= nil
+    if not F.AH.isOpen() or F.Engine.clock() < (B.liveDue or 0) then
+        return
+    end
+    local bids = char().bids
+    local running = bids ~= nil and next(bids) ~= nil
     local shown = F.UI and F.UI.section == "mybids"
     if
         (running or shown)
-        and F.AH.isOpen()
-        and F.Engine.clock() >= (B.liveDue or 0)
         and F.AH.ready()
         and not F.Deals.searching()
         and not F.Scan.blocking()
@@ -344,9 +345,8 @@ function B.onLive()
                 -- the amount the player bid (never advise bidding against yourself).
                 leading = not U.finite(r.bid) or not U.finite(b.amount) or r.bid <= b.amount
             end
-            r.leading = leading
-            b.leading, b.next, b.highest, b.buyout, b.band = leading, r.minBid, r.bid, r.buyout, r.band
-            b.outbid = not r.leading and (b.outbid or now) or nil
+            b.next, b.buyout, b.band = r.minBid, r.buyout, r.band
+            b.outbid = not leading and (b.outbid or now) or nil
             b.seen = now
             local latest = now + (B.BAND_MAX[r.band] or B.BAND_MAX[3])
             b.ends = math.min(b.ends or latest, latest)
@@ -480,7 +480,7 @@ function B.answer(auctionID, how)
     if not pcall(F.AH.bid, auctionID, amount) then
         return false, "error"
     end
-    b.amount, b.at, b.outbid, b.leading, b.seen = amount, F.Engine.clock(), nil, true, nil
+    b.amount, b.at, b.outbid, b.seen = amount, F.Engine.clock(), nil, nil
     b.next = nil
     B.liveDue = F.Engine.clock() + 2
     F.Engine.notify(how == "buyout" and "bid_bought" or "bid_placed")

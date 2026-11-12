@@ -40,17 +40,20 @@ function T.canBuy(deal)
     return deal and deal.verified and clock() - deal.verified <= F.Deals.FRESH and not T.busy() and F.AH.isOpen()
 end
 
+-- The deal's lot can be bought from its check: a commodity always, an item only while its search
+-- is the last item search (the server sells it from that search alone).
+local function lotReady(deal)
+    return deal.kind == "commodity" or F.AH.searchedLast(deal.id)
+end
+T.lotReady = lotReady
+
 -- Selection and mouse movement may prepare read-only data; buying still needs a click.
 function T.prepareBuy(key)
     local deal = F.Deals.get(key)
     if not deal or T.busy() or not F.AH.isOpen() then
         return false
     end
-    if
-        deal.verified
-        and clock() - deal.verified <= F.Deals.FRESH
-        and (deal.kind == "commodity" or F.AH.searchedLast(deal.id))
-    then
+    if T.canBuy(deal) and lotReady(deal) then
         return true
     end
     deal.verified = nil -- a failed preparation cannot leave the earlier ready mark usable
@@ -68,26 +71,27 @@ function T.readyToBuy(deal)
         and not F.Deals.searching()
         and not F.Sniper.inFlight()
         and F.AH.available()
-        and (deal.kind == "commodity" or F.AH.searchedLast(deal.id))
+        and lotReady(deal)
 end
 
 -- The same test without its side effect, for buttons: a post, cancel or answer button is enabled
 -- only while its click would go through (pressing it several times did nothing in game: "the
 -- auction house is busy"). The selling pages hold background searches (Deals.holding), so the
 -- buttons come back within a second or two.
-function T.wayReady()
+-- `peek` false (a click): the throttle watchdog is kept up to date (AH.ready).
+function T.wayReady(peek)
     return F.AH.isOpen()
         and not T.busy()
         and not T.postingNow()
         and not F.Deals.searching()
         and not F.Sniper.inFlight()
-        and F.AH.ready()
+        and F.AH.ready(peek ~= false)
 end
 
 -- The way to the server is free: no search waits for its answer and the throttle is ready. When it
 -- is not, background work rests for a few seconds so the next click goes through.
 function T.wayFree()
-    if not T.busy() and not T.postingNow() and not F.Deals.searching() and not F.Sniper.inFlight() and F.AH.ready() then
+    if T.wayReady(false) then
         return true
     end
     F.Deals.holdUntil = clock() + 5
@@ -215,8 +219,9 @@ end
 -- so the run checks one deal at a time, just before the click that buys it, and the next lot of
 -- the same item is bought without a new search. Check all and the sniper rest meanwhile, so
 -- nothing else takes the way to the server. A deal that can no longer be bought is skipped.
--- T.run = { key = deal being bought, skipped = { [key] = true }, bought = lots, spent = copper }
-function T.runTargets()
+-- T.run = { key = deal being bought, skipped = { [key] = true }, bought = lots, clicked = time }
+-- `first`: only the first deal is wanted.
+function T.runTargets(first)
     local out = {}
     local wallet = F.Engine.wallet()
     for _, d in ipairs(F.Deals.list) do
@@ -227,6 +232,9 @@ function T.runTargets()
             and not (T.run and T.run.skipped[d.key])
         then
             out[#out + 1] = d
+            if first then
+                break
+            end
         end
     end
     return out
@@ -237,7 +245,7 @@ end
 T.RUN_IDLE = 60
 
 function T.runStart()
-    T.run = { skipped = {}, bought = 0, spent = 0, at = clock(), clicked = clock() }
+    T.run = { skipped = {}, bought = 0, clicked = clock() }
     T.runStep()
     F.Engine.changed()
     return T.run ~= nil
@@ -258,12 +266,11 @@ function T.runStep()
     end
     local ui = F.UI
     local away = ui and ui.frame and (not ui.frame:IsShown() or ui.section ~= "deals" or ui.filter ~= "vendor")
-    if not F.AH.isOpen() or away or clock() - (run.clicked or run.at) > T.RUN_IDLE then
+    if not F.AH.isOpen() or away or clock() - run.clicked > T.RUN_IDLE then
         T.run = nil
         F.Engine.changed()
         return
     end
-    F.Deals.holdUntil = clock() + 2 -- Check all and the sniper rest while the run goes on
     if T.busy() then
         return
     end
@@ -276,7 +283,7 @@ function T.runStep()
     end
     if not d then
         run.key, run.checks = nil, 0
-        local next = T.runTargets()[1]
+        local next = T.runTargets(true)[1]
         if not next then
             T.run = nil
             F.Engine.notify(run.bought > 0 and "run_done" or "no_deal")
@@ -290,7 +297,7 @@ function T.runStep()
     end
     -- Checked and still fresh (and, for an item, its search is the last one): ready, even when the
     -- way to the server is busy for a moment. Only a stale check is sent again.
-    local fresh = T.canBuy(d) and (d.kind == "commodity" or F.AH.searchedLast(d.id))
+    local fresh = T.canBuy(d) and lotReady(d)
     if fresh or F.Deals.pending(d.key) then
         return
     end
@@ -324,7 +331,6 @@ function T.runClick()
     local ok, why = T.buy(d.key)
     if ok then
         T.run.bought = T.run.bought + 1
-        T.run.spent = T.run.spent + (T.op and T.op.cost or 0)
         T.run.checks = 0
     end
     return ok, why
@@ -457,18 +463,16 @@ function T.onChat(msg)
         return
     end
     -- "You have been outbid on X": the bid can still be answered on Shopping list, My bids.
-    local outbid = type(ERR_AUCTION_OUTBID_S) == "string" and ERR_AUCTION_OUTBID_S:gsub("%%s", "\1")
-    if outbid then
-        local pattern = "^" .. outbid:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"):gsub("\1", "(.+)") .. "$"
+    local pattern = U.globalPattern(ERR_AUCTION_OUTBID_S)
+    if pattern then
         local name = msg:match(pattern)
         if name then
             F.Bids.outbid((name:gsub("%s*%(x%d+%)%s*$", "")))
             return
         end
     end
-    local won = type(ERR_AUCTION_WON_S) == "string" and ERR_AUCTION_WON_S:gsub("%%s", "\1")
-    if won then
-        local pattern = "^" .. won:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"):gsub("\1", "(.+)") .. "$"
+    local pattern = U.globalPattern(ERR_AUCTION_WON_S)
+    if pattern then
         local name = msg:match(pattern)
         local op = T.op
         if name and not (op and op.state == "awaiting") then
@@ -482,9 +486,8 @@ function T.onChat(msg)
             end
         end
     end
-    local sold = type(ERR_AUCTION_SOLD_S) == "string" and ERR_AUCTION_SOLD_S:gsub("%%s", "\1")
-    if sold then
-        local pattern = "^" .. sold:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"):gsub("\1", "(.+)") .. "$"
+    local pattern = U.globalPattern(ERR_AUCTION_SOLD_S)
+    if pattern then
         if msg:match(pattern) then
             T.ownedDue = 0
         end

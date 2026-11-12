@@ -80,6 +80,13 @@ end
 function methods:IsShown()
     return self.shown
 end
+function methods:SetShown(on)
+    if on then
+        self:Show()
+    else
+        self:Hide()
+    end
+end
 function methods:SetText(v)
     self.text = tostring(v or "")
 end

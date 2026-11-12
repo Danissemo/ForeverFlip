@@ -201,5 +201,5 @@ class ThinEvidenceTests(unittest.TestCase):
         local h={}
         M.recordSales(h,{[90]=5,[95]=3},900,now,{[95]=3})
         local line=UI.saleEvidenceLine(h,80)
-        assert(line:find('Seen bought: 8 in 2 buys') and line:find('5 from lots bought in part') and line:find('3 whole lots'),line)
+        assert(line:find('2 purchases, 8 units') and line:find('5 from lots bought in part') and line:find('3 whole lots'),line)
         assert(UI.saleEvidenceLine({},80):find('No purchase'))''')
