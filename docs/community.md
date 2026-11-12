@@ -46,6 +46,18 @@ pending uploads about once a minute. A failed attempt keeps unsent scans and ret
 seconds. File changes made during a transfer are processed on the next pass. The window stays
 responsive while parsing and network work run in the background.
 
+### Updating the helper
+
+For **1.2.0-beta.6**, download the new **ForeverFlipSync.exe** from the same release as the addon.
+Close the old helper window before replacing or launching the new file. The helper's addon updater
+updates the game addon only; it does not replace its own executable. Your game choice, sign-in and
+sharing preferences remain in `%APPDATA%\ForeverFlipSync`.
+
+This beta fixes startup sharing when the saved GitHub sign-in is discovered after the first price
+download. Existing unsent scans are reconsidered without needing a new `/reload`. It also fixes the
+Windows title-bar icon. **Show activity** shows upload submissions and the server's acceptance or
+rejection; **Community prices updated** describes the independent download, not proof of an upload.
+
 ### Addon updates and beta testing
 
 The helper also keeps the ForeverFlip addon up to date from the
@@ -54,7 +66,7 @@ the installed version and whether a newer one is out.
 
 - **Update automatically** (on by default): a newer release is installed as soon as it is found, at
   start and every 6 hours. Off, the helper only announces it, and **Update now** installs it.
-- **Beta tester** (off by default): pre-releases (`1.2.0-beta.5`) are offered too. Betas bring new
+- **Beta tester** (off by default): pre-releases (`1.2.0-beta.6`) are offered too. Betas bring new
   features first and may have rough edges; see [Beta testing](testing.md#beta-testing) for what to
   check and how to report. Ticking it looks for a beta at once. Unticking it never downgrades: you
   keep the beta until a release newer than it comes out.

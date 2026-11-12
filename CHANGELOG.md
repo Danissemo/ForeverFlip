@@ -6,6 +6,21 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0-beta.6] - 2026-11-12
+
+Changes since beta.5. Includes the updated addon and ForeverFlip Sync helper.
+
+### Fixed
+
+- Posting queues use the client's available posting count across bag stacks instead of only the
+  first stack. Post AH-worthy and Post all submit all available matching units, respecting keep
+  rules and client limits; Post next bought also uses the full available quantity of its stock.
+
+- Sync re-evaluates its sharing mode after delayed GitHub account discovery or a settings change
+  during a transfer. Existing saved scans are reconsidered even when their file has not changed.
+- The window title icon uses Tk's PNG photo path, without overriding it with the asset kit's
+  PNG-compressed ICO frames that Tk 8.6's bitmap reader cannot decode reliably.
+
 ## [1.2.0-beta.5] - 2026-11-12
 
 Changes since beta.4. Includes all earlier beta improvements.
@@ -549,7 +564,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v1.2.0-beta.5...HEAD
+[Unreleased]: ../../compare/v1.2.0-beta.6...HEAD
+[1.2.0-beta.6]: ../../compare/v1.2.0-beta.5...v1.2.0-beta.6
 [1.2.0-beta.5]: ../../compare/v1.2.0-beta.4...v1.2.0-beta.5
 [1.2.0-beta.4]: ../../compare/v1.2.0-beta.3...v1.2.0-beta.4
 [1.2.0]: ../../compare/v1.1.0...v1.2.0

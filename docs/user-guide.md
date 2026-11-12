@@ -307,7 +307,8 @@ At the bottom:
 
 How the two posting queues work:
 
-- **Each click:** posts the first ready item at the suggested price, using a fresh local scan
+- **Each click:** posts all available units of the first ready item across bag stacks, within the
+  client's posting limit and any keep rule, at the suggested price, using a fresh local scan
   price immediately when available. Checks of unrelated items do not occupy the connection first.
 - **When no item is ready:** the click prepares missing prices as a bulk queue (*Reading the current
   prices of the items to post*). A single-item Check price takes priority over remaining bulk work.

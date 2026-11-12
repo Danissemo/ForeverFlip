@@ -60,7 +60,7 @@
 
 - **Posting rules:** undercut by a step or a percent, minimum and maximum price, units to keep, hold
   below the minimum. Never below your break-even.
-- **Post next bought / Post all:** one click per item, at the right price and the selected duration
+- **Post next bought / Post all:** all available units across bag stacks, one click per item, at the right price and the selected duration
   (24 hours by default, or **Auto**).
 - **Cancel undercut:** cancels undercut auctions one by one, only when the repost still pays.
 - **One-click chores:** take all auction mail, sell all vendor deals at a merchant.
@@ -94,10 +94,10 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> **Current beta: [1.2.0-beta.5](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.5)**
-> adds the redesigned desktop Sync helper with GitHub sign-in, beta updates and bundled assets,
-> clearer Resale diagnostics, unit prices and fixes for selected-item checks. Includes all beta.4
-> improvements to purchases, posting and responsiveness. See the
+> **Current beta: [1.2.0-beta.6](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.6)**
+> posts all available units of an item across bag stacks and fixes scan uploads after delayed
+> GitHub sign-in discovery in the Sync helper, together with its window icon. Includes all earlier
+> beta improvements. Download the new helper EXE as well as updating the addon. See the
 > [current beta checklist](docs/testing.md#current-beta-checklist) and
 > [Beta testing](docs/testing.md#beta-testing).
 

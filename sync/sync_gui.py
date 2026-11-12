@@ -116,6 +116,15 @@ class Images:
         return result
 
 
+def window_icons(root, images):
+    """Keep Tk on its PNG path: Tk 8.6's ICO reader expects DIB frames, not PNG frames."""
+    icons = tuple(i for i in (images.get('app-icon', 1), images.get('app-icon', 2)) if i is not None)
+    if not icons:
+        icons = (app_icon_image(root, 32),)
+    root.iconphoto(True, *icons)
+    return icons
+
+
 def fonts(root):
     families = set(tkfont.families(root))
     base = 'Segoe UI' if 'Segoe UI' in families else 'TkDefaultFont'
@@ -473,11 +482,8 @@ class SyncWindow:
         root.configure(bg=hexcolor(BOTTOM))
         root.protocol('WM_DELETE_WINDOW', self.close)
         try:
-            icons = [i for i in (img.get('app-icon', 1), img.get('app-icon', 2)) if i is not None]
-            self.icon_image = icons[0] if icons else app_icon_image(root, 32)
-            root.iconphoto(True, *(icons or [self.icon_image]))
-            if os.name == 'nt' and (ASSETS/'app-icon.ico').is_file():
-                root.iconbitmap(default=str(ASSETS/'app-icon.ico'))  # crisp in the title bar and taskbar
+            self.icon_images = window_icons(root, img)
+            self.icon_image = self.icon_images[0]
         except tk.TclError:
             pass
         self.width = s(664)
@@ -970,6 +976,12 @@ class SyncWindow:
                         state = {}
                     self.session = self.core.SyncSession(game, self.args.repo or self.config.get('repo') or self.core.DEFAULT_REPO,
                                                          state, state_path, None, share, self.config)
+                if self.session.upload != share:
+                    # Account discovery and the sharing switch can finish during an earlier download.
+                    # Reconsider unchanged saves when the effective sharing mode changes.
+                    self.session.upload = share
+                    self.session.last_seen = {}
+                    self.session.retry_at = 0
                 self.session.refresh_credentials(self.config, force=force)
                 if not self.core.saved_variable_files(game):
                     self.core.log('No saved ForeverFlip scan yet. Make a full scan in game, then /reload.')
@@ -1062,7 +1074,8 @@ class SyncWindow:
         if not self.busy and not self.closing and self.auto.get() and self.game and time.monotonic() >= self.next_check:
             self.next_check = time.monotonic() + 5
             try:
-                if self.session is None or self.session.due():
+                share = self.share.get() and self.account is not None
+                if self.session is None or self.session.upload != share or self.session.due():
                     self.start_sync()
             except OSError as error:
                 self.status.set(str(error))

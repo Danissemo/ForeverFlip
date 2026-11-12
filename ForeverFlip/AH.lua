@@ -711,6 +711,26 @@ function A.readBags()
     end
     return out
 end
+-- The posting API accepts matching items across bag stacks. A bag row's count describes only
+-- its own slot; the client decides how many units its location can post together.
+function A.postCount(item)
+    if not AH.GetAvailablePostCount then
+        return item.count or 0
+    end
+    local ok, available = pcall(AH.GetAvailablePostCount, item.loc)
+    if not ok or not U.finite(available) or available <= 0 then
+        return 0
+    end
+    local matching = 0
+    for _, b in ipairs(A.bagItems()) do
+        if b.key == item.key then
+            matching = matching + b.count
+        end
+    end
+    -- Never mix another gear variant or include units outside the sellable bags.
+    return math.min(math.floor(available), matching)
+end
+
 function A.deposit(item, qty, duration)
     if item.kind == "commodity" then
         return AH.CalculateCommodityDeposit(item.id, duration, qty)

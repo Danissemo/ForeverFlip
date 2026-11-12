@@ -2013,8 +2013,8 @@ function UI.createSell(p)
     end)
     UI.postAuction:SetPoint("LEFT", UI.postAll, "RIGHT", 4, 0)
     for b, tip in pairs({
-        [UI.postAll] = "Posts every item for sale, one per click.",
-        [UI.postAuction] = "Posts only items the auction house pays more for than a vendor, after the cut and the deposits (Best column). Items a vendor pays as much for stay in the bags for the merchant.",
+        [UI.postAll] = "Posts all available units of the next item for sale per click.",
+        [UI.postAuction] = "Posts all available units of one item per click, only when the auction house pays more than a vendor, after the cut and the deposits (Best column). Items a vendor pays as much for stay in the bags for the merchant.",
     }) do
         b:SetScript("OnEnter", function(self)
             if GameTooltip then

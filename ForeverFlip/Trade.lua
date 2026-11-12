@@ -649,7 +649,7 @@ function T.post(item, qty, price, duration)
     if not T.wayFree() then
         return false, "post_busy"
     end
-    if not U.finite(qty) or qty < 1 or qty > item.count or not U.finite(price) or price < 1 then
+    if not U.finite(qty) or qty < 1 or qty > F.AH.postCount(item) or not U.finite(price) or price < 1 then
         return false, "values"
     end
     if item.kind ~= "commodity" then
@@ -1125,7 +1125,7 @@ end
 
 function T.postNext()
     return postFirst(T.toPost(), function(item)
-        return math.min(item.count, item.position.qty)
+        return math.min(F.AH.postCount(item), item.position.qty)
     end)
 end
 
@@ -1219,7 +1219,7 @@ function T.postAll(auctionOnly)
     return postFirst(T.toPostAll(auctionOnly), function(item)
         local rule = T.rule(item.key)
         local spare = T.bagCount(item.key) - (rule and rule.keep or 0)
-        return math.min(item.count, spare)
+        return math.min(F.AH.postCount(item), spare)
     end)
 end
 
