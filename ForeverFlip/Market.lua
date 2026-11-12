@@ -763,9 +763,48 @@ M.lotDemand = lotDemand
 M.SURE_HOURS = 48
 M.SURE_PRIOR = 0.1
 M.SURE_PRIOR_HOURS = 24
+-- Before lots were tracked over two scans, only the older measure is there: units that
+-- disappeared near the price (h.flow), which also counts expired, cancelled and reposted lots.
+-- It gives a number too, with every unit counted as a whole lot (real = 1/2), never above
+-- M.FLOW_SURE_MAX: a disappearance is no purchase seen.
+M.FLOW_SURE_MAX = 0.5
+local function flowConfidence(h, price, qty, now, trust)
+    local f = type(h) == "table" and h.flow
+    if type(f) ~= "table" or (f.pairs or 0) < 1 or not U.finite(price) or price <= 0 then
+        return nil
+    end
+    -- M.demandAt counts at 85% of the price it is given: asked at price x 95/85, it counts at 95%.
+    local d = M.demandAt({ flow = f }, price * 0.95 / 0.85)
+    if not U.finite(d.sold) or not U.finite(d.hours) then
+        return nil
+    end
+    trust = U.finite(trust) and math.max(0, trust) or 1
+    local tail = F.Trade.saleChances(d.sold * 0.5 * trust, d.hours, M.SURE_HOURS, M.SURE_PRIOR, M.SURE_PRIOR_HOURS)
+    local p = tail(math.max(1, qty or 1))
+    local age = U.finite(now) and U.finite(f.at) and math.max(0, now - f.at) or 0
+    local fresh = 0.5 ^ (math.max(0, age - 6 * 3600) / (48 * 3600))
+    return math.min(M.FLOW_SURE_MAX, p * fresh),
+        {
+            p = p,
+            units = d.sold,
+            perBuy = 1,
+            real = 0.5,
+            hours = d.hours,
+            selling = M.SURE_HOURS,
+            rival = 0,
+            sweep = 1,
+            fresh = fresh,
+            age = age,
+            flow = true,
+        }
+end
+
 function M.confidence(h, price, qty, now, trust)
     local s = type(h) == "table" and h.sales
-    if type(s) ~= "table" or (s.pairs or 0) < 1 or not U.finite(price) or price <= 0 then
+    if type(s) ~= "table" or (s.pairs or 0) < 1 then
+        return flowConfidence(h, price, qty, now, trust)
+    end
+    if not U.finite(price) or price <= 0 then
         return nil
     end
     local floor, units = 0.95 * price, 0

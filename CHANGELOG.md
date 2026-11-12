@@ -14,7 +14,8 @@ All notable changes are listed here. The format follows
   one buyer of four units counts as one purchase. A lot that vanished whole counts half (often
   another reseller). Shelves cleared in one go, a rival who undercuts often, unsold stock of the
   item and old sales data lower it. Selecting a deal explains the number; the formula is in
-  docs/how-it-works.md.
+  docs/how-it-works.md. Before two full scans have tracked an item's lots, Sure is reckoned from
+  the lots that disappeared near the price and is at most 50%.
 - **Check all is much faster for gear.** Each item-key version learns its ending from its lots, so
   a check of "Magician Staff of the Owl" searches only its own versions, not the fifteen of every
   ending. One sweep of an item's versions answers the checks of its other endings at once. The

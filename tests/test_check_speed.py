@@ -111,6 +111,18 @@ class SureTests(unittest.TestCase):
         local b = M.confidence(four, 1000, 1, now)
         assert(parts.perBuy == 4 and a < b, a .. ' vs ' .. b)''')
 
+    def test_before_lots_are_tracked_disappearances_give_a_capped_number(self):
+        run(SURE + '''fullScan()
+        local d
+        for _, x in ipairs(F.Deals.list) do if x.mode == 'flip' then d = x end end
+        local h = F.Data.market(F.db, F.Engine.scope()).history[d and d.key or 'c:10']
+        if d then h.sales = nil end
+        local h2 = { flow = { pairs = 1, hours = 0.25, at = now, market = 1000, sold = { 1, 1, 1, 1, 1, 1, 1, 1 } } }
+        local sure, parts = M.confidence(h2, 1000, 1, now)
+        assert(sure and parts.flow and sure <= M.FLOW_SURE_MAX, tostring(sure))
+        local line = F.UI.sureSentence({ mode = 'flip', key = 'x', exit = 1000, qty = 1 }, now)
+        assert(line == nil or line:find('Sure'), 'no crash without history')''')
+
     def test_more_units_are_less_sure(self):
         run(SURE + '''local h = history(10, 24)
         assert(M.confidence(h, 1000, 1, now) > M.confidence(h, 1000, 10, now))''')

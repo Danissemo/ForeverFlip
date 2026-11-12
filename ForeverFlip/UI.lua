@@ -1628,16 +1628,27 @@ function UI.sureSentence(d, now)
     if not sure or type(parts) ~= "table" then
         return nil
     end
+    if parts.flow then
+        return string.format(
+            L(
+                "Sure %s: only lots that disappeared are known yet (%d near this price in %.1f h), no purchase confirmed: at most %d%% until two full scans track the lots."
+            ),
+            UI.sureText(sure),
+            math.floor(parts.units + 0.5),
+            parts.hours,
+            math.floor(F.Market.FLOW_SURE_MAX * 100 + 0.5)
+        )
+    end
     local line = string.format(
         L(
-            "Sure %s: %d%% chance real buyers take %d at this price in %d h (%d bought at 95%% of it or more in %d h watched; %d%% real buyers)."
+            "Sure %s: %d%% chance real buyers take %d at this price in %d h (%d bought at 95%% of it or more in %.1f h watched; %d%% real buyers)."
         ),
         UI.sureText(sure),
         math.floor(parts.p * 100 + 0.5),
         d.qty,
         math.floor(parts.selling + 0.5),
         math.floor(parts.units + 0.5),
-        math.floor(parts.hours + 0.5),
+        parts.hours,
         math.floor(parts.real * 100 + 0.5)
     )
     local extra = {}

@@ -252,7 +252,11 @@ old data.
 | sweep | `1 - min(1, sweeps / pairs) / 2`: shelves cleared in one go are speculation. |
 | fresh | `0.5 ^ (max(0, age - 6 h) / 48 h)`: sales data loses half its weight every 2 days after 6 hours. |
 
-`Sure = P × sweep × fresh`. A vendor deal is 100% (a merchant pays at once). Examples (one unit
+`Sure = P × sweep × fresh`. A vendor deal is 100% (a merchant pays at once). Before two full
+scans have tracked the item's lots, only the older measure is there: units that disappeared near
+the price (`h.flow`), which also counts expired, cancelled and reposted lots. Sure is then reckoned
+from those with every unit counted as a whole lot (real = 1/2) and capped at 50%
+(`M.FLOW_SURE_MAX`): a disappearance is no purchase seen. Examples (one unit
 unless said): no sale seen at the price, 7%; one whole lot vanished in 1.5 hours, about 47%; one lot
 bought in part, about 69%; ten sales in a day, 5 units, about 91%. Green from 70%, yellow from 40%,
 red below.
