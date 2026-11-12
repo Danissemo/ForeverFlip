@@ -16,6 +16,9 @@ end
 function GetRealmName()
     return "Realm"
 end
+function UnitGUID()
+    return 'Player-1'
+end
 function UnitName()
     return "Me"
 end
@@ -318,6 +321,15 @@ C_AuctionHouse = {
     PlaceBid = function(id, price)
         call("PlaceBid", id, price)
     end,
+    QueryBids = function()
+        call("QueryBids")
+    end,
+    GetNumBids = function()
+        return #myBids
+    end,
+    GetBidInfo = function(i)
+        return myBids[i]
+    end,
     PostItem = function(loc, duration, qty, bid, buyout)
         call("PostItem", loc, duration, qty, bid, buyout)
         return postNeedsConfirm
@@ -352,6 +364,7 @@ C_AuctionHouse = {
     end,
 }
 owned = {}
+myBids = {} -- the game's Bids list: { auctionID, itemKey, itemLink, minBid, bidAmount, buyoutAmount, timeLeft, bidder }
 
 -- Commodity tiers: one row per price, own units counted apart.
 function commodityRows(id)

@@ -308,6 +308,16 @@ function T.onChat(msg)
     if F.Util.secret(msg) or type(msg) ~= "string" then
         return
     end
+    -- "You have been outbid on X": the bid can still be answered on Shopping list, My bids.
+    local outbid = type(ERR_AUCTION_OUTBID_S) == "string" and ERR_AUCTION_OUTBID_S:gsub("%%s", "\1")
+    if outbid then
+        local pattern = "^" .. outbid:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"):gsub("\1", "(.+)") .. "$"
+        local name = msg:match(pattern)
+        if name then
+            F.Bids.outbid((name:gsub("%s*%(x%d+%)%s*$", "")))
+            return
+        end
+    end
     local won = type(ERR_AUCTION_WON_S) == "string" and ERR_AUCTION_WON_S:gsub("%%s", "\1")
     if won then
         local pattern = "^" .. won:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%0"):gsub("\1", "(.+)") .. "$"
@@ -390,6 +400,7 @@ function T.step()
         T.ownedDue = clock() + 60
         pcall(F.AH.queryOwned)
     end
+    F.Bids.step()
 end
 
 function T.settle(index, wasBought)

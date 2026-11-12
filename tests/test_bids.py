@@ -38,7 +38,10 @@ class BidTests(unittest.TestCase):
         run(BIDS + '''AUCTION_OUTBID_MAIL_SUBJECT='Outbid on %s'
         B.check('i:30');run(0.1);answer();B.place('i:30')
         inbox={{subject='Outbid on Linen Bag',money=500}};fire('MAIL_SHOW');F.Mail.record(1)
-        assert(#B.open()==0 and not F.Data.char(F.db,F.Engine.owner()).positions['i:30'])''')
+        local c=F.Data.char(F.db,F.Engine.owner())
+        -- The money is back, but the auction runs on: the bid stays, marked outbid, to be answered.
+        local _, bid = next(c.bids)
+        assert(bid and bid.outbid and not c.positions['i:30'])''')
 
     def test_bids_page_lists_the_candidate(self):
         run(BIDS + '''local UI=F.UI;UI.show('bids');assert(UI.bidTable.rows[1].key=='i:30')

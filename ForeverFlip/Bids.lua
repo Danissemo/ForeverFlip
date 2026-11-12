@@ -206,19 +206,51 @@ function B.place(key)
         amount = o.bid,
         value = c and c.value or nil,
         at = F.Engine.clock(),
+        ends = c and c.ends or nil,
     }
+    B.liveDue = F.Engine.clock() + 2
     B.offers[key] = nil
     F.Engine.notify("bid_placed")
     F.Engine.changed()
     return true
 end
 
-local function openBid(name)
+-- The open bid of an item by name; a bid still running before one the player was outbid on.
+local function openBid(name, outbidFirst)
     local c = char()
+    local found, foundBid
     for id, b in pairs(c.bids or {}) do
         if string.lower(b.name or "") == string.lower(name or "") then
-            return id, b
+            local better = not found
+                or (outbidFirst and not foundBid.outbid and b.outbid)
+                or (not outbidFirst and foundBid.outbid and not b.outbid)
+            if better then
+                found, foundBid = id, b
+            end
         end
+    end
+    return found, foundBid
+end
+
+-- Finished bids, newest last: { auctionID, key, name, qty, amount, value, outcome = won | lost, at, ended }.
+B.LOG = 40
+local function finishBid(id, b, outcome)
+    local c = char()
+    c.bids[id] = nil
+    c.bidLog = type(c.bidLog) == "table" and c.bidLog or {}
+    c.bidLog[#c.bidLog + 1] = {
+        auctionID = id,
+        key = b.key,
+        name = b.name,
+        qty = b.qty,
+        amount = b.amount,
+        value = b.value,
+        outcome = outcome,
+        at = b.at,
+        ended = F.Engine.clock(),
+    }
+    while #c.bidLog > B.LOG do
+        table.remove(c.bidLog, 1)
     end
 end
 
@@ -229,7 +261,7 @@ function B.won(name, fromInvoice)
         return false
     end
     local c = char()
-    c.bids[id] = nil
+    finishBid(id, b, "won")
     if not fromInvoice then
         F.Trade.awaitBuyerInvoice(b.name, b.qty)
     end
@@ -242,15 +274,211 @@ function B.won(name, fromInvoice)
     return true
 end
 
--- "Outbid on X": the money comes back by mail; the bid is closed.
+-- "You have been outbid on X" or its mail: the money comes back at once, while the auction still
+-- runs and can be bid on again. The bid stays listed as outbid until the auction ends (then lost).
 function B.outbid(name)
-    local id = openBid(name)
+    local id, b = openBid(name, false)
     if id then
-        char().bids[id] = nil
+        b.outbid, b.leading = b.outbid or F.Engine.clock(), false
+        B.liveDue = 0 -- the next bid the house takes is asked for at once
         F.Engine.changed()
         return true
     end
     return false
+end
+
+-- My bids -----------------------------------------------------------------------------------------
+-- The game's Bids list is asked for every minute while the auction house is open and a bid runs
+-- (or My bids is shown), and read on BIDS_UPDATED. It tells for each auction whether the player
+-- leads and the next bid the house takes. Bids placed in the game's own window are tracked too.
+B.LIVE_EVERY = 60
+B.BAND_MAX = { [0] = 1800, [1] = 7200, [2] = 43200, [3] = 172800 }
+
+function B.step()
+    local c = char()
+    local running = next(c.bids or {}) ~= nil
+    local shown = F.UI and F.UI.section == "mybids"
+    if
+        (running or shown)
+        and F.AH.isOpen()
+        and F.Engine.clock() >= (B.liveDue or 0)
+        and F.AH.ready()
+        and not F.Deals.searching()
+        and not F.Scan.blocking()
+        and not F.Trade.busy()
+    then
+        B.liveDue = F.Engine.clock() + B.LIVE_EVERY
+        pcall(F.AH.queryBids)
+    end
+end
+
+function B.onLive()
+    local ok, list = pcall(F.AH.bids)
+    if not ok or type(list) ~= "table" then
+        return
+    end
+    local c = char()
+    c.bids = c.bids or {}
+    local now = F.Engine.clock()
+    local seen = {}
+    for _, r in ipairs(list) do
+        seen[r.auctionID] = true
+        local b = c.bids[r.auctionID]
+        if not b and r.id then
+            -- A bid placed in the game's own window: its worth is reckoned like any bid's.
+            local key = F.AH.keyFor(r.id, r.link)
+            b = {
+                key = key,
+                name = U.linkName(r.link) or U.itemInfo(r.id) or key,
+                qty = 1,
+                amount = r.bid,
+                at = now,
+                native = true,
+            }
+            c.bids[r.auctionID] = b
+        end
+        if b then
+            b.leading, b.next, b.highest, b.buyout, b.band = r.leading, r.minBid, r.bid, r.buyout, r.band
+            b.outbid = not r.leading and (b.outbid or now) or nil
+            b.seen = now
+            local latest = now + (B.BAND_MAX[r.band] or B.BAND_MAX[3])
+            b.ends = math.min(b.ends or latest, latest)
+        end
+    end
+    -- A bid gone from the list has ended: lost when someone else led it; one the player led waits
+    -- for its "won" line or mail (B.won).
+    for id, b in pairs(c.bids) do
+        if not seen[id] and now - (b.at or 0) > 10 and b.outbid then
+            finishBid(id, b, "lost")
+        end
+    end
+    B.liveAt = now
+    F.Engine.changed()
+end
+
+-- Highest bid on `qty` units worth `value` (money they bring, B.value x qty) that still leaves the
+-- minimum profit and return of Settings: a bid costs nothing when outbid (the money comes back), so
+-- bidding again pays whenever winning at that price would.
+function B.maxBid(value)
+    local s = F.db.settings
+    if not U.finite(value) or value <= 0 then
+        return nil
+    end
+    local roi = math.max(0, s.minROI or 0.2)
+    return math.floor(math.min(value - (s.minProfit or 100), value / (1 + roi)))
+end
+
+-- Every bid of the player with its state and the advice:
+--   status   leading | outbid | ended (led when last seen; the mail tells) | won | lost
+--   advice   rebid    outbid, and the next bid still leaves the minimum profit
+--            buyout   outbid or leading with hours left, and the buyout still leaves it: other
+--                     bidders get hours to come back, the buyout ends the auction now
+--            hold     leading: nothing to do
+--            let_go   outbid past what the item is worth to you
+--            no_money the next bid is more than you have
+function B.mine()
+    local c = char()
+    local history = F.Data.market(F.db, F.Engine.scope()).history
+    local wallet = F.Engine.wallet()
+    local minProfit = F.db.settings.minProfit or 100
+    local out = {}
+    for id, b in pairs(c.bids or {}) do
+        local item = U.parseKey(b.key or "")
+        local unit = item and B.value(b.key, item.id, history)
+        local value = unit and unit * (b.qty or 1) or b.value
+        local row = {
+            auctionID = id,
+            key = b.key,
+            id = item and item.id,
+            name = b.name,
+            qty = b.qty or 1,
+            mine = b.amount,
+            next = b.next,
+            buyout = b.buyout,
+            band = b.band,
+            value = value,
+            at = b.at,
+            live = true,
+        }
+        row.maxBid = B.maxBid(value)
+        if b.outbid then
+            row.status = "outbid"
+        elseif b.seen and B.liveAt and b.seen < B.liveAt then
+            row.status = "ended"
+        else
+            row.status = "leading"
+        end
+        local buyoutPays = b.buyout and row.maxBid and b.buyout <= row.maxBid
+        if row.status == "outbid" then
+            if buyoutPays and (b.band or 3) >= 2 then
+                row.advice, row.price = "buyout", b.buyout
+            elseif b.next and row.maxBid and b.next <= row.maxBid then
+                row.advice, row.price = b.next > wallet and "no_money" or "rebid", b.next
+            elseif buyoutPays then
+                row.advice, row.price = "buyout", b.buyout
+            elseif b.next then
+                row.advice = "let_go"
+            end
+        elseif row.status == "leading" then
+            row.advice = buyoutPays and (b.band or 0) >= 2 and "buyout" or "hold"
+            row.price = row.advice == "buyout" and b.buyout or b.amount
+        end
+        if row.advice == "buyout" and b.buyout > wallet then
+            row.advice = "no_money"
+        end
+        row.profit = value and row.price and value - row.price or nil
+        if row.profit and row.profit < minProfit and row.advice == "hold" then
+            row.thin = true
+        end
+        out[#out + 1] = row
+    end
+    for i = #(c.bidLog or {}), 1, -1 do
+        local l = c.bidLog[i]
+        if F.Engine.clock() - (l.ended or 0) <= 2 * 86400 then
+            local item = U.parseKey(l.key or "")
+            out[#out + 1] = {
+                auctionID = l.auctionID,
+                key = l.key,
+                id = item and item.id,
+                name = l.name,
+                qty = l.qty or 1,
+                mine = l.amount,
+                value = l.value,
+                status = l.outcome,
+                profit = l.outcome == "won" and l.value and l.amount and l.value - l.amount or nil,
+                at = l.ended,
+            }
+        end
+    end
+    return out
+end
+
+-- The answer to an outbid: bid the next amount the house takes, or buy the auction out.
+function B.answer(auctionID, how)
+    local c = char()
+    local b = c.bids and c.bids[auctionID]
+    if not b then
+        return false, "nothing_to_bid"
+    end
+    local amount = how == "buyout" and b.buyout or b.next
+    if not amount then
+        return false, "verify_first"
+    end
+    if amount > F.Engine.wallet() then
+        return false, "no_money"
+    end
+    if not F.AH.isOpen() or not F.Trade.wayFree() then
+        return false, "buy_busy"
+    end
+    if not pcall(F.AH.bid, auctionID, amount) then
+        return false, "error"
+    end
+    b.amount, b.at, b.outbid, b.leading, b.seen = amount, F.Engine.clock(), nil, true, nil
+    b.next = nil
+    B.liveDue = F.Engine.clock() + 2
+    F.Engine.notify(how == "buyout" and "bid_bought" or "bid_placed")
+    F.Engine.changed()
+    return true
 end
 
 function B.open()
@@ -264,12 +492,16 @@ function B.open()
     return out
 end
 
--- Bids older than two days are forgotten (the mail was missed).
+-- Bids older than two days are closed (the mail was missed): lost when outbid, else forgotten.
 function B.prune()
     local c = char()
     for id, b in pairs(c.bids or {}) do
         if F.Engine.clock() - (b.at or 0) > 2 * 86400 then
-            c.bids[id] = nil
+            if b.outbid then
+                finishBid(id, b, "lost")
+            else
+                c.bids[id] = nil
+            end
         end
     end
 end

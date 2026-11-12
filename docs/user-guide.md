@@ -250,9 +250,34 @@ worth is its vendor price, or its usual auction price after the cut if it sells.
    **ready** when a bid is still worth placing.
 2. Click **Place bid**. ForeverFlip bids the minimum the game accepts.
 3. If you win, the item arrives by mail. The chat line or the "Auction won" mail books it as stock.
-   If you are outbid, the money comes back by mail and the bid is closed.
+   If you are outbid, the money comes back by mail at once, while the auction still runs.
 
-Your open bids are listed under the table. Bids without news for two days are forgotten.
+### My bids
+
+**Shopping list → My bids** lists every bid of yours: those placed here and those placed in the
+game's own window. While the auction house is open, ForeverFlip reads the game's bids list every
+minute (and at once after you are outbid).
+
+| Column | Meaning |
+| --- | --- |
+| My bid | What you bid. |
+| Next bid | The lowest bid the auction house accepts now. |
+| Worth | What the item brings you: the vendor price, or its usual price after the cut and deposit. |
+| Status | **leading**, **outbid**, **ended** (you led when it was last seen; the mail tells), **won** or **lost**. |
+| Advice | **bid X**, **buy out X**, **keep**, **let it go** or **not enough money**. |
+
+The advice comes from one rule. A bid that is outbid costs nothing, because the money comes back.
+So bidding again pays whenever winning at that price would. The most worth bidding is
+
+    worth - minimum profit,  and at most  worth / (1 + minimum return)
+
+using **Minimum profit** and **Minimum return** from Settings. An outbid bid gets **bid X** while the
+next bid is within that, and **let it go** past it. When the auction has hours left (more than
+2 hours) and its buyout is within that limit too, the advice is **buy out**. Other bidders have
+time to come back, and the buyout ends the auction now.
+
+Select a row to see the numbers, then click **Bid again** or **Buy out**. Won and lost bids stay
+listed for two days. Bids without news for two days are closed.
 
 ## Sell my items
 

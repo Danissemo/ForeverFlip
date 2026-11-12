@@ -697,6 +697,40 @@ function A.bid(auctionID, amount)
     AH.PlaceBid(auctionID, amount)
 end
 
+-- The auctions the player has bid on (the game's own Bids list): asked for with A.queryBids, read
+-- on BIDS_UPDATED. Each: { auctionID, id, link, minBid (the next bid the house takes), bid (the
+-- highest bid now), buyout, band (time left: 0 under 30 min, 1 up to 2 h, 2 up to 12 h, 3 more),
+-- leading (the highest bid is the player's) }. nil where the client has no such list.
+function A.queryBids()
+    if AH.QueryBids then
+        AH.QueryBids({}, {})
+        return true
+    end
+end
+function A.bids()
+    if not AH.GetNumBids or not AH.GetBidInfo then
+        return nil
+    end
+    local me = UnitGUID and UnitGUID("player")
+    local out = {}
+    for i = 1, (AH.GetNumBids() or 0) do
+        local b = AH.GetBidInfo(i)
+        if b and b.auctionID then
+            out[#out + 1] = {
+                auctionID = b.auctionID,
+                id = b.itemKey and b.itemKey.itemID,
+                link = b.itemLink,
+                minBid = b.minBid,
+                bid = b.bidAmount,
+                buyout = (b.buyoutAmount or 0) > 0 and b.buyoutAmount or nil,
+                band = b.timeLeft,
+                leading = b.bidder ~= nil and me ~= nil and b.bidder == me,
+            }
+        end
+    end
+    return out
+end
+
 -- Buying (each call comes from a click) -------------------------------------------------------------
 function A.quote(id, qty)
     AH.StartCommoditiesPurchase(id, qty)

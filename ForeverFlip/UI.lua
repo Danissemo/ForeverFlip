@@ -19,6 +19,8 @@ local MESSAGES = {
     nothing_undercut = "No undercut auction worth reposting. Press Check prices first.",
     bid_placed = "Bid placed. If nobody bids more, the item arrives by mail when the auction ends.",
     bid_won = "Auction won: the item is booked as stock.",
+    bid_bought = "Bought out: the item arrives by mail.",
+    nothing_to_bid = "That bid is no longer open.",
     hidden = "The item is hidden: it is no longer offered for sale.",
     unhidden = "The item is back in the list for sale.",
     share_queued = "Sending the scan...",
@@ -1083,6 +1085,7 @@ function UI.create()
     for _, id in ipairs({
         "deals",
         "shop",
+        "mybids",
         "bids",
         "sell",
         "auctions",
@@ -1120,6 +1123,7 @@ function UI.create()
     UI.createDeals(UI.pages.deals)
     UI.createShop(UI.pages.shop)
     UI.createBids(UI.pages.bids)
+    UI.createMyBids(UI.pages.mybids)
     UI.createSell(UI.pages.sell)
     UI.createAuctions(UI.pages.auctions)
     UI.createUndercuts(UI.pages.undercuts)
@@ -1145,7 +1149,10 @@ UI.GROUPS = {
             { "bids", "Bids" },
         },
     },
-    { label = "Shopping list", pages = { { "shop", "My list" }, { "deals:shop", "Deals from the list" } } },
+    {
+        label = "Shopping list",
+        pages = { { "shop", "My list" }, { "deals:shop", "Deals from the list" }, { "mybids", "My bids" } },
+    },
     { label = "Crafting", pages = { { "crafting", "Crafting" } } },
     {
         label = "Selling",
@@ -2114,6 +2121,161 @@ function UI.refreshBids()
     local selected = UI.bidSelected
     UI.bidButton:SetEnabled(selected ~= nil and F.Bids.offer(selected) ~= nil)
     UI.bidCheck:SetEnabled(selected ~= nil and not F.Deals.pending(selected))
+end
+
+-- My bids page (Shopping list) -------------------------------------------------------------------
+-- Every bid of the player: leading, outbid (with the next bid the house takes), won or lost, and
+-- whether answering an outbid pays (F.Bids.mine, F.Bids.maxBid).
+local MY_BID_STATUS = {
+    leading = { "|cff40ff40", "leading" },
+    outbid = { "|cffff6060", "outbid" },
+    ended = { "|cffffd100", "ended" },
+    won = { "|cff40ff40", "won" },
+    lost = { "|cff999999", "lost" },
+}
+local MY_BID_ADVICE = {
+    rebid = { "|cff40ff40", "bid %s" },
+    buyout = { "|cff66ccff", "buy out %s" },
+    hold = { "|cffffffff", "keep" },
+    let_go = { "|cff999999", "let it go" },
+    no_money = { "|cffff9933", "not enough money" },
+}
+local MY_BID_ROWS = 13
+function UI.createMyBids(p)
+    local list = CreateFrame("Frame", nil, p)
+    list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
+    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 96)
+    UI.myBidTable = table_(
+        list,
+        {
+            { "Name" },
+            { "Qty", 36 },
+            { "My bid", 76 },
+            { "Next bid", 76 },
+            { "Worth", 76 },
+            { "Status", 70, "LEFT" },
+            { "Advice", 110, "LEFT" },
+        },
+        MY_BID_ROWS,
+        function(row)
+            UI.myBidSelected = row.auctionID
+            UI.refresh()
+        end
+    )
+    local bar = footer(p, 92, "GameFontHighlightSmall")
+    UI.myBidText = bar.text
+    local function answer(how)
+        if UI.myBidSelected then
+            local ok, why = F.Bids.answer(UI.myBidSelected, how)
+            if not ok then
+                F.Engine.notify(why)
+            end
+        end
+    end
+    UI.myBidBuyout = button(bar, "Buy out", 110, function()
+        answer("buyout")
+    end)
+    UI.myBidBuyout:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
+    UI.myBidAgain = button(bar, "Bid again", 120, function()
+        answer("rebid")
+    end)
+    UI.myBidAgain:SetPoint("RIGHT", UI.myBidBuyout, "LEFT", -4, 0)
+    UI.myBidRefresh = button(bar, "Refresh", 100, function()
+        F.Bids.liveDue = 0
+    end)
+    UI.myBidRefresh:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
+end
+
+function UI.refreshMyBids()
+    local order = { outbid = 1, leading = 2, ended = 3, won = 4, lost = 5 }
+    local list = UI.myBidTable.sort(F.Bids.mine(), function(b, column)
+        return ({ b.name or "", b.qty, b.mine, b.next, b.value, order[b.status] or 9, b.profit })[column]
+    end)
+    local selected
+    for i, r in ipairs(UI.myBidTable.rows) do
+        local b = list[i]
+        if b then
+            r.auctionID, r.key = b.auctionID, b.key
+            r.icon:SetTexture(icon(b.id))
+            r.name:SetText(b.name or nameOf(b.key or ""))
+            r.cols[1]:SetText(b.qty)
+            r.cols[2]:SetText(b.mine and U.money(b.mine) or "-")
+            r.cols[3]:SetText(b.next and U.money(b.next) or "-")
+            r.cols[4]:SetText(b.value and U.money(b.value) or "-")
+            local st = MY_BID_STATUS[b.status] or { "", b.status or "" }
+            r.cols[5]:SetText(st[1] .. L(st[2]) .. "|r")
+            local ad = b.advice and MY_BID_ADVICE[b.advice]
+            r.cols[6]:SetText(ad and ad[1] .. string.format(L(ad[2]), b.price and U.money(b.price) or "") .. "|r" or "")
+            if b.auctionID == UI.myBidSelected and b.live then
+                r.selected:Show()
+                selected = b
+            else
+                r.selected:Hide()
+            end
+            r:Show()
+        else
+            r.auctionID, r.key = nil, nil
+            r:Hide()
+        end
+    end
+    local empty = UI.myBidTable.empty
+    if #list == 0 then
+        empty:SetText(
+            L(
+                "Your bids appear here while the auction house is open: those placed from Deals, Bids and those placed in the game's own window."
+            )
+        )
+        empty:Show()
+    else
+        empty:Hide()
+    end
+    local lines = {}
+    if selected then
+        local s = F.db.settings
+        if selected.value and selected.maxBid then
+            lines[#lines + 1] = string.format(
+                L(
+                    "Worth to you %s (what %d brings: the vendor price, or the usual price after the cut and deposit). Worth bidding up to %s: that keeps your minimum profit %s and return %d%%."
+                ),
+                U.money(selected.value),
+                selected.qty,
+                U.money(math.max(0, selected.maxBid)),
+                U.money(s.minProfit or 100),
+                math.floor((s.minROI or 0.2) * 100 + 0.5)
+            )
+        end
+        if selected.advice == "rebid" then
+            lines[#lines + 1] = string.format(
+                L("Outbid. Bidding %s again brings %s if you win; if you are outbid again the money comes back."),
+                U.money(selected.price),
+                U.money(selected.profit or 0)
+            )
+        elseif selected.advice == "buyout" then
+            lines[#lines + 1] = string.format(
+                L("Buying out for %s ends it now with %s profit: hours are left for others to bid more."),
+                U.money(selected.price),
+                U.money(selected.profit or 0)
+            )
+        elseif selected.advice == "let_go" then
+            lines[#lines + 1] = string.format(
+                L(
+                    "Outbid past its worth: the next bid %s leaves less than your minimum. Let it go; your money is back by mail."
+                ),
+                U.money(selected.next or 0)
+            )
+        elseif selected.advice == "hold" then
+            lines[#lines + 1] =
+                L("You lead. If someone bids more, your money comes back and this page shows whether to answer.")
+        end
+    else
+        lines[#lines + 1] =
+            L("Select a bid: an outbid one shows whether bidding again still pays, from what the item brings you.")
+    end
+    UI.myBidText:SetText(table.concat(lines, "\n"))
+    local open = selected ~= nil and selected.status ~= "won" and selected.status ~= "lost"
+    UI.myBidAgain:SetEnabled(open and selected.status == "outbid" and selected.next ~= nil and F.AH.isOpen())
+    UI.myBidBuyout:SetEnabled(open and selected.buyout ~= nil and F.AH.isOpen())
+    UI.myBidRefresh:SetEnabled(F.AH.isOpen())
 end
 
 -- Sell page --------------------------------------------------------------------------------------
@@ -4873,6 +5035,8 @@ function UI.refresh()
         UI.refreshShop()
     elseif UI.section == "bids" then
         UI.refreshBids()
+    elseif UI.section == "mybids" then
+        UI.refreshMyBids()
     elseif UI.section == "sell" then
         UI.refreshSell()
     elseif UI.section == "auctions" then

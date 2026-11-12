@@ -144,6 +144,8 @@ local events = {
     "AUCTION_HOUSE_AUCTION_CREATED",
     "AUCTION_HOUSE_POST_WARNING",
     "OWNED_AUCTIONS_UPDATED",
+    "BIDS_UPDATED",
+    "BID_ADDED",
     "ITEM_DATA_LOAD_RESULT",
     "ITEM_KEY_ITEM_INFO_RECEIVED",
     "CHAT_MSG_SYSTEM",
@@ -268,6 +270,10 @@ function E.handle(event, ...)
         F.Trade.onPostWarning()
     elseif event == "OWNED_AUCTIONS_UPDATED" then
         F.Trade.onOwned()
+    elseif event == "BIDS_UPDATED" then
+        F.Bids.onLive()
+    elseif event == "BID_ADDED" then
+        F.Bids.liveDue = 0
     elseif event == "ITEM_KEY_ITEM_INFO_RECEIVED" then
         -- The auction house now knows the item's kind: the Sell page and the deals may list it.
         E.changed()

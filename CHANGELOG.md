@@ -6,6 +6,15 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Shopping list → My bids**: every bid of yours, including those placed in the game's own window.
+  It shows whether you lead, were outbid, won or lost, the next bid the house takes and what the
+  item is worth to you. For an outbid bid it advises bidding again while that still leaves your
+  minimum profit and return (an outbid costs nothing: the money comes back). When hours are left
+  and the buyout still pays, it advises buying out. **Bid again** and **Buy out** act on the
+  selected bid. Being outbid no longer closes the bid: the auction still runs.
+
 ### Fixed
 
 - **Undercuts: honest chances and a better reckoning of every way out.**
