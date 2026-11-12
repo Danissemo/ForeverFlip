@@ -50,19 +50,19 @@ class MarketTests(unittest.TestCase):
         run('''local M=ForeverFlip.Market
         -- 8 flasks at 9-10s, one at 49s, a wall from 78s: the addon once called this +1g87s.
         local rows={{unit=900,qty=2},{unit=998,qty=5},{unit=999,qty=1},{unit=4900,qty=1},{unit=7800,qty=16},{unit=9000,qty=10}}
-        local h={flow={hours=24,sold={3,3,3,3},pairs=4,at=now,market=7800}}
+        local h={};M.recordSales(h,{[7800]=3},24*3600,now);h.sales.pairs=4
         local d,why=M.evaluate(rows,{kind='commodity',budget=1000000,history=h,market=7800,now=now,settings={minProfit=100,minROI=0.2}})
         assert(not d,'no resale: three bought, five cheap flasks left')
         local _,why2=M.evaluate(rows,{kind='commodity',budget=1000000,history={},market=7800,now=now,settings={}})
         assert(why2=='collecting')
-        h.flow.sold={30,30,30,30}
+        h={};M.recordSales(h,{[7800]=30},24*3600,now);h.sales.pairs=4
         d=M.evaluate(rows,{kind='commodity',budget=1000000,history=h,market=7800,now=now,settings={minProfit=100,minROI=0.2}})
         assert(d and d.mode=='flip' and d.qty==9 and d.exit==7799 and d.profit>0)
-        h.flow.sold={0,0,0,0}
+        h={};M.recordSales(h,{},24*3600,now);h.sales.pairs=4
         d,why=M.evaluate(rows,{kind='commodity',budget=1000000,history=h,market=7800,now=now,settings={}})
         assert(not d and why=='not_selling')''')
 
-    def test_sales_flow_ignores_cheap_lots_bought_by_resellers(self):
+    def test_flow_fallback_does_not_count_cheap_listings_as_high_price_sales(self):
         run('''local M=ForeverFlip.Market;local h={}
         local function book(cheap,wall)local b={};if cheap>0 then M.bucketAdd(b,900,cheap)end;M.bucketAdd(b,7800,wall);return b end
         M.recordFlow(h,book(8,16),7800,now);M.recordFlow(h,book(2,16),7800,now+900);M.recordFlow(h,book(8,16),7800,now+1800)
@@ -343,15 +343,15 @@ class ToolsTests(unittest.TestCase):
         local UI=ForeverFlip.UI;UI.show('stats');assert(UI.statsTable.rows[2]:IsShown())''')
 
 
-class TwoScanTests(unittest.TestCase):
-    def test_resale_starts_after_two_scans_with_at_most_two_units(self):
+class EarlyObservationTests(unittest.TestCase):
+    def test_one_confirmed_observation_pair_caps_resale_at_two_units(self):
         run('''local M=ForeverFlip.Market
         local rows={{unit=900,qty=5},{unit=7800,qty=16}}
-        local h={flow={hours=0.25,sold={20,20,20,20},pairs=1,at=now,market=7800}}
+        local h={};M.recordSales(h,{[7800]=20},900,now)
         local ctx={kind='commodity',budget=1000000,history=h,market=7800,now=now,settings={minProfit=100,minROI=0.2}}
         local d,why=M.evaluate(rows,ctx);assert(not d,'5 cheap units left would undercut')
         rows={{unit=900,qty=2},{unit=7800,qty=16}};d=M.evaluate(rows,ctx);assert(d and d.qty==2)
-        h.flow.pairs=0;d,why=M.evaluate(rows,ctx);assert(not d and why=='collecting')''')
+        h.sales.pairs=0;d,why=M.evaluate(rows,ctx);assert(not d and why=='collecting')''')
 
     def test_selection_is_cleared_when_it_is_not_in_the_chosen_list(self):
         run(SETUP + '''fullScan();local UI=ForeverFlip.UI;UI.show('deals:vendor')

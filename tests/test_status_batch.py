@@ -45,7 +45,7 @@ class StatusBatchTests(unittest.TestCase):
             assert(D.search and D.search.key==keys[i]);answer()
             assert(T.prices[keys[i]],'selling prices must refresh')
         end
-        assert(now-started<3,'old one-second scheduler takes at least four seconds')
+        assert(now-started<3,'five immediate replies should finish within three simulated seconds')
         local done,total,active,failed=D.batchProgress('sell')
         assert(done==5 and total==5 and not active and failed==0 and sends()==5)
         ''')
@@ -87,7 +87,7 @@ class StatusBatchTests(unittest.TestCase):
         run(0.1);assert(D.search and sends()==101)
         ''')
 
-    def test_drop_retries_wait_two_seconds_then_eventually_fail_once(self):
+    def test_dropped_key_uses_backoff_then_succeeds_on_the_batch_second_pass(self):
         run(BATCH + '''D.startBatch('sell',{keys[1],keys[2]},false)
         for attempt=1,3 do
             assert(D.search);D.onDropped()
