@@ -361,6 +361,8 @@ local function ingest(j, i)
             seq[#seq + 1] = math.floor(unit + 0.5)
             seq[#seq + 1] = r.count
             seq[#seq + 1] = r.band
+            g.owners = g.owners or {}
+            g.owners[#g.owners + 1] = M.ownerTag(r.owner)
         end
     end
     g.units = g.units + r.count
@@ -412,7 +414,7 @@ local function finish(j, done)
             -- Lots first: when they cover the whole item, the flow counts only confirmed sales.
             local confirmed
             if j.lots then
-                soldToday, confirmed = S.trackLots(h, g.seq or {}, now)
+                soldToday, confirmed = S.trackLots(h, g.seq or {}, now, g.owners, key)
             end
             M.recordFlow(h, g.buckets, value, now, confirmed)
             h.units = g.units
@@ -525,7 +527,7 @@ local function finish(j, done)
             -- last one (a partial answer): then a missing item proves nothing.
             local item = U.parseKey(key)
             if not (item and j.unread and j.unread[item.id]) then
-                local sold = S.trackLots(h, {}, now)
+                local sold = S.trackLots(h, {}, now, {}, key)
                 local today = h.days and h.days[#h.days]
                 if sold > 0 and today and today.d == math.floor(now / 86400) then
                     today.s = (today.s or 0) + sold
@@ -552,15 +554,82 @@ end
 -- sold at once; a lot that vanished whole is a suspect (h.pending) and sold only when the next scan
 -- shows no new lot of its price and count (M.confirmGone). Returns the units sold, and the confirmed
 -- sales by price when the lots cover the whole item (nil otherwise).
-function S.trackLots(h, seq, now)
-    local sold, byPrice, fresh, gone, complete = 0, {}, nil, nil, false
+-- Units of `key` the player's characters bought on this auction house after `since` and up to
+-- `now`: their purchases took lots too, and are no demand of the market.
+function S.ownBought(key, since, now)
+    local units = 0
+    if not F.db or type(F.db.chars) ~= "table" or not key then
+        return units
+    end
+    for _, c in pairs(F.db.chars) do
+        local journal = type(c) == "table" and c.journal
+        for i = #(journal or {}), 1, -1 do
+            local e = journal[i]
+            if type(e) == "table" and (e.at or 0) <= since then
+                break
+            end
+            if type(e) == "table" and e.kind == "buy" and e.key == key and not e.merchant and (e.at or 0) <= now then
+                units = units + (e.qty or 0)
+            end
+        end
+    end
+    return units
+end
+
+-- Takes `units` out of a sale map ({ [price] = units }), cheapest first (purchases take the
+-- cheapest lots); returns what is left to take.
+local function takeCheapest(map, units)
+    local prices = {}
+    for price in pairs(map) do
+        prices[#prices + 1] = price
+    end
+    table.sort(prices)
+    for _, price in ipairs(prices) do
+        if units <= 0 then
+            break
+        end
+        local take = math.min(units, map[price])
+        map[price], units = map[price] - take, units - take
+        if map[price] <= 0 then
+            map[price] = nil
+        end
+    end
+    return units
+end
+
+-- Lots that vanished whole, less the player's own purchases (cheapest first).
+local function takeOwnFromGone(gone, units)
+    if units <= 0 or not gone[1] then
+        return gone, units
+    end
+    local lots = {}
+    for i = 1, #gone - 2, 3 do
+        lots[#lots + 1] = { gone[i], gone[i + 1], gone[i + 2] }
+    end
+    table.sort(lots, function(a, b)
+        return a[1] < b[1]
+    end)
+    local out = {}
+    for _, lot in ipairs(lots) do
+        local take = math.min(units, lot[2])
+        units = units - take
+        if lot[2] - take > 0 then
+            out[#out + 1], out[#out + 2], out[#out + 3] = lot[1], lot[2] - take, lot[3]
+        end
+    end
+    return out, units
+end
+
+function S.trackLots(h, seq, now, owners, key)
+    local sold, byPrice, confirmed, fresh, sellers, gone, complete = 0, {}, {}, nil, nil, nil, false
     local dt = now - (h.lotsAt or 0)
     local compared = h.lots and dt >= 300 and dt <= 3 * 3600
+    owners = owners or {}
     if compared then
         local prev = M.unpackLots(h.lots)
         local all, reposted
-        _, all, gone, reposted = M.trackSales(prev, seq, dt)
-        for i = 1, #gone - 1, 2 do
+        _, all, gone, reposted, sellers = M.trackSales(prev, seq, dt, M.unpackOwners(h.lotOwners), owners)
+        for i = 1, #gone - 2, 3 do
             all[gone[i]] = all[gone[i]] - gone[i + 1]
         end
         for price, units in pairs(all) do
@@ -568,25 +637,37 @@ function S.trackLots(h, seq, now)
                 byPrice[price] = units
             end
         end
+        -- The player's own purchases since the last scan are no market demand: they come out of
+        -- the lots that vanished first (bought whole), then of the lots bought in part.
+        local own = S.ownBought(key, h.lotsAt or 0, now)
+        gone, own = takeOwnFromGone(gone, own)
+        takeCheapest(byPrice, own)
         fresh = reposted
         complete = #prev < 3 * M.LOTS and #seq < 3 * M.LOTS
     else
         fresh = M.lotKeys(seq)
+        sellers = M.lotSellers(owners)
     end
     if h.pending then
         if now - (h.pendingAt or 0) <= M.CONFIRM_WITHIN and now > (h.pendingAt or now) then
-            M.confirmGone(M.unpackPending(h.pending), fresh, byPrice)
+            M.confirmGone(M.unpackPending(h.pending), fresh, confirmed, sellers)
         end
         h.pending, h.pendingAt = nil, nil
+    end
+    for price, units in pairs(confirmed) do
+        byPrice[price] = (byPrice[price] or 0) + units
     end
     if gone and gone[1] then
         h.pending, h.pendingAt = M.packPending(gone), now
     end
     if compared or next(byPrice) then
-        sold = M.recordSales(h, byPrice, compared and dt or 0, now)
+        sold = M.recordSales(h, byPrice, compared and dt or 0, now, confirmed)
     end
     if #seq > 0 then
         h.lots, h.lotsAt = M.packLots(seq), now
+        h.lotOwners = M.packOwners(owners)
+    else
+        h.lotOwners = nil
     end
     return sold, complete and byPrice or nil
 end

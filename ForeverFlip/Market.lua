@@ -297,16 +297,51 @@ M.BAND_MIN = { [0] = 0, [1] = 1800, [2] = 7200, [3] = 43200 }
 M.LOTS = 300 -- lots kept per item between scans (the oldest, which is where sales are seen)
 M.SALE_HALF_LIFE = 3 * 86400
 
+-- The seller of a lot as a short number, so lots can be told apart by seller without keeping
+-- names: 0 = unknown (no owner in the scan). Two sellers can share a tag (1 in 16 million).
+function M.ownerTag(owner)
+    if type(owner) ~= "string" or owner == "" then
+        return 0
+    end
+    local h = 5381
+    for i = 1, #owner do
+        h = (h * 33 + owner:byte(i)) % 16777213
+    end
+    return h + 1
+end
+
+function M.packOwners(owners)
+    local parts = {}
+    for i = 1, math.min(#owners, M.LOTS) do
+        parts[i] = string.format("%d", owners[i] or 0)
+    end
+    return parts[1] and table.concat(parts, ",") or nil
+end
+
+function M.unpackOwners(text)
+    local out = {}
+    if type(text) == "string" then
+        for n in text:gmatch("%d+") do
+            out[#out + 1] = tonumber(n)
+        end
+    end
+    return out
+end
+
 local function compatible(prev, i, cur, k)
     local a, b = 3 * i - 2, 3 * k - 2
     return prev[a] == cur[b] and cur[b + 1] <= prev[a + 1] and cur[b + 2] <= prev[a + 2]
 end
 
 -- Units sold between two scans `dt` seconds apart: total and { [price] = units }, then the whole
--- lots that vanished among them ({ price, count, price, count, ... }: sales only once a later scan
--- shows they were not posted again, see M.confirmGone) and the new lots of `cur` that are not the
--- repost of a lot that vanished ({ ["price:count"] = lots }).
-function M.trackSales(prev, cur, dt)
+-- lots that vanished among them ({ price, count, owner, ... }: sales only once a later scan shows
+-- they were not posted again, see M.confirmGone), the new lots of `cur` that are not the repost of
+-- a lot that vanished ({ ["price:count"] = lots }) and the sellers of those new lots
+-- ({ [owner tag] = lots }). `prevOwners`/`curOwners` (optional): the seller tag of each lot
+-- (M.ownerTag). A lot that vanished while its seller posted a new lot of the item, at any price or
+-- count, was taken down and posted again (undercutting), not sold: seen in game as sales that
+-- never happened, which made an item look ten times as wanted as it was.
+function M.trackSales(prev, cur, dt, prevOwners, curOwners)
     local np, nc = math.floor(#prev / 3), math.floor(#cur / 3)
     local match, used = {}, {}
     local k = 1
@@ -362,27 +397,35 @@ function M.trackSales(prev, cur, dt)
     -- (cancelled and reposted, or expired and reposted), not sold: the new one runs longer, so it
     -- does not match as the same lot. In game one seller's 65-80 silver bracers were read as sales
     -- this way while the item sold at 3-4 silver, and resale prices came out ten times too high.
-    local reposted, gone = {}, {}
+    local reposted, gone, sellers = {}, {}, {}
     for _, list in pairs(free) do
         for _, n in ipairs(list) do
             local key = cur[3 * n - 2] .. ":" .. cur[3 * n - 1]
             reposted[key] = (reposted[key] or 0) + 1
+            local o = curOwners and curOwners[n] or 0
+            if o > 0 then
+                sellers[o] = (sellers[o] or 0) + 1
+            end
         end
     end
     for i = 1, np do
         local price, count, band = prev[3 * i - 2], prev[3 * i - 1], prev[3 * i]
         if not match[i] then
             local key = price .. ":" .. count
+            local o = prevOwners and prevOwners[i] or 0
             if (reposted[key] or 0) > 0 then
                 reposted[key] = reposted[key] - 1
+            elseif o > 0 and (sellers[o] or 0) > 0 then
+                sellers[o] = sellers[o] - 1 -- the same seller posted again: a repost
             elseif (M.BAND_MIN[band] or 0) >= dt and price <= cheapest then
                 add(price, count)
                 gone[#gone + 1] = price
                 gone[#gone + 1] = count
+                gone[#gone + 1] = o
             end
         end
     end
-    return sold, byPrice, gone, reposted
+    return sold, byPrice, gone, reposted, sellers
 end
 
 -- New lots of a scan as { ["price:count"] = lots }: every lot, when there is nothing to compare with.
@@ -395,6 +438,17 @@ function M.lotKeys(seq)
     return keys
 end
 
+-- Sellers of a scan's lots as { [owner tag] = lots } (unknown sellers left out).
+function M.lotSellers(owners)
+    local out = {}
+    for _, o in ipairs(owners or {}) do
+        if o > 0 then
+            out[o] = (out[o] or 0) + 1
+        end
+    end
+    return out
+end
+
 -- Whole lots that vanished are only suspected sales: the seller may have cancelled the auction and
 -- post it again later (the price and count come back as a new lot), and the time-left bands cannot
 -- tell that apart. A suspect is confirmed by the next scan of the item (up to M.CONFIRM_WITHIN
@@ -402,14 +456,20 @@ end
 -- the house altogether. A lot that only got smaller is a sure sale at once: an auction can be
 -- cancelled only as a whole. `fresh` is the new lots of that next scan (taken as they are used);
 -- adds the confirmed units to byPrice and returns how many lots turned out to be reposts.
+-- `sellers` (optional, { [owner tag] = lots } of that next scan's new lots): a suspect whose seller
+-- posted the item again is a repost too, whatever the new price or count. Suspects are
+-- { price, count, owner, ... } (owner 0 = unknown).
 M.CONFIRM_WITHIN = 3 * 3600
-function M.confirmGone(pending, fresh, byPrice)
+function M.confirmGone(pending, fresh, byPrice, sellers)
     local reposts = 0
-    for i = 1, #pending - 1, 2 do
-        local price, count = pending[i], pending[i + 1]
+    for i = 1, #pending - 2, 3 do
+        local price, count, o = pending[i], pending[i + 1], pending[i + 2] or 0
         local key = price .. ":" .. count
         if (fresh[key] or 0) > 0 then
             fresh[key] = fresh[key] - 1
+            reposts = reposts + 1
+        elseif o > 0 and sellers and (sellers[o] or 0) > 0 then
+            sellers[o] = sellers[o] - 1
             reposts = reposts + 1
         else
             byPrice[price] = (byPrice[price] or 0) + count
@@ -420,18 +480,23 @@ end
 
 function M.packPending(gone)
     local parts = {}
-    for i = 1, math.min(#gone, 2 * M.LOTS) - 1, 2 do
-        parts[#parts + 1] = string.format("%.0f:%d", gone[i], gone[i + 1])
+    for i = 1, math.min(#gone, 3 * M.LOTS) - 2, 3 do
+        parts[#parts + 1] = string.format("%.0f:%d:%d", gone[i], gone[i + 1], gone[i + 2] or 0)
     end
     return parts[1] and table.concat(parts, ",") or nil
 end
 
+-- Suspects as { price, count, owner, ... }; older saves without the owner read as owner 0.
 function M.unpackPending(text)
     local list = {}
     if type(text) == "string" then
-        for p, c in text:gmatch("([%d%.]+):(%d+)") do
-            list[#list + 1] = tonumber(p)
-            list[#list + 1] = tonumber(c)
+        for entry in text:gmatch("[^,]+") do
+            local p, c, o = entry:match("^([%d%.]+):(%d+):?(%d*)$")
+            if p then
+                list[#list + 1] = tonumber(p)
+                list[#list + 1] = tonumber(c)
+                list[#list + 1] = tonumber(o) or 0
+            end
         end
     end
     return list
@@ -460,11 +525,51 @@ function M.unpackLots(text)
 end
 
 -- Adds the sales seen between two scans to the item's decayed sale distribution h.sales =
--- { hours, pairs, at, b = price histogram of sold units }. Returns the units added.
-function M.recordSales(h, byPrice, dt, now)
+-- { hours, pairs, at, b = price histogram of sold units, sure, lots, log, recent }. Returns the
+-- units added. `lots` (optional, { [price] = units }): the part of byPrice that are whole lots
+-- confirmed gone; the rest are lots bought in part (sure sales). What each figure is made of:
+--   sure / lots   decayed units of each kind, for the evidence shown with every estimate
+--   log           the last M.SALE_LOG sales: "time:price:units:kind" (p = part of a lot, l = lot)
+--   recent        units seen per scan pair, the last 12 pairs
+-- One-off sweeps: a pair that saw more than M.SWEEP times the median of the pairs before it (at
+-- least 3) is counted at that ceiling: one buyer clearing a shelf (often another reseller) is no
+-- daily demand, and counting it whole let one scan pair decide a day of buying.
+M.SALE_LOG = 30
+M.SWEEP = 3
+function M.recordSales(h, byPrice, dt, now, lots)
     local s = type(h.sales) == "table" and h.sales or { hours = 0, pairs = 0, at = now, b = {} }
     s.b = type(s.b) == "table" and s.b or {}
+    local total = 0
+    for price, units in pairs(byPrice) do
+        if price > 0 and units > 0 then
+            total = total + units
+        end
+    end
+    local scale = 1
+    s.recent = type(s.recent) == "table" and s.recent or {}
+    if dt > 0 then
+        if #s.recent >= 3 then
+            local sorted = {}
+            for i, v in ipairs(s.recent) do
+                sorted[i] = v
+            end
+            table.sort(sorted)
+            local median = sorted[math.floor((#sorted + 1) / 2)]
+            local ceiling = math.max(5, M.SWEEP * median)
+            if total > ceiling then
+                scale = ceiling / total
+                s.sweeps = (s.sweeps or 0) + 1
+            end
+        end
+        s.recent[#s.recent + 1] = total * scale
+        while #s.recent > 12 do
+            table.remove(s.recent, 1)
+        end
+    end
     local decay = 0.5 ^ (math.max(0, now - (s.at or now)) / M.SALE_HALF_LIFE)
+    s.sure = (s.sure or 0) * decay
+    s.lots = (s.lots or 0) * decay
+    s.log = type(s.log) == "table" and s.log or {}
     s.hours = (s.hours or 0) * decay + dt / 3600
     for b, units in pairs(s.b) do
         if b % 2 == 0 then
@@ -477,10 +582,23 @@ function M.recordSales(h, byPrice, dt, now)
     end
     local sold = 0
     for price, units in pairs(byPrice) do
-        if price > 0 then
-            M.bucketAdd(s.b, price, units)
-            sold = sold + units
+        if price > 0 and units > 0 then
+            local counted = units * scale
+            M.bucketAdd(s.b, price, counted)
+            sold = sold + counted
+            local whole = math.min(units, lots and lots[price] or 0)
+            s.lots = s.lots + whole * scale
+            s.sure = s.sure + (units - whole) * scale
+            if whole > 0 then
+                s.log[#s.log + 1] = string.format("%d:%.0f:%d:l", now, price, whole)
+            end
+            if units - whole > 0 then
+                s.log[#s.log + 1] = string.format("%d:%.0f:%d:p", now, price, units - whole)
+            end
         end
+    end
+    while #s.log > M.SALE_LOG do
+        table.remove(s.log, 1)
     end
     if dt > 0 then
         s.pairs = math.min(99, (s.pairs or 0) + 1)
@@ -488,6 +606,50 @@ function M.recordSales(h, byPrice, dt, now)
     s.at = now
     h.sales = s
     return sold
+end
+
+-- What the sales of an item rest on, for the evidence shown with Est./day and Sells at:
+-- { units, sure, lots, hours, pairs, buys, low, median, high, sweeps, at } from the sales at or
+-- above `floor` (all with nil); nil without any sale seen.
+function M.saleEvidence(h, floor)
+    local s = type(h) == "table" and h.sales
+    if type(s) ~= "table" or type(s.log) ~= "table" or not s.log[1] then
+        return nil
+    end
+    local prices, units, buys, sure, lots, at = {}, 0, 0, 0, 0, nil
+    for _, entry in ipairs(s.log) do
+        local t, price, n, kind = entry:match("^(%d+):([%d%.]+):(%d+):(%a)$")
+        price, n = tonumber(price), tonumber(n)
+        if price and n and (not floor or price >= floor) then
+            buys, units = buys + 1, units + n
+            if kind == "l" then
+                lots = lots + n
+            else
+                sure = sure + n
+            end
+            for _ = 1, math.min(n, 50) do
+                prices[#prices + 1] = price
+            end
+            at = math.max(at or 0, tonumber(t) or 0)
+        end
+    end
+    if buys == 0 then
+        return nil
+    end
+    table.sort(prices)
+    return {
+        units = units,
+        sure = sure,
+        lots = lots,
+        buys = buys,
+        hours = s.hours,
+        pairs = s.pairs,
+        low = prices[1],
+        median = prices[math.floor((#prices + 1) / 2)],
+        high = prices[#prices],
+        sweeps = s.sweeps or 0,
+        at = at,
+    }
 end
 
 -- Price at `share` of the sold units (cheapest first); nil with fewer than `need` units sold.
@@ -779,6 +941,12 @@ function M.evaluate(rows, ctx)
             local cap = math.max(1, math.floor(d.perDay))
             if d.pairs < 2 then
                 cap = math.min(cap, 2)
+            end
+            -- No more units than were ever seen bought at the price: a day rate made of one or two
+            -- purchases is no promise of more (seen in game: a few sales read as 20 a day).
+            local seen = U.finite(d.sold) and math.floor(d.sold + 0.5) or nil
+            if seen and seen < cap then
+                cap = math.max(1, seen)
             end
             if d.perDay < 0.5 or qty + held > cap then
                 if reason ~= "small" then

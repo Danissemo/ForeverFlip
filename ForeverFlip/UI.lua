@@ -1303,7 +1303,7 @@ function UI.createDeals(p)
     headerTip(
         UI.dealTable.headers[6],
         "Est./day",
-        "Estimated units that disappeared per day near the Sells at price, not a sale probability. Expired/cancelled lots can count.\n\nTwo usable full scans are required. Zero means none disappeared; '-' means unknown. Vendor deals need no auction-house resale.\n\nGrey estimates use data older than 3 hours. Checking a current price does not refresh sale history. Short observations are smoothed: one unit gone in 15 minutes counts as about 5-6 a day, not 96."
+        "Units bought per day at 85% of the Sells at price or more, not a sale probability. Counted from lots seen bought between full scans: a lot that got smaller is a sure sale; a lot that vanished whole counts only when the next scan shows its seller did not post the item again. Expired/cancelled lots, reposts at any price, your own purchases and one-off sweeps (above three times the usual scan pair) are left out.\n\nTwo usable full scans are required. Zero means none was bought; '-' means unknown. Orange: only whole lots were seen, no lot bought in part. Vendor deals need no auction-house resale.\n\nGrey estimates use data older than 3 hours. Checking a current price does not refresh sale history. Short observations are smoothed: one unit bought in 15 minutes counts as about 5-6 a day, not 96."
     )
     -- The deals scroll like every table (the scrollbar on the right); the line below counts them.
     UI.pageText = text(p, "GameFontHighlightSmall")
@@ -1468,27 +1468,63 @@ local function sellsAtText(d, history)
 end
 
 local MODE_LABELS = { vendor = "vendor", shop = "shopping list", disenchant = "disenchant", bid = "bid" }
-local function estimateText(d, estimate)
+-- Est./day: grey when the data is old, orange when no lot was seen bought in part at the price
+-- (only whole lots that vanished, confirmed by the next scan: the weaker evidence).
+local function estimateText(d, estimate, h)
     if d.mode ~= "flip" then
         return L(MODE_LABELS[d.mode] or d.mode)
     elseif not estimate.known then
         return "-"
     end
     local value = estimate.perDay == 0 and "0" or string.format("%.1f", estimate.perDay)
-    return estimate.stale and "|cff999999" .. value .. "|r" or value
+    if estimate.stale then
+        return "|cff999999" .. value .. "|r"
+    end
+    local e = h and U.finite(d.exit) and F.Market.saleEvidence(h, 0.85 * d.exit)
+    if e and e.sure == 0 then
+        return "|cffffa040" .. value .. "|r"
+    end
+    return value
 end
 
-local function estimateSentence(estimate)
+-- The sales an estimate rests on, in words: units, buys, how sure, prices (UI.saleEvidenceLine).
+function UI.saleEvidenceLine(h, floor)
+    local e = F.Market.saleEvidence(h, floor)
+    if not e then
+        return L("No purchase seen at this price yet.")
+    end
+    local line = string.format(
+        L("Seen bought: %d in %d buys (%d from lots bought in part, %d whole lots), %s to %s, median %s."),
+        math.floor(e.units + 0.5),
+        e.buys,
+        math.floor(e.sure + 0.5),
+        math.floor(e.lots + 0.5),
+        U.money(e.low),
+        U.money(e.high),
+        U.money(e.median)
+    )
+    if e.sweeps > 0 then
+        line = line .. " " .. string.format(L("%d one-off sweeps counted at a ceiling."), e.sweeps)
+    end
+    return line
+end
+
+local function estimateSentence(estimate, h, exit)
     if not estimate.known then
         return L("Sale estimate unavailable: collect two full scans with usable price data.")
     end
     local value = estimate.perDay == 0 and "0" or string.format("~%.1f", estimate.perDay)
-    local sentence = string.format(L("Estimated disappeared/day: %s."), value)
+    local floor = U.finite(exit) and math.floor(0.85 * exit) or nil
+    local sentence = floor and string.format(L("Bought per day at %s or more: %s."), U.money(floor), value)
+        or string.format(L("Estimated disappeared/day: %s."), value)
     if estimate.age then
         sentence = sentence
             .. " "
             .. string.format(L("Data %d min old"), math.floor(estimate.age / 60))
             .. (estimate.stale and L(" (old data).") or ".")
+    end
+    if h then
+        sentence = sentence .. "\n" .. UI.saleEvidenceLine(h, floor)
     end
     return sentence
 end
@@ -1598,7 +1634,7 @@ function UI.refreshDeals()
             r.cols[2]:SetText(U.money(unitCost(d)))
             r.cols[3]:SetText(sellsAtText(d, history))
             r.cols[4]:SetText(U.money(d.profit))
-            r.cols[5]:SetText(estimateText(d, estimates[d.key]))
+            r.cols[5]:SetText(estimateText(d, estimates[d.key], history[d.key]))
             r.cols[6]:SetText(dealStatus(d))
             if d.key == UI.selected then
                 r.selected:Show()
@@ -1660,7 +1696,8 @@ function UI.refreshDeals()
     if d then
         local lines = { dealSentence(d), dealOutlook(d, estimates[d.key]) }
         if d.mode == "flip" then
-            lines[#lines + 1] = estimateSentence(estimates[d.key] or saleEstimate(d, history, now))
+            lines[#lines + 1] =
+                estimateSentence(estimates[d.key] or saleEstimate(d, history, now), history[d.key], d.exit)
         end
         if d.kind ~= "commodity" then
             lines[#lines + 1] =
@@ -5077,6 +5114,14 @@ local function tooltipLines(tooltip)
                 string.format(L("Sold per day at %s or more"), U.money(math.floor(at * 0.85))),
                 string.format("~%.1f", s.perDay)
             )
+            local e = F.Market.saleEvidence(h, math.floor(at * 0.85))
+            if e then
+                tipLine(
+                    tooltip,
+                    string.format(L("  seen: %d buys, %d in part / %d whole lots"), e.buys, e.sure, e.lots),
+                    U.money(e.low) .. " - " .. U.money(e.high)
+                )
+            end
         else
             tipLine(tooltip, L("Sales"), L("not measured yet (needs two scans)"))
         end

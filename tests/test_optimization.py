@@ -16,7 +16,7 @@ class LotWorkTests(unittest.TestCase):
         debug.sethook(function() instructions = instructions + 100 end, '', 100)
         local sold, prices, gone, fresh = ForeverFlip.Market.trackSales(prev, cur, 900)
         debug.sethook()
-        assert(sold == 300 and prices[100] == 300 and #gone == 600 and fresh['100:2'] == 300)
+        assert(sold == 300 and prices[100] == 300 and #gone == 900 and fresh['100:2'] == 300)
         assert(instructions < 200000, 'incompatible stacks used '..instructions..' Lua instructions')''')
 
 

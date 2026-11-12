@@ -141,7 +141,15 @@ function V.buy(offer)
     local c = F.Data.char(F.db, F.Engine.owner())
     local name = U.linkName(offer.link) or offer.name or offer.key
     F.Data.addPosition(c, offer.key, name, qty, cost, "flip", offer.exit, F.Engine.clock())
-    F.Data.log(c, { at = F.Engine.clock(), kind = "buy", key = offer.key, name = name, qty = qty, amount = cost })
+    F.Data.log(c, {
+        at = F.Engine.clock(),
+        kind = "buy",
+        key = offer.key,
+        name = name,
+        qty = qty,
+        amount = cost,
+        merchant = true, -- bought from a merchant: no auction house lot was taken (Scan.ownBought)
+    })
     F.Engine.changed()
     return true, qty
 end

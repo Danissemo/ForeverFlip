@@ -75,8 +75,10 @@ end
 -- Sales measured before 1.2.0-beta.4 counted reposts (and the flow cancelled, expired and repriced
 -- auctions) as sales: in game, 194 "sales" of an item with 31 units listed, and gear "sold" at
 -- asking prices nobody paid. They are dropped once, to be measured again with the confirmation
--- by the next scan; prices and listed units stay.
-D.SALES_MODEL = 2
+-- by the next scan; prices and listed units stay. Model 3 (1.2.0-beta.8) drops them once more: a
+-- lot taken down and posted again at a new price still counted as sold, and so did the player's
+-- own purchases.
+D.SALES_MODEL = 3
 function D.cleanSales(db)
     if (tonumber(db.salesModel) or 1) >= D.SALES_MODEL then
         return

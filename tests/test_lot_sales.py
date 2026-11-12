@@ -49,7 +49,7 @@ fullScan()
 class ScanTrackingTests(unittest.TestCase):
     def test_whole_lot_sales_require_a_followup_scan_before_daily_units(self):
         run(SCANS + '''-- the cheapest cloth lot (5 at 60c) is bought; another seller lists more at 150c
-        table.remove(auctions,1);addAuction(10,150,10)
+        table.remove(auctions,1);addAuction(10,150,10,'Other')
         scan()
         local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
         -- a whole lot that vanished is only a suspect until the next scan
@@ -144,3 +144,62 @@ class SalesCleanupTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class HardenedSalesTests(unittest.TestCase):
+    def test_a_seller_who_takes_a_lot_down_and_posts_it_cheaper_did_not_sell(self):
+        run(SCANS + '''-- the seller of the 60c lot undercuts: takes it down, posts the same goods at 55c
+        local lot=table.remove(auctions,1)
+        addAuction(10,55,lot.count+1,lot.owner)
+        scan(); scan()
+        local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
+        assert(M.demandAt(h,60,now).sold==0,'a repost at a new price and count is no sale')''')
+
+    def test_own_purchases_are_not_market_demand(self):
+        run(SCANS + '''local F=ForeverFlip
+        local c=F.Data.char(F.db,F.Engine.owner())
+        local lot=table.remove(auctions,1) -- the player buys the cheapest lot
+        F.Data.log(c,{at=now+5,kind='buy',key='c:10',name='Linen Cloth',qty=lot.count,amount=lot.buyout})
+        addAuction(10,150,10,'Other')
+        scan(); scan()
+        local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
+        assert(M.demandAt(h,1,now).sold==0,'the player bought it: '..M.demandAt(h,1,now).sold)''')
+
+    def test_a_one_off_sweep_is_counted_at_a_ceiling(self):
+        run(LOTS + '''local h={}
+        for i=1,4 do M.recordSales(h,{[100]=4},900,now+i*900) end
+        M.recordSales(h,{[100]=400},900,now+5*900)
+        assert(h.sales.sweeps==1,'the sweep was noticed')
+        local d=M.lotDemand(h,100)
+        assert(d.sold<4*4+13,'counted at three times the usual pair: '..d.sold)''')
+
+    def test_the_evidence_names_kinds_prices_and_units(self):
+        run(LOTS + '''local h={}
+        M.recordSales(h,{[100]=6,[120]=2},900,now,{[120]=2})
+        M.recordSales(h,{[110]=3},900,now+900)
+        local e=M.saleEvidence(h)
+        assert(e.units==11 and e.sure==9 and e.lots==2 and e.buys==3,e.units..' '..e.sure..' '..e.lots)
+        assert(e.low==100 and e.high==120 and e.median==100,e.median)
+        local above=M.saleEvidence(h,110)
+        assert(above.units==5 and above.low==110)''')
+
+
+class ThinEvidenceTests(unittest.TestCase):
+    def test_a_deal_never_buys_more_than_was_ever_seen_bought(self):
+        run(LOTS + '''local h={}
+        M.recordSales(h,{[7700]=1},900,now-900); M.recordSales(h,{[7700]=1},900,now)
+        assert(M.lotDemand(h,7700).perDay>5,'a high day rate from two purchases')
+        local ctx={kind='commodity',vendor=10,budget=10000000,history=h,market=7800,now=now,settings={minProfit=1,minROI=0.01}}
+        local d=M.evaluate({{unit=900,qty=1},{unit=900,qty=1},{unit=7800,qty=16}},ctx)
+        assert(d and d.mode=='flip' and d.qty==2,'two seen bought, two bought: '..tostring(d and d.qty))
+        d=M.evaluate({{unit=900,qty=1},{unit=900,qty=1},{unit=900,qty=1},{unit=7800,qty=16}},ctx)
+        assert(not d,'three would be more than were ever seen bought')''')
+
+    def test_the_deal_detail_lists_the_purchases_seen(self):
+        from test_addon import SETUP
+        run(SETUP + '''local F,UI,M=ForeverFlip,ForeverFlip.UI,ForeverFlip.Market
+        local h={}
+        M.recordSales(h,{[90]=5,[95]=3},900,now,{[95]=3})
+        local line=UI.saleEvidenceLine(h,80)
+        assert(line:find('Seen bought: 8 in 2 buys') and line:find('5 from lots bought in part') and line:find('3 whole lots'),line)
+        assert(UI.saleEvidenceLine({},80):find('No purchase'))''')

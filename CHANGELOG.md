@@ -8,6 +8,19 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Est./day counted sales that never happened.** Three leaks are closed:
+  - A seller who took a lot down and posted the item again at another price or count was counted
+    as a sale. Each lot now carries a seller mark; a lot that vanished while its seller posted the
+    item again is a repost, whatever the new price.
+  - Your own purchases counted as market demand. Units your characters bought between two scans
+    are taken out (merchant purchases are not).
+  - One buyer clearing a shelf counted as a day of demand. A scan pair that saw more than three
+    times the usual pair is counted at that ceiling.
+  Sales measured before this release are dropped once and measured again from the next two full
+  scans.
+- **A deal never buys more units than were ever seen bought** at its Sells at price (a day rate made
+  of two purchases bought ten).
+
 - **Sell all at a merchant sold only part of the list** (17 of 24 stacks in game), and the stacks
   left in the bags were booked as sold. Stacks now go in small batches; a stack counts as sold
   only once it has left the bags; a stack the merchant did not take is sent again, up to 3 times.
@@ -15,6 +28,11 @@ All notable changes are listed here. The format follows
   reads "Selling..." while the sale runs.
 
 ### Changed
+
+- **The evidence behind Est./day is shown.** The deal detail says how many units were seen bought
+  at the price, in how many buys, how many from lots bought in part (sure) and how many as whole
+  lots, the price range and median. The tooltip has the same in short. Est./day is orange when only
+  whole lots were seen. The Est./day header explains what is counted and left out.
 
 - **AddOns list.** ForeverFlip and ForeverFlip Shared Data are listed under **Auctions** (beside
   Auctionator and TradeSkillMaster) with their own icon: a gold coin with flip arrows. The ForeverFlip

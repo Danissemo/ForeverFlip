@@ -164,7 +164,7 @@ class SaleabilityTableTests(unittest.TestCase):
         runtime().execute(SALEABILITY + '''
         UI.selected='c:50';UI.refreshDeals()
         local detail=UI.dealText:GetText()
-        assert(detail:find('Estimated'),detail)
+        assert(detail:find('Bought per day'),detail)
         assert(detail:find('240 min') and detail:find('old data'),detail)
         assert(not detail:find('999'),'cached deal rate must not claim current sales')
         UI.selected='c:30';UI.refreshDeals();assert(UI.dealText:GetText():find('unavailable'))
