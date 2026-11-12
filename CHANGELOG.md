@@ -74,7 +74,9 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   its edge), and the top buttons sit a little further left. Money shows its two largest coins (gold
   and silver, or silver and copper), so it fits the columns. The side menu is larger. At a
   merchant, the merchant's own item pages are hidden while the ForeverFlip tab is open (they showed
-  through it).
+  through it). The side panel is narrower, and its entries are dark plates with a thin border
+  (gold when selected). Item names in the tables have no brackets, and Shift-click puts an item's
+  link into the chat line.
 - **Merchant buy list redrawn:** each item shows its icon, its name in its quality colour, the price
   here and on the auction house, the profit each and the sales a day, with Buy N and the cost of the
   purchase on the right. More offers than its four rows scroll with the mouse wheel; the title

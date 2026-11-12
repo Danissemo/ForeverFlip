@@ -417,3 +417,19 @@ class BuyBusyTests(unittest.TestCase):
         assert(not ok and why == 'buy_busy' and D.holding(), 'said, and the background rests')
         D.search = nil
         assert(T.buy('c:10'), 'the next click buys')''')
+
+
+class NameLinkTests(unittest.TestCase):
+    def test_names_without_brackets_and_shift_click_links_to_chat(self):
+        run(BASE + '''fullScan(); UI.show('deals:all'); UI.refresh()
+        local row = UI.dealTable.rows[1]
+        assert(row:IsShown() and row.link)
+        local shown = row.name:GetText()
+        assert(not shown:find('[', 1, true) and not shown:find(']', 1, true), shown)
+        local inserted
+        IsModifiedClick = function(what) return what == 'CHATLINK' end
+        ChatEdit_InsertLink = function(l) inserted = l; return true end
+        local selectedBefore = UI.selected
+        row:Click()
+        assert(inserted == row.link, 'the link goes to the chat line')
+        assert(UI.selected == selectedBefore, 'a Shift-click does not select the deal')''')

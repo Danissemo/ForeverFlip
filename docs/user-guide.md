@@ -34,7 +34,7 @@ When you open the auction house, a **ForeverFlip** tab appears next to the game'
 Sell, Auctions). If [LibAHTab](https://www.curseforge.com/wow/addons/libahtab) is installed, the tab
 is created through it so it sits next to the tabs of other addons.
 
-The window has three parts. Tables longer than their rows scroll with the mouse wheel; the first
+Shift-click a row to put the item's link into the chat line. The window has three parts. Tables longer than their rows scroll with the mouse wheel; the first
 column's header then shows which entries are on screen, for example `Name (5-15 / 15)`. The deals
 have pages instead (Previous / Next).
 

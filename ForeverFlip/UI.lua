@@ -10,7 +10,7 @@ local UI = {}
 F.UI = UI
 
 local ROW = 20
-local LEFT_WIDTH = 194
+local LEFT_WIDTH = 172
 
 local MESSAGES = {
     nothing_to_post = "Nothing bought for resale is waiting in the bags.",
@@ -114,21 +114,44 @@ local function inset(parent, atlas)
 end
 
 -- Entry of the left list, styled like the auction house category list.
+local function border(parent, r, g, b, a, layer)
+    local lines = {}
+    for i, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
+        local t = parent:CreateTexture(nil, layer or "BORDER")
+        t:SetColorTexture(r, g, b, a)
+        if side == "TOP" or side == "BOTTOM" then
+            t:SetHeight(1)
+            t:SetPoint(side .. "LEFT", parent, side .. "LEFT", 0, 0)
+            t:SetPoint(side .. "RIGHT", parent, side .. "RIGHT", 0, 0)
+        else
+            t:SetWidth(1)
+            t:SetPoint("TOP" .. side, parent, "TOP" .. side, 0, 0)
+            t:SetPoint("BOTTOM" .. side, parent, "BOTTOM" .. side, 0, 0)
+        end
+        lines[i] = t
+    end
+    return lines
+end
+
 local function category(parent, label, onClick)
     local row = CreateFrame("Button", nil, parent)
-    row:SetHeight(26)
-    local normal = row:CreateTexture(nil, "BACKGROUND")
-    normal:SetTexture("Interface\\AuctionFrame\\UI-AuctionFrame-FilterBg")
-    normal:SetTexCoord(0, 0.53125, 0, 0.625)
-    normal:SetPoint("TOPLEFT", row, "TOPLEFT", -2, 0)
-    normal:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 2, 1)
-    local selected = row:CreateTexture(nil, "ARTWORK")
-    selected:SetAtlas("auctionhouse-nav-button-select")
-    selected:SetBlendMode("ADD")
-    selected:SetAllPoints(normal)
+    row:SetHeight(24)
+    local back = row:CreateTexture(nil, "BACKGROUND")
+    back:SetColorTexture(0.11, 0.1, 0.09, 0.92)
+    back:SetAllPoints()
+    border(row, 0.35, 0.3, 0.2, 0.9)
+    -- The selected entry: gold border and a warm tint (shown by UI.show).
+    local selected = CreateFrame("Frame", nil, row)
+    selected:SetAllPoints()
+    local tint = selected:CreateTexture(nil, "ARTWORK")
+    tint:SetColorTexture(1, 0.82, 0, 0.12)
+    tint:SetAllPoints()
+    border(selected, 1, 0.82, 0, 0.95, "OVERLAY")
     selected:Hide()
     row.selected = selected
-    row:SetHighlightTexture("Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight", "ADD")
+    local hover = row:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetColorTexture(1, 1, 1, 0.06)
+    hover:SetAllPoints()
     local t = text(row, "GameFontNormal")
     t:SetPoint("LEFT", row, "LEFT", 10, 0)
     t:SetPoint("RIGHT", row, "RIGHT", -4, 0)
@@ -335,6 +358,13 @@ local function table_(parent, columns, rows, onClick, onSort)
         r.icon:SetSize(ROW - 4, ROW - 4)
         r.icon:SetPoint("LEFT", r, "LEFT", 4, 0)
         r.name = text(r, "GameFontHighlight")
+        local setName = r.name.SetText
+        r.name.SetText = function(self, value)
+            if type(value) == "string" then
+                value = value:gsub("|h%[(.-)%]|h", "|h%1|h")
+            end
+            return setName(self, value)
+        end
         r.name:SetPoint("LEFT", r.icon, "RIGHT", 4, 0)
         r.name:SetPoint("RIGHT", r, "RIGHT", -x - 4, 0)
         r.name:SetWordWrap(false)
@@ -355,6 +385,13 @@ local function table_(parent, columns, rows, onClick, onSort)
             r:SetScript("OnMouseWheel", t.wheel)
         end
         r:SetScript("OnClick", function(self, mouse)
+            if IsModifiedClick and IsModifiedClick("CHATLINK") and ChatEdit_InsertLink then
+                local item = self.key and U.parseKey(self.key)
+                local itemLink = self.link or (item and select(2, U.itemInfo(item.id)))
+                if itemLink and ChatEdit_InsertLink(itemLink) then
+                    return -- Shift-click: the item's link into the chat line
+                end
+            end
             if mouse == "RightButton" and self.key then
                 UI.showHistory(self.key, self.link)
                 return
@@ -441,14 +478,14 @@ function UI.create()
         local c = category(left, group.label, function()
             UI.show(group.current or group.pages[1][1])
         end)
-        c:SetPoint("TOPLEFT", left, "TOPLEFT", 8, -8 - (i - 1) * 29)
-        c:SetPoint("TOPRIGHT", left, "TOPRIGHT", -8, -8 - (i - 1) * 29)
+        c:SetPoint("TOPLEFT", left, "TOPLEFT", 8, -8 - (i - 1) * 27)
+        c:SetPoint("TOPRIGHT", left, "TOPRIGHT", -8, -8 - (i - 1) * 27)
         c.group = group
         UI.categories[i] = c
     end
     UI.summary = text(left, "GameFontHighlightSmall")
-    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -8 - #UI.GROUPS * 29 - 12)
-    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -8 - #UI.GROUPS * 29 - 12)
+    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -8 - #UI.GROUPS * 27 - 12)
+    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -8 - #UI.GROUPS * 27 - 12)
     UI.summary:SetSpacing(4)
 
     -- Right: one page per category.
@@ -4260,7 +4297,7 @@ function UI.merchant(open)
         if v then
             row.icon:SetTexture(icon(v.id))
             row.bag, row.slot = v.bag, v.slot
-            local name = v.link or (v.id and U.itemInfo(v.id)) or v.key
+            local name = v.link and v.link:gsub("|h%[(.-)%]|h", "|h%1|h") or (v.id and U.itemInfo(v.id)) or v.key
             row.text:SetText(name .. (v.count > 1 and (" x" .. v.count) or ""))
             row.value:SetText(U.money(v.price))
             row:Show()
