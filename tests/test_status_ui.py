@@ -141,12 +141,14 @@ class SaleabilityTableTests(unittest.TestCase):
         assert(cell('c:50'):find('|cff999999') and cell('c:50'):find('2.0',1,true))
         ''')
 
-    def test_sells_at_is_cost_plus_profit_and_profit_is_the_difference(self):
+    def test_buy_at_and_sells_at_are_prices_of_one_unit_and_profit_is_the_whole_deal(self):
         runtime().execute(SALEABILITY + '''
         local U=F.Util
-        assert(row('c:10').cols[2]:GetText()==U.money(20),'cost')
-        assert(row('c:10').cols[3]:GetText():find(U.money(100),1,true),'sells at: what all units bring')
-        assert(row('c:10').cols[4]:GetText()==U.money(80),'profit = sells at - cost')
+        assert(row('c:10').cols[2]:GetText()==U.money(20),'buy at: one unit')
+        assert(row('c:10').cols[3]:GetText():find(U.money(1000),1,true),'sells at: the listing price of one unit')
+        assert(row('c:10').cols[4]:GetText()==U.money(80),'profit: the whole deal')
+        local d=D.get('c:10');d.qty,d.cost=4,80;UI.refresh()
+        assert(row('c:10').cols[2]:GetText()==U.money(20),'the average price of one unit, not the total')
         ''')
 
     def test_estimate_sort_is_numeric_with_unknown_and_vendor_last_in_both_directions(self):

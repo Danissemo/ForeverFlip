@@ -1094,7 +1094,7 @@ function UI.createDeals(p)
         {
             { "Name" },
             { "Qty", 50 },
-            { "Cost", 80 },
+            { "Buy at", 80 },
             { "Sells at", 80 },
             { "Profit", 80 },
             { "Est./day", 74 },
@@ -1133,7 +1133,12 @@ function UI.createDeals(p)
     headerTip(
         UI.dealTable.headers[4],
         "Sells at",
-        "What selling all the units brings, after the auction cut and the deposits. The resale price per unit is just below the next other seller, at most the usual price and at most what a quarter of the sales seen reached; only as many units as sell in a day at that price are bought, and your own unsold stock of the item lowers the estimate. * means no sales were seen yet: the price is the asking price. A vendor deal sells at the vendor price (* = not yet confirmed at a merchant)."
+        "The price to sell one unit at: list it at this price on the auction house (a vendor deal: what a merchant pays for one). For a resale it is just below the next other seller, at most the usual price and at most what a quarter of the sales seen reached; only as many units as sell in a day at that price are bought. Profit counts the 5% cut and the deposits. * means no sales were seen yet: the price is only the asking price (vendor deal: not yet confirmed at a merchant)."
+    )
+    headerTip(
+        UI.dealTable.headers[3],
+        "Buy at",
+        "The price of one unit: what the deal pays on average for each (several lots may have different prices). Qty times this is the whole cost."
     )
     headerTip(
         UI.dealTable.headers[6],
@@ -1288,15 +1293,27 @@ end
 -- What the deal sells at, per unit: the vendor price, or the resale price the deal counts on (the
 -- usual asking price, at most what a quarter of the sales seen reached). A resale price with no
 -- sales seen yet is only the asking price: marked with "*".
--- Sells at: what selling all the deal's units brings after the cut and the deposits (its cost plus
--- its profit). Green for a resale, orange for a vendor deal; "*" when the price is not backed by
--- sales seen (a resale) or by a merchant (a vendor deal).
+-- Buy at and Sells at are prices of ONE unit, as the game's own lists and the tooltips show them
+-- (in game, totals of several units next to a per-unit "sold at" price read as selling far above
+-- the market). Profit stays the deal's whole profit.
+local function unitCost(d)
+    return math.floor((d.cost or 0) / math.max(1, d.qty or 1) + 0.5)
+end
+
+-- The price one unit is listed at (a vendor deal: what a merchant pays); "*" when the price is not
+-- backed by sales seen (a resale) or by a merchant (a vendor deal).
+local function unitExit(d)
+    if U.finite(d.exit) and d.exit > 0 then
+        return math.floor(d.exit)
+    end
+    return math.floor(((d.cost or 0) + (d.profit or 0)) / math.max(1, d.qty or 1) + 0.5)
+end
+
 local function sellsAtText(d, history)
-    local total = (d.cost or 0) + (d.profit or 0)
     local unsure = d.mode == "vendor" and d.vendorHow and d.vendorHow ~= "seen"
         or d.mode == "flip" and F.Market.saleCap(history[d.key]) == nil
     -- The mark goes in front: the sums stay aligned on the right edge.
-    return (unsure and "|cff999999*|r " or "") .. U.money(total)
+    return (unsure and "|cff999999*|r " or "") .. U.money(unitExit(d))
 end
 
 local MODE_LABELS = { vendor = "vendor", shop = "shopping list", disenchant = "disenchant", bid = "bid" }
@@ -1379,9 +1396,9 @@ function UI.refreshDeals()
         elseif field == 2 then
             return d.qty
         elseif field == 3 then
-            return d.cost
+            return unitCost(d)
         elseif field == 4 then
-            return (d.cost or 0) + (d.profit or 0)
+            return unitExit(d)
         elseif field == 5 then
             return d.profit
         elseif field == 6 then
@@ -1425,7 +1442,7 @@ function UI.refreshDeals()
             r.icon:SetTexture(icon(d.id))
             r.name:SetText(nameOf(d.key, d.link))
             r.cols[1]:SetText(d.qty)
-            r.cols[2]:SetText(U.money(d.cost))
+            r.cols[2]:SetText(U.money(unitCost(d)))
             r.cols[3]:SetText(sellsAtText(d, history))
             r.cols[4]:SetText(U.money(d.profit))
             r.cols[5]:SetText(estimateText(d, estimates[d.key]))

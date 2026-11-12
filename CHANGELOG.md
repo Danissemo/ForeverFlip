@@ -8,6 +8,11 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Buy at and Sells at are prices of one unit.** The deals table showed what all the units cost
+  and bring (after the cut and deposits) next to a tooltip giving the price of one unit sold, so a
+  deal of 3 units listed at 93 silver each read as "Sells at 2 gold 59" against "sold at 1 gold 55"
+  and looked far above the market. **Cost** is now **Buy at** (the average price of one unit) and
+  **Sells at** is the price to list one unit at; **Profit** stays the whole deal's.
 - **Check all no longer stops behind a selected deal.** Selecting a checked deal held the
   background checks back for two minutes, so Buy would go at once; when the selected deal was the
   one Check all was reading, its own search waited for itself and the check stood still. The

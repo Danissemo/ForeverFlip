@@ -142,9 +142,9 @@ weapons and armor priced below the expected value of their materials.
 |---|---|
 | Item | Icon and name. Hover for the game tooltip; right-click for the price history. |
 | Qty | Units to buy. |
-| Cost | What buying all of them costs (the highest unit price is in the line under the table). |
-| Sells at | What selling all of them brings, after the auction cut and the deposits. For a resale the price per unit is worked out from the market: just below the next other seller, at most the usual price and at most what a quarter of the sales seen reached; only as many units are bought as sell in a day at that price, and your own unsold stock of the item lowers the estimate. Green for a resale, `*` when no sales were seen yet (the price is then only the asking price). Orange for a vendor deal, `*` when the vendor price is not yet confirmed at a merchant. |
-| Profit | Sells at minus Cost: the money you keep. For a shopping deal: the saving against your price. For a disenchant deal: the material value minus the cost. |
+| Buy at | The price of one unit (the average when the deal buys lots of different prices). Qty × Buy at is the whole cost; the total of the page is in the line under the table. |
+| Sells at | The price to sell one unit at: list it at this price (a vendor deal: what a merchant pays for one). For a resale it is worked out from the market: just below the next other seller, at most the usual price and at most what a quarter of the sales seen reached; only as many units are bought as sell in a day at that price, and your own unsold stock of the item lowers the estimate. `*` when no sales were seen yet (the price is then only the asking price), or for a vendor deal when the vendor price is not yet confirmed at a merchant. |
+| Profit | The whole deal's profit: what selling all the units brings after the 5% cut and the deposits, minus what buying them costs. For a shopping deal: the saving against your price. For a disenchant deal: the material value minus the cost. |
 | Est./day | For a resale: units per day that disappear near the Sells at price (how popular it is at that price). For other deals: the kind of deal. Hover the header for what it counts. |
 | Status | See below. |
 

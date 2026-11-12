@@ -37,11 +37,11 @@ class TableTests(unittest.TestCase):
         runtime().execute(DEALS + '''
         click('Name');assert(keys()=='c:20,c:30,c:10',keys())
         click('Name');assert(keys()=='c:10,c:30,c:20',keys())
-        click('Cost');assert(keys()=='c:30,c:20,c:10',keys())
-        click('Cost');assert(keys()=='c:10,c:20,c:30',keys())
+        click('Buy at');assert(keys()=='c:30,c:20,c:10',keys())
+        click('Buy at');assert(keys()=='c:10,c:20,c:30',keys())
         click('Qty');assert(keys()=='c:10,c:20,c:30',keys())
         click('Qty');assert(keys()=='c:20,c:30,c:10',keys())
-        click('Sells at');assert(keys()=='c:30,c:10,c:20',keys())
+        click('Sells at');assert(keys()=='c:30,c:20,c:10',keys()) -- per unit: 75, 250, 400
         click('Sells at');assert(keys()=='c:10,c:20,c:30',keys())
         click('Profit');assert(keys()=='c:20,c:10,c:30',keys())
         click('Profit');assert(keys()=='c:30,c:10,c:20',keys())
@@ -51,7 +51,7 @@ class TableTests(unittest.TestCase):
 
     def test_sort_survives_refresh_filter_switches_and_live_data_changes(self):
         runtime().execute(DEALS + '''
-        click('Cost');UI.refresh();assert(keys()=='c:30,c:20,c:10')
+        click('Buy at');UI.refresh();assert(keys()=='c:30,c:20,c:10')
         UI.show('deals:vendor');assert(keys()=='c:30,c:10')
         UI.show('deals:flip');assert(keys()=='c:20')
         UI.show('deals:all');assert(keys()=='c:30,c:20,c:10')
@@ -73,8 +73,8 @@ class TableTests(unittest.TestCase):
             if page<3 then assert(UI.next:IsEnabled());UI.next:Click() end
         end
         local count=0;for _ in pairs(seen) do count=count+1 end;assert(count==30)
-        click('Cost');assert(UI.dealPage==1 and UI.dealTable.rows[1].key=='c:10')
-        click('Cost');assert(UI.dealTable.rows[1].key=='c:39')
+        click('Buy at');assert(UI.dealPage==1 and UI.dealTable.rows[1].key=='c:10')
+        click('Buy at');assert(UI.dealTable.rows[1].key=='c:39')
         click('Profit');assert(UI.dealTable.rows[1].key=='c:10')
         click('Profit');assert(UI.dealTable.rows[1].key=='c:10')
         ''')
@@ -83,7 +83,7 @@ class TableTests(unittest.TestCase):
         runtime().execute(DEALS + '''
         local dealHeader
         for _,w in ipairs(widgets) do
-            if w.template=='AuctionHouseTableHeaderStringTemplate' and w:GetText()=='Cost' then dealHeader=w.parent end
+            if w.template=='AuctionHouseTableHeaderStringTemplate' and w:GetText()=='Buy at' then dealHeader=w.parent end
         end
         for _,w in ipairs(widgets) do
             if w.template=='AuctionHouseTableHeaderStringTemplate' and w.parent~=dealHeader then
