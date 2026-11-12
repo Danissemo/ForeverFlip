@@ -685,3 +685,39 @@ class BuyWayTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PacedVendorSaleTests(unittest.TestCase):
+    def test_sell_all_sells_every_stack_in_batches_and_resends_dropped_ones(self):
+        run(BASE + '''F.db.settings.vendorMargin = 0
+        addItem(71, 'Murloc Fin', 28, 'commodity')
+        local slot = 0
+        for bag = 0, 1 do for s = 1, 12 do putBag(bag, s, 71, 1); slot = slot + 1 end end
+        F.Data.market(F.db, F.Engine.scope()).history['c:71'] = { scan = { at = now, market = 20 } }
+        -- The server ignores the first sale of every third stack (as in game: 17 of 24 taken).
+        local use, n, tried = C_Container.UseContainerItem, 0, {}
+        C_Container.UseContainerItem = function(bag, s)
+            local k = bag .. ':' .. s
+            n = n + 1
+            if tried[k] or n % 3 ~= 0 then use(bag, s) end
+            tried[k] = true
+        end
+        MerchantFrame:Show()
+        local stacks = T.sellAllToVendor()
+        assert(stacks == 24 and #soldToVendor <= T.VENDOR_BATCH, 'a first batch, not all 24 in one frame')
+        assert(T.sellingToVendor())
+        for _ = 1, 100 do run(0.1); if not T.sellingToVendor() then break end end
+        assert(not T.sellingToVendor() and #soldToVendor == 24, #soldToVendor .. ' of 24 sold')
+        local last = printed[#printed]
+        assert(last:find('sold 24 stacks'), last)''')
+
+    def test_stock_left_in_the_bags_is_not_booked_as_sold(self):
+        run(BASE + '''F.db.settings.vendorMargin = 0
+        addItem(71, 'Murloc Fin', 28, 'commodity'); putBag(0, 1, 71, 4)
+        local c = F.Data.char(F.db, F.Engine.owner())
+        F.Data.addPosition(c, 'c:71', 'Murloc Fin', 4, 40, 'vendor', 28, now)
+        C_Container.UseContainerItem = function() end -- the merchant never takes it
+        MerchantFrame:Show(); T.sellAllToVendor()
+        for _ = 1, 100 do run(0.1); if not T.sellingToVendor() then break end end
+        assert(c.positions['c:71'] and c.positions['c:71'].qty == 4, 'still held')
+        assert(printed[#printed]:find('did not sell'), printed[#printed])''')

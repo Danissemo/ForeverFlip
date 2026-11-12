@@ -6,6 +6,14 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sell all at a merchant sold only part of the list** (17 of 24 stacks in game), and the stacks
+  left in the bags were booked as sold. Stacks now go in small batches; a stack counts as sold
+  only once it has left the bags; a stack the merchant did not take is sent again, up to 3 times.
+  The chat line reports what really sold, and lists any stacks that still did not sell. The button
+  reads "Selling..." while the sale runs.
+
 ### Changed
 
 - **AddOns list.** ForeverFlip and ForeverFlip Shared Data are listed under **Auctions** (beside

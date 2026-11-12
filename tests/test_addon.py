@@ -248,6 +248,7 @@ class TradeTests(unittest.TestCase):
         fire('MERCHANT_SHOW');assert(ForeverFlip.UI.merchantButton:IsShown())
         ForeverFlip.UI.merchantButton:Click()
         assert(#soldToVendor==1 and soldToVendor[1].itemID==10)
+        run(0.1) -- booked once the stack has left the bags
         local e=c.journal[#c.journal];assert(e.kind=='vendor' and e.amount==1500 and e.profit==600)''')
 
 

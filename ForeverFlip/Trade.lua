@@ -301,6 +301,7 @@ end
 -- A purchase without any answer for 30 seconds is kept as unknown; the player settles it in the
 -- journal (the chat line "You won an auction" tells).
 function T.step()
+    T.stepVendor()
     local op = T.op
     if op and op.state == "awaiting" and op.money and clock() - op.at > 30 then
         -- No money spent in 30 seconds: reported, and the deal is checked again. The server can
@@ -1955,40 +1956,138 @@ function T.sellUnusableGear()
     return stacks, money
 end
 
--- Sells the whole list (T.vendorSellList) to the open merchant. Returns stacks sold and money.
-function T.sellAllToVendor()
+-- Sells the whole list (T.vendorSellList) to the open merchant, in paced batches. Selling every
+-- stack in one frame lost part of them: the server took 17 of 24 (seen in game), the rest stayed
+-- in the bags and was booked as sold anyway. Now T.VENDOR_BATCH stacks go every T.VENDOR_GAP
+-- seconds (T.stepVendor), a stack counts as sold only once it left its bag slot, and a stack
+-- still there after T.VENDOR_WAIT seconds is sent again (up to 3 tries). Returns the stacks and
+-- money of the whole list; the chat line with what really sold comes at the end.
+T.VENDOR_BATCH = 6
+T.VENDOR_GAP = 0.3
+T.VENDOR_WAIT = 2
+
+local function preciseNow()
+    return GetTime and GetTime() or clock()
+end
+
+local function slotHolds(v)
+    local info = C_Container and C_Container.GetContainerItemInfo(v.bag, v.slot)
+    return info ~= nil and info.itemID == v.id and (info.stackCount or 1) == v.count
+end
+
+-- A stack that left its slot: booked (stock as its sale, the buyback entry only matched).
+local function bookVendorSale(job, v)
+    local c = char()
+    job.sold, job.money = job.sold + 1, job.money + v.price
+    if F.db.toVendor then
+        F.db.toVendor[v.key] = nil -- marked by the anti-undercut: sold now
+    end
+    local p = c.positions[v.key]
+    if p and p.qty > 0 then
+        F.Merchant.expectSale(v.id, v.count)
+        local name = p.name or v.key
+        local cost = F.Data.sale(c, v.key, name, v.count, v.price, clock())
+        F.Data.log(c, {
+            at = clock(),
+            kind = "vendor",
+            key = v.key,
+            name = name,
+            qty = v.count,
+            amount = v.price,
+            profit = v.price - cost,
+        })
+    end
+end
+
+local function finishVendorJob(job)
+    T.vendorJob = nil
+    if job.sold > 0 then
+        print(
+            "ForeverFlip: "
+                .. string.format(F.Locale.text("sold %d stacks to the vendor for %s"), job.sold, U.money(job.money))
+        )
+    end
+    if job.failed > 0 then
+        print(
+            "ForeverFlip: "
+                .. string.format(F.Locale.text("%d stacks did not sell: the merchant did not take them"), job.failed)
+        )
+    end
+    F.Engine.changed()
+end
+
+-- One step of a vendor sale (every frame, from T.step): sent stacks that left their slot are
+-- booked, stuck ones are sent again, and the next batch goes once the gap has passed.
+function T.stepVendor()
+    local job = T.vendorJob
+    if not job then
+        return
+    end
     if not MerchantFrame or not MerchantFrame:IsShown() then
+        -- The merchant was closed: what left the bags is booked, the rest stays unsold.
+        for _, v in ipairs(job.sent) do
+            if not slotHolds(v) then
+                bookVendorSale(job, v)
+            end
+        end
+        job.sent, job.queue = {}, {}
+        finishVendorJob(job)
+        return
+    end
+    local t = preciseNow()
+    local waiting = {}
+    for _, v in ipairs(job.sent) do
+        if not slotHolds(v) then
+            bookVendorSale(job, v)
+        elseif t - v.at < T.VENDOR_WAIT then
+            waiting[#waiting + 1] = v
+        elseif v.tries < 3 then
+            table.insert(job.queue, 1, v) -- not taken: sent again
+        else
+            job.failed = job.failed + 1
+        end
+    end
+    job.sent = waiting
+    if #job.queue > 0 and t - (job.last or -10) >= T.VENDOR_GAP then
+        job.last = t
+        for _ = 1, T.VENDOR_BATCH do
+            local v = table.remove(job.queue, 1)
+            if not v then
+                break
+            end
+            if slotHolds(v) then
+                v.at, v.tries = t, (v.tries or 0) + 1
+                C_Container.UseContainerItem(v.bag, v.slot)
+                job.sent[#job.sent + 1] = v
+            end
+        end
+    end
+    if #job.queue == 0 and #job.sent == 0 then
+        finishVendorJob(job)
+    end
+end
+
+function T.sellAllToVendor()
+    if not MerchantFrame or not MerchantFrame:IsShown() or T.vendorJob then
         return 0, 0
     end
-    local c = char()
-    local stacks, money = 0, 0
-    for _, v in ipairs(T.vendorSellList()) do
-        C_Container.UseContainerItem(v.bag, v.slot)
-        stacks, money = stacks + 1, money + v.price
-        if F.db.toVendor then
-            F.db.toVendor[v.key] = nil -- marked by the anti-undercut: sold now
-        end
-        local p = c.positions[v.key]
-        if p and p.qty > 0 then
-            -- Stock (a vendor deal): booked as its sale, and the buyback entry is only matched.
-            F.Merchant.expectSale(v.id, v.count)
-            local name = p.name or v.key
-            local cost = F.Data.sale(c, v.key, name, v.count, v.price, clock())
-            F.Data.log(c, {
-                at = clock(),
-                kind = "vendor",
-                key = v.key,
-                name = name,
-                qty = v.count,
-                amount = v.price,
-                profit = v.price - cost,
-            })
-        end
+    local list = T.vendorSellList()
+    if #list == 0 then
+        return 0, 0
     end
-    if stacks > 0 then
-        F.Engine.changed()
+    local money, stacks = 0, #list
+    for _, v in ipairs(list) do
+        money = money + v.price
     end
+    T.vendorJob = { queue = list, sent = {}, sold = 0, money = 0, failed = 0 }
+    T.stepVendor() -- the first batch goes with the click
+    F.Engine.changed()
     return stacks, money
+end
+
+-- True while a vendor sale is under way (the Sell all button waits).
+function T.sellingToVendor()
+    return T.vendorJob ~= nil
 end
 
 function T.sellToVendor()

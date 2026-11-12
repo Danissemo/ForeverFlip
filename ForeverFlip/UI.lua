@@ -5259,11 +5259,9 @@ local function merchantRow(parent, y, withButton)
     return row
 end
 
+-- The sale goes in paced batches (Trade.stepVendor), which prints what really sold at the end.
 local function sellAll()
-    local stacks, money = F.Trade.sellAllToVendor()
-    if stacks > 0 then
-        print("ForeverFlip: " .. string.format(L("sold %d stacks to the vendor for %s"), stacks, U.money(money)))
-    end
+    F.Trade.sellAllToVendor()
     UI.merchant(true)
 end
 
@@ -5536,8 +5534,12 @@ function UI.merchant(open)
     else
         view.sellNote:SetText("")
     end
-    view.sellAll:SetText(#list > 0 and string.format(L("Sell all (%d): %s"), #list, U.money(total)) or L("Sell all"))
-    view.sellAll:SetEnabled(#list > 0)
+    local selling = F.Trade.sellingToVendor and F.Trade.sellingToVendor()
+    view.sellAll:SetText(
+        selling and L("Selling...")
+            or (#list > 0 and string.format(L("Sell all (%d): %s"), #list, U.money(total)) or L("Sell all"))
+    )
+    view.sellAll:SetEnabled(#list > 0 and not selling)
     local offers = F.Merchant.offers()
     view.buyOffset = math.max(0, math.min(view.buyOffset or 0, #offers - MERCHANT_BUY_ROWS))
     view.buyTitle:SetText(
