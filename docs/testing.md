@@ -1,588 +1,603 @@
-# Testing
+# Тестування
 
-Use these steps to check **ForeverFlip and ForeverFlip Sync 1.2.0-beta.6**.
-Choose a test, follow its steps and write down what happened. You do not need to read the code.
+Ці інструкції призначені для **ForeverFlip і ForeverFlip Sync 1.2.0-beta.6**.
+Виберіть перевірку, виконайте кроки й запишіть, що сталося. Читати код не потрібно.
 
-## In-game checklist
+[Завантажити окремий файл тестувальника](tester-checklist.uk.xlsx): вибирайте ✅ або ❌ та
+записуйте фактичну поведінку в колонці «Примітка». Спочатку всі результати — «Не перевірено».
 
-### Start here
+<a id="in-game-checklist"></a>
+## Перевірки у грі
 
-These are small checks you can follow without reading the code. The button names below match the
-English interface. **Upload** sends your saved scans to the server; **download** gets shared prices.
-A **stack** is one pile of an item in a bag. A **lot** is an item or pile listed at the auction house.
-**Sync** means the separate ForeverFlip Sync program on Windows. Find a test by its ID with Ctrl+F.
+### Із чого почати
 
-1. Install beta.6. Close the old Sync window and open the new EXE from the same release.
-2. Restart WoW if you added or removed addon files/folders. Otherwise type `/reload` in chat.
-3. Open the auction house, then the **ForeverFlip** tab. Use cheap items for buy/sell checks:
-   buying uses gold, and posting pays an auction deposit.
-4. Start with UI-1, SCAN-1, DEAL-5, POST-2 and SYNC-1. Then choose the other cards you can run.
-5. Do one card at a time. Write **PASS**, **FAIL** or **SKIP** next to its ID in your notes.
-   Missing an item, a second player or enough history means **SKIP**, not FAIL.
+Назви кнопок аддона нижче відповідають українській локалізації з `ForeverFlip/Locale.lua`.
+Увімкніть її командою `/ff lang uk`, потім `/reload`. Вікно помічника Sync зараз англійське,
+тому його кнопки наведено так, як на екрані: **Sync now**, **Show activity**, **Beta tester** тощо.
 
-**PASS** means you saw the stated result yourself. **FAIL** means you followed the steps but saw
-something different. A card marked **Computer check** is run by the automated checker; you do not
-need to cause a server error in the live game. Old checkmarks do not count for a new build.
+**Надсилання** передає ваші скани на сервер; **завантаження** отримує ціни спільноти.
+**Пачка** — купка одного предмета в сумці. **Лот** — предмет або пачка на аукціоні.
+**Sync** — окрема програма ForeverFlip Sync у Windows. Знайти тест за ID можна через Ctrl+F.
 
-### Current beta checklist
+1. Установіть beta.6. Закрийте старе вікно Sync і відкрийте новий EXE з того самого випуску.
+2. Якщо додали чи прибрали файли або теки аддона, перезапустіть WoW. Інакше достатньо `/reload`.
+3. Відкрийте аукціон і вкладку **ForeverFlip**. Для перевірок купівлі й продажу беріть дешеві речі:
+   купівля витрачає золото, а виставлення потребує застави.
+4. Почніть із UI-1, SCAN-1, DEAL-5, POST-2 і SYNC-1. Далі вибирайте доступні вам перевірки.
+5. Виконуйте одну картку за раз. Позначайте ✅ **Пройдено**, ❌ **Не пройдено** або ⏭ **Пропущено**.
+   Немає предмета, другого гравця чи історії — це пропуск, а не помилка.
 
-Use the current beta.6 addon and helper for every card. Each card says what you need, exactly what
-to do, and what a successful result looks like. There is no need to complete the cards in order.
+✅ означає, що ви самі побачили очікуваний результат. ❌ — виконали кроки, але отримали інше.
+У картках «Автоперевірка» ситуацію створює комп’ютер: ламати справжній сервер не потрібно.
+Старі позначки не зараховуються новій збірці.
 
-#### Window and buttons
+<a id="current-beta-checklist"></a>
+### Чек-лист поточної бети
 
-##### UI-1 — Check the version and reload
+Використовуйте аддон і помічник beta.6. Кожна картка містить потрібні умови, кроки та ознаку
+успіху. Послідовність карток довільна. У файлі тестувальника є всі 49 карток із тими самими ID.
 
-**Need:** The auction house is open.
+#### Вікно та кнопки
 
-1. Type `/ff diag` in chat. Check that it says `1.2.0-beta.6`.
-2. Note the gold, stock and settings you can see. Type `/reload`.
-3. Open ForeverFlip again.
+##### UI-1 — Перевірити версію та збереження даних
 
-**PASS if:** The version is still beta.6. Your saved data and settings have not disappeared.
+**Потрібно:** Відкритий аукціон.
 
-##### UI-2 — Read and sort the pages
+1. Введіть у чаті `/ff lang uk`, потім `/reload`, щоб увімкнути українські підписи.
+2. Введіть `/ff diag`. Переконайтеся, що вказано `1.2.0-beta.6`.
+3. Запишіть кількість золота, один запис запасів і одне налаштування. Введіть `/reload` та знову відкрийте ForeverFlip.
 
-**Need:** A page with at least two rows.
+**Пройдено, якщо:** Версія — beta.6. Записані дані та налаштування не зникли.
 
-1. Open each page in the left menu. Scroll any long list.
-2. Click one column title twice. For a price column, look for smallest-first, then largest-first.
-3. Use `/ff lang uk` and `/reload` to check Ukrainian. Return with `/ff lang en` and `/reload`.
+##### UI-2 — Прочитати сторінки та відсортувати список
 
-**PASS if:** Text fits, buttons work, and sorting changes in both directions. There are no empty boxes instead of letters.
+**Потрібно:** Сторінка, де є щонайменше два рядки.
 
-##### UI-3 — Check a list longer than one page
+1. По черзі відкрийте сторінки лівого меню. Прокрутіть довгий список.
+2. Двічі натисніть заголовок стовпця з ціною: спочатку перевірте порядок від меншої до більшої, потім навпаки.
+3. Перевірте англійську через `/ff lang en` і `/reload`. Поверніть українську через `/ff lang uk` і `/reload`.
 
-**Need:** Enough items for more than one page in Selling or Deals.
+**Пройдено, якщо:** Текст уміщується, кнопки працюють, порядок змінюється в обидва боки. Замість літер немає порожніх квадратів.
 
-1. Press **Check all**. Write down the total it starts with.
-2. Wait for the work to finish. Do not add or remove items during this check.
-3. Go to another page of the list and look at the results.
+##### UI-3 — Перевірити список із кількома сторінками
 
-**PASS if:** Items beyond the first page are included. The work ends with results or a clear failed-check count; it does not restart forever.
+**Потрібно:** У продажах або угодах є більше предметів, ніж уміщується на одній сторінці.
 
-##### UI-4 — Use a keyboard button
+1. Натисніть **Перевірити все**. Запишіть початкову загальну кількість.
+2. Дочекайтеся завершення. Під час цієї перевірки не додавайте й не прибирайте предмети.
+3. Перейдіть на наступну сторінку та перегляньте результати.
 
-**Need:** A cheap deal and a resale item in your bags.
+**Пройдено, якщо:** Перевірено також предмети за межами першої сторінки. Робота завершується результатом або зрозумілою кількістю невдалих перевірок, а не починається без кінця.
 
-1. Open **Settings > Key bindings** and assign an unused key to Buy.
-2. Select and check a deal. Press the key to buy; if asked to confirm, press the same key again.
-3. Try Buy next and Post next bought with their assigned keys too.
+##### UI-4 — Користуватися клавішею замість кнопки
 
-**PASS if:** The key acts on the item shown on screen. It does not buy or post again by itself.
+**Потрібно:** Дешева угода та предмет для перепродажу в сумках.
 
-#### Scanning and other work in the background
+1. Відкрийте **Налаштування** → **Клавіші**. Призначте вільну клавішу дії **Купити або підтвердити вибрану угоду**.
+2. Виберіть і перевірте угоду. Натисніть цю клавішу для купівлі; якщо потрібне підтвердження — ту саму клавішу ще раз.
+3. Також спробуйте клавіші для наступної найкращої угоди та **Виставити наступне куплене (потім усе)**.
 
-##### SCAN-1 — Make one full scan
+**Пройдено, якщо:** Клавіша працює з предметом, який показано на екрані. Пізніше аддон сам не повторює купівлю чи виставлення.
 
-**Need:** The Full scan button is enabled. If it shows a countdown, wait.
+#### Сканування та фонові перевірки
 
-1. Press **Full scan** once.
-2. Watch the status at the top and the counts on the left.
-3. While rows are being read, try changing pages.
+##### SCAN-1 — Зробити один повний скан
 
-**PASS if:** The scan finishes and shows its counts. Pages still respond. If the server never replies, use SCAN-3.
+**Потрібно:** Кнопка повного сканування доступна. Якщо є відлік часу — зачекайте.
 
-##### SCAN-2 — Wait for the next automatic scan
+1. Один раз натисніть **Повний скан**.
+2. Стежте за повідомленням угорі та лічильниками ліворуч.
+3. Поки аддон читає дані, спробуйте відкрити іншу сторінку.
 
-**Need:** Automatic full scans are on in Settings.
+**Пройдено, якщо:** Скан завершується й показує кількість прочитаного. Сторінки реагують. Якщо сервер зовсім не відповідає, дивіться SCAN-3.
 
-1. Finish one full scan.
-2. Keep the auction house open and let the Full scan countdown run out. Avoid buying/posting during this check.
+##### SCAN-2 — Дочекатися автоматичного сканування
 
-**PASS if:** A new scan starts when allowed. It does not keep sending full scans every few seconds.
+**Потрібно:** У налаштуваннях увімкнено **Повний скан кожні 15 хвилин, поки відкритий аукціон**.
 
-##### SCAN-3 — Check a missing or incomplete server reply
+1. Дочекайтеся завершення одного повного скану.
+2. Залиште аукціон відкритим до завершення відліку. Під час цього тесту не купуйте й не виставляйте предмети.
 
-**Need:** Computer check; no live-game setup.
+**Пройдено, якщо:** Коли скан дозволено, починається наступний. Аддон не надсилає запит повного сканування кожні кілька секунд.
 
-1. Run the automatic tests listed under Computer checks below for incomplete scans and timeouts.
+##### SCAN-3 — Перевірити відсутню або неповну відповідь сервера
 
-**PASS if:** Parts of a reply do not become a complete scan. No-answer work times out after five minutes and respects the full-scan cooldown. An explicitly dropped request has its own retry rule.
+**Потрібно:** Автоперевірка: потрібен Python із тестовими бібліотеками; налаштовувати гру не потрібно.
 
-##### SCAN-4 — Read a scan started by another addon
+1. У теці вихідного проєкту виконайте `python -m unittest discover -s tests -p "test_audit.py"`.
+2. Якщо не запускаєте автоматичні тести, позначте цей пункт «Пропущено».
 
-**Need:** Auctionator or auxForever is installed.
+**Пройдено, якщо:** Результат — OK. Частини відповіді не стають повним сканом. Без відповіді очікування закінчується через п’ять хвилин із дотриманням паузи повного скану. Явно відхилений запит має окреме правило повтору.
 
-1. Open that addon and start its full scan.
-2. Look at ForeverFlip while the scan completes.
+##### SCAN-4 — Прочитати скан іншого аддона
 
-**PASS if:** ForeverFlip reads the scan too. It does not start a second full scan to replace it.
+**Потрібно:** Установлено Auctionator або auxForever.
 
-##### SCAN-5 — Switch the sniper on and off
+1. Відкрийте цей аддон і запустіть його повний скан.
+2. Під час завершення скану перегляньте ForeverFlip.
 
-**Need:** The auction house is open and a full scan is not waiting.
+**Пройдено, якщо:** ForeverFlip також читає цей скан, не запускаючи замість нього другий повний скан.
 
-1. Turn **Sniper** on. Leave it running and watch the round/check counts.
-2. Browse an item in the normal Buy tab, then return to ForeverFlip.
-3. Turn Sniper off.
+##### SCAN-5 — Увімкнути й вимкнути снайпер
 
-**PASS if:** The counts grow while it is on, without freezing the window. New sniper work stops when it is off; an answer already on its way may still arrive.
+**Потрібно:** Аукціон відкритий, повний скан зараз не очікує відповіді.
 
-##### QUEUE-1 — Ask for one price during Check all
+1. Увімкніть кнопку снайпера: вона показує **Снайпер: УВІМК**. Поспостерігайте за кількістю кіл і перевірок.
+2. Знайдіть предмет у звичайній вкладці купівлі гри й поверніться до ForeverFlip.
+3. Вимкніть снайпер: кнопка показує **Снайпер: ВИМК**.
 
-**Need:** Several items can be checked.
+**Пройдено, якщо:** Поки снайпер увімкнений, лічильники зростають без зависання вікна. Після вимкнення нова робота не починається; уже надіслана відповідь ще може прийти.
 
-1. Start **Check all**.
-2. Choose another item and press **Check price**.
-3. Wait for that result, then watch the remaining batch.
+##### QUEUE-1 — Перевірити один предмет під час загальної перевірки
 
-**PASS if:** Your selected item is handled before the rest of the waiting batch, once the current reply finishes. The rest continues afterwards.
+**Потрібно:** Є кілька предметів для перевірки.
 
-##### QUEUE-2 — Interrupt a gear price check
+1. Запустіть **Перевірити все**.
+2. Виберіть інший предмет і натисніть **Перевірити ціну**.
+3. Дочекайтеся його результату та подивіться, як продовжується решта списку.
 
-**Need:** Several gear items and another item are available to check.
+**Пройдено, якщо:** Щойно завершується поточна відповідь, вибраний вами предмет отримує чергу перед рештою очікуваного списку. Потім загальна перевірка продовжується.
 
-1. Start checking the gear list.
-2. While it is working, select the other item and press **Check price**.
-3. Wait for the remaining gear checks to finish.
+##### QUEUE-2 — Перервати перевірку спорядження ручним запитом
 
-**PASS if:** The manual check gets a turn. Gear checks continue afterwards without losing their progress. They do not claim to cancel a request already sent.
+**Потрібно:** Є кілька предметів спорядження та ще один предмет для перевірки.
 
-##### QUEUE-3 — Select an item without stopping its own check
+1. Запустіть перевірку списку спорядження.
+2. Поки вона працює, виберіть інший предмет і натисніть **Перевірити ціну**.
+3. Дочекайтеся завершення решти перевірок.
 
-**Need:** Check all is working through several items.
+**Пройдено, якщо:** Ручний запит отримує свою чергу. Перевірка спорядження потім продовжується зі збереженим прогресом. Аддон не вдає, що скасував запит, уже надісланий серверу.
 
-1. Select the item it is currently checking.
-2. Wait for that item to get a result.
-3. Leave it selected and watch the remaining list for about 15 seconds.
+##### QUEUE-3 — Вибрати предмет і не зупинити його перевірку
 
-**PASS if:** The selected item completes its check. The rest does not remain stuck behind the selection. A checked deal can stay ready for up to five minutes.
+**Потрібно:** Працює перевірка кількох предметів.
 
-##### QUEUE-4 — Click while the addon is busy
+1. Виберіть саме той предмет, який зараз перевіряється.
+2. Дочекайтеся його результату.
+3. Залиште його вибраним і близько 15 секунд стежте за рештою списку.
 
-**Need:** A large scan or a large Analytics history.
+**Пройдено, якщо:** Вибраний предмет завершує перевірку. Решта не залишається заблокованою назавжди. Перевірена угода може бути готовою до купівлі до п’яти хвилин.
 
-1. Open another page while the addon is processing data.
-2. If you have a cheap checked deal, press Buy, or post a cheap ready item.
-3. Watch the status at the top.
+##### QUEUE-4 — Натиснути кнопку, поки аддон зайнятий
 
-**PASS if:** The click gets visible feedback. Purchase/post messages remain visible rather than being covered by an unrelated batch message. If the connection is busy, the addon asks you to wait.
+**Потрібно:** Великий скан або велика історія для аналітики.
 
-#### Deals and buying
+1. Відкрийте іншу сторінку, поки аддон обробляє дані.
+2. Якщо є дешева перевірена угода, натисніть **Купити**, або виставте дешевий предмет із готовою ціною.
+3. Стежте за повідомленням угорі.
 
-##### DEAL-1 — Buy one cheap vendor deal
+**Пройдено, якщо:** Є видимий відгук на натискання. Повідомлення купівлі чи виставлення не перекривається сторонньою перевіркою. Якщо з’єднання зайняте, аддон повідомляє, що потрібно зачекати.
 
-**Need:** A cheap offer under **Deals > To vendor**. Skip if none exists.
+#### Угоди та купівля
 
-1. Select it and press **Check price** if needed.
-2. Read the item, quantity and total. Press **Buy**. Confirm if asked.
-3. Check your auction mail and the journal.
+##### DEAL-1 — Купити одну дешеву угоду для торговця
 
-**PASS if:** A successful purchase is recorded once and the correct item arrives. If the lot is gone or changed, the addon explains instead of recording a fake purchase.
+**Потрібно:** Є дешева пропозиція в розділі угод **Торговцю**. Якщо її немає — пропустіть тест.
 
-##### DEAL-2 — Confirm on the same Buy button
+1. Виберіть пропозицію та за потреби натисніть **Перевірити ціну**.
+2. Прочитайте назву, кількість і загальну ціну. Натисніть **Купити**, потім підтвердьте, якщо буде запит.
+3. Перевірте пошту аукціону й **Аналітика** → **Журнал і прибуток**.
 
-**Need:** A cheap commodity deal, such as cloth or herbs.
+**Пройдено, якщо:** Успішну купівлю записано один раз; на пошту надійшов правильний предмет. Якщо лот зник або змінився, аддон пояснює це замість запису вигаданої купівлі.
 
-1. Select and check the deal. Press **Buy**.
-2. Read the quoted total. Press **Confirm** on the same button to accept it.
-3. On a separate attempt, switch to another item before confirming.
+##### DEAL-2 — Підтвердити купівлю тією самою кнопкою
 
-**PASS if:** The first attempt buys only after confirmation. The second item does not inherit the old quote. An expired quote is requested again instead of being blindly confirmed.
+**Потрібно:** Дешева угода зі складованим товаром, наприклад тканиною або травою.
 
-##### DEAL-3 — Handle an error during a purchase
+1. Виберіть і перевірте угоду. Натисніть **Купити**.
+2. Прочитайте запропоновану суму. Натисніть **Підтвердити** на тій самій кнопці.
+3. В окремій спробі виберіть інший предмет до підтвердження.
 
-**Need:** Computer check, or a real error that occurs naturally.
+**Пройдено, якщо:** У першій спробі купівля відбувається тільки після підтвердження. Інший предмет не успадковує стару пропозицію. Прострочена ціна запитується знову.
 
-1. Use the purchase-error computer checks below. Do not try to break the live connection.
-2. If a live purchase shows an error, check chat, mail and the journal before trying to buy the same lot again.
+##### DEAL-3 — Обробити помилку під час купівлі
 
-**PASS if:** A generic error alone does not say another player won. A later successful purchase is recorded once. Without evidence of success, it is not booked as bought.
+**Потрібно:** Автоперевірка або справжня помилка, яка виникла сама.
 
-##### DEAL-4 — Buy after checking another item
+1. Для автоперевірки виконайте `python -m unittest discover -s tests -p "test_purchase_confirmation.py"`. Не потрібно навмисно псувати з’єднання гри.
+2. Якщо помилка виникла у грі, перед повторною купівлею того самого лота перевірте чат, пошту й журнал.
 
-**Need:** A cheap non-commodity item/gear deal and one other item.
+**Пройдено, якщо:** Результат автотесту — OK. Загальна помилка сама по собі не означає, що хтось випередив вас. Пізніший успіх записується один раз; без ознак успіху купівля не вважається завершеною.
 
-1. Check the deal you want to buy.
-2. Check a different item, then return to the first deal.
-3. Press Buy. If it checks again, wait and press Buy when asked.
+##### DEAL-4 — Купити після перевірки іншого предмета
 
-**PASS if:** The correct item is bought. Nothing is purchased later without your next click.
+**Потрібно:** Дешева угода з окремим предметом або спорядженням і ще один предмет.
 
-##### DEAL-5 — Read unit prices and total profit
+1. Перевірте угоду, яку хочете купити.
+2. Перевірте інший предмет, а потім поверніться до першого.
+3. Натисніть **Купити**. Якщо аддон знову перевіряє ціну, зачекайте й натисніть купівлю, коли попросить.
 
-**Need:** A deal with more than one unit.
+**Пройдено, якщо:** Купується правильний предмет. Пізніше нічого не купується без вашого нового натискання.
 
-1. Find **Buy at**, **Sells at**, **Profit** and **Qty** in the deal row.
-2. Select it and compare the detail below the list.
-3. Point at **Est./day** to read its explanation.
+##### DEAL-5 — Відрізнити ціну штуки від прибутку всієї угоди
 
-**PASS if:** Buy at and Sells at mean one unit; Profit means the whole deal. Est./day can be unknown or zero. It does not promise that an item will sell.
+**Потрібно:** Угода, де більше однієї одиниці товару.
 
-##### DEAL-6 — Keep buying within your limit
+1. Знайдіть у рядку **Купівля за**, **Продаж за**, **Прибуток** і **К-ть**.
+2. Виберіть рядок і порівняйте його з описом під списком.
+3. Наведіть мишу на **Оцін./д** та прочитайте пояснення.
 
-**Need:** A cheap deal and a spending limit smaller than its total cost.
+**Пройдено, якщо:** Купівля та продаж указуються за одну штуку, прибуток — за всю угоду. Оцінка на день може бути невідомою або нульовою та не обіцяє продаж.
 
-1. In **Settings > Safety**, set the visit spending limit low enough to block this purchase.
-2. Try to buy the deal.
-3. Restore your normal setting after the check.
+##### DEAL-6 — Не перевищити ліміт купівлі
 
-**PASS if:** The addon explains the limit and does not spend beyond it. The computer checks also cover per-item limits, ignored items, shopping quantities and leaving cheap units for others.
+**Потрібно:** Дешева угода й ліміт витрат, менший за її загальну ціну.
 
-#### Sales history and Resale
+1. У **Налаштування** → **Безпека** установіть ліміт витрат за відвідування, який блокує цю купівлю.
+2. Спробуйте купити угоду.
+3. Після перевірки поверніть своє звичайне налаштування.
 
-##### DEMAND-1 — Check that a missing lot is not instantly called a sale
+**Пройдено, якщо:** Аддон пояснює обмеження та не витрачає понад нього. Ліміт на предмет, ігнорування, кількість зі списку покупок і залишення дешевих одиниць також перевіряються автоматично.
 
-**Need:** Computer check; see confirmed-sales/repost checks below.
+#### Історія продажів та перепродаж
 
-1. Run the computer checks for partial sales, missing lots and reposts.
+##### DEMAND-1 — Не вважати кожен зниклий лот негайним продажем
 
-**PASS if:** A reduced stack can supply sales evidence. A whole missing lot waits for a later scan to rule out a repost. Two full scans do not automatically mean confirmed whole-lot sales.
+**Потрібно:** Автоперевірка; потрібен Python із тестовими бібліотеками.
 
-##### DEMAND-2 — Read an empty Resale page
+1. У теці проєкту виконайте `python -m unittest discover -s tests -p "test_lot_sales.py"`.
+2. Якщо не запускаєте автотести, виберіть «Пропущено».
 
-**Need:** At least one saved full scan.
+**Пройдено, якщо:** Результат — OK. Зменшена пачка може дати дані про продаж. Повністю зниклий лот чекає наступного скану для виключення перевиставлення. Два скани не гарантують підтверджених продажів цілих лотів.
 
-1. Open **Deals > Resale**.
-2. If it is empty, read the explanation and the **Sales data** count on the left.
-3. Collect more full scans when the normal countdown allows it. Check again.
+##### DEMAND-2 — Прочитати пояснення порожнього перепродажу
 
-**PASS if:** An empty page explains the current missing data or limits. It does not promise that exactly two scans will create offers. Profitable offers may still be absent.
+**Потрібно:** Збережено хоча б один повний скан.
 
-##### DEMAND-3 — Get more gold after a budget rejection
+1. Відкрийте розділ угод **Перепродаж**.
+2. Якщо список порожній, прочитайте пояснення та лічильник «Дані продажів» ліворуч.
+3. Збирайте наступні повні скани, коли це дозволяє відлік часу, і перевірте сторінку ще раз.
 
-**Need:** An empty Resale page that explicitly says your budget is too small.
+**Пройдено, якщо:** Порожня сторінка пояснює відсутні дані або обмеження. Вона не обіцяє угоди рівно після двох сканів. Вигідних пропозицій справді може не бути.
 
-1. Write down the last scan time.
-2. Get more gold, for example by collecting a sale from the mailbox.
-3. Return to the auction house and look at Resale before a new full scan.
+##### DEMAND-3 — Додати золото після обмеження бюджетом
 
-**PASS if:** The addon considers the new budget using saved information. A lead may appear, but still needs a live price check before buying. It is also correct to show no offers if the other requirements are not met.
+**Потрібно:** Порожній перепродаж прямо повідомляє, що бюджету недостатньо.
 
-#### Posting items for sale
+1. Запишіть час останнього скану.
+2. Отримайте більше золота, наприклад заберіть гроші за продаж із пошти.
+3. Поверніться на аукціон і перегляньте перепродаж до нового повного скану.
 
-##### POST-1 — Open Selling without checking every bag item
+**Пройдено, якщо:** Аддон ураховує новий бюджет за збереженими даними. Може з’явитися кандидат, але перед купівлею потрібна жива перевірка ціни. Відсутність угод теж допустима, якщо інші вимоги не виконані.
 
-**Need:** Several sellable items in your bags.
+#### Виставлення на продаж
 
-1. Open **Selling > My items**.
-2. Look at the status before pressing any price-check or posting button.
-3. Then request Post all or Check all yourself.
+##### POST-1 — Відкрити продаж без перевірки всіх сумок
 
-**PASS if:** Opening the page alone does not start a bag-wide price-check job. Requested work starts only when you ask for it. A ready item can post before unrelated missing prices are checked.
+**Потрібно:** У сумках є кілька придатних до продажу предметів.
 
-##### POST-2 — Post all stacks of one item
+1. Відкрийте **Продаж** → **Мої предмети**.
+2. Подивіться на стан до натискання кнопок перевірки чи виставлення.
+3. Потім самі натисніть **Виставити все** або **Перевірити все**.
 
-**Need:** 40 cheap sellable units of one commodity. Use a known price above the vendor value. Hide other for-sale items for this check.
+**Пройдено, якщо:** Саме відкриття сторінки не запускає перевірку всіх сумок. Запитана робота починається після натискання; готовий предмет може виставитися раніше за перевірку інших цін.
 
-1. Split the 40 units into stacks of 10, 10 and 20. Remove any keep rule for this item.
-2. Press **Post AH-worthy** once. Wait for confirmation and look in **My auctions**.
-3. For the second part, start again with 40 units in your bags. Open **Rule...**, set **keep** to 25, save, then press Post AH-worthy.
+##### POST-2 — Виставити всі пачки одного товару
 
-**PASS if:** The first part posts 40 units in one request if the client allows 40. The second posts 15 and leaves 25 in your bags. Do not run the second part with empty bags from the first part.
+**Потрібно:** 40 дешевих одиниць одного складованого товару з відомою ціною вище ціни торговця. Інші предмети для цього тесту приховайте.
 
-##### POST-3 — Wait before posting the next item
+1. Розділіть 40 одиниць на пачки 10, 10 і 20. Приберіть правило збереження цього товару в сумках.
+2. Один раз натисніть **Вигідне на аукціон**. Дочекайтеся підтвердження й відкрийте **Мої лоти**.
+3. Для другої частини знову підготуйте 40 одиниць у сумках. Відкрийте **Правило...**, задайте **залишати** = 25, натисніть **Зберегти правило** та знову **Вигідне на аукціон**.
 
-**Need:** Two different cheap ready-priced items in your bags.
+**Пройдено, якщо:** У першій частині одним запитом виставляються 40 одиниць, якщо клієнт дозволяє таку кількість. У другій виставляються 15, а 25 лишаються. Другу частину не можна проводити з порожніми сумками після першої.
 
-1. Press **Post all** once.
-2. While it waits for confirmation, try pressing it again.
-3. After the first post is confirmed, press once more for the next item.
+##### POST-3 — Дочекатися підтвердження перед наступним предметом
 
-**PASS if:** There is one post at a time. A second item needs another click. If the game asks for a price warning confirmation, it is not accepted automatically.
+**Потрібно:** Два різні дешеві предмети з готовими цінами.
 
-##### POST-4 — Keep an item out of the posting queue
+1. Один раз натисніть **Виставити все**.
+2. Поки очікується підтвердження, спробуйте натиснути кнопку ще раз.
+3. Після підтвердження першого виставлення натисніть ще раз для наступного предмета.
 
-**Need:** A cheap item in Selling and no other ready item for this check.
+**Пройдено, якщо:** Одночасно виконується одне виставлення. Інший предмет потребує нового натискання. Попередження про ціну не підтверджується автоматично.
 
-1. Select the item and press **Hide**. Try Post all.
-2. Open **Hidden**, select it and return it to sale.
-3. Open **Rule...**, set keep to the number of units you own and save. Try Post all again.
+##### POST-4 — Не виставляти прихований або збережений предмет
 
-**PASS if:** A hidden item is not posted. Returning it makes it visible again. Keeping every unit leaves it in your bags. Price floors, maximums and guessed prices are checked separately by the computer.
+**Потрібно:** Дешевий предмет у продажах; для цього тесту немає іншого готового предмета.
 
-##### POST-5 — Keep your typed price
+1. Виберіть предмет і натисніть **Приховати**. Спробуйте **Виставити все**.
+2. Відкрийте **Приховані**, виберіть його та натисніть **Повернути**.
+3. Відкрийте **Правило...**, задайте **залишати** рівним усій кількості в сумках і збережіть. Знову спробуйте **Виставити все**.
 
-**Need:** A cheap sellable item.
+**Пройдено, якщо:** Прихований предмет не виставляється. Після повернення він знову видимий. Правило збереження всієї кількості залишає її в сумках. Мінімум, максимум і приблизні ціни перевіряються також автотестами.
 
-1. Select it and let the addon fill a suggested price.
-2. Type your own price. Refresh the price check.
-3. Move the selected item to another bag slot. Read the price and item before posting.
+##### POST-5 — Зберегти ціну, введену вручну
 
-**PASS if:** Your typed price remains. The selection still refers to the same item, not a different item now in the old slot.
+**Потрібно:** Дешевий предмет для продажу.
 
-##### POST-6 — Check and cancel one own auction
+1. Виберіть його й дочекайтеся підставленої ціни.
+2. Введіть свою ціну. Оновіть перевірку ціни.
+3. Перемістіть вибраний предмет в іншу комірку сумки. Перед виставленням перечитайте предмет і ціну.
 
-**Need:** An auction you own and are willing to cancel.
+**Пройдено, якщо:** Ваша ціна не змінюється. Вибрано той самий предмет, а не інший, що опинився в старій комірці.
 
-1. Open **Selling > My auctions** and press **Check prices**.
-2. Read the result. If only your lots are listed, it should explain that.
-3. For an undercut lot, use the cancel action once and check your mail.
+##### POST-6 — Перевірити й зняти один свій лот
 
-**PASS if:** The chosen auction is cancelled once, not repeatedly. If there is no suitable lot, skip the cancellation part.
+**Потрібно:** Ваш лот, який ви готові зняти.
 
-##### POST-7 — Use the Undercuts advice
+1. Відкрийте **Продаж** → **Мої лоти** і натисніть **Перевірити ціни**.
+2. Прочитайте результат. Якщо продаєте тільки ви, це має бути пояснено.
+3. Для перебитого лота один раз скористайтеся зняттям і перевірте пошту.
 
-**Need:** An own auction with a cheaper competing offer.
+**Пройдено, якщо:** Знімається вибраний лот і лише один раз. Якщо відповідного лота немає, пропустіть частину зі зняттям.
 
-1. Open **Selling > Undercuts** and select it.
-2. Read the choices: wait, repost, buy out or vendor.
-3. If you choose a buyout, inspect the added Shopping quantity before buying.
+##### POST-7 — Переглянути поради для перебитого лота
 
-**PASS if:** The choices show their estimates. A buyout target uses your resale plan and goes down as its requested units are bought. Do not buy just to obtain a PASS; skip the buying part if you do not want the trade.
+**Потрібно:** Ваш лот, дешевше якого продає інший продавець.
 
-#### Mail, gold and the other pages
+1. Відкрийте **Продаж** → **Підрізання** та виберіть його.
+2. Прочитайте варіанти: зачекати, перевиставити, викупити або продати торговцю.
+3. Якщо вибрали викуп, перед купівлею перегляньте додану кількість у **Список покупок**.
 
-##### BOOK-1 — Record an auction sale once
+**Пройдено, якщо:** Варіанти показують оцінки. Ціль викупу враховує ваш план перепродажу й зменшується після купівлі одиниць. Не купуйте лише заради галочки; небажану угоду можна пропустити.
 
-**Need:** A sold multi-unit auction and its gold mail.
+#### Пошта, золото та інші сторінки
 
-1. Note the item count and gold in the mail.
-2. Press **Take auction mail**.
-3. Open **Analytics > Journal**, then reload and check it again.
+##### BOOK-1 — Записати продаж один раз
 
-**PASS if:** The sale has the correct count and money and is not added a second time after reload.
+**Потрібно:** Проданий багатоштуковий лот і лист із золотом за нього.
 
-##### BOOK-2 — Take auction mail only
+1. Запишіть кількість предметів та золото з листа.
+2. Натисніть **Забрати пошту аукціону**.
+3. Відкрийте **Аналітика** → **Журнал і прибуток**, потім перезавантажте інтерфейс і перевірте ще раз.
 
-**Need:** Auction mail plus an unrelated ordinary letter.
+**Пройдено, якщо:** У продажі правильні кількість і сума. Після перезавантаження він не додається вдруге.
 
-1. Open the mailbox and press **Take auction mail**.
-2. Look at what remains in the inbox.
-3. On a separate run, close the mailbox while collection is active.
+##### BOOK-2 — Забрати лише пошту аукціону
 
-**PASS if:** Ordinary mail is left alone. Closing the mailbox stops the job. Full bags and refused mail are also covered by computer checks.
+**Потрібно:** Листи аукціону та звичайний сторонній лист.
 
-##### BOOK-3 — Record a vendor sale once
+1. Відкрийте пошту та натисніть **Забрати пошту аукціону**.
+2. Подивіться, які листи залишилися.
+3. В окремій спробі закрийте пошту під час забирання.
 
-**Need:** Cheap vendor stock tracked by ForeverFlip.
+**Пройдено, якщо:** Звичайні листи залишаються. Закриття пошти зупиняє роботу. Повні сумки та відмову забрати лист також перевіряє комп’ютер.
 
-1. Open a merchant and use the ForeverFlip sell button.
-2. After the bags update, look at the sell list and journal.
-3. With another tracked item, sell it manually to the merchant and check the journal again.
+##### BOOK-3 — Записати продаж торговцю один раз
 
-**PASS if:** Sold items leave the list. Each sale is recorded once, whether the addon button or a manual sale was used.
+**Потрібно:** Дешевий товар, який ForeverFlip обліковує для продажу торговцю.
 
-##### FEATURE-1 — Add a shopping item
+1. Відкрийте торговця та продайте товар кнопкою ForeverFlip.
+2. Після оновлення сумок перегляньте список продажу та журнал.
+3. Інший облікований предмет продайте торговцю вручну й знову перевірте журнал.
 
-**Need:** An item link and an item you want to track.
+**Пройдено, якщо:** Продані предмети прибираються зі списку. Кожен продаж записаний один раз, незалежно від способу продажу.
 
-1. Add it to **Shopping list** with a wanted quantity and price.
-2. Check its price and look for a matching Shopping deal.
-3. Remove the entry or ignore it and check the list again.
+##### FEATURE-1 — Додати предмет до списку покупок
 
-**PASS if:** The entry and eligible deals follow the quantity/price you chose. Ignored items do not remain purchase targets. No matching offer is a valid result.
+**Потрібно:** Посилання на предмет, який хочете відстежувати.
 
-##### FEATURE-2 — Show a learned recipe
+1. Додайте його до **Список покупок** і задайте бажані кількість та ціну.
+2. Перевірте ціну й пошукайте відповідну угоду зі списку.
+3. Приберіть запис або додайте предмет до ігнорованих та перевірте знову.
 
-**Need:** A character with a profession.
+**Пройдено, якщо:** Запис і відповідні угоди враховують задані кількість та ціну. Ігноровані предмети не залишаються цілями купівлі. Відсутність відповідної пропозиції теж нормальна.
 
-1. Open the profession window once.
-2. Open **Crafting** and choose a recipe.
-3. Use **Shop materials** when you have some, but not all, materials in your bags.
+##### FEATURE-2 — Показати вивчений рецепт
 
-**PASS if:** The recipe appears. Missing prices are explained. The shopping list asks for missing materials rather than ones already in your bags. Disenchant-specific cases need an enchanter or computer checks.
+**Потрібно:** Персонаж із професією.
 
-##### FEATURE-3 — Place and track a bid
+1. Один раз відкрийте вікно професії.
+2. Відкрийте **Крафт** та виберіть рецепт.
+3. Коли частина матеріалів уже є в сумках, скористайтеся додаванням відсутніх матеріалів до покупок.
 
-**Need:** A cheap near-expiry auction you actually want to bid on.
+**Пройдено, якщо:** Рецепт є в списку. Відсутні ціни пояснюються. Додаються матеріали, яких бракує, а не вже наявні. Для розпилення потрібен відповідний персонаж або автотести.
 
-1. Open **Deals > Bids**, select it and check the price.
-2. Read the amount and place the bid.
-3. When a won/outbid mail arrives, collect it and inspect the journal.
+##### FEATURE-3 — Зробити ставку й відстежити результат
 
-**PASS if:** The bid and its final outcome are tracked once. If there is no suitable auction or you do not want to bid, skip it.
+**Потрібно:** Дешевий лот, що скоро завершується, на який ви справді хочете зробити ставку.
 
-##### FEATURE-4 — Keep two auction houses separate
+1. У розділі угод відкрийте **Ставки**, виберіть лот і перевірте ціну.
+2. Прочитайте суму та зробіть ставку.
+3. Після листа про виграш або перебиття заберіть його й перегляньте журнал.
 
-**Need:** Access to your faction house and a neutral house.
+**Пройдено, якщо:** Ставка та її остаточний результат обліковуються один раз. Якщо лота немає або ви не хочете ставити, пропустіть тест.
 
-1. Scan at your faction auction house and note the house name.
-2. Travel to a neutral auction house and open ForeverFlip.
-3. Return to the first house later.
+##### FEATURE-4 — Не змішати два аукціони
 
-**PASS if:** The house label and stored prices follow the house you opened. Neutral calculations start with a 15% cut. Hardcore and map edge cases have computer checks too.
+**Потрібно:** Доступ до фракційного та нейтрального аукціонів.
 
-##### FEATURE-5 — Read history and export the journal
+1. Зробіть скан на аукціоні своєї фракції й запишіть назву аукціону.
+2. Перейдіть до нейтрального аукціону та відкрийте ForeverFlip.
+3. Згодом поверніться до першого аукціону.
 
-**Need:** Some saved history and journal entries.
+**Пройдено, якщо:** Назва та збережені ціни відповідають відкритому аукціону. Нейтральні розрахунки починаються з комісії 15%. Хардкор і нетипові місця також перевіряються автоматично.
 
-1. Open **Analytics** and select different views.
-2. Right-click a deal to open its history. Point at an item tooltip.
-3. Type `/ff export` and copy the CSV text if needed.
+##### FEATURE-5 — Прочитати історію та вивантажити журнал
 
-**PASS if:** The pages/charts open without errors and show price age or missing data. Export opens copyable journal text. Weekly advice needs enough history; skip that part on a fresh profile.
+**Потрібно:** Є збережена історія та записи журналу.
 
-##### FEATURE-6 — Keep saved data after reload
+1. Відкрийте **Аналітика** і перегляньте різні сторінки.
+2. Натисніть правою кнопкою на угоду для відкриття історії. Перегляньте підказку предмета.
+3. Введіть `/ff export` і за потреби скопіюйте CSV.
 
-**Need:** Existing stock, journal entries and saved settings.
+**Пройдено, якщо:** Сторінки та графіки відкриваються без помилок, показують вік ціни або відсутність даних. Експорт дає текст журналу. Для тижневих порад потрібна історія; на новому профілі цю частину пропустіть.
 
-1. Write down one stock count, one journal entry and one setting.
-2. Type `/reload` and open the same pages.
-3. If you use another character/house, check its own saved view too.
+##### FEATURE-6 — Зберегти дані після перезавантаження
 
-**PASS if:** The recorded data is still present under the correct character/house. Test the missing-save warning only with a disposable profile or the computer checker, not by deleting your real save.
+**Потрібно:** Є запаси, записи журналу й налаштування.
 
-#### Sharing and the Windows helper
+1. Запишіть одну кількість запасів, один запис журналу й одне налаштування.
+2. Введіть `/reload` та відкрийте ті самі сторінки.
+3. Якщо користуєтеся іншим персонажем або аукціоном, перевірте також їхні дані.
 
-##### SHARE-1 — Copy and share scan history
+**Пройдено, якщо:** Записане збереглося для правильного персонажа й аукціону. Попередження про відсутнє збереження перевіряйте на окремому тестовому профілі або автотестом, не видаляючи свій справжній файл.
 
-**Need:** A completed scan; a second player for the receiving part.
+#### Обмін сканами та помічник Windows
 
-1. Open **Settings > Sharing** and export the scan history as text.
-2. Check that the copied text starts with `FF3|`.
-3. Have the second player receive/import it and look at Received.
+##### SHARE-1 — Скопіювати й передати історію скану
 
-**PASS if:** Current history is readable by the other addon. Reimporting the exact same history is rejected as a duplicate. If you have no second player, skip that part.
+**Потрібно:** Є завершений скан; для приймання потрібен другий гравець.
 
-##### SHARE-2 — Receive shared data without creating a fake purchase
+1. Відкрийте **Налаштування** → **Обмін сканами** і натисніть **Експорт текстом**.
+2. Переконайтеся, що текст починається з `FF3|`.
+3. Нехай інший гравець отримає або імпортує текст і перевірить список отриманого.
 
-**Need:** Shared or community history.
+**Пройдено, якщо:** Інший аддон читає поточну історію. Повторний імпорт того самого тексту відхиляється як дублікат. Якщо немає другого гравця, пропустіть цю частину.
 
-1. Receive/import it, then type `/reload`.
-2. Open history and compare stock and journal with your earlier notes.
-3. Import the same history again.
+##### SHARE-2 — Не створити вигадану операцію з отриманої історії
 
-**PASS if:** History can update; stock and journal do not gain a fake purchase/sale. Repeated data is not counted again. FF1 community support and ignoring old FF2 sales are computer-checked compatibility paths.
+**Потрібно:** Є історія від іншого гравця або спільноти.
 
-##### SYNC-1 — Look at the new helper window
+1. Отримайте або імпортуйте її, потім введіть `/reload`.
+2. Відкрийте історію та порівняйте запаси й журнал із попередніми записами.
+3. Імпортуйте ту саму історію ще раз.
 
-**Need:** The beta.6 EXE on Windows.
+**Пройдено, якщо:** Історія може оновитися, але вигадана купівля чи продаж у запасах і журналі не з’являється. Повторні дані не додаються вдруге. Підтримку FF1 і відкидання старих продажів FF2 перевіряють автотести.
 
-1. Start it. Look for the blue quill in the top-left title bar.
-2. Open **Show activity** and close it again.
-3. If possible, repeat at another Windows display scale, such as 125%, 150% or 200%.
+##### SYNC-1 — Оглянути нове вікно помічника
 
-**PASS if:** The icon, pictures, switches and buttons appear. Text fits and nothing important is cut off. If you cannot change scale, mark that part SKIP.
+**Потрібно:** EXE beta.6 у Windows.
 
-##### SYNC-2 — Choose and remember the game folder
+1. Запустіть його. Знайдіть синє перо ліворуч у заголовку вікна.
+2. Відкрийте **Show activity**, потім закрийте журнал.
+3. За можливості повторіть з іншим масштабом Windows: 125%, 150% або 200%.
 
-**Need:** Your Forever game folder.
+**Пройдено, якщо:** Іконка, зображення, перемикачі та кнопки видимі. Текст уміщується, важливе не обрізане. Якщо масштаб змінити не можете, позначте цю частину як пропущену.
 
-1. Press **Change** beside GAME. Choose `_forever_` or its installation parent.
-2. Close and reopen the helper.
-3. If you have more than one installation, check which path it chose.
+##### SYNC-2 — Вибрати й запам’ятати теку гри
 
-**PASS if:** It remembers the right Forever installation. It asks for a choice when needed and does not silently use Retail or Classic.
+**Потрібно:** Тека вашого клієнта Forever.
 
-##### SYNC-3 — Sign in and sign out
+1. Натисніть **Change** поруч із **GAME**. Виберіть `_forever_` або батьківську теку встановлення.
+2. Закрийте та знову відкрийте помічник.
+3. Якщо є кілька встановлень, прочитайте вибраний шлях.
 
-**Need:** A GitHub account.
+**Пройдено, якщо:** Помічник запам’ятав правильний Forever. За неоднозначності просить вибір, а не непомітно використовує Retail чи Classic.
 
-1. Press **Sign in with GitHub**. Enter and approve the shown code yourself on the opened GitHub page.
-2. Restart the helper and check the account line.
-3. Press **Sign out** to remove the helper-stored sign-in.
+##### SYNC-3 — Увійти в GitHub і вийти
 
-**PASS if:** The helper remembers the approved sign-in and removes its own stored token on sign-out. If another login source (CLI/config/environment) remains, it can still show an account; that alone is not a failed sign-out.
+**Потрібно:** Обліковий запис GitHub.
 
-##### SYNC-4 — Send one saved full scan
+1. Натисніть **Sign in with GitHub**. На відкритій сторінці GitHub самі введіть і підтвердьте код.
+2. Перезапустіть помічник і перевірте рядок облікового запису.
+3. Натисніть **Sign out**, щоб видалити вхід, збережений самим помічником.
 
-**Need:** GitHub sign-in and sharing enabled in the helper.
+**Пройдено, якщо:** Схвалений вхід запам’ятався, а вихід видалив власний збережений токен помічника. Якщо є інший вхід через CLI, конфігурацію або змінну середовища, він усе ще може показувати обліковий запис — це не помилка виходу.
 
-1. In the game, turn on **Settings > Sharing > Keep my full scans for the ForeverFlip Sync helper**.
-2. Make a new complete scan, then type `/reload` to save it to disk.
-3. In Sync press **Sync now**, then **Show activity**.
+##### SYNC-4 — Надіслати один збережений повний скан
 
-**PASS if:** Activity shows the scan submission and later the server answer. Check that answer, not just Community prices updated: that message only describes a download. Record a rejection reason if the server rejects it.
+**Потрібно:** У помічнику виконано вхід у GitHub та ввімкнено обмін.
 
-##### SYNC-5 — Send saved scans after a restart
+1. У грі відкрийте **Налаштування** → **Обмін сканами** та ввімкніть **Зберігати мої повні скани для помічника ForeverFlip Sync (дані спільноти)**.
+2. Зробіть новий повний скан, потім введіть `/reload` для запису на диск.
+3. У помічнику натисніть **Sync now**, потім **Show activity**.
 
-**Need:** An unsent saved scan; helper sharing already switched on.
+**Пройдено, якщо:** Журнал показує надсилання та пізнішу відповідь сервера. Перевіряйте саме відповідь: **Community prices updated** означає лише завантаження цін. Якщо сервер відхилив скан, запишіть причину.
 
-1. Close and reopen the helper.
-2. Wait for its sign-in check and automatic sync, or press Sync now.
-3. Read **Show activity** without toggling sharing or making another game save.
+##### SYNC-5 — Надіслати наявний скан після перезапуску
 
-**PASS if:** The saved scan is considered for upload after the sign-in is found. Starting a price download first must not leave sharing silently off.
+**Потрібно:** Є не надісланий збережений скан; обмін у помічнику вже ввімкнений.
 
-##### SYNC-6 — Retry after a connection failure
+1. Закрийте й знову відкрийте помічник.
+2. Дочекайтеся перевірки входу й автоматичного обміну або натисніть **Sync now**.
+3. Прочитайте **Show activity**, не перемикаючи обмін і не роблячи нового збереження гри.
 
-**Need:** Computer check; or a connection failure that happens naturally.
+**Пройдено, якщо:** Після визначення входу наявний скан розглядається для надсилання. Раннє завантаження цін не повинно залишати надсилання непомітно вимкненим.
 
-1. Use the retry computer checks below.
-2. If a real failure occurs, restore the connection and press Sync now. Read Show activity.
+##### SYNC-6 — Повторити роботу після збою зв’язку
 
-**PASS if:** Successful uploads stay acknowledged; unfinished ones can retry. The error names the failed operation. A price download can still be attempted when sharing fails.
+**Потрібно:** Автоперевірка або збій, який стався сам.
 
-##### SYNC-7 — Download and read community prices
+1. Для автотесту виконайте `python -m unittest discover -s tests -p "test_sync_helper.py"`.
+2. Якщо стався справжній збій, відновіть зв’язок, натисніть **Sync now** і прочитайте **Show activity**.
 
-**Need:** Sync automatic downloads on, or the Sync now button.
+**Пройдено, якщо:** Автотест завершується OK. Успішно надіслані скани залишаються позначеними; незавершені можна повторити. Помилка називає невдалу операцію. Після невдалого надсилання можна окремо спробувати завантажити ціни.
 
-1. Press **Sync now**, then look at the PRICES row.
-2. If the helper created `ForeverFlip_Shared` for the first time, restart WoW. For later data updates, type `/reload`.
-3. In the game, inspect community information under Sharing.
+##### SYNC-7 — Завантажити й прочитати ціни спільноти
 
-**PASS if:** Available downloaded prices are loaded. No community prices yet can also be correct if none exists. Your own returned summaries do not repeatedly add the same sales.
+**Потрібно:** Увімкнено автоматичний обмін або доступна кнопка Sync now.
 
-##### SYNC-8 — Choose beta or stable addon updates
+1. Натисніть **Sync now** і перегляньте рядок **PRICES**.
+2. Якщо `ForeverFlip_Shared` створено вперше, перезапустіть гру. Для наступних оновлень даних введіть `/reload`.
+3. У грі перегляньте дані спільноти в **Обмін сканами**.
 
-**Need:** The helper and an isolated game copy for installation experiments.
+**Пройдено, якщо:** Доступні ціни завантажуються в аддон. **No community prices yet** також можливе, якщо даних немає. Ваші власні повернуті зведення не повинні багаторазово додавати ті самі продажі.
 
-1. Look at the installed addon version shown in the helper.
-2. Turn **Beta tester** on and check which update is offered.
-3. Turn it off again. If you do not have a separate test copy, stop before an installation experiment.
+##### SYNC-8 — Вибрати бета-оновлення або стабільні випуски
 
-**PASS if:** Beta mode can offer pre-releases. Turning it off does not install an older version. Hash checks, backups and rollback are covered by computer checks. The helper EXE itself must still be downloaded separately.
+**Потрібно:** Помічник; для дослідів зі встановленням — окрема копія гри.
 
-##### SYNC-9 — Keep the helper responsive
+1. Прочитайте встановлену версію аддона в помічнику.
+2. Увімкніть **Beta tester** і подивіться, яке оновлення запропоновано.
+3. Вимкніть його. Без окремої тестової копії зупиніться перед дослідом зі встановленням.
 
-**Need:** A saved scan large enough to take noticeable processing time.
+**Пройдено, якщо:** Бета-режим може пропонувати попередні випуски. Його вимкнення не встановлює старішої версії. Перевірку хешу, резервування й відновлення виконують автотести. EXE помічника все одно завантажується окремо.
 
-1. Press Sync now and open Show activity while it works.
-2. Try moving the helper window or changing the log view.
-3. Close it during an active sync.
+##### SYNC-9 — Не зависнути під час обробки скану
 
-**PASS if:** The window responds. Closing waits for the active sync to finish rather than silently losing its saved progress. Command-line and TLS details are covered by the computer checker.
+**Потрібно:** Достатньо великий збережений скан, щоб робота була помітною.
 
-#### Computer checks for hard-to-create situations
+1. Натисніть **Sync now** та відкрийте **Show activity** під час роботи.
+2. Спробуйте пересунути вікно або змінити вигляд журналу.
+3. Закрийте помічник під час активного обміну.
 
-Run these from the repository root. The program creates a pretend auction house and checks the
-result for you. `OK` means the group passed; `FAILED` means copy the failure for the developer.
-These tests do not buy real items or upload your scans. A skipped window test still needs a real
-Windows check using the cards above.
+**Пройдено, якщо:** Вікно реагує. Закриття чекає завершення активного обміну без непомітної втрати збереженого прогресу. Командний режим і TLS окремо перевіряє комп’ютер.
 
-| What is checked | Run this command |
+#### Автоперевірки складних ситуацій
+
+Команди виконуються в теці вихідного проєкту. Вони створюють уявний аукціон і самі перевіряють
+результат. `OK` — група пройшла, `FAILED` — збережіть помилку для розробника. Вони не купують
+справжні предмети та не надсилають ваші скани. Пропущений тест вікна не замінює огляду у Windows.
+
+| Що перевіряється | Команда |
 |---|---|
-| Missing/partial full-scan replies, purchase/post errors and duplicate actions | `python -m unittest discover -s tests -p "test_audit.py"` |
-| A generic purchase error followed by success, or a late answer | `python -m unittest discover -s tests -p "test_purchase_confirmation.py"` |
-| Partial sales, missing lots and repost protection | `python -m unittest discover -s tests -p "test_lot_sales.py"` |
-| Current confirmed-sales rates and the separate flow fallback | `python -m unittest discover -s tests -p "test_demand.py"` |
-| Price rules, minimum/maximum, keep and automatic duration | `python -m unittest discover -s tests -p "test_selling_rules.py"` |
-| Posting limits, all bag stacks and retained units | `python -m unittest discover -s tests -p "test_post_quantities.py"` |
-| Safe gear pause/resume and manual request priority | `python -m unittest discover -s tests -p "test_foreground.py"` |
-| Failed submissions, retry, changed saves and readable errors | `python -m unittest discover -s tests -p "test_sync_helper.py"` |
-| Delayed account discovery and the window icon setup | `python -m unittest discover -s tests -p "test_sync_gui_state.py"` |
-| Bad update packages, hash checks, backups and rollback | `python -m unittest discover -s tests -p "test_addon_update.py"` |
-| All groups, including mail, bids, crafting and compatibility | `python -m unittest discover -s tests -p "test_*.py"` |
+| Неповні скани, відсутні відповіді, помилки операцій і дублікати | `python -m unittest discover -s tests -p "test_audit.py"` |
+| Загальна помилка купівлі та пізніше підтвердження | `python -m unittest discover -s tests -p "test_purchase_confirmation.py"` |
+| Часткові продажі, зниклі лоти й перевиставлення | `python -m unittest discover -s tests -p "test_lot_sales.py"` |
+| Поточний розрахунок підтверджених продажів та окремий резервний flow | `python -m unittest discover -s tests -p "test_demand.py"` |
+| Правила ціни, мінімум/максимум, залишення й тривалість | `python -m unittest discover -s tests -p "test_selling_rules.py"` |
+| Усі пачки, залишені одиниці та межі кількості | `python -m unittest discover -s tests -p "test_post_quantities.py"` |
+| Пауза спорядження та пріоритет ручних запитів | `python -m unittest discover -s tests -p "test_foreground.py"` |
+| Невдале надсилання, повтори, змінені файли й пояснення помилок | `python -m unittest discover -s tests -p "test_sync_helper.py"` |
+| Пізнє визначення входу та налаштування іконки | `python -m unittest discover -s tests -p "test_sync_gui_state.py"` |
+| Неправильний архів, хеш, резервування й відновлення | `python -m unittest discover -s tests -p "test_addon_update.py"` |
+| Усі групи, зокрема пошта, ставки, крафт і сумісність | `python -m unittest discover -s tests -p "test_*.py"` |
 
-#### Write down a result
+#### Як записати результат
 
-Copy this and fill in the blanks:
+Найзручніше заповнювати [Excel-бланк тестувальника](tester-checklist.uk.xlsx).
+У колонці «Результат» виберіть позначку зі списку. У «Примітці» опишіть, що зробив аддон;
+для ❌ вкажіть, що очікували побачити, і додайте повідомлення або посилання на знімок екрана.
+Файл містить умови, кроки та очікуваний результат усіх карток, тому ним можна користуватися окремо.
+
+Приклад для текстового звіту:
 
 ```text
-Test ID: POST-2
-Addon / helper version: 1.2.0-beta.6 / 1.2.0-beta.6
-Result: PASS / FAIL / SKIP
-What I had before the test:
-What I clicked:
-What I saw afterwards:
-Screenshot or activity message:
+ID перевірки: POST-2
+Версії аддона / помічника: 1.2.0-beta.6 / 1.2.0-beta.6
+Результат: ✅ Пройдено / ❌ Не пройдено / ⏭ Пропущено
+Що було перед початком:
+Що натиснув/натиснула:
+Що відбулося:
+Знімок екрана або повідомлення журналу:
 ```
 
-## Beta testing
+<a id="beta-testing"></a>
+## Як тестувати бету
 
-Use [the beta.6 release](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.6), or turn on
-**Beta tester** in the [Sync helper](community.md#addon-updates-and-beta-testing) for addon updates.
-Install the matching helper EXE separately. Follow the current checklist against the installed
-build; automated checks do not establish live auction timing or real GitHub upload acceptance.
+Використовуйте [випуск beta.6](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.6)
+або ввімкніть **Beta tester** у [помічнику Sync](community.md#addon-updates-and-beta-testing)
+для оновлень аддона. Відповідний EXE помічника завантажуйте окремо. Автотести не підтверджують
+час відповіді живого аукціону чи справжнє прийняття скану GitHub.
 
-Report an [issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose) with the checklist ID,
-addon/helper version, what you did, expected/actual result, and whether it reproduces. Include a
-screenshot for visual faults. For Lua failures, `/reload` and provide the relevant `errors` entries
-from `WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua` plus `/ff diag`. For Sync failures, include
-the relevant **Show activity** lines and submission outcome. Never include tokens or sign-in codes.
+У [звіті про помилку](https://github.com/Danissemo/ForeverFlip/issues/new/choose) вкажіть ID картки,
+версії, кроки, очікуване й фактичне, а також повторюваність. Для візуальної помилки додайте знімок.
+Для помилки Lua введіть `/reload` і надайте відповідні записи `errors` з
+`WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua` та `/ff diag`. Для Sync потрібні рядки
+**Show activity** й відповідь на надсилання. Не додавайте токени та коди входу.
 
-## Automated tests
+## Автоматичні тести
 
-To run the full checker:
+Щоб запустити повну перевірку:
 
-1. Open the source project folder: it contains `README.md`, `tests`, `sync` and `ForeverFlip`.
-   This is not the installed addon folder inside the game.
-2. Open a terminal in that folder. Python must be installed; the project's CI uses Python 3.12.
-3. Paste the commands below one at a time. The first installs the test libraries; the second runs
-   the tests. `OK` means they passed. If it says `FAILED`, save the error text for the developer.
-4. The last command checks Lua formatting and needs StyLua installed. It does not run the game.
+1. Відкрийте теку вихідного проєкту: у ній є `README.md`, `tests`, `sync` і `ForeverFlip`.
+   Це не встановлена тека аддона всередині гри.
+2. Відкрийте в ній термінал. Має бути встановлений Python; CI проєкту використовує Python 3.12.
+3. По черзі виконайте команди нижче. Перша встановлює бібліотеки, друга запускає тести.
+   `OK` означає успіх. За `FAILED` збережіть текст помилки для розробника.
+4. Остання команда перевіряє форматування Lua й потребує встановленого StyLua; гру вона не запускає.
 
 ```bash
 python -m pip install -r requirements-dev.txt
@@ -590,114 +605,112 @@ python -m unittest discover -s tests -p "test_*.py"
 stylua --check ForeverFlip
 ```
 
-The current checker discovers **509 tests in 38 modules**. The Lua tests load the actual TOC files
-in order into `lupa.lua51`, then exercise events and frame updates through `tests/mock.lua`.
-Python tests cover the Sync helper, community aggregator and release tooling. Mocked network tests
-do not upload real scans or authenticate to GitHub. Tk window tests can be skipped when the
-platform has no display; record the skipped count instead of treating it as visual verification.
+Поточний набір — **509 тестів у 38 модулях**. Lua-тести завантажують справжні файли з TOC
+у правильному порядку через `lupa.lua51`, а `tests/mock.lua` відтворює події й кадри клієнта.
+Python перевіряє помічник, агрегатор та випуск. Мережеві заглушки не надсилають справжні скани
+й не виконують реальний вхід у GitHub. Віконні тести Tk можуть пропускатися без дисплея:
+записуйте кількість пропусків, а не вважайте це перевіркою зовнішнього вигляду.
 
-To run a focused group while developing, use discovery with the module name, for example:
+Окрему групу можна запустити так:
 
 ```bash
 python -m unittest discover -s tests -p "test_post_quantities.py"
 python -m unittest discover -s tests -p "test_sync_gui_state.py"
 ```
 
-### Coverage by module
+### Покриття за модулями
 
-| File | Covers |
+| Файл | Що перевіряє |
 |---|---|
-| `test_addon.py` | Utilities, market maths, full scan pipeline, verification, buying, posting, own auctions, mail, merchant, accounting, analytics, time-of-week pattern. Also provides the `runtime()` helper the other suites use. |
-| `test_demand.py` | Confirmed-sales rates, observed zero, price levels, age, smoothing and priority over flow; separate tests retain the flow-only fallback. |
-| `test_scheduler.py` | The exact-search queue: FIFO within priorities, response ownership, shared requests/callbacks, background retries and timeouts. |
-| `test_batch_progress.py`, `test_status_batch.py` | Check all: capture, progress and completion. |
-| `test_status_ui.py`, `test_tables.py` | Status line, tables, sorting, paging, localisation of the UI. |
-| `test_accuracy.py` | Game deposits, neutral auction houses, stale quotes. |
-| `test_fast_sniper.py` | Browse rounds, paging, candidates, key batches, the player's browsing. |
-| `test_lot_sales.py` | Lot-by-lot sales tracking, sale prices, 14-day history, price age, history window. |
-| `test_invoices.py` | Invoices, double-booking protection, failed posts, sale rate, trust, learned cut. |
-| `test_post_quantities.py` | Posting across bag stacks, retained quantities, client limits and manual-post boundaries; no unattended next-item posting. |
-| `test_selling_rules.py` | Undercut percent, rules, maximum, hold, Post all, Cancel undercut, automatic duration. |
-| `test_shopping.py` | Shopping deals, ignored items, the shopping page, learning from searches, key bindings. |
-| `test_crafting.py` | Recipes, material and product prices, Shop materials, disenchant table and deals. |
-| `test_bids.py` | Bid candidates, checks, placing, won and outbid bids, the Bids page. |
-| `test_no_sellers.py` | Items nobody sells: empty checks, fallback prices, guesses, no answer. |
-| `test_hidden_items.py` | Hiding items from the Sell page, the Hidden view, returning items. |
-| `test_sorting.py` | Column sorting of every table, both directions, cached lists untouched. |
-| `test_ingame_round2.py` | Own auctions nobody else sells, no answer, sniper summary, Buy tab marks per row. |
-| `test_share.py` | Shared scans: text form, sending, receiving, merging, rejection; key bindings in the settings; statistics display. |
-| `test_history.py` | Community-history price filtering and disputed scans; unconfirmed or disputed data is not published as confirmed prices. |
-| `test_sync.py` | Raw full-scan capture, SavedVariables parsing, FFR1 uploads, FF1 community summaries, seals, duplicate rejection, confirmation and aggregation. |
-| `test_extras.py` | `ForeverFlipAPI`, aux fallback, CSV export, realm gold, presets. |
-| `test_forever12.py` | 1.2: vendor prices from the buyback list and the margin, the stuck throttle, owner names, gear searched by browse and version, other addons' full scans, the scan wait, disenchant rules and learning, the realm channel, the trust filter, the spending limit, cheap lots left, Buy next, the saved-data guard, hardcore scopes, tooltip advice. |
-| `test_simulation.py` | Simulated play sessions (see below), with and without the player and other addons acting meanwhile, a `/reload` with the saved data written and read back as text, switching between a faction and a neutral house, and a full scan of 100 000 auctions read in small frames. |
-| `test_audit.py` | Current regression coverage: stuck quotes and requests, queue order, the request budget, purchases bound to the selected deal, the price field, posting and cancelling twice, late answers, mail the game refuses, one failing part of the frame update. |
-| `test_release.py` | Exact beta release notes, legacy fallback, refusal of missing notes, and current-version archive contents. |
-| `test_locale.py` | Every `L("...")` string has a Ukrainian translation, and no key is translated twice. |
-| `test_foreground.py` | Interactive promotion, wire ownership, safe gear pause/resume, trade exclusion, status priority and posting before read-ahead. |
-| `test_optimization.py` | Bounded analytics rankings and build slices, lot comparison work, scan recovery fairness, browse chunks, input painting and indexed own-unit counts. |
-| `test_purchase_confirmation.py` | General auction errors preceding successful purchase, money or chat confirmation; timeout and late recovery without double booking. |
-| `test_resale_diagnostics.py` | Actual sales-data counts, visible spending limits, affordability classification and safe local re-evaluation after money gains. |
-| `test_sync_helper.py` | Forever discovery, retail rejection, upload retries, saved preferences, credential refresh and file-change handling. |
-| `test_github_login.py` | GitHub device sign-in, encrypted token storage, sign-out and credential precedence. |
-| `test_addon_update.py` | Stable/beta selection, download digest and TOC validation, safe installation and rollback. |
-| `test_sync_gui_state.py` | Delayed account discovery wakes automatic sharing, unchanged saves are reconsidered, and PNG window icons are not overridden by ICO decoding. |
-| `test_sync_packaging.py` | TLS verification and isolated packaged-runtime diagnostic behavior; the Windows builder also tests the actual EXE. |
+| `test_addon.py` | Утиліти, розрахунки, сканування, перевірка угод, купівля, виставлення, пошта, торговець, облік та аналітика. Надає runtime() для інших тестів. |
+| `test_demand.py` | Підтверджені продажі: нуль і невідомі дані, рівні цін, вік, згладжування та перевага над flow. Окремо перевіряє резервний розрахунок flow. |
+| `test_scheduler.py` | Черга точного пошуку: пріоритети, порядок, належність відповідей, спільні запити, повтори та завершення очікування. |
+| `test_batch_progress.py`, `test_status_batch.py` | «Перевірити все»: прийняття запитів, прогрес, повтори й завершення. |
+| `test_status_ui.py`, `test_tables.py` | Стан, таблиці, сортування, сторінки та переклад; оцінка продажів, ціна за штуку й прибуток угоди. |
+| `test_accuracy.py` | Застави клієнта, нейтральні аукціони та прострочені пропозиції купівлі. |
+| `test_fast_sniper.py` | Сторінки снайпера, кандидати, групи ключів та пошуки самого гравця. |
+| `test_lot_sales.py` | Продажі за лотами, часткове викуповування, підтвердження зниклих лотів, перевиставлення, 14 днів історії та вік ціни. |
+| `test_invoices.py` | Поштові квитанції: правильна кількість, захист від повторного запису, невдале виставлення й уточнення комісії. |
+| `test_post_quantities.py` | Усі пачки в сумках, залишена кількість, обмеження клієнта та ручного виставлення; відсутність автоматичного наступного лота. |
+| `test_selling_rules.py` | Підрізання, мінімум/максимум ціни, утримання, залишена кількість, зняття перебитих і автоматична тривалість. |
+| `test_shopping.py` | Угоди зі списку покупок, кількість і ціна, ігнорування, навчання з пошуків гравця та клавіші. |
+| `test_crafting.py` | Рецепти, ціни матеріалів і виробів, відсутні ціни, список матеріалів, розпилення та угоди. |
+| `test_bids.py` | Кандидати ставок, перевірка, ставка, виграш або перебиття та сторінка ставок. |
+| `test_no_sellers.py` | Порожні перевірки, остання виставлена ціна, позначені припущення, відсутня відповідь і резервні ціни. |
+| `test_hidden_items.py` | Приховування й повернення предметів, відсів для торговця, запитані перевірки та ціни зі свіжого скану. |
+| `test_sorting.py` | Сортування таблиць в обидва боки без зміни вихідних списків. |
+| `test_ingame_round2.py` | Власні лоти без конкурентів, відсутня відповідь, підсумок снайпера та позначки у вкладці купівлі. |
+| `test_share.py` | Формат і передача історії, приймання частинами, відкидання повторів, сумісність старих форматів, клавіші та статистика. |
+| `test_history.py` | Порівняння з історією спільноти: відкидання нетипових цін і спірних сканів. |
+| `test_sync.py` | Збереження повних сканів, читання SavedVariables, FFR1, зведення FF1, контрольна сума, дублікати, підтвердження та агрегатор. |
+| `test_extras.py` | Публічний ForeverFlipAPI, резервні ціни aux, CSV, золото персонажів і готові набори налаштувань. |
+| `test_forever12.py` | Сумісність Forever: ціни торговця, черга сервера, власники, спорядження, чужі скани, безпека, обмін, різні аукціони, підказки та збереження. |
+| `test_simulation.py` | Модель ігрових сеансів зі сторонніми діями, перезавантаженням, зміною аукціону та 100 000 лотів. |
+| `test_audit.py` | Завислі запити, черга, купівля, виставлення, пошта, торговець, часткові скани, інтерфейс і поради при підрізанні. |
+| `test_release.py` | Вибір нотаток потрібної бети, резервний вибір базової версії, відсутні нотатки та вміст архіву поточної версії. |
+| `test_locale.py` | Наявність українського перекладу для рядків L(...) і відсутність повторних ключів. |
+| `test_foreground.py` | Пріоритет ручних дій, належність відповіді, пауза спорядження, виключення одночасних операцій та виставлення до фонової підготовки. |
+| `test_optimization.py` | Робота частинами: аналітика, порівняння лотів, відновлення скану, великі відповіді, відгук на натискання та індекс власних лотів. |
+| `test_purchase_confirmation.py` | Загальна помилка перед успішною купівлею, підтвердження подією/грошима/чатом і пізній результат без подвійного запису. |
+| `test_resale_diagnostics.py` | Справжній лічильник спостережень, пояснення бюджету й безпечний перерахунок кандидатів після отримання золота. |
+| `test_sync_helper.py` | Пошук Forever, відкидання Retail, повтори надсилання, налаштування, оновлення входу та зміни збереження під час обміну. |
+| `test_github_login.py` | Вхід за кодом GitHub, шифроване зберігання токена, вихід та порядок джерел облікових даних. |
+| `test_addon_update.py` | Стабільні й бета-версії, хеш і TOC архіву, резервні копії, безпечне встановлення та відновлення. |
+| `test_sync_gui_state.py` | Пізнє визначення входу вмикає надсилання, незмінені файли переглядаються знову, PNG-іконку не перезаписує ICO. |
+| `test_sync_packaging.py` | Перевірка TLS і діагностика зібраного EXE без читання конфігурації чи облікових даних. |
 
-### Simulated sessions
+### Модель ігрових сеансів
 
-`tests/sim.lua` provides a changing market: other players list, buy, cancel and expire auctions.
-`test_simulation.py` runs seeds **1, 2 and 3**, plus seed **6** with player/other-addon activity
-(`chaos=0.05`). It also tests reload persistence, switching houses and a 100,000-auction scan.
-After each simulated tick, journal totals, stock, listings and money must agree, and caught or
-uncaught Lua errors fail the run. Additional seeds can use `session(seed)` from that module.
+`tests/sim.lua` створює змінний ринок: інші гравці виставляють, купують і знімають лоти;
+термін лотів спливає. `test_simulation.py` запускає початкові значення генератора **1, 2, 3**,
+а також **6** зі сторонніми діями (`chaos=0.05`). Є перезавантаження, зміна аукціону та скан
+100 000 лотів. Після кожного кроку журнал, запаси, власні лоти й золото мають узгоджуватися;
+оброблена або необроблена помилка Lua провалює перевірку. Додаткові запуски — `session(seed)`.
 
-### Build and release verification
+### Перевірка збірки та випуску
 
 ```bash
 python tools/build.py --output dist
 ```
 
-This verifies TOC/runtime version agreement, runs the same full suite and creates the addon ZIP.
-CI also checks StyLua on main pushes and pull requests. On Windows, build the helper separately:
+Команда звіряє версії TOC і коду, запускає всі тести та створює ZIP аддона. CI також перевіряє
+StyLua для main і pull request. Помічник у Windows збирається окремо:
 
 ```powershell
 python -m pip install pyinstaller
 python tools/build_sync_helper.py --output dist
 ```
 
-The Windows builder includes the Sync asset kit and EXE icon, preserves any TLS resource required
-by the Python distribution, and runs the actual EXE's TLS/Tk self-test. `--self-test-network` adds a
-public community-index GET; `--self-test-report <path>` saves the JSON result. Self-test mode runs
-before configuration or credentials are read and does not sync user data.
+Збірка додає зображення й іконку EXE, зберігає потрібний дистрибутиву Python ресурс TLS
+і запускає самоперевірку TLS/Tk справжнього EXE. `--self-test-network` додає публічний GET
+індексу спільноти; `--self-test-report <path>` зберігає JSON. Самоперевірка виконується до читання
+конфігурації та облікових даних і не обмінюється даними користувача.
 
-For a release, also verify that the tag, TOC and `F.version` agree; the helper's `VERSION` identifies
-the matching build; the ZIP contains the tagged runtime files; the published EXE contains the asset
-kit; and both downloads match GitHub's published digests. A frozen runtime self-test does not check
-the full window layout, title-bar icon or actual scan submission: use the manual rows below.
+Перед випуском звірте тег, TOC та `F.version`, а також `VERSION` помічника. ZIP має містити
+файли саме цього тега, EXE — усі зображення; хеші завантажень мають збігатися з GitHub.
+Самоперевірка EXE не перевіряє весь вигляд вікна, іконку заголовка чи реальне надсилання:
+для цього є відповідні картки вище.
 
-The pre-commit hook checks formatting and runs the suite when code changes; the local post-commit
-flow can install the addon and push main. See [local development flow](../CONTRIBUTING.md#local-development-flow).
+Перед комітом кодових змін локальний хук запускає форматування й тести; після коміту може
+встановити аддон і відправити main. Дивіться [локальний процес розробки](../CONTRIBUTING.md#local-development-flow).
 
-### Automated checker maintenance
+### Як підтримувати набір перевірок
 
-Confirmed-sales tests must use records produced by `Market.recordSales`; flow-only examples belong
-in the explicitly named fallback tests. Check that a valid observed record with no sales near a
-high price gives zero, while absent observations remain unknown. Batch retries may revisit a failed
-item once after the other items; do not label that intermediate failure as a permanent final result.
+Перевірки поточних продажів використовують записи `Market.recordSales`; приклади лише з flow
+належать явно названим резервним тестам. Порожній рівень ціни у справжніх спостереженнях дає
+нуль; відсутність спостережень лишається невідомою. Загальна перевірка може повторити невдалий
+предмет один раз після решти списку: проміжна помилка не завжди остаточна.
 
-The module table above must list every existing `tests/test_*.py` file. Tests named after an old
-release or incident still protect current functions; remove one only when its contract or called
-path has actually been removed or superseded. Rename misleading test descriptions to describe the
-current layer being tested, rather than removing a live regression.
+У таблиці мають бути всі наявні `tests/test_*.py`. Старий номер версії в назві не робить тест
+зайвим. Видаляйте перевірку тільки після вилучення або заміни відповідного контракту чи коду;
+неточну назву виправляйте, зберігаючи потрібну регресію.
 
-In particular, `Market.trackSales` produces candidate vanished-lot counts; `Scan.trackLots` defers
-whole-lot confirmation to rule out reposts. Keep both unit and scan-level tests. Keep FF1 parsing,
-FF2 sales rejection, saved-data migration, aux/API fallbacks and the owned-auction progress adapter:
-these paths still exist. The removed anonymous relay is not a current upload path.
+`Market.trackSales` повертає кандидатів зниклих лотів, а `Scan.trackLots` відкладає підтвердження
+цілих лотів для виключення перевиставлення. Потрібні обидва рівні. Читання FF1, відкидання
+продажів FF2, міграція даних, резервні API/aux та адаптер прогресу власних аукціонів досі працюють.
+Вилучений анонімний ретранслятор не є поточним шляхом надсилання.
 
-There is one current manual checklist above. Old release-specific checklists, inherited pass marks,
-fixed gear-response promises and guaranteed Resale-after-two-scans expectations are not acceptance
-criteria. Do not reintroduce automatic purchase/post replay after a timer or pretend an in-flight
-server request was cancelled locally. Put `unittest.main()` after every test class so direct runs
-and discovery cover the same cases.
+Є один поточний чек-лист. Старі галочки, обіцянка відповіді спорядження за фіксований час і
+гарантовані угоди після двох сканів не є критеріями успіху. Купівля чи виставлення не мають
+повторюватися самі з таймера; уже надісланий запит не можна вважати скасованим лише локально.
+Розміщуйте `unittest.main()` після всіх класів, щоб прямий запуск і пошук тестів бачили ті самі перевірки.
