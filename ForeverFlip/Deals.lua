@@ -203,6 +203,9 @@ end
 -- a post sent while the sniper's messages are in flight is often thrown away by the server, and
 -- the throttle stays busy.
 function D.holding()
+    if clock() < (D.holdUntil or 0) then
+        return true -- a purchase or post found the way busy: it is cleared for the next click
+    end
     local ui = F.UI
     if not ui or not ui.frame or not ui.frame:IsShown() then
         return false
@@ -211,7 +214,7 @@ function D.holding()
         return true
     end
     local selected = ui.section == "deals" and D.get(ui.selected) or nil
-    return selected ~= nil and selected.verified ~= nil and clock() - selected.verified <= D.HOLD
+    return selected ~= nil and selected.verified ~= nil and clock() - selected.verified <= D.FRESH
 end
 
 -- The best deal the player can buy now (Buy next key): checked deals first, then by profit.

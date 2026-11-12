@@ -81,6 +81,9 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   counts them.
 - **Gear I can't use:** a button at the merchant sells the equipment your class can never use, bound
   or not (unbound pieces only when the auction house would not pay more).
+- **Buy is enabled for every ready deal:** the background rests as long as the selected deal is
+  ready (it rested only 45 seconds, so a ready deal's Buy turned grey). When a search is still
+  answered at the click, the status says so and the background rests 5 seconds for the next click.
 - **A purchase or a post goes out only on a free way to the server:** Buy is enabled while no search
   waits for its answer and the server is ready (the background rests while a checked deal is
   selected). A purchase sent behind an unanswered search never left the game (no money spent, "no

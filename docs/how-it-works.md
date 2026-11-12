@@ -262,7 +262,7 @@ candidate or part of Post all.
 (`C_AuctionHouse.SendSearchQuery`) reads the item's current listings and the deal is evaluated again
 with them, using the same rules.
 
-- While the Selling page is open, or a freshly checked deal is selected (45 seconds, `D.HOLD`), the
+- While the Selling page is open, or a selected deal is ready (its check is fresh, `D.FRESH`), the
   sniper and the automatic checks wait (`Deals.holding`): a purchase or a post sent while their
   messages are in flight is often thrown away by the server.
 - Buy (and Post) is enabled only while no search waits for its answer and the server is ready: the

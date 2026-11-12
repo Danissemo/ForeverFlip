@@ -405,3 +405,15 @@ class CoinTests(unittest.TestCase):
         assert(U.plainMoney(123456) == '12g 34s 56c', U.plainMoney(123456))
         assert(U.parseMoney(U.plainMoney(123456)) == 123456)
         assert(U.money(-250):sub(1, 1) == '-')''')
+
+
+class BuyBusyTests(unittest.TestCase):
+    def test_a_busy_way_is_said_on_the_click_and_cleared_for_the_next(self):
+        run(BASE + '''fullScan(); D.verify('c:10'); answer()
+        UI.selected = 'c:10'
+        D.search = { key = 'c:999', item = { id = 999, kind = 'commodity' }, source = 'sniper', at = now, callbacks = {} }
+        assert(T.canBuy(D.get('c:10')), 'Buy stays enabled for a ready deal')
+        local ok, why = T.buy('c:10')
+        assert(not ok and why == 'buy_busy' and D.holding(), 'said, and the background rests')
+        D.search = nil
+        assert(T.buy('c:10'), 'the next click buys')''')

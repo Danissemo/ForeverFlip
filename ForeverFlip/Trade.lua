@@ -37,13 +37,17 @@ end
 -- purchase sent then never left (no money spent, no answer). Background searches rest while a
 -- checked deal is selected (Deals.holding), so the way is free within a second or two.
 function T.canBuy(deal)
-    return deal
-        and deal.verified
-        and clock() - deal.verified <= F.Deals.FRESH
-        and not T.busy()
-        and not F.Deals.searching()
-        and F.AH.ready(true)
-        and F.AH.isOpen()
+    return deal and deal.verified and clock() - deal.verified <= F.Deals.FRESH and not T.busy() and F.AH.isOpen()
+end
+
+-- The way to the server is free: no search waits for its answer and the throttle is ready. When it
+-- is not, background work rests for a few seconds so the next click goes through.
+function T.wayFree()
+    if not F.Deals.searching() and F.AH.ready() then
+        return true
+    end
+    F.Deals.holdUntil = clock() + 5
+    return false
 end
 
 function T.buy(key)
@@ -56,6 +60,9 @@ function T.buy(key)
     end
     if T.overLimit(deal.cost) then
         return false, "spend_limit"
+    end
+    if not T.wayFree() then
+        return false, "buy_busy"
     end
     F.Engine.message = nil
     local op = {
@@ -527,8 +534,8 @@ function T.post(item, qty, price, duration)
     if T.postingNow() or not F.AH.isOpen() then
         return false, "busy"
     end
-    -- Like a purchase, a post waits for a search in flight and for the server (see T.canBuy).
-    if F.Deals.searching() or not F.AH.ready() then
+    -- Like a purchase, a post waits for a search in flight and for the server (T.wayFree).
+    if not T.wayFree() then
         return false, "post_busy"
     end
     if not U.finite(qty) or qty < 1 or qty > item.count or not U.finite(price) or price < 1 then

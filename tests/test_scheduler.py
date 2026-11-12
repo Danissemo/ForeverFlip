@@ -118,7 +118,8 @@ class SchedulerTests(unittest.TestCase):
         local UI=ForeverFlip.UI;UI.selected='c:10';D.verify('c:10');answer()
         ForeverFlip.Engine.autoVerify=true;ForeverFlip.db.settings.sniper=true
         run(2);assert(not D.search and T.canBuy(D.get('c:10')),'background must leave time to click Buy')
-        run(45);assert(D.search,'background resumes once the selected verification expires')''')
+        run(45);assert(not D.search,'still ready: the way stays free for Buy')
+        run(80);assert(D.search,'background resumes once the selected deal is no longer ready')''')
 
     def test_replace_keeps_pending_foreground_requests(self):
         run(SETUP + '''fullScan();local D=ForeverFlip.Deals;throttleReady=false

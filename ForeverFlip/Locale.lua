@@ -390,6 +390,7 @@ T.uk = {
     ["Gear I can't use (%d)"] = "Непридатне спорядження (%d)",
     ["No unusable gear"] = "Немає непридатного спорядження",
     ["each"] = "за одиницю",
+    ["The auction house is still answering a search: press Buy again in a moment."] = "Аукціон ще відповідає на пошук: натисніть «Купити» ще раз за мить.",
     ["reload"] = "Мову збережено. Введіть /reload.",
     ["The game kept refusing an auction mail: taking mail stopped. Take it by hand."] = "Гра постійно відмовляла в листі аукціону: збір пошти зупинено. Заберіть його вручну.",
     ["Buying: waiting for the auction house..."] = "Покупка: чекаємо на аукціон...",
