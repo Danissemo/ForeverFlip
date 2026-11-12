@@ -198,6 +198,22 @@ function D.searching()
     return D.search ~= nil
 end
 
+-- Background work (the sniper, automatic checks) waits while the player is about to buy or post:
+-- a freshly checked deal is selected (D.HOLD seconds), or the Selling page is open. A purchase or
+-- a post sent while the sniper's messages are in flight is often thrown away by the server, and
+-- the throttle stays busy.
+function D.holding()
+    local ui = F.UI
+    if not ui or not ui.frame or not ui.frame:IsShown() then
+        return false
+    end
+    if ui.section == "sell" or ui.section == "auctions" then
+        return true
+    end
+    local selected = ui.section == "deals" and D.get(ui.selected) or nil
+    return selected ~= nil and selected.verified ~= nil and clock() - selected.verified <= D.HOLD
+end
+
 -- The best deal the player can buy now (Buy next key): checked deals first, then by profit.
 function D.best()
     local wallet = F.Engine.wallet()
@@ -378,7 +394,6 @@ function D.enqueue(key, callback, identity, fast)
     -- A single check (a click) goes before the searches of a Check all batch (fast ones).
     local pos = #D.requests + 1
     if not r.fast then
-        F.Engine.message = nil -- the status shows this check, not an older message
         for i, q in ipairs(D.requests) do
             if q.fast then
                 pos = i
@@ -906,10 +921,8 @@ function D.step()
     if F.Trade.checkQueue and #F.Trade.checkQueue > 0 then
         return
     end
-    -- Leave the player time to click Buy on the selected, freshly checked deal.
-    local ui = F.UI
-    local selected = ui and ui.section == "deals" and ui.frame:IsShown() and D.get(ui.selected)
-    if selected and selected.verified and now - selected.verified <= D.HOLD then
+    -- The player is about to buy or post: background searches wait (D.holding).
+    if D.holding() then
         return
     end
     r = D.backgroundRetry

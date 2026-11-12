@@ -54,6 +54,7 @@ local MESSAGES = {
     buy_unknown = "No answer from the auction house. Settle the purchase in the Journal.",
     posted = "Auction created.",
     post_sent = "Posting... waiting for the auction house to confirm.",
+    buy_dropped = "The auction house threw the purchase away (too many messages): press Buy again.",
     post_busy = "The auction house is busy: press again in a moment.",
     post_dropped = "The auction house threw the post away (too many messages): press again.",
     post_unconfirmed = "The auction house did not confirm the post: check My auctions, then press again.",
@@ -709,6 +710,7 @@ function UI.createDeals(p)
     UI.buyButton:SetPoint("RIGHT", UI.confirmButton, "LEFT", -4, 0)
     UI.checkButton = button(bar, "Check price", 116, function()
         if UI.selected then
+            F.Engine.message = nil -- the status shows this check, not an older message
             F.Deals.verify(UI.selected)
             F.Engine.changed()
             UI.refresh()
@@ -1412,7 +1414,7 @@ function UI.createSell(p)
     end)
     UI.ruleToggle:SetPoint("RIGHT", UI.sellHide, "LEFT", -4, 0)
 
-    local bar = footer(p, 108)
+    local bar = footer(p, 108, "GameFontHighlightSmall")
     UI.sellText = bar.text
     local priceLabel = text(bar, "GameFontNormal")
     priceLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 36)
@@ -1508,6 +1510,7 @@ function UI.createSell(p)
     end
     UI.sellCheck:SetScript("OnClick", function()
         if UI.sellSelected then
+            F.Engine.message = nil
             F.Trade.checkPrice(UI.sellSelected.key)
             F.Engine.changed()
             UI.refresh()
@@ -1827,19 +1830,20 @@ function UI.refreshSell()
     local h = F.Data.market(F.db, F.Engine.scope()).history[item.key]
     -- What buyers really paid (sales seen between full scans), and how much sells a day at the price.
     local sale = h and F.Market.salePrice(h)
+    local demand = price and h and F.Market.saleability(h, price, F.Engine.clock())
+    local market = {}
     if sale then
-        lines[#lines + 1] =
-            string.format(L("Buyers paid about %s each lately (the middle of the sales seen)."), U.money(sale))
+        market[#market + 1] = string.format(L("buyers paid about %s lately"), U.money(sale))
     end
-    if price and h then
-        local s = F.Market.saleability(h, price, F.Engine.clock())
-        if s.known then
-            lines[#lines + 1] = string.format(
-                L("At %s about %s units a day sell."),
-                U.money(price),
-                s.perDay == 0 and "0" or string.format("%.1f", s.perDay)
-            )
-        end
+    if demand and demand.known then
+        market[#market + 1] = string.format(
+            L("at %s about %s a day sell"),
+            U.money(price),
+            demand.perDay == 0 and "0" or string.format("%.1f", demand.perDay)
+        )
+    end
+    if #market > 0 then
+        lines[#lines + 1] = L("Market") .. ": " .. table.concat(market, "; ") .. "."
     end
     local timing = h and F.Market.timing(h, F.Engine.clock())
     if timing and timing.ready and timing.now <= 0.95 and timing.spread >= 0.08 then

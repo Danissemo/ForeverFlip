@@ -262,6 +262,13 @@ candidate or part of Post all.
 (`C_AuctionHouse.SendSearchQuery`) reads the item's current listings and the deal is evaluated again
 with them, using the same rules.
 
+- While the Selling page is open, or a freshly checked deal is selected (45 seconds, `D.HOLD`), the
+  sniper and the automatic checks wait (`Deals.holding`): a purchase or a post sent while their
+  messages are in flight is often thrown away by the server.
+- An item purchase is confirmed by the first of: the purchase event, the chat line "You won an
+  auction" (hidden from addons on newer clients) or its price leaving the wallet (`PLAYER_MONEY`). A
+  purchase the server throws away (`AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED` right after it) is
+  reported at once.
 - A check is valid for **2 minutes** (`D.FRESH`). After that, Buy requires a new check. A lot
   bought by someone meanwhile only makes the purchase fail, for nothing. Background searches wait
   45 seconds (`D.HOLD`) while a freshly checked deal is selected, to leave time for Buy.

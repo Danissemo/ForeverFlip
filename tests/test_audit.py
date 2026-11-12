@@ -267,3 +267,33 @@ class MerchantTests(unittest.TestCase):
         assert(UI.merchantView:IsShown() and UI.merchantView.sellRows[1]:IsShown())
         UI.merchantView.sellAll:Click()
         assert(#soldToVendor == 1, 'one click sells it all')''')
+
+
+class QuietTests(unittest.TestCase):
+    def test_the_sniper_waits_while_selling_is_open(self):
+        run(BASE + '''UI.show('sell')
+        assert(D.holding(), 'background work waits on the Selling page')
+        UI.show('analytics')
+        assert(not D.holding())''')
+
+    DEAL = BASE + """addItem(40, 'Moon Gem', 2000, 'item')
+    for i = 1, 30 do addAuction(40, 5000 + i, 1) end
+    fullScan()
+    addAuction(40, 1001, 1)
+    D.verify('i:40'); answer()
+    assert(D.get('i:40') and D.get('i:40').verified, 'a checked vendor deal')
+    """
+
+    def test_an_item_purchase_is_confirmed_by_the_money_leaving(self):
+        run(self.DEAL + """C_AuctionHouse.PlaceBid = function() end -- no purchase event, no chat line
+        assert(T.buy('i:40'))
+        money = money - 1001
+        fire('PLAYER_MONEY')
+        assert(not T.op, 'bought: no wait for an event or a chat line')
+        assert(F.Data.char(F.db, F.Engine.owner()).positions['i:40'].qty == 1)""")
+
+    def test_a_dropped_purchase_is_said_at_once(self):
+        run(self.DEAL + """C_AuctionHouse.PlaceBid = function() end -- the server never answers it
+        assert(T.buy('i:40'))
+        fire('AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED')
+        assert(not T.op and F.Engine.message == 'buy_dropped', tostring(F.Engine.message))""")

@@ -254,6 +254,9 @@ function E.handle(event, ...)
         F.Share.onMessage(...)
         return
     elseif event == "PLAYER_MONEY" or event == "PLAYER_ENTERING_WORLD" then
+        if event == "PLAYER_MONEY" then
+            F.Trade.onMoney()
+        end
         F.Analytics.recordGold()
         if event == "PLAYER_ENTERING_WORLD" and not F.Share.joined then
             -- The game joins its own channels first; joining ours a few seconds later keeps their order.

@@ -63,6 +63,14 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **Selling is more compact:** the rule fields moved into a panel opened with **Rule...**, Check
   price is a small refresh button beside the price, and the list shows 12 rows. Check all is
   narrower.
+- **Buying and posting go through at once:** the sniper and the automatic checks wait while the
+  Selling page is open or a freshly checked deal is selected, so the server is free for the click
+  (with the sniper on, posts were refused as busy and purchases thrown away). An item purchase is
+  confirmed by its price leaving the wallet: the purchase event does not always come on WoW Forever,
+  and the chat line "You won an auction" is hidden from addons on newer clients, so purchases waited
+  30 seconds. A purchase the server throws away is said at once.
+- **Selling text** is smaller and the market line is one line, so it no longer runs into the price
+  row.
 - **Merchant: a ForeverFlip tab and Sell to vendor.** One button on the Merchant tab sells everything
   a merchant pays the most for (Best = Vendor on Selling, and vendor-deal stock), except hidden
   items, items with a keep rule and resale stock. The ForeverFlip tab beside Merchant and Buyback

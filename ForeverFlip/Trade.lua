@@ -71,6 +71,7 @@ function T.buy(key)
             return false, "verify_first"
         end
         op.state, op.qty, op.cost, op.auctionID = "awaiting", 1, lot.unit, lot.auctionID
+        op.money = F.Engine.wallet() -- the price leaving the wallet confirms the purchase (T.onMoney)
         if not pcall(F.AH.buyItem, lot.auctionID, lot.unit) then
             return false, "error"
         end
@@ -194,6 +195,18 @@ end
 function T.onCommodityFailed()
     if T.op and T.op.kind == "commodity" and T.op.state == "awaiting" then
         failed(T.op)
+    end
+end
+
+-- PLAYER_MONEY: the price of an awaited item purchase left the wallet. On WoW Forever the purchase
+-- event does not always come, and the chat line "You won an auction" is hidden from addons on newer
+-- clients, so the money is the sign that does not fail.
+function T.onMoney()
+    local op = T.op
+    if op and op.kind ~= "commodity" and op.state == "awaiting" and op.money then
+        if F.Engine.wallet() <= op.money - (op.cost or 0) then
+            bought(op)
+        end
     end
 end
 
@@ -553,6 +566,14 @@ end
 
 -- AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED right after a post: the server threw it away.
 function T.onDropped()
+    local op = T.op
+    if op and op.state == "awaiting" and clock() - op.at <= 3 then
+        T.op = nil
+        F.Engine.notify("buy_dropped")
+        F.Deals.verify(op.key)
+        F.Engine.changed()
+        return
+    end
     local l = T.lastPost
     if l and #l.ids == 0 and clock() - l.at <= 3 then
         T.lastPost = nil

@@ -190,6 +190,8 @@ Check these with 1.2.0-beta.3 (or later).
 | ⬜ | Items without an answer | Check all on My items with WoW Forever scrolls: they get a price. An item whose search still gets no answer is searched by name the next time. |
 | ⬜ | Post feedback | Post AH-worthy with the sniper on: the status says Posting... and then Auction created once the game confirms; a dropped post says press again. With Selling open for a moment, the first press already posts. |
 | ⬜ | Compact Selling | The bottom of Selling → My items has the price row and the post buttons only; the refresh button beside the price checks it again; Rule... opens the min / max / keep panel; 12 rows fit in the list; nothing overlaps. |
+| ⬜ | Posting with the sniper on | With the sniper on, open Selling → My items and post: no "busy" message, the auction is created on the first press (the sniper rests while Selling is open). |
+| ⬜ | Quick purchase | Buy a gear or item deal: the status goes from Buying to Purchase recorded within a second or two, not after 30 seconds. |
 | ⬜ | Merchant tab | At a merchant a ForeverFlip tab sits beside Merchant and Buyback. Sell to vendor (N) on the Merchant tab sells every item whose Best is Vendor, except Hidden ones, in one click. The ForeverFlip tab lists them with Sell all, and below the items to buy here. |
 | ⬜ | Buying at a merchant | Buy 9 throwing axes at a merchant: no "Internal Bag Error"; with fewer free bag slots, only as many as fit are bought. |
 | ⬜ | House name | The open house is named in the middle of the bottom bar, right of the money display; the summary on the left no longer repeats it. |

@@ -176,6 +176,7 @@ local function idle()
         and #D.requests == 0
         and not D.backgroundRetry
         and #S.candidates == 0
+        and not D.holding()
         and F.AH.ready()
 end
 
@@ -259,7 +260,7 @@ function S.step()
         S.nextRound = t + S.PAUSE
     end
     if q then
-        if q.more and F.AH.ready() and #S.candidates == 0 then
+        if q.more and F.AH.ready() and #S.candidates == 0 and not F.Deals.holding() then
             q.more, q.at, q.answered = false, t, false
             pcall(F.AH.browseMore)
         end
