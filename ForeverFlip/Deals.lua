@@ -66,10 +66,16 @@ function D.ownTrust(c, key, now)
 end
 
 -- The usual asking price, capped by what sales actually reached once enough were seen.
+-- Price a resale may count on: the usual asking price, capped by what buyers really paid. An item
+-- watched for an hour or more without one confirmed sale has none (nil, second value true): its
+-- asking prices are not a price anyone pays.
 function D.resaleCap(market, history)
     local cap = F.Market.saleCap(history)
     if cap and U.finite(market) then
         return math.min(market, cap)
+    end
+    if not cap and F.Market.watched(history) then
+        return nil, true
     end
     return market or cap
 end
@@ -79,6 +85,7 @@ function D.evaluate(g, vendor, history, now)
         return nil, "blocked"
     end
     local room, held = itemRoom(g.key)
+    local cap, unsold = D.resaleCap(g.market, history)
     local deal, reason = F.Market.evaluate(g.rows, {
         kind = g.kind,
         vendor = vendor,
@@ -89,7 +96,8 @@ function D.evaluate(g, vendor, history, now)
         budget = D.budget(),
         deposit = F.AH.depositFn(g.id, g.kind, F.Trade.durationFor and F.Trade.durationFor() or 3),
         history = history,
-        market = D.resaleCap(g.market, history),
+        market = cap,
+        noResale = unsold,
         now = now or clock(),
         settings = settings(),
     })

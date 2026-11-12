@@ -65,7 +65,36 @@ function D.open(saved)
     db.deSeen = type(db.deSeen) == "table" and db.deSeen or {}
     db.markets = type(db.markets) == "table" and db.markets or {}
     db.chars = type(db.chars) == "table" and db.chars or {}
+    D.cleanSales(db)
     return db
+end
+
+-- Sales measured before 1.2.0-beta.4 counted reposts (and the flow cancelled, expired and repriced
+-- auctions) as sales: in game, 194 "sales" of an item with 31 units listed, and gear "sold" at
+-- asking prices nobody paid. They are dropped once, to be measured again with the confirmation
+-- by the next scan; prices and listed units stay.
+D.SALES_MODEL = 2
+function D.cleanSales(db)
+    if (tonumber(db.salesModel) or 1) >= D.SALES_MODEL then
+        return
+    end
+    for _, m in pairs(db.markets) do
+        if type(m) == "table" and type(m.history) == "table" then
+            for _, h in pairs(m.history) do
+                if type(h) == "table" then
+                    h.sales, h.flow, h.pending, h.pendingAt = nil, nil, nil, nil
+                    if type(h.days) == "table" then
+                        for _, d in ipairs(h.days) do
+                            if type(d) == "table" then
+                                d.s = nil
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    db.salesModel = D.SALES_MODEL
 end
 
 function D.market(db, scope)

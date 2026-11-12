@@ -119,8 +119,13 @@ item is the cheapest price of the bucket that reaches **30% of the listed volume
 - the expensive tail never reaches it.
 
 Resale prices never go above the usual price, nor above the **sale cap**: the price that a quarter of
-the [sales seen](#sales-tracked-lot-by-lot) reached (`M.saleCap`, once 3 units were seen sold). The
-median of the sales seen (`M.salePrice`) is shown as "sells at" in tooltips.
+the [sales seen](#sales-tracked-lot-by-lot) reached, at most three times their median (`M.saleCap`;
+one confirmed sale already sets it). An item whose lots were watched for an hour or more without one
+confirmed sale gets no resale at all (`M.watched`, reason "not selling"): its asking prices are not a
+price anyone pays. The median of the sales seen (`M.salePrice`) is shown as "sells at" in tooltips.
+
+Sales measured before 1.2.0-beta.4 counted reposts as sales; they are dropped once
+(`Data.cleanSales`) and measured again.
 
 ## Sales estimate
 
@@ -580,7 +585,8 @@ crafts.
   cheapest price and the units listed (`S.snapshot`).
 - **Text form.** `FF1|<scope>|<time>|key,usual,cheapest,units;...`, with numbers in base 36 and the
   separators `%`, `,`, `;`, `|` in item keys escaped as `%XX`. The same text is used for export and
-  import.
+  import. `FF3` adds the daily records `o.cheapest.usual.units.sold`; `FF2` has the same form, but
+  its sales were counted before the repost protection, so only its prices are read.
 - **Transport.**
   - Addon messages with the prefix `ForeverFlip` (`C_ChatInfo.SendAddonMessage`) to GUILD, PARTY,
     RAID or WHISPER.

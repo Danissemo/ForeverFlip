@@ -219,6 +219,13 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   count appeared was posted again, not sold (in game: one seller's 65-80 silver bracers read as
   sales while the item sold at 3-4 silver, and Sells at came out ten times too high). The resale
   cap also stays within three times the median sale.
+- **No resale at prices nobody paid.** An item watched for an hour or more without one confirmed sale
+  is no resale deal: the prices others ask are not a price to resell at (in game, gear bought at 27
+  silver to resell at 94 silver, all of it expired). One or two confirmed sales already cap the
+  resale price.
+- **Sales measured with reposts are dropped once.** Sold units, the flow and the daily sold counts
+  saved before are cleared at login and measured again; prices stay. Shared scans are FF3 now: the
+  sales of FF2 texts (older versions) are not read, their prices are.
 - **Sale invoices booked no sale.** The count of an invoice was read from the wrong value (the minute
   of delivery, nearly always 0): sold stock stayed open, statistics missed the profit and the sale
   rates counted only failures, which lowered the trust of items that did sell. The count is read

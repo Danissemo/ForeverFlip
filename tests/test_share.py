@@ -76,14 +76,20 @@ class ShareTests(unittest.TestCase):
         run(SHARE + '''local UI=F.UI;UI.show('settings');UI.settingTabs.share:Click()
         assert(UI.settingFrames.share:IsShown() and not UI.settingFrames.general:IsShown())
         UI.shareGuild:Click();assert(#Sh.outbox>0)
-        UI.shareExport:Click();assert(UI.exportFrame.box:GetText():sub(1,4)=='FF2|')''')
+        UI.shareExport:Click();assert(UI.exportFrame.box:GetText():sub(1,4)=='FF3|')''')
+
+    def test_sales_of_older_versions_are_not_read(self):
+        run(SHARE + '''local text='FF2|Realm-Alliance|'..Sh.enc(now)..'|c:10,'..Sh.enc(100)..','..Sh.enc(90)..','..Sh.enc(5)
+          ..','..Sh.enc(1)..'.'..Sh.enc(90)..'.'..Sh.enc(100)..'.'..Sh.enc(5)..'.'..Sh.enc(194)
+        local back=Sh.decode(text);assert(back.items[1].days[1].m==100 and back.items[1].days[1].s==0)
+        back=Sh.decode('FF3'..text:sub(4));assert(back.items[1].days[1].s==194)''')
 
     def test_history_of_several_days_travels_and_is_merged(self):
         run(SHARE + '''local h=F.Data.market(F.db,F.Engine.scope()).history
         local key=next(h);local today=math.floor(F.Scan.last.at/86400)
         h[key].days={{d=today-3,min=900,m=1000,n=4,s=2},{d=today-1,min=950,m=1100,n=5,s=1},{d=today,min=990,m=1200,n=6}}
         local snap=Sh.snapshot();assert(snap.history)
-        local text=Sh.encode(snap);assert(text:sub(1,4)=='FF2|')
+        local text=Sh.encode(snap);assert(text:sub(1,4)=='FF3|')
         local back=Sh.decode(text)
         local it;for _,x in ipairs(back.items) do if x.key==key then it=x end end
         assert(it and #it.days==3 and it.days[1].o==3 and it.days[1].s==2,'three days back, with sales')

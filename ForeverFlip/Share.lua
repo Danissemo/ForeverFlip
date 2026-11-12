@@ -27,7 +27,10 @@ local S = {}
 F.Share = S
 
 S.PREFIX = "ForeverFlip"
-S.VERSION = 2 -- FF2: with daily records; FF1 (a single scan) is still read
+-- FF3: with daily records whose sales are confirmed (not reposts). FF2 has the same form, but its
+-- sales were counted before that protection: its prices are read, its sales are not. FF1 (a
+-- single scan) is still read.
+S.VERSION = 3
 S.HISTORY_DAYS = 7
 S.CHUNK = 240 -- payload characters per addon message (a message holds 255)
 S.PACE = 0.3 -- seconds between two messages sent
@@ -136,7 +139,7 @@ function S.encode(snap)
         parts[i] = record
     end
     return "FF"
-        .. (snap.history and 2 or 1)
+        .. (snap.history and S.VERSION or 1)
         .. "|"
         .. esc(snap.scope)
         .. "|"
@@ -145,14 +148,15 @@ function S.encode(snap)
         .. table.concat(parts, ";")
 end
 
-local function dayRecords(text)
+local function dayRecords(text, noSales)
     local days = {}
     for o, min, m, n, s in (text or ""):gmatch("(%w+)%.(%w+)%.(%w+)%.(%w+)%.(%w+)") do
         local function v(x)
             local value = S.dec(x)
             return value and value > 0 and value or nil
         end
-        days[#days + 1] = { o = S.dec(o) or 0, min = v(min), m = v(m), n = S.dec(n) or 0, s = S.dec(s) or 0 }
+        days[#days + 1] =
+            { o = S.dec(o) or 0, min = v(min), m = v(m), n = S.dec(n) or 0, s = not noSales and S.dec(s) or 0 }
     end
     return days
 end
@@ -180,10 +184,11 @@ function S.decodeBegin(text)
     text = text:gsub("[\r\n]", ""):gsub("^%s+", ""):gsub("%s+$", "")
     local version, scope, at, body = text:match("^FF(%d+)|([^|]+)|(%w+)|(.*)$")
     version = tonumber(version)
-    if version ~= 1 and version ~= 2 then
+    if version ~= 1 and version ~= 2 and version ~= 3 then
         return nil
     end
-    local snap = { scope = unesc(scope), at = S.dec(at), items = {}, history = version == 2 or nil }
+    local snap = { scope = unesc(scope), at = S.dec(at), items = {}, history = version >= 2 or nil }
+    snap.oldSales = version == 2 or nil
     if not snap.at then
         return nil
     end
@@ -204,8 +209,13 @@ function S.decodeSome(ctx, done)
         end
         key = key and unesc(key)
         if key and U.parseKey(key) then
-            ctx.snap.items[#ctx.snap.items + 1] =
-                { key = key, m = S.dec(m), min = S.dec(min), n = S.dec(n), days = days and dayRecords(days) or nil }
+            ctx.snap.items[#ctx.snap.items + 1] = {
+                key = key,
+                m = S.dec(m),
+                min = S.dec(min),
+                n = S.dec(n),
+                days = days and dayRecords(days, ctx.snap.oldSales) or nil,
+            }
         end
         if done and done() then
             return false

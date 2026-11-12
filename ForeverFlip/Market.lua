@@ -507,6 +507,13 @@ local function soldQuantile(h, share, need)
     end
 end
 
+-- True when the item's lots were watched long enough (an hour of scan pairs) to have seen a sale.
+M.WATCHED_HOURS = 1
+function M.watched(h)
+    local s = type(h) == "table" and h.sales
+    return type(s) == "table" and U.finite(s.hours) and s.hours >= M.WATCHED_HOURS
+end
+
 -- Typical price of the units seen sold (median), or nil without at least 3 sales.
 function M.salePrice(h)
     return soldQuantile(h, 0.5, 3)
@@ -516,9 +523,10 @@ end
 -- M.CAP_SPREAD times the typical (median) sale: a few sales far above the rest are rare luck, or
 -- reposts read as sales, not a price to count on.
 M.CAP_SPREAD = 3
+-- One or two confirmed sales already cap it: their price is what a buyer really paid.
 function M.saleCap(h)
-    local cap = soldQuantile(h, 0.75, 3)
-    local median = soldQuantile(h, 0.5, 3)
+    local cap = soldQuantile(h, 0.75, 0.5)
+    local median = soldQuantile(h, 0.5, 0.5)
     if cap and median then
         cap = math.min(cap, math.floor(median * M.CAP_SPREAD))
     end
@@ -693,6 +701,11 @@ function M.evaluate(rows, ctx)
 
     if ctx.vendorOnly then
         return best, best and nil or reason
+    end
+    -- Watched and never seen sold: the asking prices are no price to resell at (in game, gear
+    -- bought at 27 silver to resell at the 94 silver others asked, and nobody paid that).
+    if ctx.noResale then
+        return best, best and nil or (reason == "no_gap" and "not_selling" or reason)
     end
 
     -- Resale: try every prefix of the cheapest listings. Each prefix has its own exit price and

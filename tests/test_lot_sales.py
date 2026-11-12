@@ -120,5 +120,27 @@ class DisplayTests(unittest.TestCase):
         assert(UI.historyFrame and UI.historyFrame:IsShown() and UI.historyFrame.key==row.key)''')
 
 
+
+class SalesCleanupTests(unittest.TestCase):
+    def test_sales_measured_before_the_repost_protection_are_dropped_once(self):
+        run(LOTS + '''local db={markets={s={history={k={sales={hours=4,pairs=9,b={}},flow={hours=4},
+          scan={market=10},days={{d=1,m=10,n=31,s=194}}}}}}}
+        db=ForeverFlip.Data.open(db);local h=db.markets.s.history.k
+        assert(not h.sales and not h.flow and h.days[1].s==nil and h.days[1].n==31 and h.scan.market==10)
+        h.sales={hours=1};ForeverFlip.Data.open(db);assert(h.sales,'once')''')
+
+    def test_watched_item_never_seen_sold_is_no_resale(self):
+        run(LOTS + '''local h={sales={hours=3,pairs=12,b={}},flow={hours=3,pairs=12,market=9900,sold={0,0,0,0}}}
+        local cap,unsold=ForeverFlip.Deals.resaleCap(9900,h);assert(cap==nil and unsold)
+        local d,why=M.evaluate({{unit=2700,qty=1},{unit=9900,qty=3}},{kind='gear',budget=100000,history=h,
+          market=cap,noResale=unsold,now=now,settings={}})
+        assert(not d and why=='not_selling',why)''')
+
+    def test_one_confirmed_sale_caps_the_resale_price(self):
+        run(LOTS + '''local h={};M.recordSales(h,{[3000]=1},3600,now)
+        assert(ForeverFlip.Deals.resaleCap(9900,h)==3000)
+        assert(ForeverFlip.Deals.resaleCap(9900,{})==9900,'not watched: the asking price')''')
+
+
 if __name__ == '__main__':
     unittest.main()
