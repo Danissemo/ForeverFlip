@@ -3956,7 +3956,7 @@ function UI.sniperSummary()
     end
     return "\n\n"
         .. string.format(
-            L("Sniper: %d rounds\nRead %d · found %d · checks %d"),
+            L("Sniper: %d rounds\nRead %d · found %d\nChecks: %d"),
             F.Sniper.rounds,
             F.Sniper.items,
             F.Sniper.found,
