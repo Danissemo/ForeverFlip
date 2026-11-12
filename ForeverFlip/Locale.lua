@@ -269,6 +269,7 @@ T.uk = {
     ["The price changed. The deal is checked again."] = "Ціна змінилася. Угоду перевіряю знову.",
     ["The price offer expired. Press Buy again."] = "Пропозиція ціни минула. Натисніть «Купити» ще раз.",
     ["Purchase recorded."] = "Покупку записано.",
+    ["Bought one lot. The resale price counts on the other cheap lots too: press Buy again."] = "Куплено один лот. Ціна перепродажу розрахована на інші дешеві лоти теж: натисніть «Купити» ще раз.",
     ["The purchase failed (someone was faster). The deal is checked again."] = "Покупка не вдалася (хтось був швидшим). Угоду перевіряю знову.",
     ["No answer from the auction house. Settle the purchase in the Journal."] = "Аукціон не відповів. Позначте результат покупки в «Журналі».",
     ["Auction created."] = "Лот виставлено.",

@@ -190,6 +190,13 @@ local function bought(op)
     -- Gear and items are bought one auction per click: the deal is worked out again from the lots
     -- already read, without the lot just bought, so the next click buys the next lot at once.
     F.Deals.afterPurchase(op)
+    -- A resale's price is one step below the lot after the ones it buys: a cheap lot left behind
+    -- undercuts it. The player is told to buy the rest (in game: one of two 4-silver gloves bought,
+    -- the other then sold below the resale price).
+    local rest = op.mode == "flip" and op.kind ~= "commodity" and F.Deals.get(op.key)
+    if rest and rest.mode == "flip" and type(rest.lots) == "table" and #rest.lots > 0 then
+        F.Engine.notify("bought_more")
+    end
     F.Engine.changed()
 end
 
@@ -1338,8 +1345,10 @@ end
 
 -- Everything to sell at a merchant, stack by stack: vendor-deal stock (never at a loss), and every
 -- bag item whose Best is "vendor" (Selling page: a merchant pays at least what the auction house
--- leaves). Left out: hidden items, items with a "keep" rule, and stock bought for resale (it goes to
--- the auction house). { bag, slot, key, id, count, price, link }, dearest first.
+-- leaves), resale stock included: once its resale no longer pays, the merchant is the better way
+-- and the sale closes the position. Left out: hidden items, items with a "keep" rule, and vendor-deal
+-- stock a merchant would pay less for than it cost. { bag, slot, key, id, count, price, link },
+-- dearest first.
 function T.vendorSellList()
     local c = char()
     local out, seen = {}, {}
@@ -1357,7 +1366,7 @@ function T.vendorSellList()
             not seen[b.bag .. ":" .. b.slot]
             and not T.hidden(b.key)
             and not (rule and rule.keep)
-            and not (p and p.qty > 0)
+            and not (p and p.qty > 0 and p.mode == "vendor")
             and not b.locked
             and T.bestWay(b.key, b.id) == "vendor"
         then

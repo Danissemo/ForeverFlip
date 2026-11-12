@@ -52,6 +52,7 @@ local MESSAGES = {
     mail_stuck = "The game kept refusing an auction mail: taking mail stopped. Take it by hand.",
     requote = "The price offer was about to expire; a new one was asked. Press Confirm when it arrives.",
     bought = "Purchase recorded.",
+    bought_more = "Bought one lot. The resale price counts on the other cheap lots too: press Buy again.",
     buy_failed = "The purchase failed (someone was faster). The deal is checked again.",
     buy_unknown = "No answer from the auction house. Settle the purchase in the Journal.",
     buy_busy = "The auction house is still answering a search: press Buy again in a moment.",
