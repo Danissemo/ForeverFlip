@@ -441,7 +441,7 @@ function A.foreignRecent()
     return A.foreignAt ~= nil and F.Engine.clock() - A.foreignAt < A.FOREIGN_WAIT
 end
 
--- Item-key versions, learned from every browse answer (ours, the game's Buy tab, other addons) and
+-- Item-key versions, learned from owned auctions and browse answers (ours or other addons) and
 -- kept between sessions: F.db.itemKeys[id] = { at = time, list = { { l = level, s = suffix,
 -- n = lower-case name or nil }, ... } }. A check of gear then searches its versions straight away
 -- (one search per version of the ending) instead of a browse by name first and every version of
@@ -450,6 +450,44 @@ end
 -- item-key info is in the client's cache before a version is searched.
 A.KEYS_FRESH = 6 * 3600
 A.KEYS_MAX = 60
+function A.rememberKey(key, link, owned)
+    local id = type(key) == "table" and key.itemID
+    if not F.db or not id or kinds[id] == "commodity" then
+        return
+    end
+    local info = select(2, pcall(AH.GetItemKeyInfo, key))
+    if type(info) == "table" then
+        kinds[id] = info.isCommodity and "commodity" or info.isEquipment and "gear" or "item"
+    end
+    if kinds[id] == "commodity" then
+        return
+    end
+    -- One owned gear version does not describe every version of the same ending.
+    -- Its complete candidate list still comes from browsing, as before.
+    if owned and kinds[id] ~= "item" then
+        return
+    end
+    F.db.itemKeys = type(F.db.itemKeys) == "table" and F.db.itemKeys or {}
+    local e = F.db.itemKeys[id]
+    if type(e) ~= "table" or type(e.list) ~= "table" then
+        e = { list = {} }
+        F.db.itemKeys[id] = e
+    end
+    e.at = F.Engine.clock()
+    local name = U.linkName(link) or (type(info) == "table" and info.itemName)
+    name = type(name) == "string" and string.lower(name) or nil
+    local level, suffix = key.itemLevel or 0, key.itemSuffix or 0
+    for _, v in ipairs(e.list) do
+        if v.l == level and v.s == suffix then
+            v.n = name or v.n
+            return
+        end
+    end
+    if #e.list < A.KEYS_MAX then
+        e.list[#e.list + 1] = { l = level, s = suffix, n = name }
+    end
+end
+
 function A.learnKeys()
     if not F.db then
         return
@@ -458,32 +496,9 @@ function A.learnKeys()
     if not ok or type(results) ~= "table" then
         return
     end
-    F.db.itemKeys = type(F.db.itemKeys) == "table" and F.db.itemKeys or {}
-    local now = F.Engine.clock()
     for _, r in ipairs(results) do
         local k = type(r) == "table" and r.itemKey
-        local id = type(k) == "table" and k.itemID
-        if id and A.kindOf(id) == "gear" then
-            local e = F.db.itemKeys[id]
-            if type(e) ~= "table" or type(e.list) ~= "table" then
-                e = { list = {} }
-                F.db.itemKeys[id] = e
-            end
-            e.at = now
-            local info = select(2, pcall(AH.GetItemKeyInfo, k))
-            local name = type(info) == "table" and type(info.itemName) == "string" and string.lower(info.itemName)
-                or nil
-            local level, suffix, found = k.itemLevel or 0, k.itemSuffix or 0, false
-            for _, v in ipairs(e.list) do
-                if v.l == level and v.s == suffix then
-                    v.n, found = name or v.n, true
-                    break
-                end
-            end
-            if not found and #e.list < A.KEYS_MAX then
-                e.list[#e.list + 1] = { l = level, s = suffix, n = name }
-            end
-        end
+        A.rememberKey(k)
     end
 end
 
@@ -516,8 +531,8 @@ end
 
 -- The client knows the item's auction house data: a search of it is answered. Without it the
 -- server often ignores the search (Auctionator waits for it too); the data is asked for.
-function A.keyInfoReady(item)
-    local ok, info = pcall(AH.GetItemKeyInfo, plainKey(item.id))
+function A.keyInfoReady(item, key)
+    local ok, info = pcall(AH.GetItemKeyInfo, key or plainKey(item.id))
     if ok and type(info) == "table" then
         return true
     end
@@ -932,6 +947,7 @@ function A.owned()
     for i = 1, (AH.GetNumOwnedAuctions and AH.GetNumOwnedAuctions() or 0) do
         local a = AH.GetOwnedAuctionInfo(i)
         if a and a.itemKey then
+            A.rememberKey(a.itemKey, a.itemLink, true)
             -- A listed auction reports the price of one unit; a sold one reports the whole sale
             -- (as Auctionator reads it). Kept apart: price is always one unit, total the lot.
             local qty = a.quantity or 1
@@ -941,6 +957,7 @@ function A.owned()
             out[#out + 1] = {
                 auctionID = a.auctionID,
                 id = a.itemKey.itemID,
+                itemKey = U.copy(a.itemKey),
                 link = a.itemLink,
                 qty = qty,
                 price = buyout and (sold and math.floor(buyout / math.max(qty, 1) + 0.5) or buyout),

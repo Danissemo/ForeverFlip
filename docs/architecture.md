@@ -115,6 +115,12 @@ versions (`phase = "browse"`), then each version is searched (`phase = "keys"`) 
 merged. Once the sniper's sent browse reply is drained, its unsent pagination gives way
 (`F.Sniper.yield`).
 
+Non-commodity searches reuse exact keys learned from owned auctions or browse results; ordinary
+items such as recipes can have a nonzero key level too. Both UPDATED and ADDED result events
+advance pagination. A request has a 30-second cumulative reply-wait budget across its stages;
+intentional waits between versions do not consume it. Expired requests return unknown, and
+unresponsive cached keys are invalidated before later retries.
+
 An already sent query cannot be cancelled by clearing a Lua field: its reply must still be
 drained, or time out, before another request owns the connection. Only an unsent gear-version
 step (`waitKey`) can be parked in the queue; it resumes with the same keys and accumulated rows.

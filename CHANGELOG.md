@@ -8,6 +8,12 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- Recipe and other non-equipment price checks reuse exact item keys from owned auctions and
+  browse results, avoiding silent zero-level queries. Item and commodity added-page events are
+  processed, stalled cached keys are invalidated, and one multi-version request cannot consume
+  more than 30 seconds of reply-wait time. Intentional pauses between versions do not consume it.
+  Late replies to timed-out browses cannot certify the next item as having no sellers.
+
 - Audit: prevent duplicate accounting after bid wins, manual purchase settlement, repeated inbox
   updates and merchant buyback events; distribute sale invoices across matching listings and use
   exact sold-lot totals. Preserve gear variant names in bids and localize undercut scan notices.

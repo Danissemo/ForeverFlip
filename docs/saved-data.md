@@ -20,7 +20,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `vendor` | table | `vendor[itemID]` = the client's vendor sell price; `0` means vendors do not buy the item. Shared by all characters. |
 | `vendorSeen` | table | `vendorSeen[itemID]` = what a merchant really paid, from the buyback list: `{ p = copper each, t = when, c = the client's price then }`. Preferred over `vendor`. |
 | `sellable` | table | Item IDs previously accepted for auction posting; fallback when the client's current sellability check is inconclusive. |
-| `itemKeys` | table | Cached gear key versions: `itemKeys[itemID] = { at, list = { { l, s, n }, ... } }` (level, suffix, optional lower-case name). |
+| `itemKeys` | table | Cached non-commodity key versions, learned from owned auctions and browse results: `itemKeys[itemID] = { at, list = { { l, s, n }, ... } }` (level, suffix, optional lower-case name). |
 | `deSeen` | table | `deSeen[band]` = your own disenchant results per item band (`"2:w:25"` = green weapons up to item level 25): `{ n = disenchants, [itemID] = units }`. |
 | `lastScan` | number | Time of the last full-scan request (the 15-minute cooldown is per account). |
 | `scanPending` | table | The full-scan request still waiting for (or in the middle of) its answer: `{ at, scope, base, baseMark, other, answered }`. Kept over closing the auction house and `/reload`; cleared when the scan is read or given up. |

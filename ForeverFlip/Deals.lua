@@ -20,6 +20,9 @@ D.SELECTED_HOLD = 15
 D.PER_MINUTE = 200
 -- Shortest gap between two searches of the player or of Check all (was 0.4 s and 1 s).
 D.GAP = 0.2
+-- Total time spent waiting for sent replies across browse/versions/pages. Per-message
+-- timeouts alone allow dozens of slow versions to monopolize the whole manual queue.
+D.MAX_SEARCH_TIME = 30
 
 local function clock()
     return F.Engine.clock()
@@ -444,15 +447,18 @@ local function startRequest(r)
     end
     -- An item the client has no auction house data for yet: asked for, and the search waits up to
     -- two seconds for it (the server often ignores the search of such an item).
-    local plain = not (r.item.kind == "gear" or D.byName[r.item.id])
-    if plain and F.AH.keyInfoReady and not F.AH.keyInfoReady(r.item) then
+    -- Ordinary items (including recipes) can carry nonzero key levels too. Reuse the
+    -- server's owned/browse key instead of first waiting for an ignored zero-level query.
+    local cached = r.item.kind ~= "commodity" and F.AH.cachedKeys and F.AH.cachedKeys(r.item)
+    local plain = not (cached or r.item.kind == "gear" or D.byName[r.item.id])
+    if (cached or plain) and F.AH.keyInfoReady and not F.AH.keyInfoReady(r.item, cached and cached[1]) then
         r.infoSince = r.infoSince or now
         if now - r.infoSince < 2 then
             return false
         end
     end
     if r.waitKey then
-        D.search, r.waitKey, r.at = r, nil, clock()
+        D.search, r.waitKey, r.at, r.budgetAt = r, nil, clock(), now
         if not pcall(F.AH.searchKey, r.keys[r.keyIndex]) then
             D.search = nil
             completeRequest(r, nil, false)
@@ -461,7 +467,7 @@ local function startRequest(r)
         return true
     end
     -- Cached answers and dropped-message events may fire inside the API call.
-    r.at, r.pages = clock(), 0
+    r.at, r.pages, r.budgetAt = clock(), 0, now
     D.search, D.lastRequest = r, now
     D.sent[#D.sent + 1] = now
     r.attempts = (r.attempts or 0) + 1
@@ -469,7 +475,6 @@ local function startRequest(r)
     -- Gear, and items whose plain search got no answer, are searched by name: a browse lists their
     -- exact item keys, then each key is searched.
     local byName = (r.item.kind == "gear" or D.byName[r.item.id]) and F.AH.canSearchGear()
-    local cached = byName and F.AH.cachedKeys and F.AH.cachedKeys(r.item)
     if cached then
         -- Its versions are known from an earlier browse: they are searched straight away.
         r.phase, r.keys, r.keyIndex, r.found, r.foundIDs, r.allComplete, r.cached =
@@ -583,6 +588,16 @@ local function finishSearch(rows, complete)
     F.Engine.changed()
 end
 
+local function timeoutSearch(s)
+    if s.phase == "browse" then
+        F.AH.foreignAt = clock() -- its late browse reply must not certify the next item
+    end
+    if s.cached then
+        F.AH.forgetKeys(s.item.id)
+    end
+    finishSearch(nil, false)
+end
+
 -- The next item-key version of a gear search, or the end of it with every version's rows.
 function nextGearKey(s)
     s.keyIndex, s.keyPages, s.keyRows = s.keyIndex + 1, 0, nil
@@ -604,7 +619,7 @@ function nextGearKey(s)
     -- Yield between versions: the next frame can serve a new click or purchase first.
     s.phase, s.at, s.waitKey = "keys", clock(), true
     if priority(s) == 0 and not F.Trade.busy() and F.AH.ready() then
-        s.waitKey = nil
+        s.waitKey, s.budgetAt = nil, precise()
         if not pcall(F.AH.searchKey, key) then
             finishSearch(nil, false)
         end
@@ -1091,6 +1106,17 @@ function D.step()
     D.batchRetry()
     local now = clock()
     local s = D.search
+    if s then
+        local t = precise()
+        if not s.waitKey then
+            s.waited = (s.waited or 0) + math.max(0, t - (s.budgetAt or t))
+        end
+        s.budgetAt = t
+        if (s.waited or 0) >= D.MAX_SEARCH_TIME then
+            timeoutSearch(s)
+            s = nil
+        end
+    end
     local first = D.requests[1]
     if s and s.waitKey and first and priority(first) < priority(s) then
         parkSearch()
@@ -1106,7 +1132,7 @@ function D.step()
         and not F.Trade.postingNow()
         and (priority(s) == 0 or not D.buyHolding(s.key))
     then
-        s.waitKey, s.at = nil, now
+        s.waitKey, s.at, s.budgetAt = nil, now, precise()
         if not pcall(F.AH.searchKey, s.keys[s.keyIndex]) then
             finishSearch(nil, false)
         end
@@ -1123,7 +1149,7 @@ function D.step()
             queueRequest(s, true)
             retryChanged()
         else
-            finishSearch(nil, false)
+            timeoutSearch(s)
         end
     end
     if D.search or F.Trade.busy() or not F.AH.isOpen() then

@@ -127,7 +127,9 @@ local events = {
     "AUCTION_HOUSE_CLOSED",
     "REPLICATE_ITEM_LIST_UPDATE",
     "COMMODITY_SEARCH_RESULTS_UPDATED",
+    "COMMODITY_SEARCH_RESULTS_ADDED",
     "ITEM_SEARCH_RESULTS_UPDATED",
+    "ITEM_SEARCH_RESULTS_ADDED",
     "COMMODITY_PRICE_UPDATED",
     "COMMODITY_PRICE_UNAVAILABLE",
     "COMMODITY_PURCHASE_SUCCEEDED",
@@ -222,9 +224,9 @@ function E.handle(event, ...)
         E.applyCut()
     elseif event == "REPLICATE_ITEM_LIST_UPDATE" then
         F.Scan.onReplicate()
-    elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
+    elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" or event == "COMMODITY_SEARCH_RESULTS_ADDED" then
         F.Deals.onResults(...)
-    elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
+    elseif event == "ITEM_SEARCH_RESULTS_UPDATED" or event == "ITEM_SEARCH_RESULTS_ADDED" then
         local key = ...
         if type(key) == "table" then
             F.Deals.onResults(key.itemID, key)
