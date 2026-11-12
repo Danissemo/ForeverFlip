@@ -398,8 +398,17 @@ function M.trackSales(prev, cur, dt, prevOwners, curOwners)
     -- does not match as the same lot. In game one seller's 65-80 silver bracers were read as sales
     -- this way while the item sold at 3-4 silver, and resale prices came out ten times too high.
     local reposted, gone, sellers = {}, {}, {}
+    -- New lots posted below the cheapest lot of the scan before: undercuts, the measure of how
+    -- quickly the item's sellers answer each other (see F.Trade.fightPlan).
+    local before, undercuts = math.huge, 0
+    for i = 1, np do
+        before = math.min(before, prev[3 * i - 2])
+    end
     for _, list in pairs(free) do
         for _, n in ipairs(list) do
+            if cur[3 * n - 2] < before then
+                undercuts = undercuts + 1
+            end
             local key = cur[3 * n - 2] .. ":" .. cur[3 * n - 1]
             reposted[key] = (reposted[key] or 0) + 1
             local o = curOwners and curOwners[n] or 0
@@ -425,7 +434,7 @@ function M.trackSales(prev, cur, dt, prevOwners, curOwners)
             end
         end
     end
-    return sold, byPrice, gone, reposted, sellers
+    return sold, byPrice, gone, reposted, sellers, undercuts
 end
 
 -- New lots of a scan as { ["price:count"] = lots }: every lot, when there is nothing to compare with.
@@ -536,7 +545,9 @@ end
 -- daily demand, and counting it whole let one scan pair decide a day of buying.
 M.SALE_LOG = 30
 M.SWEEP = 3
-function M.recordSales(h, byPrice, dt, now, lots)
+-- `undercuts` (optional): new lots posted below the cheapest lot of the scan before, kept decayed
+-- in s.cuts like the sales (M.undercutRate).
+function M.recordSales(h, byPrice, dt, now, lots, undercuts)
     local s = type(h.sales) == "table" and h.sales or { hours = 0, pairs = 0, at = now, b = {} }
     s.b = type(s.b) == "table" and s.b or {}
     local total = 0
@@ -569,6 +580,7 @@ function M.recordSales(h, byPrice, dt, now, lots)
     local decay = 0.5 ^ (math.max(0, now - (s.at or now)) / M.SALE_HALF_LIFE)
     s.sure = (s.sure or 0) * decay
     s.lots = (s.lots or 0) * decay
+    s.cuts = (s.cuts or 0) * decay + (dt > 0 and undercuts or 0)
     s.log = type(s.log) == "table" and s.log or {}
     s.hours = (s.hours or 0) * decay + dt / 3600
     for b, units in pairs(s.b) do
@@ -719,6 +731,18 @@ local function lotDemand(h, price)
     return { pairs = s.pairs, perDay = units / (s.hours + M.PRIOR_HOURS) * 24, sold = units, hours = s.hours }
 end
 M.lotDemand = lotDemand
+
+-- Undercuts of an item per hour: new lots posted below the cheapest lot, over the hours its lots
+-- were watched (with the same prior hours as the sales, so one scan pair does not decide it).
+-- { perHour, cuts, hours }; nil before the first scan pair.
+function M.undercutRate(h)
+    local s = type(h) == "table" and h.sales
+    if type(s) ~= "table" or (s.pairs or 0) < 1 or not U.finite(s.hours) then
+        return nil
+    end
+    local cuts = U.finite(s.cuts) and s.cuts or 0
+    return { perHour = cuts / (s.hours + M.PRIOR_HOURS), cuts = cuts, hours = s.hours }
+end
 
 -- Lowest prices seen outside full scans (the sniper's browse rounds, the player's searches) lower
 -- today's cheapest price of an item. `r` = { id, minPrice }.

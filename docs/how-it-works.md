@@ -436,6 +436,17 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
 - **Cancel undercut** (`T.undercutList`, `T.cancelNextUndercut`): an undercut auction is offered for
   cancelling only if its repost price (the undercut of the cheapest other seller) still reaches the
   item's floor. Each click cancels one.
+- **Anti-undercut** (`T.fightPlan`): every way out of an undercut is valued as expected money.
+  Units sold in t hours at or above a price follow a negative binomial: the rate is a
+  Gamma(n + 1/2, (h + `M.PRIOR_HOURS`) / 24) belief from n units seen sold in h hours
+  (`T.saleChances`), so thin data gives wide chances. A lot behind k units sells
+  E[min(max(N − k, 0), qty)] units (`T.expectedSold`); the demand is measured at the lot's own
+  price. Deposits come back with a sale; unsold units are worth `T.quote` (at least the vendor
+  price). Rivals answer at c per hour = max(own answers in a day / 24, `M.undercutRate`: new lots
+  posted below the cheapest between full scans, decayed like the sales in `h.sales.cuts`); a lot
+  first in line stays first for (1 − e^(−ct)) / c hours. Options: wait, undercut, buyout, raise (buy
+  every lot below the next seller above less a step, at most `M.saleCap`, and post all there),
+  vendor.
 - **Sales:** when `OWNED_AUCTIONS_UPDATED` marks an auction as sold, the sale is booked once (per
   auction ID) with its real quantity and price. The chat line *A buyer has been found for your
   auction* triggers a refresh.

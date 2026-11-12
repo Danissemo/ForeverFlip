@@ -1554,24 +1554,38 @@ end
 
 -- Anti-undercut ------------------------------------------------------------------------------------
 -- When another seller lists an item cheaper than the player's auction, every way out is priced and
--- the player chooses. Each option's value is its expected money, from the item's measured sales:
--- buyers take the cheapest lots first, sales come at the measured rate r (units a day near the
--- cheaper price, from the lot-tracked full scans), and the number sold in t hours is taken as Poisson
--- with mean r * t / 24. A lot behind k units (those cheaper, then its own) sells within t hours with
--- probability P(N >= k). An item that does not sell comes back by mail: it is still worth at least
--- what a merchant pays (the "fallback").
---   wait     keep the auction: P(the cheaper units and yours sell before it ends) x your price after
---            the cut, else the fallback;
---   undercut cancel (the deposit is lost, and the game may charge more) and post again one step
---            below the cheaper seller (T.undercut) for the duration the item needs: P(yours sells)
---            x the new price after the cut, else the fallback less the new deposit;
---   buyout   buy the cheaper units (a shopping list entry: they are checked and bought like any
---            deal), so your auction is the cheapest again, and sell them at your price too;
+-- the player chooses. Each option's value is its expected money, from the item's measured sales.
+--
+-- Sales. Buyers take the cheapest lots first. The units sold in t hours at or above a price p are
+-- counted from the lot-tracked full scans: n units in h hours watched. The rate is not taken as
+-- known: with few sales it is uncertain, so it is a Gamma(n + 1/2, (h + M.PRIOR_HOURS) / 24 days)
+-- belief, and the units sold in t hours follow the matching negative binomial (T.saleChances). Four
+-- units in one hour no longer read as a sure 22 a day: the chances stay wide until more is seen.
+-- A lot behind k units (other sellers' cheaper lots, the player's own cheaper lots, then its own)
+-- sells u units: E[min(max(N - k, 0), qty)], so a stack sells in part (T.expectedSold). The buyers
+-- who reach a lot must accept its price: the demand is measured at the lot's own price.
+--
+-- Deposits come back with a sale and are lost on expiry or cancel. Unsold units come back by mail
+-- and are worth what posting them again brings (F.Trade.quote), at least a merchant's price.
+--
+-- Rival undercutters. A seller who answers each undercut makes a single step down last only until
+-- the answer. The answer rate c per hour is the item's undercuts seen between full scans
+-- (M.undercutRate) or the player's own answers in the last day / 24, the higher. A lot first in line
+-- stays first for E[min(T, t)] = (1 - e^(-ct)) / c hours; after an answer the rest waits behind the
+-- rival's new lot.
+--   wait     keep the auction until it ends;
+--   undercut cancel (deposit lost, and the game may charge more) and post one step below the cheaper
+--            seller (T.undercut) for the duration the item needs;
+--   buyout   buy the cheaper units (shopping list) so yours is first again; sell them at your price;
+--   raise    buy every other seller's lot below a higher target (the next seller above yours less
+--            a step, at most the price sales reach, M.saleCap), cancel yours and post all at the
+--            target: a shelf cleared of cheap lots sells at the price buyers pay;
 --   vendor   cancel and sell to a merchant.
--- Not offered: undercut below the item's floor, buyout when the cheaper units cost more than the
--- money one deal may use or more than 50 units. Without measured sales the probabilities are not
--- known: wait and buyout are not priced, and the advice falls back to the prices alone.
+-- Not offered: undercut below the item's floor; buyout and raise when the units cost more than
+-- the money one deal may use or are more than T.BUYOUT_UNITS. Without measured sales the chances
+-- are not known: wait and buyout are not priced, raise is not offered, and the advice is to wait.
 T.WAR_ROUNDS = 3
+T.WAR_RATE = 1 / 4 -- an answer every 4 hours or sooner: a price war
 T.BUYOUT_UNITS = 50
 local HOURS = { 2, 8, 24 }
 
@@ -1623,6 +1637,81 @@ function T.atLeast(k, m)
     return math.max(0, math.min(1, 1 - below))
 end
 
+-- Chances of the units sold in `t` hours when n units sold in h hours watched (T.saleChances):
+-- the negative binomial of a Gamma(n + 1/2, (h + M.PRIOR_HOURS) / 24) rate. Returns tail(k) =
+-- P(N >= k); a normal approximation beyond T.CHANCE_TERMS units.
+T.CHANCE_TERMS = 2000
+function T.saleChances(sold, hours, t)
+    local shape = math.max(0, U.finite(sold) and sold or 0) + 0.5
+    local exposure = (math.max(0, U.finite(hours) and hours or 0) + M.PRIOR_HOURS) / 24
+    local days = math.max(0, U.finite(t) and t or 0) / 24
+    if days <= 0 then
+        return function(k)
+            return k <= 0 and 1 or 0
+        end
+    end
+    local p = exposure / (exposure + days) -- the chance of "no sale" in each step of the mixture
+    local mean = shape * (1 - p) / p
+    local sd = math.sqrt(mean / p)
+    local tails = { [0] = 1 }
+    local term = p ^ shape -- P(N = 0)
+    local below, n = 0, 0
+    return function(k)
+        if k <= 0 then
+            return 1
+        end
+        if k > T.CHANCE_TERMS then
+            local z = (k - 0.5 - mean) / math.max(sd, 1e-9)
+            return math.max(0, math.min(1, 1 - 0.5 * (1 + erf(z / math.sqrt(2)))))
+        end
+        while n < k do
+            below = below + term
+            term = term * (n + shape) / (n + 1) * (1 - p)
+            n = n + 1
+            tails[n] = math.max(0, math.min(1, 1 - below))
+        end
+        return tails[k]
+    end
+end
+
+-- Expected units of a lot of `qty` sold behind `ahead` units, with tail(k) = P(N >= k):
+-- sum over j = 1..qty of P(N >= ahead + j).
+function T.expectedSold(tail, ahead, qty)
+    local units = 0
+    for j = 1, math.max(0, qty or 0) do
+        local p = tail(ahead + j)
+        units = units + p
+        if p < 1e-6 then
+            break
+        end
+    end
+    return units
+end
+
+-- The answer rate of rival sellers per hour (see the comment above) and where it comes from.
+function T.answerRate(key, h)
+    local own = T.rounds(key) / 24
+    local seen = M.undercutRate(h)
+    local scans = seen and seen.perHour or 0
+    return math.max(own, scans), seen
+end
+
+-- Units of a lot first in line at `price` sold in `t` hours when rivals answer at c per hour:
+-- first for E[min(T, t)], then behind the rival's new lot of `rivalQty` for the rest.
+local function soldUnderFire(d, ahead, qty, t, c, rivalQty)
+    local first = c > 0 and (1 - math.exp(-c * t)) / c or t
+    local early = T.expectedSold(T.saleChances(d.sold, d.hours, first), ahead, qty)
+    local rest = math.floor(qty - early + 0.5)
+    if c <= 0 or rest <= 0 or t - first <= 0 then
+        return early
+    end
+    local late = T.expectedSold(T.saleChances(d.sold, d.hours, t - first), ahead + rivalQty, rest)
+    -- The answer comes in only part of the cases: the rest of the time the lot stays first.
+    local answered = 1 - math.exp(-c * t)
+    local stayed = T.expectedSold(T.saleChances(d.sold, d.hours, t), ahead, qty)
+    return math.min(qty, (1 - answered) * stayed + answered * (early + late))
+end
+
 function T.fightPlan(a)
     if not a or a.sold or not a.key then
         return nil
@@ -1637,13 +1726,31 @@ function T.fightPlan(a)
     end
     local qty, price = a.qty or 1, a.price or 0
     local check = T.prices[a.key]
+    local rows = check and check.rows or {}
     local ahead, buyCost = 0, 0
-    for _, r in ipairs(check and check.rows or {}) do
+    local wall -- the cheapest other seller above the player's price
+    for _, r in ipairs(rows) do
         if r.unit < price then
             ahead = ahead + (r.qty or 1)
             buyCost = buyCost + r.unit * (r.qty or 1)
+        elseif r.unit > price and (not wall or r.unit < wall) then
+            wall = r.unit
         end
     end
+    -- The player's own lots of the item that buyers reach first.
+    local ownAhead = 0
+    for _, o in ipairs(T.owned or {}) do
+        if
+            o ~= a
+            and not o.sold
+            and o.key == a.key
+            and (o.price or 0) > 0
+            and (o.price < price or (o.price == price and (o.auctionID or 0) < (a.auctionID or 0)))
+        then
+            ownAhead = ownAhead + (o.qty or 1)
+        end
+    end
+    local rivalQty = rows[1] and rows[1].qty or 1
     local new = T.undercut(cheapest, item.kind)
     local floor = T.floorFor({ key = a.key, kind = item.kind })
     local vendorPrice = F.AH.clientVendorPrice(item.id)
@@ -1655,11 +1762,18 @@ function T.fightPlan(a)
     local okCost, extra = pcall(F.AH.cancelCost, a.auctionID)
     local cancel = deposit + (okCost and U.finite(extra) and extra or 0)
     local vendor = (F.AH.vendorPrice(item.id, true) or 0)
-    local fallback = vendor * qty
+    -- An unsold unit comes back: worth posting again (the quote), at least a merchant's price.
+    local again = 0
+    local okQuote, q = pcall(T.quote, a.key, item.id)
+    if okQuote and type(q) == "table" and U.finite(q.value) then
+        again = q.value
+    end
+    local fallback = math.max(vendor, again)
     local h = F.Data.market(F.db, F.Engine.scope()).history[a.key]
     h = type(h) == "table" and h or nil
-    local d = M.demandAt(h, cheapest)
-    local rate = (d.pairs or 0) > 0 and d.perDay or nil
+    local d = M.demandAt(h, price)
+    local known = (d.pairs or 0) > 0
+    local c, seen = T.answerRate(a.key, h)
     local left = (a.timeLeft or 0) / 3600
     local plan = {
         auction = a,
@@ -1667,11 +1781,16 @@ function T.fightPlan(a)
         new = new,
         cheapest = cheapest,
         ahead = ahead,
+        ownAhead = ownAhead,
         floor = floor,
         cancel = cancel,
-        rate = rate,
+        fallback = fallback,
+        rate = known and d.perDay or nil,
         sold = d.sold,
         hours = d.hours,
+        thin = known and ((d.sold or 0) < 10 or (d.hours or 0) < 6),
+        answers = c * 24,
+        cutsSeen = seen and seen.cuts or nil,
         rounds = T.rounds(a.key),
         options = {},
     }
@@ -1679,45 +1798,54 @@ function T.fightPlan(a)
         plan.options[#plan.options + 1] = o
         plan[o.id] = o
     end
-    -- Wait: the cheaper units and yours must sell before the auction ends.
-    if rate then
-        local p = T.atLeast(ahead + qty, rate * left / 24)
-        add({ id = "wait", p = p, ev = p * M.net(price, qty) + (1 - p) * fallback })
+    -- Money of `units` sold out of `lot` at `at` each: the sale, its deposit back, the rest again.
+    local function value(units, lot, at, dep)
+        return units * M.net(at, 1) + dep * units / math.max(lot, 1) + (lot - units) * fallback
+    end
+    -- Wait: behind the cheaper units and own cheaper lots until the auction ends.
+    if known then
+        local tail = T.saleChances(d.sold, d.hours, left)
+        local units = T.expectedSold(tail, ahead + ownAhead, qty)
+        add({ id = "wait", p = tail(ahead + ownAhead + qty), units = units, ev = value(units, qty, price, deposit) })
     else
         add({ id = "wait", unknown = true, ev = nil })
     end
-    -- Undercut: cancel, then first in line at the new price for the duration it needs.
+    -- Undercut: cancel, then first in line at the new price until a rival answers.
     if floor and new < floor then
         add({ id = "undercut", blocked = "floor" })
     else
         local hours = HOURS[T.durationFor(a.key, qty, new)] or 24
         local newDeposit = depositFor(qty)
-        local net = M.net(new, qty)
-        if rate then
-            local r2 = M.demandAt(h, new)
-            local rate2 = (r2.pairs or 0) > 0 and r2.perDay or rate
-            local p = T.atLeast(qty, rate2 * hours / 24)
-            add({ id = "undercut", p = p, ev = p * net + (1 - p) * (fallback - newDeposit) - cancel, hours = hours })
+        if known then
+            local d2 = M.demandAt(h, new)
+            d2 = (d2.pairs or 0) > 0 and d2 or d
+            local units = soldUnderFire(d2, ownAhead, qty, hours, c, rivalQty)
+            local tail = T.saleChances(d2.sold, d2.hours, hours)
+            add({
+                id = "undercut",
+                p = tail(ownAhead + qty),
+                units = units,
+                answered = 1 - math.exp(-c * hours),
+                ev = value(units, qty, new, newDeposit) - newDeposit - cancel,
+                hours = hours,
+            })
         else
-            add({ id = "undercut", ev = net - cancel, guess = true, hours = hours })
+            add({ id = "undercut", ev = M.net(new, qty) - cancel, guess = true, hours = hours })
         end
     end
-    -- Buy out the cheaper units, then everything sells at your price.
-    if ahead > 0 and ahead <= T.BUYOUT_UNITS and buyCost <= F.Deals.budget() then
-        local unitNet = M.net(price, 1)
-        local resell = depositFor(ahead)
-        if rate then
-            local mine = T.atLeast(qty, rate * left / 24)
-            local theirs = T.atLeast(qty + ahead, rate) -- bought units, posted for a day after yours
+    -- Buy out the cheaper units: yours is first again, theirs follow at your price for a day.
+    local budget = F.Deals.budget()
+    if ahead > 0 and ahead <= T.BUYOUT_UNITS and buyCost <= budget then
+        if known then
+            local mine = soldUnderFire(d, ownAhead, qty, left, c, rivalQty)
+            local resell = depositFor(ahead)
+            local theirs = soldUnderFire(d, ownAhead + qty, ahead, 24, c, rivalQty)
             add({
                 id = "buyout",
                 cost = buyCost,
                 units = ahead,
-                ev = mine * M.net(price, qty)
-                    + (1 - mine) * fallback
-                    + theirs * unitNet * ahead
-                    + (1 - theirs) * (vendor * ahead - resell)
-                    - buyCost,
+                p = T.saleChances(d.sold, d.hours, left)(ownAhead + qty),
+                ev = value(mine, qty, price, deposit) + value(theirs, ahead, price, resell) - resell - buyCost,
             })
         else
             add({ id = "buyout", cost = buyCost, units = ahead, unknown = true })
@@ -1725,9 +1853,50 @@ function T.fightPlan(a)
     else
         add({ id = "buyout", blocked = ahead > T.BUYOUT_UNITS and "many" or "money", cost = buyCost, units = ahead })
     end
+    -- Raise: clear the shelf below a higher target, then post everything at the target.
+    if known then
+        local cap = M.saleCap(h)
+        local target = wall and U.below(wall, item.kind) or nil
+        if cap then
+            target = target and math.min(target, cap) or cap
+        end
+        if target and target > price then
+            local units, cost = 0, 0
+            for _, r in ipairs(rows) do
+                if r.unit < target then
+                    units = units + (r.qty or 1)
+                    cost = cost + r.unit * (r.qty or 1)
+                end
+            end
+            if units > T.BUYOUT_UNITS or cost > budget then
+                add({
+                    id = "raise",
+                    blocked = units > T.BUYOUT_UNITS and "many" or "money",
+                    cost = cost,
+                    units = units,
+                    target = target,
+                })
+            else
+                local lot = qty + units
+                local d3 = M.demandAt(h, target)
+                d3 = (d3.pairs or 0) > 0 and d3 or { sold = 0, hours = d.hours }
+                local all = depositFor(lot)
+                local sold = soldUnderFire(d3, ownAhead, lot, 24, c, rivalQty)
+                add({
+                    id = "raise",
+                    cost = cost,
+                    units = units,
+                    target = target,
+                    expect = sold,
+                    p = T.saleChances(d3.sold, d3.hours, 24)(ownAhead + lot),
+                    ev = value(sold, lot, target, all) - all - cancel - cost,
+                })
+            end
+        end
+    end
     -- Vendor: cancel now and sell to a merchant.
     if vendor > 0 then
-        add({ id = "vendor", ev = fallback - cancel })
+        add({ id = "vendor", ev = vendor * qty - cancel })
     end
     local best
     for _, o in ipairs(plan.options) do
@@ -1735,20 +1904,19 @@ function T.fightPlan(a)
             best = o
         end
     end
-    -- Without measured sales waiting is not priced: it stays the advice unless an option is sure to
-    -- bring more than the auction's own price could.
-    if not rate and best and best.id ~= "vendor" then
+    -- Without measured sales waiting is not priced: it stays the advice unless a merchant is.
+    if not known and best and best.id ~= "vendor" then
         best = plan.wait
     end
     plan.best = best or plan.wait
     plan.verdict = plan.best.id
-    plan.war = plan.rounds >= T.WAR_ROUNDS
+    plan.war = plan.rounds >= T.WAR_ROUNDS or c >= T.WAR_RATE
     plan.net = plan.best.ev or 0
     return plan
 end
 
 -- Plans of every undercut auction: those where acting pays most first.
-local ORDER = { undercut = 1, buyout = 2, vendor = 3, wait = 4 }
+local ORDER = { undercut = 1, raise = 2, buyout = 3, vendor = 4, wait = 5 }
 function T.fightPlans()
     local out = {}
     for _, a in ipairs(T.owned or {}) do
@@ -1798,6 +1966,7 @@ end
 -- again from My items, one step below the cheaper seller). vendor: cancels and marks the item for
 -- the merchant's Sell all. buyout: puts the cheaper units on the shopping list (up to one step
 -- below your price) and checks them: they are bought from Shopping list, Deals from the list.
+-- raise: puts every lot below the target on the shopping list and cancels the auction.
 -- wait: nothing changes; the auction is left out of Answer next until the prices change.
 function T.fight(plan, id)
     id = id or plan.verdict
@@ -1817,6 +1986,21 @@ function T.fight(plan, id)
         if not F.Shopping.add(plan.key, max, o.units, U.linkName(plan.auction.link), plan.auction.price) then
             return false
         end
+        F.Deals.verify(plan.key)
+        return true
+    end
+    if id == "raise" then
+        -- The lots below the target go on the shopping list, then yours is cancelled: once they are
+        -- bought, the cheapest other seller is the wall and posting again lands just below it.
+        local item = U.parseKey(plan.key)
+        local max = U.below(o.target, item and item.kind)
+        if not F.Shopping.add(plan.key, max, o.units, U.linkName(plan.auction.link), o.target) then
+            return false
+        end
+        if not T.cancelAuction(plan.auction) then
+            return false
+        end
+        remember(plan.key)
         F.Deals.verify(plan.key)
         return true
     end

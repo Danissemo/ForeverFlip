@@ -384,20 +384,28 @@ the advice. Click a row: every option is shown with its numbers, the advice mark
 
 | Option | What it does | How it is valued |
 |---|---|---|
-| **wait** | Keep the auction. | The chance that the cheaper units and yours sell before your auction ends, times your price after the cut; if not, the item comes back and is still worth what a merchant pays. |
-| **undercut** | Cancel (the deposit is lost, and the game may charge more) and post again one step below the cheaper seller. The item comes back by mail; post it from My items. | The chance yours sells first at the new price in the duration it needs, times that price after the cut, less what cancelling costs and the new deposit if it does not sell. Not offered below the item's floor. |
-| **buy out** | Buy the cheaper units, so yours is the cheapest again, and sell them at your price too. They go on the shopping list and are bought from Shopping list → Deals from the list. | Your auction's chance and the bought units' chance to sell at your price, less what they cost. Not offered for more than 50 units or more money than one deal may use. |
+| **wait** | Keep the auction. | The units of yours expected to sell before it ends, behind the cheaper units and your own cheaper lots of the item, at your price after the cut, with the deposit back; unsold units come back and are worth posting again. |
+| **undercut** | Cancel (the deposit is lost, and the game may charge more) and post again one step below the cheaper seller. The item comes back by mail; post it from My items. | The units expected to sell at the new price while yours stays first, and behind the rival's next lot once a rival answers, less what cancelling costs and the new deposit. Not offered below the item's floor. |
+| **buy out** | Buy the cheaper units, so yours is the cheapest again, and sell them at your price too. They go on the shopping list and are bought from Shopping list → Deals from the list. | Yours and the bought units sold at your price (rivals may answer here too), less what they cost. Not offered for more than 50 units or more money than one deal may use. |
+| **raise** | Buy every other seller's lot below a higher target (the next seller above you less a step, at most the price sales reach), cancel yours and post everything at the target. The lots go on the shopping list; once they are bought, posting again lands just below the next seller. | The units expected to sell at the target in a day, less the lots' cost, what cancelling costs and the new deposit. Offered only when the target is above your price; same limits as buy out. |
 | **to a vendor** | Cancel and sell to a merchant (the item joins the merchant's Sell all). | The merchant's price less what cancelling costs. |
 
-The chances come from the item's measured sales: buyers take the cheapest lots first, units sell at
-the rate measured near the cheaper price, and the number sold in a time is taken as a Poisson count.
-The page shows the rate and how many sales it is based on. Without measured sales the chances are
-unknown: waiting stays the advice unless a merchant pays more.
+The chances come from the item's measured sales at the price of each option: buyers take the
+cheapest lots first, and the units sold in a time follow the sales seen in the full scans. With few
+sales seen the rate is uncertain, and the chances are kept wide on purpose: four units seen in one
+hour do not make a sale "97% sure". A stack can sell in part, and the page says how many units of
+it are expected to sell. Without measured sales the chances are unknown: waiting stays the advice
+unless a merchant pays more.
+
+**Rivals.** Some sellers answer every undercut. How often the item is undercut between full scans
+(new lots posted below the cheapest) and how often you answered it in the last day give the rivals'
+answer rate; the page shows it when it is notable. A step down only lasts until the next answer, so
+undercutting is worth less on such items, and buying out or raising may be worth more.
 
 - **Answer next (N)** answers the next auction whose advice is to act (undercut or to a vendor), one
   auction per click.
-- A **!** after the advice marks a price war: you answered three times in a day and were undercut
-  again. Each round costs a deposit.
+- A **!** after the advice marks a price war: you answered three times in a day, or rivals answer
+  every 4 hours or sooner. Each round costs a deposit.
 - After each full scan your auctions are checked against it without searches (when the scan names
   the owners), and the chat says how many are worth answering.
 

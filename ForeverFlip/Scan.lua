@@ -637,13 +637,14 @@ end
 
 function S.trackLots(h, seq, now, owners, key)
     local sold, byPrice, confirmed, fresh, sellers, gone, complete = 0, {}, {}, nil, nil, nil, false
+    local undercuts = 0
     local dt = now - (h.lotsAt or 0)
     local compared = h.lots and dt >= 300 and dt <= 3 * 3600
     owners = owners or {}
     if compared then
         local prev = M.unpackLots(h.lots)
         local all, reposted
-        _, all, gone, reposted, sellers = M.trackSales(prev, seq, dt, M.unpackOwners(h.lotOwners), owners)
+        _, all, gone, reposted, sellers, undercuts = M.trackSales(prev, seq, dt, M.unpackOwners(h.lotOwners), owners)
         for i = 1, #gone - 2, 3 do
             all[gone[i]] = all[gone[i]] - gone[i + 1]
         end
@@ -676,7 +677,7 @@ function S.trackLots(h, seq, now, owners, key)
         h.pending, h.pendingAt = M.packPending(gone), now
     end
     if compared or next(byPrice) then
-        sold = M.recordSales(h, byPrice, compared and dt or 0, now, confirmed)
+        sold = M.recordSales(h, byPrice, compared and dt or 0, now, confirmed, undercuts)
     end
     if #seq > 0 then
         h.lots, h.lotsAt = M.packLots(seq), now

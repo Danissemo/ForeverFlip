@@ -619,6 +619,81 @@ class AntiUndercutTests(unittest.TestCase):
         assert(#T.fightPlans() == 0, 'a cancelled auction leaves the list')''')
 
 
+class UndercutModelTests(unittest.TestCase):
+    PLAN = AntiUndercutTests.PLAN
+
+    def test_thin_sales_keep_the_chances_wide(self):
+        run(BASE + '''local T = F.Trade
+        -- 4 units seen in 1 hour: a plain rate says 2 sales in 5 hours are near sure.
+        local thin = T.saleChances(4, 1, 5)(2)
+        local plain = T.atLeast(2, 4 / (1 + 4) * 5)
+        assert(thin < plain - 0.05, thin .. ' vs ' .. plain)
+        -- With many sales the belief narrows to the plain rate.
+        local rich = T.saleChances(4000, 1000, 5)(2)
+        assert(math.abs(rich - T.atLeast(2, 4000 / 1004 * 5)) < 0.02, tostring(rich))
+        assert(T.saleChances(3, 10, 0)(1) == 0 and T.saleChances(3, 10, 5)(0) == 1)''')
+
+    def test_a_stack_sells_in_part(self):
+        run(BASE + '''local T = F.Trade
+        local tail = T.saleChances(2000, 96, 24) -- about 500 a day
+        local units = T.expectedSold(tail, 0, 80)
+        assert(units > 79, 'a big demand sells the stack: ' .. units)
+        local slow = T.saleChances(40, 96, 24) -- about 10 a day
+        local part = T.expectedSold(slow, 0, 80)
+        assert(part > 5 and part < 20, 'part of the stack, not nothing: ' .. part)''')
+
+    def test_wait_counts_the_deposit_back_and_own_lots_ahead(self):
+        run(self.PLAN + '''local alone = T.fightPlans()[1]
+        owned[2] = {auctionID = 5, itemKey = {itemID = 30}, quantity = 1, buyoutAmount = 24000, status = 0, timeLeftSeconds = 43200}
+        fire('OWNED_AUCTIONS_UPDATED')
+        local plan
+        for _, p in ipairs(T.fightPlans()) do if p.auction.auctionID == 6 then plan = p end end
+        assert(plan.ownAhead == 1, 'my cheaper lot is ahead of this one')
+        assert(plan.wait.p < alone.wait.p, 'and lowers its chance')
+        local w = alone.wait
+        local floorValue = w.units * F.Market.net(25000, 1) + (1 - w.units) * alone.fallback
+        assert(w.ev > floorValue, 'the deposit comes back with the sale')''')
+
+    def test_rival_answers_shorten_an_undercut(self):
+        run(self.PLAN + '''local calm = T.fightPlans()[1]
+        local h = F.Data.market(F.db, F.Engine.scope()).history['i:30']
+        h.sales = { hours = 10, pairs = 3, at = now, b = {}, cuts = 30 }
+        local fire_ = T.fightPlans()[1]
+        assert(fire_.answers > 24, 'about 2 answers an hour: ' .. fire_.answers)
+        assert(fire_.war, 'a price war')
+        assert(fire_.undercut.answered > 0.9 and fire_.undercut.ev < calm.undercut.ev,
+            fire_.undercut.ev .. ' vs ' .. calm.undercut.ev)
+        UI.show('undercuts'); UI.undercutTable.rows[1]:Click()
+        assert(UI.fightText:GetText():find('Rivals answer', 1, true), UI.fightText:GetText())''')
+
+    def test_raise_clears_the_shelf_below_the_next_seller(self):
+        run(self.PLAN + '''T.prices['i:30'].rows = {{unit = 20000, qty = 2}, {unit = 40000, qty = 1}}
+        local plan = T.fightPlans()[1]
+        local o = plan.raise
+        assert(o and not o.blocked and o.target < 40000 and o.target > 25000, tostring(o and o.target))
+        assert(o.units == 2 and o.cost == 40000 and o.ev, 'buys the two cheaper units')
+        UI.show('undercuts'); UI.undercutTable.rows[1]:Click()
+        assert(UI.fightText:GetText():find('post all at', 1, true), UI.fightText:GetText())
+        assert(T.fight(plan, 'raise'))
+        local e = F.Shopping.entry('i:30')
+        assert(e and e.max < o.target and e.qty == 2 and e.resell == o.target)
+        assert(#T.fightPlans() == 0, 'the auction was cancelled to post again at the target')''')
+
+    def test_no_raise_without_room_above(self):
+        run(self.PLAN + '''local plan = T.fightPlans()[1]
+        assert(not plan.raise, 'nobody above and no sale price: nothing to raise to')''')
+
+    def test_undercut_posts_are_counted_between_scans(self):
+        run(BASE + '''local M = F.Market
+        local function seq(t) local o = {} for _, l in ipairs(t) do for _, v in ipairs(l) do o[#o + 1] = v end end return o end
+        local _, _, _, _, _, cuts = M.trackSales(seq{{100, 1, 3}, {150, 1, 3}}, seq{{100, 1, 3}, {150, 1, 3}, {90, 1, 3}, {95, 2, 3}}, 900)
+        assert(cuts == 2, tostring(cuts))
+        local h = {}
+        M.recordSales(h, {}, 900, now, nil, 2)
+        local r = M.undercutRate(h)
+        assert(r and r.cuts == 2 and math.abs(r.perHour - 2 / (0.25 + 4)) < 1e-9, tostring(r and r.perHour))''')
+
+
 class EmptyLinkNameTests(unittest.TestCase):
     def test_an_own_auction_with_an_empty_link_name_is_named(self):
         run(BASE + '''addItem(82, 'Sharp Throwing Axe', 1200, 'gear')

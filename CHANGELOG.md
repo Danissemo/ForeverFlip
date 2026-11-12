@@ -8,6 +8,24 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Undercuts: honest chances and a better reckoning of every way out.**
+  - Few sales no longer read as sure: four units seen in one hour made a 97% chance to sell. The
+    rate is now an uncertain belief, and the chances stay wide until more sales are seen.
+  - The demand is measured at the price of each option: buyers who reach your lot must accept
+    your price, not the cheaper one.
+  - The deposit of a kept auction comes back with the sale; cancelling loses it. Waiting was
+    undervalued by that much.
+  - A stack sells in part: 80 units behind slow demand counted as nothing, now as the units
+    expected to sell.
+  - Unsold units are worth posting them again (at least a merchant's price), not only the
+    merchant's price.
+  - Your own cheaper lots of the same item count as units ahead.
+  - **Rival undercutters:** how often the item is undercut between full scans is now measured, and
+    an undercut is valued as lasting only until the next answer. The page shows the answer rate;
+    a rival answering every 4 hours or sooner marks a price war.
+- **New option: raise.** Buy every other seller's lot below a higher target (the next seller above
+  you less a step, at most the price sales reach), cancel yours and post everything at the target.
+
 - Buy prepares an item/gear deal's server search context when selected or hovered, so the first
   enabled click buys instead of only requesting another check. The button waits for in-flight
   searches, and hovering reserves the connection from background searches and owned refreshes.
