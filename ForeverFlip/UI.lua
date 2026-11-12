@@ -3896,7 +3896,8 @@ end
 -- A ForeverFlip tab beside Merchant and Buyback: what to sell to this merchant (one button sells it
 -- all) and what to buy here for the auction house. The Merchant tab gets a button that sells the
 -- same list at once.
-local MERCHANT_SELL_ROWS, MERCHANT_BUY_ROWS = 7, 4
+local MERCHANT_SELL_ROWS, MERCHANT_BUY_ROWS = 5, 4
+local MERCHANT_BUY_HEIGHT = 44
 
 local function merchantRow(parent, y, withButton)
     local row = CreateFrame("Frame", nil, parent)
@@ -3935,15 +3936,42 @@ local function merchantRow(parent, y, withButton)
         end
     end)
     if withButton then
-        row.buy = button(row, "Buy", 64, function(self)
+        row:SetHeight(MERCHANT_BUY_HEIGHT - 2)
+        row.icon:SetSize(32, 32)
+        row.icon:ClearAllPoints()
+        row.icon:SetPoint("LEFT", row, "LEFT", 2, 0)
+        local frameBorder = row:CreateTexture(nil, "BORDER")
+        frameBorder:SetColorTexture(0.55, 0.45, 0.25, 0.8)
+        frameBorder:SetPoint("TOPLEFT", row.icon, "TOPLEFT", -1, 1)
+        frameBorder:SetPoint("BOTTOMRIGHT", row.icon, "BOTTOMRIGHT", 1, -1)
+        row.buy = button(row, "Buy", 74, function(self)
             local ok, why = F.Merchant.buy(self.offer)
             if not ok and why then
                 F.Engine.notify(why)
             end
             UI.merchant(true)
         end)
-        row.buy:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-        row.text:SetPoint("RIGHT", row.buy, "LEFT", -4, 0)
+        row.buy:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, -2)
+        row.cost = text(row, "GameFontHighlightSmall")
+        row.cost:SetPoint("TOP", row.buy, "BOTTOM", 0, -2)
+        row.text:ClearAllPoints()
+        row.text:SetFontObject(GameFontNormal)
+        row.text:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 8, 1)
+        row.text:SetPoint("RIGHT", row.buy, "LEFT", -6, 0)
+        row.text:SetWordWrap(false)
+        row.prices = text(row, "GameFontHighlightSmall")
+        row.prices:SetPoint("TOPLEFT", row.text, "BOTTOMLEFT", 0, -1)
+        row.prices:SetPoint("RIGHT", row.buy, "LEFT", -6, 0)
+        row.prices:SetJustifyH("LEFT")
+        row.gain = text(row, "GameFontHighlightSmall")
+        row.gain:SetPoint("TOPLEFT", row.prices, "BOTTOMLEFT", 0, -1)
+        row.gain:SetPoint("RIGHT", row.buy, "LEFT", -6, 0)
+        row.gain:SetJustifyH("LEFT")
+        local line = row:CreateTexture(nil, "ARTWORK")
+        line:SetColorTexture(1, 0.82, 0, 0.12)
+        line:SetHeight(1)
+        line:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, -2)
+        line:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, -2)
     else
         row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
         row.text:SetPoint("RIGHT", row.value, "LEFT", -6, 0)
@@ -4083,7 +4111,7 @@ local function createMerchantTab()
     buyTitle:SetText(L("Buy here, sell on the auction house"))
     local offers = { rows = {} }
     for i = 1, MERCHANT_BUY_ROWS do
-        offers.rows[i] = merchantRow(view, buyTop - 20 - (i - 1) * 29, true)
+        offers.rows[i] = merchantRow(view, buyTop - 20 - (i - 1) * MERCHANT_BUY_HEIGHT, true)
     end
     view.buyNote = text(view, "GameFontDisableSmall")
     view.buyNote:SetPoint("TOPLEFT", view, "TOPLEFT", 8, buyTop - 24)
@@ -4179,17 +4207,35 @@ function UI.merchant(open)
     for i, row in ipairs(view.rows) do
         local o = offers[i]
         if o then
-            row.icon:SetTexture(icon(tonumber(o.link and o.link:match("item:(%d+)")) or 0))
-            row.text:SetText(
-                string.format(
-                    L("%s: %s here, %s on AH, +%s each, ~%.1f/day"),
-                    o.link or o.name,
-                    U.money(o.unit),
-                    U.money(o.exit),
-                    U.money(math.floor(o.each)),
-                    o.perDay
-                )
+            local id = tonumber(o.link and o.link:match("item:(%d+)"))
+            row.icon:SetTexture(icon(id or 0))
+            row.text:SetText(U.linkName(o.link) or o.name or "?")
+            local quality = id and select(3, U.itemInfo(id))
+            local color = quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality]
+            if color then
+                row.text:SetTextColor(color.r, color.g, color.b)
+            else
+                row.text:SetTextColor(1, 1, 1)
+            end
+            row.prices:SetText(
+                "|cffb0b0b0"
+                    .. L("Vendor")
+                    .. "|r "
+                    .. U.money(o.unit)
+                    .. "  |cff808080·|r  |cffb0b0b0"
+                    .. L("AH")
+                    .. "|r "
+                    .. U.money(o.exit)
             )
+            row.gain:SetText(
+                "|cff40ff40+"
+                    .. U.money(math.floor(o.each))
+                    .. "|r |cffb0b0b0"
+                    .. L("each")
+                    .. "|r  |cff808080·|r  "
+                    .. string.format("~%.1f/%s", o.perDay, L("day"))
+            )
+            row.cost:SetText(L("Cost") .. ": " .. U.money(math.ceil(o.unit * o.qty)))
             row.buy.offer = o
             row.index, row.link = o.index, o.link
             row.buy:SetText(L("Buy") .. " " .. o.qty)

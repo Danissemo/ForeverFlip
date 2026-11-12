@@ -641,8 +641,9 @@ on the Merchant tab:
 - The **ForeverFlip** tab lists the same items under **Sell to this merchant**, each with what the
   merchant pays; **Sell all** and **Gear I can't use** sell them.
 - Below, **Buy here, sell on the auction house** lists the items this merchant sells for less than
-  they fetch on the auction house: the price here, the expected auction price, the profit per unit
-  (after the cut and deposit) and the measured sales per day. **Buy N** purchases the suggested
+  they fetch on the auction house. Each row shows the item (hover it for its tooltip), **Vendor** (the
+  price here) and **AH** (the expected auction price), the profit each after the cut and deposit, the
+  measured sales per day, and on the right **Buy N** with the cost of the purchase under it. **Buy N** purchases the suggested
   quantity (no more than about one day of sales, within your budget and what your bags hold), one
   stack per purchase, so items that do not stack are bought one by one. They are booked as stock for
   resale.
