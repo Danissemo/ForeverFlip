@@ -219,6 +219,11 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   count appeared was posted again, not sold (in game: one seller's 65-80 silver bracers read as
   sales while the item sold at 3-4 silver, and Sells at came out ten times too high). The resale
   cap also stays within three times the median sale.
+- **Buy did nothing after Check all.** The server sells gear and items only from the last item
+  search, so a lot read before other items were searched was dropped without an answer. Buy now
+  reads such a lot again first and asks for one more click.
+- **Buy out (Undercuts) resells.** Units bought out against an undercut are resold at your price,
+  not kept for own use; the shopping list counts them down ("N left to buy, one auction per click").
 - **No resale at prices nobody paid.** An item watched for an hour or more without one confirmed sale
   is no resale deal: the prices others ask are not a price to resell at (in game, gear bought at 27
   silver to resell at 94 silver, all of it expired). One or two confirmed sales already cap the

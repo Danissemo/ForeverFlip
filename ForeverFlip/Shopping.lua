@@ -37,13 +37,32 @@ function S.resolve(text)
 end
 
 -- entry = { max = copper per unit, qty = units wanted (nil: any), name }
-function S.add(key, max, qty, name)
+-- `resell` (optional): the price the units are resold at (a buy out against an undercut, from
+-- Selling -> Undercuts). Such an entry counts down as units are bought and goes when done.
+function S.add(key, max, qty, name, resell)
     if not U.parseKey(key) or not U.finite(max) or max <= 0 then
         return false
     end
-    list()[key] = { max = math.floor(max), qty = U.finite(qty) and qty > 0 and math.floor(qty) or nil, name = name }
+    list()[key] = {
+        max = math.floor(max),
+        qty = U.finite(qty) and qty > 0 and math.floor(qty) or nil,
+        name = name,
+        resell = U.finite(resell) and resell > 0 and math.floor(resell) or nil,
+    }
     F.Engine.changed()
     return true
+end
+
+-- Units of the item were bought: a buy-out entry counts them down.
+function S.bought(key, qty)
+    local e = F.db and list()[key]
+    if not e or not e.resell or not e.qty then
+        return
+    end
+    e.qty = e.qty - (qty or 1)
+    if e.qty <= 0 then
+        S.remove(key)
+    end
 end
 
 function S.remove(key)
@@ -136,14 +155,20 @@ function S.evaluate(rows, key, budget)
     if qty < 1 then
         return nil
     end
+    local profit = saving
+    if e.resell then
+        profit = F.Market.net(e.resell, qty) - cost
+    end
     return {
         mode = "shop",
         qty = qty,
         cost = cost,
-        exit = e.max,
-        profit = saving,
-        roi = cost > 0 and saving / cost or 0,
+        exit = e.resell or e.max,
+        profit = profit,
+        roi = cost > 0 and profit / cost or 0,
         maxUnit = used[#used].unit,
         lots = used,
+        resell = e.resell,
+        wanted = e.qty,
     }
 end

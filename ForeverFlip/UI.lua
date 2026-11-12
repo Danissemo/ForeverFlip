@@ -57,6 +57,7 @@ local MESSAGES = {
     buy_failed = "The purchase failed (someone was faster). The deal is checked again.",
     buy_unknown = "No answer from the auction house. Settle the purchase in the Journal.",
     buy_busy = "The auction house is still answering a search: press Buy again in a moment.",
+    buy_recheck = "Another item was searched since this lot was read, and the auction house would not sell it: reading it again. Press Buy once more.",
     buy_no_answer = "No answer to the purchase in 30 seconds (no money spent yet). If the money leaves later it is booked then; check before buying the same lot again.",
     bought_late = "The purchase went through after all: booked now.",
     posted = "Auction created.",
@@ -1245,7 +1246,13 @@ end
 -- Return on the money and, for resale, how long the bought units take to sell at the estimate.
 local function dealOutlook(d, estimate)
     local roi = d.cost > 0 and d.profit / d.cost or 0
-    if d.mode == "shop" then
+    if d.mode == "shop" and d.resell then
+        return string.format(
+            L("Bought out against an undercut, resold at %s with your auction. %d left to buy, one auction per click."),
+            U.money(d.resell),
+            d.wanted or d.qty
+        )
+    elseif d.mode == "shop" then
         return L("Bought for your own use: it stays out of Post next bought.")
     elseif d.mode == "disenchant" then
         return L("Estimate from the Classic disenchanting table and the usual material prices.")

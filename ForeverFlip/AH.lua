@@ -368,6 +368,7 @@ local function sorts()
     return SORTS
 end
 function A.search(item)
+    A.noteItemSearch(plainKey(item.id))
     if item.kind == "gear" and AH.SendSellSearchQuery then
         AH.SendSellSearchQuery(plainKey(item.id), sorts(), true)
     else
@@ -395,6 +396,19 @@ function A.gearBrowse(item)
     end
 end
 
+-- The server sells an auction of gear or an item only from the last item search: once another item
+-- was searched (Check all, the game's Buy tab, another addon), a purchase of the earlier one is
+-- dropped without an answer (seen in game). Every item search is noted, whoever sends it.
+function A.noteItemSearch(itemKey)
+    if type(itemKey) == "table" and itemKey.itemID then
+        A.lastItemSearch = { id = itemKey.itemID, at = F.Engine.clock() }
+    end
+end
+function A.searchedLast(id)
+    local s = A.lastItemSearch
+    return s == nil or s.id == id
+end
+
 -- Browse queries ForeverFlip did not send (the game's Buy tab, another addon) replace the results:
 -- a gear search waiting for its own answer is told (Deals.onForeignBrowse).
 function A.hookBrowse()
@@ -402,6 +416,13 @@ function A.hookBrowse()
         return
     end
     A.browseHooked = true
+    for _, name in ipairs({ "SendSearchQuery", "SendSellSearchQuery" }) do
+        if AH[name] then
+            hooksecurefunc(AH, name, function(itemKey)
+                A.noteItemSearch(itemKey)
+            end)
+        end
+    end
     for _, name in ipairs({ "SendBrowseQuery", "SearchForItemKeys" }) do
         if AH[name] then
             hooksecurefunc(AH, name, function()
@@ -433,6 +454,7 @@ function A.gearKeys(id)
 end
 -- Step 2: one exact version, and its next page.
 function A.searchKey(key)
+    A.noteItemSearch(key)
     AH.SendSearchQuery(key, sorts(), true)
 end
 function A.moreKey(key)

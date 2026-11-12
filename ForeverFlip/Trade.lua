@@ -64,13 +64,20 @@ function T.buy(key)
     if not T.wayFree() then
         return false, "buy_busy"
     end
+    if deal.kind ~= "commodity" and deal.id and not F.AH.searchedLast(deal.id) then
+        -- Another item was searched since this lot was read: the server would drop the purchase.
+        -- The lot is read again (it goes first), and the next click buys.
+        F.Deals.verify(deal.key)
+        return false, "buy_recheck"
+    end
     F.Engine.message = nil
     local op = {
         key = deal.key,
         kind = deal.kind,
         id = deal.id,
-        mode = deal.mode,
-        exit = deal.exit,
+        -- Units bought out against an undercut are resold at the player's price.
+        mode = deal.resell and "flip" or deal.mode,
+        exit = deal.resell or deal.exit,
         link = deal.link,
         at = clock(),
     }
@@ -187,6 +194,7 @@ local function bought(op)
     F.Data.log(c, { at = clock(), kind = "buy", key = op.key, name = name, qty = op.qty, amount = op.cost })
     T.op = nil
     F.Engine.notify("bought")
+    F.Shopping.bought(op.key, op.qty)
     -- Gear and items are bought one auction per click: the deal is worked out again from the lots
     -- already read, without the lot just bought, so the next click buys the next lot at once.
     F.Deals.afterPurchase(op)
@@ -1620,7 +1628,7 @@ function T.fight(plan, id)
     if id == "buyout" then
         local item = U.parseKey(plan.key)
         local max = U.below(plan.auction.price or 0, item and item.kind)
-        if not F.Shopping.add(plan.key, max, o.units, U.linkName(plan.auction.link)) then
+        if not F.Shopping.add(plan.key, max, o.units, U.linkName(plan.auction.link), plan.auction.price) then
             return false
         end
         F.Deals.verify(plan.key)
