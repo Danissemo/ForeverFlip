@@ -134,11 +134,11 @@ class SaleabilityTableTests(unittest.TestCase):
         runtime().execute(SALEABILITY + '''
         assert(UI.dealTable.headers[6]:GetText()=='Est./day')
         local function cell(key) return row(key).cols[5]:GetText() end
-        assert(cell('c:10')=='~8.0','must use history at resale exit, not purchase or cached rate')
+        assert(cell('c:10')=='8.0','must use history at resale exit, not purchase or cached rate')
         assert(cell('c:20')=='0','observed zero is known')
         assert(cell('c:30')=='-','unknown is not zero')
         assert(cell('c:40')=='vendor','vendor sale does not need AH demand')
-        assert(cell('c:50'):find('|cff999999') and cell('c:50'):find('~2.0'))
+        assert(cell('c:50'):find('|cff999999') and cell('c:50'):find('2.0',1,true))
         ''')
 
     def test_sells_at_is_cost_plus_profit_and_profit_is_the_difference(self):

@@ -640,7 +640,7 @@ local function footer(page, height, font)
 end
 
 -- Deals page -------------------------------------------------------------------------------------
-local DEAL_ROWS = 14
+local DEAL_ROWS = 13
 function UI.createDeals(p)
     UI.filter, UI.dealPage = "all", 1
     UI.dealSort, UI.dealDescending = 5, true
@@ -655,8 +655,8 @@ function UI.createDeals(p)
             { "Cost", 80 },
             { "Sells at", 80 },
             { "Profit", 80 },
-            { "Est./day", 64 },
-            { "Status", 88, "LEFT" },
+            { "Est./day", 74 },
+            { "Status", 80, "LEFT" },
         },
         DEAL_ROWS,
         function(row)
@@ -838,7 +838,8 @@ local function sellsAtText(d, history)
     local total = (d.cost or 0) + (d.profit or 0)
     local unsure = d.mode == "vendor" and d.vendorHow and d.vendorHow ~= "seen"
         or d.mode == "flip" and F.Market.saleCap(history[d.key]) == nil
-    return U.money(total) .. (unsure and " |cff999999*|r" or "")
+    -- The mark goes in front: the sums stay aligned on the right edge.
+    return (unsure and "|cff999999*|r " or "") .. U.money(total)
 end
 
 local MODE_LABELS = { vendor = "vendor", shop = "shopping list", disenchant = "disenchant", bid = "bid" }
@@ -848,7 +849,7 @@ local function estimateText(d, estimate)
     elseif not estimate.known then
         return "-"
     end
-    local value = estimate.perDay == 0 and "0" or string.format("~%.1f", estimate.perDay)
+    local value = estimate.perDay == 0 and "0" or string.format("%.1f", estimate.perDay)
     return estimate.stale and "|cff999999" .. value .. "|r" or value
 end
 
