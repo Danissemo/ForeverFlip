@@ -137,3 +137,18 @@ class SellingPagesAndHoverTests(unittest.TestCase):
         GameTooltip.SetText = function(_, text) shown = text end
         UI.statusHover.scripts.OnEnter(UI.statusHover)
         assert(shown == 'a very long status line that does not fit', tostring(shown))''')
+
+
+class AuctionTotalTests(unittest.TestCase):
+    def test_my_auctions_shows_total_on_sale_and_pending(self):
+        run(SETUP + '''local F, UI = ForeverFlip, ForeverFlip.UI
+        F.Trade.owned = {
+            { auctionID = 1, key = 'c:10', id = 10, qty = 164, price = 53, sold = false },
+            { auctionID = 2, key = 'i:30', id = 30, qty = 1, price = 9800, sold = false },
+            { auctionID = 3, key = 'c:10', id = 10, qty = 10, price = 60, sold = true },
+        }
+        U = F.Util; U.coins = false
+        UI.show('auctions'); UI.refresh()
+        local line = UI.auctionTotal:GetText():gsub('|c%x%x%x%x%x%x%x%x', ''):gsub('|r', '')
+        assert(line:find('Total on sale: 1g 84s') and line:find('6s 0c pending'), line)
+        assert(not UI.auctionText:GetText():find('Check prices'), UI.auctionText:GetText())''')

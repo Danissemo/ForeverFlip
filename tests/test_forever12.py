@@ -615,7 +615,7 @@ class TooltipTests(unittest.TestCase):
         local F = ForeverFlip
         local c = F.Data.char(F.db, F.Engine.owner())
         F.Data.addPosition(c, 'c:10', 'Linen Cloth', 4, 200, 'flip', 100, now)
-        F.Trade.owned = { { key = 'c:10', qty = 2, price = 160, sold = false } }
+        F.Trade.owned = { { key = 'c:10', qty = 2, price = 80, sold = false } }
         GameTooltip.itemLink = link(10)""")
         self.assertIn('ForeverFlip: Alliance AH', text)
         self.assertIn('You hold = 4, paid 50c each', text)

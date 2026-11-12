@@ -2735,7 +2735,14 @@ function UI.createAuctions(p)
         end
     )
     local bar = footer(p, 56)
+    -- Centered on top, as in Auctionator's Cancelling tab: what is on sale and what is on its way.
+    UI.auctionTotal = text(bar, "GameFontNormal")
+    UI.auctionTotal:SetPoint("TOP", bar, "TOP", 0, -6)
     UI.auctionText = bar.text
+    UI.auctionText:ClearAllPoints()
+    UI.auctionText:SetPoint("TOPLEFT", bar, "TOPLEFT", 8, -20)
+    UI.auctionText:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -8, -20)
+    UI.auctionText:SetWordWrap(false)
     UI.cancelAuction = button(bar, "Cancel auction", 140, function()
         for _, a in ipairs(F.Trade.owned) do
             if a.auctionID == UI.ownedSelected then
@@ -3048,6 +3055,22 @@ function UI.refreshAuctions()
         empty:Hide()
     end
     local queue = F.Trade.checksRemaining()
+    -- Total on sale (price of one unit x quantity of every auction still listed) and pending
+    -- (sold, the gold on its way by mail), centered as in Auctionator's Cancelling tab.
+    local onSale, pending = 0, 0
+    for _, a in ipairs(F.Trade.owned or {}) do
+        local value = (a.price or 0) * (a.qty or 1)
+        if a.sold then
+            pending = pending + value
+        else
+            onSale = onSale + value
+        end
+    end
+    UI.auctionTotal:SetText(
+        #(F.Trade.owned or {}) > 0
+                and string.format(L("Total on sale: %s (%s pending)"), U.money(onSale), U.money(pending))
+            or ""
+    )
     local lines = {}
     if queue > 0 then
         lines[#lines + 1] = string.format(L("Checking prices: %d left."), queue)
@@ -3056,14 +3079,12 @@ function UI.refreshAuctions()
             L("Undercut: %d. Cancel and post again a bit cheaper, or wait: cancelling loses the deposit."),
             undercut
         )
-    else
-        lines[#lines + 1] = L("Check prices to see which of your auctions are undercut.")
     end
     if selected and not selected.sold then
         local cost = F.AH.cancelCost(selected.auctionID)
         lines[#lines + 1] = string.format(L("Cancel cost besides the deposit: %s."), U.money(cost or 0))
     end
-    UI.auctionText:SetText(table.concat(lines, "\n"))
+    UI.auctionText:SetText(table.concat(lines, "  ·  "))
     UI.cancelAuction:SetEnabled(selected ~= nil and not selected.sold)
     UI.checkOwned:SetEnabled(#owned > 0 and queue == 0)
 end
@@ -5146,9 +5167,8 @@ local function ownSelling(key)
     for _, a in ipairs(F.Trade.owned or {}) do
         if a.key == key and not a.sold then
             units = units + (a.qty or 1)
-            if a.price and a.qty and a.qty > 0 then
-                local each = a.price / a.qty
-                price = price and math.min(price, each) or each
+            if a.price then
+                price = price and math.min(price, a.price) or a.price -- the price of one unit
             end
         end
     end

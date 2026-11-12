@@ -8,6 +8,9 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- The tooltip line "On sale by you" divided the price of one unit by the quantity again (164 Fish
+  Bowls at 53c each read as 0c).
+
 - **Check all stood still on the selling pages.** A check started on Undercuts paused as soon as you
   looked at My auctions (and the other way round), and went on only after you left the page. The
   selling pages now share their checks; only checks of other pages rest there.
@@ -32,6 +35,10 @@ All notable changes are listed here. The format follows
   reads "Selling..." while the sale runs.
 
 ### Changed
+
+- **My auctions** shows "Total on sale: ... (... pending)" centered above the buttons, as
+  Auctionator's Cancelling tab does, in place of the "Check prices" hint. Pending is what sold and is
+  on its way by mail.
 
 - **Stop.** While anything runs (a Check all, queued searches, the checks of your auctions, a full
   scan, a sale to a merchant), the Check all button reads **Stop** and ends all of it at once.
