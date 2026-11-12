@@ -47,6 +47,11 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **A buy out showed different figures on Undercuts and on the Shopping list.** The deal read
+  "allows up to 99s (saving 75s 5c)" while Undercuts read "expected 70s 51c". Both now give what
+  the bought units bring once resold after the cut (75s 5c); Undercuts adds, named as such, the
+  expected sum of yours and theirs together with the chances counted.
+
 - **Post, cancel and answer buttons are disabled while the auction house is busy** (a search or
   the sniper waits for its answer, or a post is on its way). Pressing them then did nothing but say
   "busy"; they come back by themselves within a second or two.

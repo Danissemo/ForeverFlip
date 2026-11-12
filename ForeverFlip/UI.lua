@@ -1605,8 +1605,9 @@ local function dealOutlook(d, estimate)
     local roi = d.cost > 0 and d.profit / d.cost or 0
     if d.mode == "shop" and d.resell then
         return string.format(
-            L("Bought out against an undercut, resold at %s with your auction. %d left to buy, one auction per click."),
-            U.money(d.resell),
+            L(
+                "Bought out against an undercut (Selling, Undercuts): with the cheaper lot gone, yours is first again. %d left to buy."
+            ),
             d.wanted or d.qty
         )
     elseif d.mode == "shop" then
@@ -1789,6 +1790,17 @@ local function dealSentence(d)
             U.money(d.cost),
             U.money(d.exit),
             U.money(d.profit)
+        )
+    end
+    if d.mode == "shop" and d.resell then
+        -- The same figure as the buy out on Undercuts: what the units bring once resold, after the cut.
+        return string.format(
+            L("Buy %d for %s and resell at %s with your auction: %s after the %d%% cut once they sell."),
+            d.qty,
+            U.money(d.cost),
+            U.money(d.resell),
+            UI.signed(d.profit),
+            math.floor(F.Market.CUT * 100 + 0.5)
         )
     end
     if d.mode == "shop" then
@@ -3373,11 +3385,18 @@ local function optionLine(plan, o)
                     U.money(o.cost)
                 )
         end
+        -- The bought units alone bring what the Shopping list deal shows; the expected sum also
+        -- counts your own auction and the chance that not all of it sells.
+        local price = plan.auction.price or 0
         return head
             .. string.format(
-                L("buy the %d cheaper units for %s, sell them and yours at your price; expected %s after the purchase."),
+                L(
+                    "buy the %d cheaper units for %s and resell them at %s: %s once they sell. Expected for yours and theirs together, chances counted: %s."
+                ),
                 o.units,
                 U.money(o.cost),
+                U.money(price),
+                UI.signed(F.Market.net(price, o.units) - o.cost),
                 value
             )
     elseif o.id == "raise" then

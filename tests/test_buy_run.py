@@ -63,6 +63,15 @@ class BuyRunTests(unittest.TestCase):
         assert(T.run == nil or T.run.key ~= first, 'left out after two checks')''')
 
 
+class BuyoutFigureTests(unittest.TestCase):
+    def test_a_buyout_deal_shows_the_resale_profit_not_a_saving(self):
+        run(SETUP + '''local UI, M = ForeverFlip.UI, ForeverFlip.Market
+        local d = { mode = 'shop', key = 'i:30', qty = 1, cost = 1900, exit = 9900, resell = 9900,
+            profit = M.net(9900, 1) - 1900 }
+        local text = table.concat(UI.dealDetail(d, nil, nil, now), ' ')
+        assert(text:find('resell at') and text:find('75s') and not text:find('saving'), text)''')
+
+
 class UndercutsHoldTests(unittest.TestCase):
     def test_background_searches_rest_on_the_undercuts_page(self):
         run(SETUP + '''local UI = ForeverFlip.UI
