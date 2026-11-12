@@ -51,6 +51,7 @@ local MESSAGES = {
     quote_expired = "The price offer expired. Press Buy again.",
     mail_stuck = "The game kept refusing an auction mail: taking mail stopped. Take it by hand.",
     requote = "The price offer was about to expire; a new one was asked. Press Confirm when it arrives.",
+    nothing_to_fight = "No undercut auction is worth answering now.",
     bought = "Purchase recorded.",
     bought_more = "Bought one lot. The resale price counts on the other cheap lots too: press Buy again.",
     buy_failed = "The purchase failed (someone was faster). The deal is checked again.",
@@ -872,6 +873,7 @@ function UI.create()
         "bids",
         "sell",
         "auctions",
+        "undercuts",
         "stats",
         "analytics",
         "crafting",
@@ -907,6 +909,7 @@ function UI.create()
     UI.createBids(UI.pages.bids)
     UI.createSell(UI.pages.sell)
     UI.createAuctions(UI.pages.auctions)
+    UI.createUndercuts(UI.pages.undercuts)
     UI.createStats(UI.pages.stats)
     UI.createAnalytics(UI.pages.analytics)
     UI.createCrafting(UI.pages.crafting)
@@ -931,7 +934,10 @@ UI.GROUPS = {
     },
     { label = "Shopping list", pages = { { "shop", "My list" }, { "deals:shop", "Deals from the list" } } },
     { label = "Crafting", pages = { { "crafting", "Crafting" } } },
-    { label = "Selling", pages = { { "sell", "My items" }, { "auctions", "My auctions" } } },
+    {
+        label = "Selling",
+        pages = { { "sell", "My items" }, { "auctions", "My auctions" }, { "undercuts", "Undercuts" } },
+    },
     {
         label = "Analytics",
         pages = { { "analytics", "Overview" }, { "stats", "By item" }, { "journal", "Journal and profit" } },
@@ -2055,7 +2061,7 @@ function UI.statusTargets()
         for _, item in ipairs(sellItems()) do
             keys[#keys + 1] = item.key
         end
-    elseif UI.section == "auctions" then
+    elseif UI.section == "auctions" or UI.section == "undercuts" then
         local seen = {}
         for _, a in ipairs(F.Trade.owned or {}) do
             if a.key and not a.sold and not seen[a.key] then
@@ -2399,6 +2405,236 @@ function UI.createAuctions(p)
         F.Trade.ownedDue = 0
     end)
     UI.refreshOwned:SetPoint("RIGHT", UI.checkOwned, "LEFT", -4, 0)
+end
+
+-- Selling, Undercuts (anti-undercut): every undercut auction, the advice, and every option priced
+-- (T.fightPlan); the player picks one with its button.
+local OPTION = {
+    wait = { "|cffffd100", "wait" },
+    undercut = { "|cff40ff40", "undercut" },
+    buyout = { "|cff66ccff", "buy out" },
+    vendor = { "|cffff9933", "to a vendor" },
+}
+
+function UI.createUndercuts(p)
+    local list = CreateFrame("Frame", nil, p)
+    list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
+    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 150)
+    UI.undercutTable = table_(
+        list,
+        {
+            { "Name" },
+            { "Qty", 40 },
+            { "My price", 80 },
+            { "Cheaper", 80 },
+            { "Ahead", 50 },
+            { "Advice", 96, "LEFT" },
+        },
+        10,
+        function(row)
+            UI.fightSelected = row.plan and row.plan.auction.auctionID
+            F.Engine.changed()
+            UI.refresh()
+        end
+    )
+    local bar = footer(p, 146, "GameFontHighlightSmall")
+    UI.fightText = bar.text
+    UI.fightButtons = {}
+    local last
+    for _, id in ipairs({ "wait", "undercut", "buyout", "vendor" }) do
+        local b = button(bar, OPTION[id][2], 100, function()
+            for _, plan in ipairs(F.Trade.fightPlans()) do
+                if plan.auction.auctionID == UI.fightSelected then
+                    F.Trade.fight(plan, id)
+                    if id == "buyout" then
+                        UI.show("deals:shop")
+                    end
+                end
+            end
+            UI.refresh()
+        end)
+        if last then
+            b:SetPoint("LEFT", last, "RIGHT", 4, 0)
+        else
+            b:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
+        end
+        UI.fightButtons[id] = b
+        last = b
+    end
+    UI.fightNext = button(bar, "Answer next", 130, function()
+        local _, why = F.Trade.fightNext()
+        F.Engine.notify(why)
+    end)
+    UI.fightNext:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
+end
+
+function UI.duration(seconds)
+    seconds = math.max(0, math.floor(seconds or 0))
+    if seconds >= 86400 then
+        return string.format(L("%.1f days"), seconds / 86400)
+    end
+    if seconds >= 3600 then
+        return string.format("%d h", math.floor(seconds / 3600))
+    end
+    return string.format("%d min", math.max(1, math.floor(seconds / 60)))
+end
+
+local function percent(p)
+    return string.format("%d%%", math.floor((p or 0) * 100 + 0.5))
+end
+
+-- One line per option: what it does, its chance and its expected money; the advice is marked.
+local function optionLine(plan, o)
+    local a = plan.auction
+    local v = OPTION[o.id]
+    local head = (plan.best == o and "> " or "   ") .. v[1] .. L(v[2]) .. "|r: "
+    if o.blocked == "floor" then
+        return head
+            .. string.format(L("not offered: %s is below your floor of %s."), U.money(plan.new), U.money(plan.floor))
+    elseif o.blocked == "many" then
+        return head .. string.format(L("not offered: %d cheaper units are too many to buy."), o.units)
+    elseif o.blocked == "money" then
+        return head
+            .. string.format(L("not offered: the cheaper units cost %s, more than one deal may use."), U.money(o.cost))
+    end
+    local value = o.ev and U.money(math.floor(math.max(0, o.ev))) or "?"
+    if o.id == "wait" then
+        if o.unknown then
+            return head .. L("keep it. How soon it sells is unknown: no sales were measured yet.")
+        end
+        return head
+            .. string.format(
+                L("keep it: %s chance that the %d cheaper units and yours sell in the %s left; expected %s."),
+                percent(o.p),
+                plan.ahead,
+                UI.duration(a.timeLeft or 0),
+                value
+            )
+    elseif o.id == "undercut" then
+        if o.guess then
+            return head
+                .. string.format(
+                    L("cancel (about %s lost) and post at %s; brings %s if it sells (chance unknown)."),
+                    U.money(plan.cancel),
+                    U.money(plan.new),
+                    value
+                )
+        end
+        return head
+            .. string.format(
+                L("cancel (about %s lost) and post at %s for %d h: %s chance to sell; expected %s."),
+                U.money(plan.cancel),
+                U.money(plan.new),
+                o.hours,
+                percent(o.p),
+                value
+            )
+    elseif o.id == "buyout" then
+        if o.unknown then
+            return head
+                .. string.format(
+                    L("buy the %d cheaper units for %s and sell them at your price; chance unknown."),
+                    o.units,
+                    U.money(o.cost)
+                )
+        end
+        return head
+            .. string.format(
+                L("buy the %d cheaper units for %s, sell them and yours at your price; expected %s after the purchase."),
+                o.units,
+                U.money(o.cost),
+                value
+            )
+    end
+    return head .. string.format(L("cancel and sell to a merchant: %s."), value)
+end
+
+function UI.refreshUndercuts()
+    local plans = F.Trade.fightPlans()
+    local act, selected = 0, nil
+    for i, r in ipairs(UI.undercutTable.rows) do
+        local plan = plans[i]
+        if plan then
+            local a = plan.auction
+            if plan.verdict == "undercut" or plan.verdict == "vendor" then
+                act = act + 1
+            end
+            r.plan, r.key, r.link = plan, a.key, a.link
+            r.icon:SetTexture(icon(a.id))
+            r.name:SetText(a.link or nameOf(a.key or ("i:" .. a.id)))
+            r.cols[1]:SetText(a.qty)
+            r.cols[2]:SetText(U.money(a.price or 0))
+            r.cols[3]:SetText(U.money(plan.cheapest))
+            r.cols[4]:SetText(plan.ahead)
+            local v = OPTION[plan.verdict]
+            r.cols[5]:SetText(v[1] .. L(v[2]) .. "|r" .. (plan.war and " |cffff6060!|r" or ""))
+            if a.auctionID == UI.fightSelected then
+                r.selected:Show()
+                selected = plan
+            else
+                r.selected:Hide()
+            end
+            r:Show()
+        else
+            r.plan, r.key = nil, nil
+            r:Hide()
+        end
+    end
+    local empty = UI.undercutTable.empty
+    if #plans == 0 then
+        empty:SetText(
+            L(
+                "None of your checked auctions is undercut. Check prices on My auctions, or wait for the next full scan: it checks them by itself."
+            )
+        )
+        empty:Show()
+    else
+        empty:Hide()
+    end
+    local lines = {}
+    if selected then
+        if selected.rate then
+            lines[#lines + 1] = string.format(
+                L(
+                    "Sales near %s: %.1f a day (%d units seen sold in %d h of scans). Values are expected money; an unsold item still brings a merchant's price."
+                ),
+                U.money(selected.cheapest),
+                selected.rate,
+                selected.sold or 0,
+                math.floor(selected.hours or 0)
+            )
+        end
+        if selected.war then
+            lines[#lines + 1] = "|cffff6060"
+                .. string.format(
+                    L("Price war: you answered %d times in a day and were undercut again; each round costs a deposit."),
+                    selected.rounds
+                )
+                .. "|r"
+        end
+        for _, o in ipairs(selected.options) do
+            lines[#lines + 1] = optionLine(selected, o)
+        end
+    elseif #plans > 0 then
+        lines[#lines + 1] = string.format(
+            L(
+                "Undercut: %d; acting pays on %d. Click a row: every way out is priced (wait, undercut, buy out the cheaper lots, a merchant) and you choose."
+            ),
+            #plans,
+            act
+        )
+    else
+        lines[#lines + 1] = L(
+            "Anti-undercut: when another seller lists your item cheaper, every way out is priced from the measured sales (wait, undercut, buy out the cheaper lots, a merchant), the best is advised, and you choose."
+        )
+    end
+    UI.fightText:SetText(table.concat(lines, "\n"))
+    for id, b in pairs(UI.fightButtons) do
+        local o = selected and selected[id]
+        b:SetEnabled(o ~= nil and not o.blocked and F.AH.isOpen())
+    end
+    UI.fightNext:SetText(L("Answer next") .. " (" .. act .. ")")
+    UI.fightNext:SetEnabled(act > 0 and F.AH.isOpen())
 end
 
 function UI.refreshAuctions()
@@ -4133,6 +4369,8 @@ function UI.refresh()
         UI.refreshSell()
     elseif UI.section == "auctions" then
         UI.refreshAuctions()
+    elseif UI.section == "undercuts" then
+        UI.refreshUndercuts()
     elseif UI.section == "stats" then
         UI.refreshStats()
     elseif UI.section == "analytics" then

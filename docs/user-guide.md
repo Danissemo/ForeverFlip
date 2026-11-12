@@ -50,7 +50,7 @@ have pages instead (Previous / Next).
 | **Deals** | All · Resale · To vendor · Bids |
 | **Shopping list** | My list · Deals from the list |
 | **Crafting** | |
-| **Selling** | My items (the Sell my items page) · My auctions |
+| **Selling** | My items (the Sell my items page) · My auctions · Undercuts (anti-undercut) |
 | **Analytics** | Overview · By item (Statistics by item) · Journal and profit |
 | **Settings** | General · Key bindings · Sharing · Safety |
 
@@ -367,6 +367,33 @@ Buttons:
 When an auction is marked sold, the sale is booked once with its real quantity and price. The
 profit is calculated against the average cost of your stock. The mail invoice later confirms it
 without booking it twice.
+
+## Undercuts (anti-undercut)
+
+When another seller lists your item cheaper than your auction, this page prices every way out and
+advises the one that brings the most money. You choose.
+
+Each undercut auction is listed with your price, the cheaper price, the units ahead of yours, and
+the advice. Click a row: every option is shown with its numbers, the advice marked with `>`.
+
+| Option | What it does | How it is valued |
+|---|---|---|
+| **wait** | Keep the auction. | The chance that the cheaper units and yours sell before your auction ends, times your price after the cut; if not, the item comes back and is still worth what a merchant pays. |
+| **undercut** | Cancel (the deposit is lost, and the game may charge more) and post again one step below the cheaper seller. The item comes back by mail; post it from My items. | The chance yours sells first at the new price in the duration it needs, times that price after the cut, less what cancelling costs and the new deposit if it does not sell. Not offered below the item's floor. |
+| **buy out** | Buy the cheaper units, so yours is the cheapest again, and sell them at your price too. They go on the shopping list and are bought from Shopping list → Deals from the list. | Your auction's chance and the bought units' chance to sell at your price, less what they cost. Not offered for more than 50 units or more money than one deal may use. |
+| **to a vendor** | Cancel and sell to a merchant (the item joins the merchant's Sell all). | The merchant's price less what cancelling costs. |
+
+The chances come from the item's measured sales: buyers take the cheapest lots first, units sell at
+the rate measured near the cheaper price, and the number sold in a time is taken as a Poisson count.
+The page shows the rate and how many sales it is based on. Without measured sales the chances are
+unknown: waiting stays the advice unless a merchant pays more.
+
+- **Answer next (N)** answers the next auction whose advice is to act (undercut or to a vendor), one
+  auction per click.
+- A **!** after the advice marks a price war: you answered three times in a day and were undercut
+  again. Each round costs a deposit.
+- After each full scan your auctions are checked against it without searches (when the scan names
+  the owners), and the chat says how many are worth answering.
 
 ## Statistics by item
 

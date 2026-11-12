@@ -391,9 +391,12 @@ function T.scanPrice(key)
     if not item then
         return nil
     end
-    for _, o in ipairs(T.owned or {}) do
-        if o.itemKey and o.itemKey.itemID == item.id then
-            return nil
+    -- A scan that names the owners leaves the player's own lots out: it prices their items too.
+    if not last.ownersKnown then
+        for _, o in ipairs(T.owned or {}) do
+            if o.id == item.id or (o.itemKey and o.itemKey.itemID == item.id) then
+                return nil
+            end
         end
     end
     -- An item the scan did not see needs no price either: nobody sells it (T.noSellers).
@@ -1257,6 +1260,13 @@ function T.ownedStatus(a)
         return "sold"
     end
     local check = a.key and T.prices[a.key]
+    if (not check or clock() - check.at > 600) and a.key then
+        -- A full scan of the last 5 minutes tells it without a search (T.scanPrice).
+        local scanned = T.scanPrice(a.key)
+        if scanned then
+            T.prices[a.key], check = scanned, scanned
+        end
+    end
     if not check or clock() - check.at > 600 then
         if a.key and T.alone(a.key) then
             return "alone"
@@ -1304,6 +1314,308 @@ function T.cancelAuction(a)
     F.Engine.notify("cancelled")
     F.Engine.changed()
     return true
+end
+
+-- Anti-undercut ------------------------------------------------------------------------------------
+-- When another seller lists an item cheaper than the player's auction, every way out is priced and
+-- the player chooses. Each option's value is its expected money, from the item's measured sales:
+-- buyers take the cheapest lots first, sales come at the measured rate r (units a day near the
+-- cheaper price, from the lot-tracked full scans), and the number sold in t hours is taken as Poisson
+-- with mean r * t / 24. A lot behind k units (those cheaper, then its own) sells within t hours with
+-- probability P(N >= k). An item that does not sell comes back by mail: it is still worth at least
+-- what a merchant pays (the "fallback").
+--   wait     keep the auction: P(the cheaper units and yours sell before it ends) x your price after
+--            the cut, else the fallback;
+--   undercut cancel (the deposit is lost, and the game may charge more) and post again one step
+--            below the cheaper seller (T.undercut) for the duration the item needs: P(yours sells)
+--            x the new price after the cut, else the fallback less the new deposit;
+--   buyout   buy the cheaper units (a shopping list entry: they are checked and bought like any
+--            deal), so your auction is the cheapest again, and sell them at your price too;
+--   vendor   cancel and sell to a merchant.
+-- Not offered: undercut below the item's floor, buyout when the cheaper units cost more than the
+-- money one deal may use or more than 50 units. Without measured sales the probabilities are not
+-- known: wait and buyout are not priced, and the advice falls back to the prices alone.
+T.WAR_ROUNDS = 3
+T.BUYOUT_UNITS = 50
+local HOURS = { 2, 8, 24 }
+
+local function fights()
+    F.db.fights = type(F.db.fights) == "table" and F.db.fights or {}
+    return F.db.fights
+end
+
+-- Times the player answered an undercut of the item in the last day.
+function T.rounds(key)
+    local list = fights()[key]
+    local n, now = 0, clock()
+    for _, at in ipairs(type(list) == "table" and list or {}) do
+        if now - at <= 86400 then
+            n = n + 1
+        end
+    end
+    return n
+end
+
+-- P(N >= k) for N ~ Poisson(m); a normal approximation for large numbers.
+local function erf(x)
+    local sign = x < 0 and -1 or 1
+    x = math.abs(x)
+    local t = 1 / (1 + 0.3275911 * x)
+    local y = 1
+        - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592)
+            * t
+            * math.exp(-x * x)
+    return sign * y
+end
+
+function T.atLeast(k, m)
+    if k <= 0 then
+        return 1
+    end
+    if not U.finite(m) or m <= 0 then
+        return 0
+    end
+    if k > 150 or m > 150 then
+        local z = (k - 0.5 - m) / math.sqrt(m)
+        return math.max(0, math.min(1, 1 - 0.5 * (1 + erf(z / math.sqrt(2)))))
+    end
+    local term, below = math.exp(-m), 0
+    for i = 0, k - 1 do
+        below = below + term
+        term = term * m / (i + 1)
+    end
+    return math.max(0, math.min(1, 1 - below))
+end
+
+function T.fightPlan(a)
+    if not a or a.sold or not a.key then
+        return nil
+    end
+    local status, cheapest = T.ownedStatus(a)
+    if status ~= "undercut" or not cheapest then
+        return nil
+    end
+    local item = U.parseKey(a.key)
+    if not item then
+        return nil
+    end
+    local qty, price = a.qty or 1, a.price or 0
+    local check = T.prices[a.key]
+    local ahead, buyCost = 0, 0
+    for _, r in ipairs(check and check.rows or {}) do
+        if r.unit < price then
+            ahead = ahead + (r.qty or 1)
+            buyCost = buyCost + r.unit * (r.qty or 1)
+        end
+    end
+    local new = T.undercut(cheapest, item.kind)
+    local floor = T.floorFor({ key = a.key, kind = item.kind })
+    local vendorPrice = F.AH.clientVendorPrice(item.id)
+    local function depositFor(units)
+        local per = M.deposit(vendorPrice, item.kind == "commodity" and units or 1)
+        return item.kind == "commodity" and per or per * units
+    end
+    local deposit = depositFor(qty)
+    local okCost, extra = pcall(F.AH.cancelCost, a.auctionID)
+    local cancel = deposit + (okCost and U.finite(extra) and extra or 0)
+    local vendor = (F.AH.vendorPrice(item.id, true) or 0)
+    local fallback = vendor * qty
+    local h = F.Data.market(F.db, F.Engine.scope()).history[a.key]
+    h = type(h) == "table" and h or nil
+    local d = M.demandAt(h, cheapest)
+    local rate = (d.pairs or 0) > 0 and d.perDay or nil
+    local left = (a.timeLeft or 0) / 3600
+    local plan = {
+        auction = a,
+        key = a.key,
+        new = new,
+        cheapest = cheapest,
+        ahead = ahead,
+        floor = floor,
+        cancel = cancel,
+        rate = rate,
+        sold = d.sold,
+        hours = d.hours,
+        rounds = T.rounds(a.key),
+        options = {},
+    }
+    local function add(o)
+        plan.options[#plan.options + 1] = o
+        plan[o.id] = o
+    end
+    -- Wait: the cheaper units and yours must sell before the auction ends.
+    if rate then
+        local p = T.atLeast(ahead + qty, rate * left / 24)
+        add({ id = "wait", p = p, ev = p * M.net(price, qty) + (1 - p) * fallback })
+    else
+        add({ id = "wait", unknown = true, ev = nil })
+    end
+    -- Undercut: cancel, then first in line at the new price for the duration it needs.
+    if floor and new < floor then
+        add({ id = "undercut", blocked = "floor" })
+    else
+        local hours = HOURS[T.durationFor(a.key, qty, new)] or 24
+        local newDeposit = depositFor(qty)
+        local net = M.net(new, qty)
+        if rate then
+            local r2 = M.demandAt(h, new)
+            local rate2 = (r2.pairs or 0) > 0 and r2.perDay or rate
+            local p = T.atLeast(qty, rate2 * hours / 24)
+            add({ id = "undercut", p = p, ev = p * net + (1 - p) * (fallback - newDeposit) - cancel, hours = hours })
+        else
+            add({ id = "undercut", ev = net - cancel, guess = true, hours = hours })
+        end
+    end
+    -- Buy out the cheaper units, then everything sells at your price.
+    if ahead > 0 and ahead <= T.BUYOUT_UNITS and buyCost <= F.Deals.budget() then
+        local unitNet = M.net(price, 1)
+        local resell = depositFor(ahead)
+        if rate then
+            local mine = T.atLeast(qty, rate * left / 24)
+            local theirs = T.atLeast(qty + ahead, rate) -- bought units, posted for a day after yours
+            add({
+                id = "buyout",
+                cost = buyCost,
+                units = ahead,
+                ev = mine * M.net(price, qty)
+                    + (1 - mine) * fallback
+                    + theirs * unitNet * ahead
+                    + (1 - theirs) * (vendor * ahead - resell)
+                    - buyCost,
+            })
+        else
+            add({ id = "buyout", cost = buyCost, units = ahead, unknown = true })
+        end
+    else
+        add({ id = "buyout", blocked = ahead > T.BUYOUT_UNITS and "many" or "money", cost = buyCost, units = ahead })
+    end
+    -- Vendor: cancel now and sell to a merchant.
+    if vendor > 0 then
+        add({ id = "vendor", ev = fallback - cancel })
+    end
+    local best
+    for _, o in ipairs(plan.options) do
+        if o.ev and not o.blocked and (not best or o.ev > best.ev) then
+            best = o
+        end
+    end
+    -- Without measured sales waiting is not priced: it stays the advice unless an option is sure to
+    -- bring more than the auction's own price could.
+    if not rate and best and best.id ~= "vendor" then
+        best = plan.wait
+    end
+    plan.best = best or plan.wait
+    plan.verdict = plan.best.id
+    plan.war = plan.rounds >= T.WAR_ROUNDS
+    plan.net = plan.best.ev or 0
+    return plan
+end
+
+-- Plans of every undercut auction: those where acting pays most first.
+local ORDER = { undercut = 1, buyout = 2, vendor = 3, wait = 4 }
+function T.fightPlans()
+    local out = {}
+    for _, a in ipairs(T.owned or {}) do
+        local just = T.cancelled[a.auctionID] and clock() - T.cancelled[a.auctionID] < 30
+        local plan = not just and T.fightPlan(a)
+        if plan then
+            out[#out + 1] = plan
+        end
+    end
+    table.sort(out, function(x, y)
+        if ORDER[x.verdict] ~= ORDER[y.verdict] then
+            return ORDER[x.verdict] < ORDER[y.verdict]
+        end
+        if x.net ~= y.net then
+            return x.net > y.net
+        end
+        return x.auction.auctionID < y.auction.auctionID
+    end)
+    return out
+end
+
+-- Auctions where the advice is to act (undercut or vendor: a click cancels them).
+function T.fightCount()
+    local n = 0
+    for _, plan in ipairs(T.fightPlans()) do
+        if plan.verdict == "undercut" or plan.verdict == "vendor" then
+            n = n + 1
+        end
+    end
+    return n
+end
+
+local function remember(key)
+    local list = fights()[key]
+    list = type(list) == "table" and list or {}
+    local now = clock()
+    for i = #list, 1, -1 do
+        if now - list[i] > 86400 then
+            table.remove(list, i)
+        end
+    end
+    list[#list + 1] = now
+    fights()[key] = list
+end
+
+-- Carries out an option of a plan. undercut: cancels (the item comes back by mail and is posted
+-- again from My items, one step below the cheaper seller). vendor: cancels and marks the item for
+-- the merchant's Sell all. buyout: puts the cheaper units on the shopping list (up to one step
+-- below your price) and checks them: they are bought from Shopping list, Deals from the list.
+-- wait: nothing changes; the auction is left out of Answer next until the prices change.
+function T.fight(plan, id)
+    id = id or plan.verdict
+    local o = plan[id]
+    if not o or o.blocked then
+        return false
+    end
+    if id == "wait" then
+        T.waiting = T.waiting or {}
+        T.waiting[plan.auction.auctionID] = plan.cheapest
+        F.Engine.changed()
+        return true
+    end
+    if id == "buyout" then
+        local item = U.parseKey(plan.key)
+        local max = U.below(plan.auction.price or 0, item and item.kind)
+        if not F.Shopping.add(plan.key, max, o.units, U.linkName(plan.auction.link)) then
+            return false
+        end
+        F.Deals.verify(plan.key)
+        return true
+    end
+    if not T.cancelAuction(plan.auction) then
+        return false
+    end
+    remember(plan.key)
+    if id == "vendor" then
+        F.db.toVendor = type(F.db.toVendor) == "table" and F.db.toVendor or {}
+        F.db.toVendor[plan.key] = clock()
+    end
+    return true
+end
+
+-- One click: the next auction where acting pays (undercut or vendor) is answered.
+function T.fightNext()
+    for _, plan in ipairs(T.fightPlans()) do
+        local waited = T.waiting and T.waiting[plan.auction.auctionID] == plan.cheapest
+        if not waited and (plan.verdict == "undercut" or plan.verdict == "vendor") then
+            return T.fight(plan), "cancelled"
+        end
+    end
+    return false, "nothing_to_fight"
+end
+
+-- After a full scan: a line in the chat when auctions of the player are worth answering.
+function T.afterScan()
+    local n = T.fightCount()
+    if n > 0 and n ~= T.toldFights then
+        print(
+            "ForeverFlip: "
+                .. string.format(L("%d of your auctions were undercut and are worth answering: Selling, Undercuts."), n)
+        )
+    end
+    T.toldFights = n
 end
 
 -- Statistics per item: totals, stock and how long it has been held.
@@ -1415,7 +1727,7 @@ function T.vendorSellList()
             and not (rule and rule.keep)
             and not (p and p.qty > 0 and p.mode == "vendor")
             and not b.locked
-            and T.bestWay(b.key, b.id) == "vendor"
+            and (T.bestWay(b.key, b.id) == "vendor" or (F.db.toVendor and F.db.toVendor[b.key]))
         then
             local price = F.AH.vendorPrice(b.id, true)
             if price and price > 0 then
@@ -1510,6 +1822,9 @@ function T.sellAllToVendor()
     for _, v in ipairs(T.vendorSellList()) do
         C_Container.UseContainerItem(v.bag, v.slot)
         stacks, money = stacks + 1, money + v.price
+        if F.db.toVendor then
+            F.db.toVendor[v.key] = nil -- marked by the anti-undercut: sold now
+        end
         local p = c.positions[v.key]
         if p and p.qty > 0 then
             -- Stock (a vendor deal): booked as its sale, and the buyback entry is only matched.

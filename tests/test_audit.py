@@ -540,3 +540,50 @@ class MerchantRefreshTests(unittest.TestCase):
         assert(UI.merchantView.sellRows[1]:IsShown(), 'listed before the sale')
         F.Trade.sellAllToVendor(); run(0.1); fire('BAG_UPDATE_DELAYED')
         assert(not UI.merchantView.sellRows[1]:IsShown(), 'gone without another click')''')
+
+
+class AntiUndercutTests(unittest.TestCase):
+    PLAN = BASE + '''local T = F.Trade
+    fullScan(); F.Scan.last.groups = nil
+    owned = {{auctionID = 6, itemKey = {itemID = 30}, quantity = 1, buyoutAmount = 25000, status = 0, timeLeftSeconds = 43200}}
+    fire('OWNED_AUCTIONS_UPDATED')
+    T.prices['i:30'] = { rows = {{unit = 20000, qty = 2}}, at = now }
+    local h = F.Data.market(F.db, F.Engine.scope()).history
+    h['i:30'] = h['i:30'] or {}
+    h['i:30'].flow = { hours = 24, sold = {6, 6, 6, 6, 6, 6, 6, 6, 6, 6}, pairs = 4, at = now, market = 25000 }
+    '''
+
+    def test_poisson_chances(self):
+        run(BASE + '''local T = F.Trade
+        assert(math.abs(T.atLeast(1, 1) - (1 - math.exp(-1))) < 1e-9, 'one sale in a mean of one')
+        assert(T.atLeast(0, 0) == 1 and T.atLeast(3, 0) == 0)
+        assert(T.atLeast(200, 400) > 0.99 and T.atLeast(400, 200) < 0.01, 'the normal approximation')''')
+
+    def test_every_option_is_priced_and_the_best_advised(self):
+        run(self.PLAN + '''local plan = T.fightPlans()[1]
+        assert(plan and plan.ahead == 2 and plan.cheapest == 20000, 'the cheaper lots')
+        for _, id in ipairs({'wait', 'undercut', 'buyout', 'vendor'}) do assert(plan[id], 'option ' .. id) end
+        assert(plan.wait.p and plan.wait.p > 0 and plan.wait.p <= 1, 'a chance from the sales')
+        local best = plan.best
+        for _, o in ipairs(plan.options) do
+            if o.ev and not o.blocked then assert(o.ev <= best.ev, o.id .. ' beats the advice') end
+        end
+        UI.show('undercuts'); UI.undercutTable.rows[1]:Click()
+        local text = UI.fightText:GetText()
+        assert(text:find('> ', 1, true) and text:find('chance', 1, true), text)''')
+
+    def test_undercut_below_the_floor_is_not_offered(self):
+        run(self.PLAN + '''F.db.rules = { ['i:30'] = { min = 24000 } }
+        local plan = T.fightPlans()[1]
+        assert(plan.undercut.blocked == 'floor' and plan.verdict ~= 'undercut')''')
+
+    def test_buyout_goes_through_the_shopping_list(self):
+        run(self.PLAN + '''local plan = T.fightPlans()[1]
+        assert(T.fight(plan, 'buyout'))
+        local e = F.Shopping.entry('i:30')
+        assert(e and e.max < 25000 and e.qty == 2, 'the cheaper units, up to one step below my price')''')
+
+    def test_answering_cancels_and_counts_the_rounds(self):
+        run(self.PLAN + '''local plan = T.fightPlans()[1]
+        assert(T.fight(plan, 'undercut') and T.rounds('i:30') == 1)
+        assert(#T.fightPlans() == 0, 'a cancelled auction leaves the list')''')

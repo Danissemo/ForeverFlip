@@ -211,6 +211,13 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 
 ### Added
 
+- **Anti-undercut (Selling → Undercuts).** For every auction of yours another seller undercut, each
+  way out is priced in expected money from the item's measured sales (Poisson chances of selling in
+  the time left or the new duration): wait, undercut (cancel and post one step below), buy out the
+  cheaper units (through the shopping list) and sell everything at your price, or a merchant. The
+  best is advised, every option has its button, Answer next acts on the next one where acting
+  pays, and price wars (three answers in a day) are marked. A full scan that names the owners
+  checks your auctions without searches and the chat tells how many are worth answering.
 - **Every scan is shared, not only the last one.** In game, Sharing sends the price history: per item
   the daily records of the last 7 days (cheapest and usual price, units listed, units seen sold),
   which hold every full scan of those days, with the last scan's prices (format FF2; FF1 texts and

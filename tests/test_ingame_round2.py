@@ -25,10 +25,10 @@ class OwnAuctionTests(unittest.TestCase):
     def test_scan_naming_owners_counts_other_units(self):
         run(SETUP + '''local F=ForeverFlip;local T=F.Trade;fullScan();assert(F.Scan.last.ownersKnown)
         owned={{auctionID=6,itemKey={itemID=30},quantity=1,buyoutAmount=25000,status=0}}
-        fire('OWNED_AUCTIONS_UPDATED');assert(T.ownedStatus(T.owned[1])==nil,'another seller lists it')''')
+        fire('OWNED_AUCTIONS_UPDATED');assert(T.ownedStatus(T.owned[1])~='alone','another seller lists it')''')
 
     def test_no_answer_is_shown(self):
-        run(SETUP + '''local F=ForeverFlip;local T=F.Trade;fullScan()
+        run(SETUP + '''local F=ForeverFlip;local T=F.Trade;fullScan();F.Scan.last.groups=nil -- the search path
         owned={{auctionID=6,itemKey={itemID=30},quantity=1,buyoutAmount=25000,status=0}}
         fire('OWNED_AUCTIONS_UPDATED');T.checkOwned();run(0.1);assert(F.Deals.search);run(11)
         assert(T.ownedStatus(T.owned[1])=='no_answer')''')

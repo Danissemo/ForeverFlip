@@ -673,6 +673,9 @@ function S.step()
         -- The scan is put into the saved data on logout and when another house opens (S.save), not
         -- here: the game writes saved data only then, and copying it is the costliest end step.
         F.Engine.notify("scan_done")
+        if F.Trade.afterScan then
+            pcall(F.Trade.afterScan)
+        end
         F.Share.afterScan()
     end
 end
