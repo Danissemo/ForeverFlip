@@ -185,9 +185,13 @@ class TradeTests(unittest.TestCase):
         local key=U.key('gear',20,'Northern Shortsword of Nature Protection')
         C_AuctionHouse.PlaceBid=function() end -- the game sends nothing back
         D.verify(key);answer();assert(T.buy(key));run(11)
+        assert(T.op,'still waiting after 10 seconds: the server can be slow')
+        run(20)
         local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
-        assert(not T.op and ForeverFlip.Engine.message=='buy_no_answer','no money spent: it did not go through')
-        assert(not c.positions[key] and not (c.unknown and #c.unknown>0),'nothing booked')''')
+        assert(not T.op and ForeverFlip.Engine.message=='buy_no_answer','no money in 30 seconds: reported')
+        assert(not c.positions[key] and not (c.unknown and #c.unknown>0),'nothing booked yet')
+        money=money-T.late.op.cost;fire('PLAYER_MONEY')
+        assert(c.positions[key] and c.positions[key].qty==1 and ForeverFlip.Engine.message=='bought_late','the late purchase is booked')''')
 
     def test_a_commodity_purchase_without_answer_is_settled_in_the_journal(self):
         run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false

@@ -267,8 +267,9 @@ with them, using the same rules.
   messages are in flight is often thrown away by the server.
 - Buy (and Post) is enabled only while no search waits for its answer and the server is ready: the
   game queues a message behind an unanswered one, and on WoW Forever some are never answered, so a
-  purchase sent then would never leave. With no money spent 10 seconds after an item purchase, it
-  is reported as not gone through and the deal is checked again.
+  purchase sent then would never leave. With no money spent 30 seconds after an item purchase, it
+  is reported and the deal is checked again; the wallet is still watched 3 minutes (`T.late`), and
+  a purchase the server takes that late is booked then.
 - **The full scan answer comes in parts** (1024, 2048, 24576 ... auctions, with pauses of seconds
   between them). It is read once the list has not changed for 5 seconds (`S.SETTLE`); a list far
   smaller than the house's last full scan (under 60%) waits for 30 quiet seconds (`S.SHORT`) or the

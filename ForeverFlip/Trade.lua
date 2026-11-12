@@ -221,6 +221,16 @@ function T.onMoney()
         if F.Engine.wallet() <= op.money - (op.cost or 0) then
             bought(op)
         end
+        return
+    end
+    local late = T.late
+    if late and clock() <= late.untilAt and F.Engine.wallet() <= late.op.money - (late.op.cost or 0) then
+        -- The purchase reported as not gone through was taken after all.
+        T.late = nil
+        bought(late.op)
+        F.Engine.notify("bought_late")
+    elseif late and clock() > late.untilAt then
+        T.late = nil
     end
 end
 
@@ -272,14 +282,11 @@ end
 -- journal (the chat line "You won an auction" tells).
 function T.step()
     local op = T.op
-    if
-        op
-        and op.state == "awaiting"
-        and op.money
-        and clock() - op.at > 10
-        and F.Engine.wallet() > op.money - (op.cost or 0)
-    then
-        -- The price never left the wallet: the purchase did not go through. Checked again.
+    if op and op.state == "awaiting" and op.money and clock() - op.at > 30 then
+        -- No money spent in 30 seconds: reported, and the deal is checked again. The server can
+        -- still take it later (seen in game: the money left after the report), so the wallet is
+        -- watched 3 more minutes and a late purchase is booked then (T.onMoney).
+        T.late = { op = op, untilAt = clock() + 180 }
         failed(op, "buy_no_answer")
     elseif op and op.state == "awaiting" and clock() - op.at > 30 then
         local c = char()

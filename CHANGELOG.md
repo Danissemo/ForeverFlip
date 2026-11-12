@@ -83,6 +83,9 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   counts them.
 - **Gear I can't use:** a button at the merchant sells the equipment your class can never use, bound
   or not (unbound pieces only when the auction house would not pay more).
+- **A slow purchase is not reported as failed too early:** an item purchase waits 30 seconds for
+  its money to leave the wallet (it was 10, and in game the money left later, after "did not go
+  through"); after that the wallet is still watched 3 minutes and a late purchase is booked then.
 - **Buy is enabled for every ready deal:** the background rests as long as the selected deal is
   ready (it rested only 45 seconds, so a ready deal's Buy turned grey). When a search is still
   answered at the click, the status says so and the background rests 5 seconds for the next click.
