@@ -69,6 +69,9 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   far smaller than the last full scan waits longer.
 - **Bag items stay on Selling while a full scan is awaited** (the game then says no item can be
   posted).
+- **New look:** money is shown with gold, silver and copper coins everywhere (price fields keep
+  `1g 20s 5c`), table rows use the normal font, the tabs above a page share its width (they ran past
+  its edge), and the top buttons sit a little further left.
 - **Merchant buy list redrawn:** each item shows its icon, its name in its quality colour, the price
   here and on the auction house, the profit each and the sales a day, with Buy N and the cost of the
   purchase on the right. More offers than its four rows scroll with the mouse wheel; the title

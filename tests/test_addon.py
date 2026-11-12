@@ -19,6 +19,8 @@ def runtime(open_ah=True):
     # Vendor prices in the tests are what merchants really pay; the safety margin for unconfirmed
     # prices has its own tests (test_forever12.py).
     lua.execute("ForeverFlip.db.settings.vendorMargin=0")
+    # Money as letters (1g 20s 5c): the texts compared in the tests; the coins have their own test.
+    lua.execute("ForeverFlip.Util.coins=false")
     if open_ah:
         lua.execute("fire('AUCTION_HOUSE_SHOW');ForeverFlip.UI.frame:Show()")
     return lua

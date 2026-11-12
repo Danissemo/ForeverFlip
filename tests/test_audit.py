@@ -393,3 +393,14 @@ class MerchantScrollTests(unittest.TestCase):
         assert(view.buyTitle:GetText():find('1%-4 / 7'), view.buyTitle:GetText())
         view.buyWheel(nil, -1); view.buyWheel(nil, -1); view.buyWheel(nil, -1); view.buyWheel(nil, -1)
         assert(view.buyTitle:GetText():find('4%-7 / 7'), 'scrolled to the end: ' .. view.buyTitle:GetText())''')
+
+
+class CoinTests(unittest.TestCase):
+    def test_money_shows_coins_and_edit_boxes_get_plain_text(self):
+        run('''local U = ForeverFlip.Util
+        U.coins = true
+        local shown = U.money(123456)
+        assert(shown:find('12|T', 1, true) and shown:find('UI-GoldIcon', 1, true) and shown:find('34|T', 1, true) and shown:find('56|T', 1, true), shown)
+        assert(U.plainMoney(123456) == '12g 34s 56c', U.plainMoney(123456))
+        assert(U.parseMoney(U.plainMoney(123456)) == 123456)
+        assert(U.money(-250):sub(1, 1) == '-')''')

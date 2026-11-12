@@ -81,28 +81,51 @@ function U.below(price, kind)
     return math.max(0, (math.ceil(price / 100) - 1) * 100)
 end
 
+-- Money as shown: digits with gold, silver and copper coins (as the game shows money). Without
+-- the coin textures (U.coins = false) the letters g, s and c in their colours.
+U.coins = true
+local COIN = {
+    g = "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t",
+    s = "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t",
+    c = "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t",
+}
+local LETTER = { g = "|cffffd100%dg|r", s = "|cffc7c7cf%ds|r", c = "|cffeda55f%dc|r" }
+
+local function parts(copper)
+    copper = math.floor(math.abs(copper) + 0.5)
+    local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
+    local out = {}
+    if g > 0 then
+        out[#out + 1] = { "g", g }
+    end
+    if s > 0 or g > 0 then
+        out[#out + 1] = { "s", s }
+    end
+    out[#out + 1] = { "c", c }
+    return out
+end
+
 function U.money(copper)
     if not U.finite(copper) then
         return "?"
     end
-    local sign = copper < 0 and "-" or ""
-    copper = math.floor(math.abs(copper) + 0.5)
-    local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
-    local parts = {}
-    if g > 0 then
-        parts[#parts + 1] = "|cffffd100" .. g .. "g|r"
+    local shown = {}
+    for i, p in ipairs(parts(copper)) do
+        shown[i] = U.coins and (p[2] .. COIN[p[1]]) or string.format(LETTER[p[1]], p[2])
     end
-    if s > 0 or g > 0 then
-        parts[#parts + 1] = "|cffc7c7cf" .. s .. "s|r"
-    end
-    parts[#parts + 1] = "|cffeda55f" .. c .. "c|r"
-    return sign .. table.concat(parts, " ")
+    return (copper < 0 and "-" or "") .. table.concat(shown, " ")
 end
 
--- Money without colour codes, for edit boxes ("1g 20s 5c").
+-- Money without colour codes or coins, for edit boxes and text ("1g 20s 5c").
 function U.plainMoney(copper)
-    local s = U.money(copper):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-    return s
+    if not U.finite(copper) then
+        return "?"
+    end
+    local shown = {}
+    for i, p in ipairs(parts(copper)) do
+        shown[i] = p[2] .. p[1]
+    end
+    return (copper < 0 and "-" or "") .. table.concat(shown, " ")
 end
 
 -- Parses "1g 20s 5c", "20s", "1.5g" or a bare number of silver.

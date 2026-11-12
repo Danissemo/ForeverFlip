@@ -333,13 +333,13 @@ local function table_(parent, columns, rows, onClick, onSort)
         r.icon = r:CreateTexture(nil, "ARTWORK")
         r.icon:SetSize(ROW - 4, ROW - 4)
         r.icon:SetPoint("LEFT", r, "LEFT", 4, 0)
-        r.name = text(r, "GameFontHighlightSmall")
+        r.name = text(r, "GameFontHighlight")
         r.name:SetPoint("LEFT", r.icon, "RIGHT", 4, 0)
         r.name:SetPoint("RIGHT", r, "RIGHT", -x - 4, 0)
         r.name:SetWordWrap(false)
         r.cols = {}
         for n = 2, #columns do
-            local c = text(r, "GameFontHighlightSmall")
+            local c = text(r, "GameFontHighlight")
             c:SetPoint("RIGHT", r, "RIGHT", -cells[n].x - 6, 0)
             c:SetWidth(cells[n].width - 10)
             c:SetJustifyH(cells[n].align or "RIGHT")
@@ -403,7 +403,7 @@ function UI.create()
             F.Engine.notify(why)
         end
     end)
-    UI.scanButton:SetPoint("TOPLEFT", f, "TOPLEFT", 96, 30)
+    UI.scanButton:SetPoint("TOPLEFT", f, "TOPLEFT", 82, 30)
     UI.sniperButton = button(f, "Sniper: ON", 116, function()
         F.Deals.setSniper(not F.db.settings.sniper)
         UI.refresh()
@@ -540,6 +540,32 @@ function UI.groupOf(id)
     return UI.GROUPS[1]
 end
 
+-- The tabs of the shown group share the page's width; before the window is laid out the width is
+-- unknown, so the first refresh after that lays them out again.
+function UI.layoutTabs(group, id)
+    UI.tabsShown = { group = group, id = id }
+    for g, tabs in pairs(UI.groupTabs) do
+        local width = UI.right and UI.right.GetWidth and UI.right:GetWidth()
+        local each = U.finite(width) and width > 100 and math.floor((width - 12 - (#tabs - 1) * 4) / #tabs) or nil
+        if each and g == group then
+            UI.tabsSized = true
+        end
+        for i, b in ipairs(tabs) do
+            if g == group then
+                if each then
+                    b:SetWidth(each)
+                    b:ClearAllPoints()
+                    b:SetPoint("TOPLEFT", UI.right, "TOPLEFT", 6 + (i - 1) * (each + 4), -4)
+                end
+                b:Show()
+            else
+                b:Hide()
+            end
+            b:SetEnabled(b.id ~= id)
+        end
+    end
+end
+
 function UI.show(id)
     local page, filter = id:match("^(%a+):?(%a*)$")
     if not page or not UI.pages[page] then
@@ -570,16 +596,7 @@ function UI.show(id)
             p:Hide()
         end
     end
-    for g, tabs in pairs(UI.groupTabs) do
-        for _, b in ipairs(tabs) do
-            if g == group then
-                b:Show()
-            else
-                b:Hide()
-            end
-            b:SetEnabled(b.id ~= id)
-        end
-    end
+    UI.layoutTabs(group, id)
     for _, c in ipairs(UI.categories) do
         if c.group == group then
             c.selected:Show()
@@ -3386,6 +3403,9 @@ function UI.refresh()
     pcall(UI.highlightBrowse)
     if not UI.frame or not UI.frame:IsShown() then
         return
+    end
+    if not UI.tabsSized and UI.tabsShown then
+        UI.layoutTabs(UI.tabsShown.group, UI.tabsShown.id)
     end
     UI.refreshStatus()
     UI.refreshSummary()
