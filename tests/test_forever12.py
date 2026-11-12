@@ -363,13 +363,15 @@ class OtherTests(unittest.TestCase):
         UI.show('bids')
         local deals = UI.categories[1]
         assert(deals.selected:IsShown(), 'bids belong to Deals')
-        assert(#deals.subs == 5)
+        assert(#deals.subs == 4)
         local shown, current = 0, nil
         for _, b in ipairs(deals.subs) do
             if b:IsShown() then shown = shown + 1 end
             if b.id == 'bids' then current = b end
         end
-        assert(shown == 5 and current.selected:IsShown(), 'the pages open under Deals, the open one marked')
+        assert(shown == 4 and current.selected:IsShown(), 'the pages open under Deals, the open one marked')
+        UI.show('deals:shop')
+        assert(UI.categories[2].group.label == 'Shopping list' and UI.categories[2].selected:IsShown(), 'list deals sit with the list')
         for _, b in ipairs(UI.groupTabs[deals.group]) do assert(not b:IsShown(), 'no tabs above the page') end
         UI.show('stats'); UI.categories[1].scripts.OnClick(UI.categories[1])
         assert(UI.section == 'bids', 'a group opens the page it showed last')

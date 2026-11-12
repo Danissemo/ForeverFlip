@@ -47,10 +47,10 @@ have pages instead (Previous / Next).
 
 | Entry | Tabs |
 |---|---|
-| **Deals** | All · To vendor · Resale · From the list (shopping list deals) · Bids |
-| **Selling** | My items (the Sell my items page) · My auctions |
-| **Shopping list** | |
+| **Deals** | All · Resale · To vendor · Bids |
+| **Shopping list** | My list · Deals from the list |
 | **Crafting** | |
+| **Selling** | My items (the Sell my items page) · My auctions |
 | **Analytics** | Overview · By item (Statistics by item) · Journal and profit |
 | **Settings** | |
 
@@ -70,7 +70,7 @@ history, because the listings are separate, and counts the 15% cut.
 |---|---|
 | **Full scan** | Asks the server for every auction of the house. The button shows a countdown while the 15-minute cooldown runs. |
 | **Sniper: ON / OFF** | Turns the [sniper](#sniper) on or off. |
-| **Check all** | Searches every entry of the open page on the auction house again, one search after another, and the page shows what was found: deals are kept, updated or dropped (All, To vendor, Resale, From the list); the items on the **Shopping list** are checked as shopping deals; **Bids** reads the best bid of every candidate; **My items** and **My auctions** read the current price of every item (the Best column and the suggested prices use it); **Crafting** reads every material and product, and the recipes are priced with those prices for 5 minutes. While it runs the button shows `Checking <page>: done/total`. Afterwards it shows `Checked ...`. Searches without an answer are sent once more by themselves; what still has none is shown as `(N without an answer)` and named in the chat. Either nobody else sells them (WoW Forever does not answer a search for an item only you have), or the server did not answer their search: the next check searches them by name, like gear. An item a full scan of the last 20 minutes did not see is not searched at all. |
+| **Check all** | Searches every entry of the open page on the auction house again, one search after another, and the page shows what was found: deals are kept, updated or dropped (All, Resale, To vendor, Deals from the list); the items on the **Shopping list** are checked as shopping deals; **Bids** reads the best bid of every candidate; **My items** and **My auctions** read the current price of every item (the Best column and the suggested prices use it); **Crafting** reads every material and product, and the recipes are priced with those prices for 5 minutes. While it runs the button shows `Checking <page>: done/total`. Afterwards it shows `Checked ...`. Searches without an answer are sent once more by themselves; what still has none is shown as `(N without an answer)` and named in the chat. Either nobody else sells them (WoW Forever does not answer a search for an item only you have), or the server did not answer their search: the next check searches them by name, like gear. An item a full scan of the last 20 minutes did not see is not searched at all. |
 | Auction house (bottom bar, beside the money display) | Which auction house is open: **Alliance AH** (blue), **Horde AH** (red) or **Neutral AH, 15% cut** (gold, at Booty Bay, Gadgetzan or Everlook). Each house keeps its own scans, prices and deals; the window title says it too. |
 | Status line | The current task (`Reading auctions 12000 / 231000`, `Evaluating items ...`), the last message, or the number of deals and how many are checked. The sniper's own figures are in the summary on the left. |
 
@@ -129,7 +129,7 @@ the 150 items most often near a deal, one per second.
   `*` marks a vendor price not yet seen at a merchant, see [Settings](#settings), Safety).
 - **Resale:** lots priced well below the next seller, for items that are measured to sell at the
   resale price. You buy them and post them again on the auction house.
-- **From the list:** lots at or below the price on your [shopping list](#shopping-list-and-ignored-items).
+- **Deals from the list** (under Shopping list): lots at or below the price on your [shopping list](#shopping-list-and-ignored-items).
 - **Bids:** see [Bids](#bids).
 
 **Disenchant** deals appear under All for a character who knows Disenchant: green and blue
@@ -226,7 +226,7 @@ The **Shopping list** page holds items you want to buy and the most you pay for 
 - **Add an entry:** Shift-click an item link into the **Item** field (or type the exact name of an item
   the game knows). Enter **Up to, each** and, optionally, a **Quantity**, then click **Add**.
 - **What it does:** the full scan, the sniper and your own searches find lots at or below that price.
-  They appear under **Deals → From the list** and are bought like any other deal.
+  They appear under **Shopping list → Deals from the list** and are bought like any other deal.
 - **Which deal wins:** if the same item also has a vendor deal or a resale with more profit, that
   deal is shown instead.
 - **What you buy:** items bought from the shopping list are for your own use. They are kept out of
