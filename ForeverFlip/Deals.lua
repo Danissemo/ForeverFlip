@@ -263,9 +263,13 @@ function D.batchPaused()
     if not ui or not ui.frame or not ui.frame:IsShown() then
         return false
     end
+    -- Only checks of other pages rest there: the selling pages' own checks (Bags, My auctions,
+    -- Undercuts) are what the player waits for on them (a check started on Undercuts stood still
+    -- for good once the player looked at My auctions, seen in game).
     local section = ui.section
-    if section == "sell" or section == "auctions" or section == "undercuts" then
-        return batch.scope ~= section
+    local selling = { sell = true, auctions = true, undercuts = true }
+    if selling[section] then
+        return not selling[batch.scope]
     end
     return false
 end
@@ -806,6 +810,40 @@ function D.setSniper(enabled)
         completeRequest(r, nil, false)
         retryChanged()
     end
+    F.Engine.changed()
+end
+
+-- Work the Stop button ends: a check of a whole page, queued searches, the checks of own
+-- auctions, a sale to a merchant, posting queues, a full scan waiting for its answer.
+function D.busy()
+    local batch = D.batch
+    return (batch and batch.active)
+        or #D.requests > 1
+        or (F.Trade.checkQueue and #F.Trade.checkQueue > 0)
+        or (F.Trade.sellingToVendor and F.Trade.sellingToVendor())
+        or (F.Scan.job ~= nil)
+        or false
+end
+
+-- Stops all of it at once (the Stop button): queued and running searches are dropped (an answer
+-- still on its way is ignored), the full scan is stopped, the sniper's round ends, a merchant sale
+-- stops after what was sent. Settings stay as they are.
+function D.stopAll()
+    D.clear()
+    D.holdUntil = nil
+    if F.Trade.checkQueue then
+        F.Trade.checkQueue = {}
+    end
+    if F.Trade.vendorJob then
+        F.Trade.vendorJob.queue = {}
+    end
+    if F.Scan.job then
+        F.Scan.stop()
+    end
+    if F.Sniper.reset then
+        F.Sniper.reset()
+    end
+    F.Engine.notify("stopped")
     F.Engine.changed()
 end
 

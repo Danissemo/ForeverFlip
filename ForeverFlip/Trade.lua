@@ -650,17 +650,95 @@ function T.quote(key, id)
     return q
 end
 
--- Posting duration (1 = 2 h, 2 = 8 h, 3 = 24 h). Setting 0 = automatic: the shortest duration that
--- holds three times the time the lot is expected to take to sell (a shorter post costs a smaller
--- deposit, and an expired one loses it):
---   * your own sales of the item, once 3 units were sold (from the invoices: days from purchase to
---     sale, per unit), else
+-- Posting duration (1 = 2 h, 2 = 8 h, 3 = 24 h). Setting 0 = automatic. A longer post costs a
+-- larger deposit, which comes back with the sale and is lost only when the post expires; a post
+-- that expires is posted again at the same duration. So each duration costs, per sale, the
+-- deposits expected to be lost before it sells:
+--   lost(d) = deposit(d) x q / (1 - q),   q = exp(-hours(d) / T)  (the chance it is not sold in time)
+-- where T is the hours the lot is expected to take to sell. The cheapest duration wins; when a
+-- longer one costs at most T.DURATION_SLACK of the sale more (or the deposits are equal, as with
+-- the 1 silver minimum on WoW Forever), the longer one wins: fewer reposts, fewer chances to be
+-- undercut while relisting. T comes from
+--   * your own sales of the item, once 3 units were sold (days from purchase to sale, per unit), else
 --   * the market: the units ahead of yours in the queue (other sellers' lots at or below your
 --     price, from a fresh check, else every unit the last scan listed) plus yours, over the units
---     measured sold per day near that price.
+--     measured bought per day near that price.
 -- 24 hours when the sales are not measured, measured from fewer than two pairs of scans, or older
--- than 3 hours.
-T.SAFETY = 3
+-- than 3 hours. Deposits come from the game (commodities), from the last post of the item at that
+-- duration, else from the vendor price at the Classic multiples 1, 2 and 4 (at least 1 silver).
+T.DURATION_HOURS = { 2, 8, 24 }
+T.DURATION_SLACK = 0.02
+
+function T.expectedHours(key, qty, price)
+    qty = qty or 1
+    local own = char().stats[key]
+    if own and (own.sold or 0) >= 3 and U.finite(own.days) and own.days > 0 then
+        return own.days / own.sold * 24 * qty
+    end
+    local usual, h = usualOf(key)
+    local at = price or usual
+    if not at or not h then
+        return nil
+    end
+    local s = M.saleability(h, at, clock())
+    if not s.known or s.stale or (s.pairs or 0) < 2 or not s.perDay or s.perDay <= 0 then
+        return nil
+    end
+    local ahead = 0
+    local check = T.prices[key]
+    if check and clock() - check.at <= 300 then
+        for _, r in ipairs(check.rows) do
+            if r.unit <= at then
+                ahead = ahead + (r.qty or 1)
+            end
+        end
+    else
+        ahead = U.finite(h.units) and h.units or 0
+    end
+    return (ahead + qty) / s.perDay * 24
+end
+
+-- The deposit of posting `qty` units of `key` for duration `d` (1 to 3).
+function T.depositFor(key, qty, d)
+    local item = U.parseKey(key)
+    if not item then
+        return nil
+    end
+    local fn = F.AH.depositFn(item.id, item.kind, d)
+    if fn then
+        return fn(qty)
+    end
+    local base = M.deposit(F.AH.clientVendorPrice(item.id), qty) -- at least 1 silver
+    local raw = math.floor((F.AH.clientVendorPrice(item.id) or 0) * 0.15 * qty) * ({ 1, 2, 4 })[d]
+    return math.max(base, raw)
+end
+
+-- Expected deposits lost per sale for each duration: { [d] = copper }, and the choice.
+function T.durationCosts(key, qty, price)
+    local hours = T.expectedHours(key, qty, price)
+    if not hours then
+        return nil, 3
+    end
+    local costs, best = {}, nil
+    for d = 1, 3 do
+        local deposit = T.depositFor(key, qty or 1, d) or 0
+        local q = math.exp(-T.DURATION_HOURS[d] / math.max(hours, 0.01))
+        costs[d] = q >= 0.999 and math.huge or deposit * q / (1 - q)
+        if not best or costs[d] < costs[best] then
+            best = d
+        end
+    end
+    local slack = math.max(1, T.DURATION_SLACK * (price or 0) * (qty or 1))
+    local choice = best
+    for d = 3, best + 1, -1 do
+        if costs[d] <= costs[best] + slack then
+            choice = d
+            break
+        end
+    end
+    return costs, choice, hours
+end
+
 function T.durationFor(key, qty, price)
     local d = F.db and F.db.settings.duration
     if d == 1 or d == 2 or d == 3 then
@@ -669,40 +747,8 @@ function T.durationFor(key, qty, price)
     if not key then
         return 3
     end
-    qty = qty or 1
-    local hours
-    local own = char().stats[key]
-    if own and (own.sold or 0) >= 3 and U.finite(own.days) and own.days > 0 then
-        hours = own.days / own.sold * 24
-    else
-        local usual, h = usualOf(key)
-        local at = price or usual
-        if not at or not h then
-            return 3
-        end
-        local s = M.saleability(h, at, clock())
-        if not s.known or s.stale or (s.pairs or 0) < 2 or not s.perDay or s.perDay <= 0 then
-            return 3
-        end
-        local ahead = 0
-        local check = T.prices[key]
-        if check and clock() - check.at <= 300 then
-            for _, r in ipairs(check.rows) do
-                if r.unit <= at then
-                    ahead = ahead + (r.qty or 1)
-                end
-            end
-        else
-            ahead = U.finite(h.units) and h.units or 0
-        end
-        hours = (ahead + qty) / s.perDay * 24
-    end
-    if hours * T.SAFETY <= 2 then
-        return 1
-    elseif hours * T.SAFETY <= 8 then
-        return 2
-    end
-    return 3
+    local _, choice = T.durationCosts(key, qty, price)
+    return choice
 end
 
 function T.post(item, qty, price, duration)

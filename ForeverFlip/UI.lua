@@ -42,6 +42,7 @@ local MESSAGES = {
     scan_timeout = "The server sent no full scan in 5 minutes (the list stayed empty; another addon or another character of the account may have used the 15-minute window). Next try 15 minutes after this one: an earlier call would start the server's wait again.",
     scan_unsettled = "The full scan list kept changing for 5 minutes and was not read. Next try 15 minutes after this one.",
     scan_dropped = "The server threw the full scan request away (too many requests). Next try in 10 seconds.",
+    stopped = "Stopped: no check, scan or sale is running now.",
     scan_paused = "The auction house closed while waiting for the full scan: the wait goes on when you open it again.",
     scan_paused_reading = "The auction house closed during the full scan: it is read again when you open it.",
     scan_resumed = "Waiting again for the full scan sent before.",
@@ -926,10 +927,26 @@ local function table_(parent, columns, rows, onClick, onSort)
             end
             onClick(self)
         end)
+        -- Hovering a row shows the item, and below it every column of the row in full: names
+        -- and states cut short in the narrow columns can be read there.
         r:SetScript("OnEnter", function(self)
+            if not GameTooltip then
+                return
+            end
             if self.key then
                 showTooltip(self, self.key, self.link)
+            else
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(self.name:GetText() or "", 1, 1, 1)
             end
+            GameTooltip:AddLine(" ")
+            for n = 2, #columns do
+                local value = self.cols[n - 1]:GetText()
+                if value and value ~= "" then
+                    GameTooltip:AddDoubleLine(L(columns[n][1]), value, 1, 0.82, 0, 1, 1, 1)
+                end
+            end
+            GameTooltip:Show()
         end)
         r:SetScript("OnLeave", function()
             if GameTooltip then
@@ -977,8 +994,14 @@ function UI.create()
     UI.sniperButton:SetPoint("LEFT", UI.scanButton, "RIGHT", 6, 0)
     -- Check all: every entry of the open page is searched on the auction house again (one search
     -- after another), and the page shows what was found.
+    -- Check all, or Stop while anything runs (F.Deals.busy): one click ends all work.
     UI.bulkButton = button(f, "Check all", 110, function()
-        UI.checkStatuses()
+        if F.Deals.busy() then
+            F.Deals.stopAll()
+            UI.refresh()
+        else
+            UI.checkStatuses()
+        end
     end)
     UI.bulkButton:SetPoint("LEFT", UI.sniperButton, "RIGHT", 6, 0)
     -- Which auction house this is (its own prices; a neutral one takes 15%): in the middle of the
@@ -987,6 +1010,28 @@ function UI.create()
     UI.status = text(f, "GameFontNormal")
     UI.placeHouse()
     UI.status:SetWordWrap(false)
+    -- The status line is cut to one line: hovering it shows all of it.
+    UI.statusHover = CreateFrame("Frame", nil, f)
+    UI.statusHover:SetAllPoints(UI.status)
+    if UI.statusHover.EnableMouse then
+        UI.statusHover:EnableMouse(true)
+    end
+    UI.statusHover:SetScript("OnEnter", function(self)
+        local shown = UI.status:GetText()
+        if GameTooltip and shown and shown ~= "" then
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+            GameTooltip:SetText(shown, 1, 0.82, 0, 1, true)
+            if F.Deals.busy() then
+                GameTooltip:AddLine(L("Stop ends all running checks, the scan and the merchant sale."), 1, 1, 1, true)
+            end
+            GameTooltip:Show()
+        end
+    end)
+    UI.statusHover:SetScript("OnLeave", function()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
     UI.progress = CreateFrame("StatusBar", nil, f)
     UI.progress:SetHeight(3)
     UI.progress:SetPoint("TOPLEFT", f, "TOPLEFT", 4, 4)
@@ -2183,6 +2228,60 @@ function UI.createSell(p)
         b:SetPoint("LEFT", i == 1 and durationLabel or UI.durations[i - 1], "RIGHT", i == 1 and 8 or 2, 0)
         UI.durations[i] = b
     end
+    -- Auto explains itself: the deposits each duration is expected to lose for the selected item.
+    UI.durations[4]:SetScript("OnEnter", function(self)
+        if not GameTooltip then
+            return
+        end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(L("Automatic duration"), 1, 0.82, 0)
+        GameTooltip:AddLine(
+            L(
+                "The deposit comes back when the lot sells and is lost only when it expires. Auto picks the duration that loses the least deposit per sale; when two are close (or cost the same), the longer one."
+            ),
+            1,
+            1,
+            1,
+            true
+        )
+        local item = UI.sellSelected
+        local qty = item and tonumber(UI.sellQty:GetText())
+        local price = item and U.parseMoney(UI.sellPrice:GetText())
+        local costs, choice, hours = nil, nil, nil
+        if item then
+            costs, choice, hours = F.Trade.durationCosts(item.key, qty or 1, price)
+        end
+        if costs then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(string.format(L("Expected to sell in about %.1f h."), hours), 0.8, 0.8, 0.8)
+            for d = 1, 3 do
+                local lost = costs[d] == math.huge and "-" or U.money(math.floor(costs[d] + 0.5))
+                GameTooltip:AddDoubleLine(
+                    string.format(
+                        L("%d h: deposit %s, lost per sale"),
+                        F.Trade.DURATION_HOURS[d],
+                        U.money(F.Trade.depositFor(item.key, qty or 1, d) or 0)
+                    ),
+                    lost,
+                    d == choice and 0.25 or 1,
+                    d == choice and 1 or 1,
+                    d == choice and 0.25 or 1,
+                    1,
+                    1,
+                    1
+                )
+            end
+        elseif item then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(L("Sales of this item are not measured yet: 24 hours."), 0.8, 0.8, 0.8, true)
+        end
+        GameTooltip:Show()
+    end)
+    UI.durations[4]:SetScript("OnLeave", function()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
     UI.postButton = button(bar, "Post", 100, function()
         local item = UI.sellSelected
         if not item then
@@ -4382,17 +4481,17 @@ function UI.refreshStatus()
     UI.refreshHouse()
     UI.sniperButton:SetText(L(F.db.settings.sniper and "Sniper: ON" or "Sniper: OFF"))
     UI.sniperBox:SetChecked(F.db.settings.sniper)
-    UI.bulkButton:SetText(L("Check all"))
     local scope, keys = UI.statusTargets()
     local batchDone, batchTotal, batchActive, batchFailed = F.Deals.batchProgress()
-    UI.bulkButton:SetEnabled(
-        scope ~= nil
-            and #keys > 0
-            and F.AH.isOpen()
-            and not batchActive
-            and not F.Trade.busy()
-            and not F.Scan.blocking()
-    )
+    if F.Deals.busy() then
+        UI.bulkButton:SetText(L("Stop"))
+        UI.bulkButton:SetEnabled(true)
+    else
+        UI.bulkButton:SetText(L("Check all"))
+        UI.bulkButton:SetEnabled(
+            scope ~= nil and #keys > 0 and F.AH.isOpen() and not F.Trade.busy() and not F.Scan.blocking()
+        )
+    end
     local op = F.Trade.op
     if op and (op.state == "quote" or op.state == "quoted" or op.state == "awaiting") then
         UI.scanButton:Disable()

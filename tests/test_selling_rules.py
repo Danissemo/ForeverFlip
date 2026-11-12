@@ -63,30 +63,50 @@ class UndercutTests(unittest.TestCase):
 
 
 class DurationTests(unittest.TestCase):
-    def test_auto_duration_holds_three_times_the_time_to_sell_the_queue(self):
-        run(SELL + '''F.db.settings.duration=0
-        local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
-        h.sales={hours=24,pairs=5,at=now,b={}};F.Market.bucketAdd(h.sales.b,150,240)
-        h.scan.market=150;h.units=0
-        local per=F.Market.saleability(h,150,now).perDay
-        local function units(hours) return math.max(1,math.floor(per*hours/24)) end
-        -- nobody ahead: the time is only our units
-        assert(T.durationFor('c:10',units(0.5),150)==1,'sold in 30 minutes: 2 hours hold three times that')
-        assert(T.durationFor('c:10',units(2),150)==2,'sold in 2 hours: 8 hours')
-        assert(T.durationFor('c:10',units(3),150)==3,'sold in 3 hours: 8 hours are not three times that')
-        -- other sellers' lots at or below the price are ahead in the queue
-        T.prices['c:10']={rows={{unit=140,qty=units(1)},{unit=200,qty=9999}},at=now}
-        assert(T.durationFor('c:10',units(0.5),150)==2,'an hour of others ahead: not 2 hours')
-        -- old or thin data: 24 hours
-        T.prices['c:10']=nil;h.sales.at=now-4*3600
-        assert(T.durationFor('c:10',1,150)==3,'sales older than 3 hours')
+    AUTO = SELL + """F.db.settings.duration=0
+    local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
+    h.sales={hours=24,pairs=5,at=now,b={}};F.Market.bucketAdd(h.sales.b,150,240)
+    h.scan.market=150;h.units=0
+    local per=F.Market.saleability(h,150,now).perDay
+    local function units(hours) return math.max(1,math.floor(per*hours/24)) end
+    """
+
+    def test_equal_deposits_post_for_24_hours(self):
+        run(self.AUTO + """-- the game asks the same 1 silver for every duration (as on WoW Forever)
+        F.AH.resetDeposits();C_AuctionHouse.CalculateCommodityDeposit=function() return 100 end
+        assert(T.durationFor('c:10',units(0.5),150)==3,'sold in 30 minutes, same deposit: 24 hours')
+        assert(T.durationFor('c:10',units(20),150)==3)""")
+
+    def test_the_deposit_comes_back_with_a_sale_so_24_hours_win(self):
+        run(self.AUTO + """-- 2 h costs 1g, 8 h 2g, 24 h 4g per stack (the usual multiples): per hour 24 h is cheapest,
+        -- and a lot that sells gets its deposit back whatever the duration
+        F.AH.resetDeposits();C_AuctionHouse.CalculateCommodityDeposit=function(_,d,q) return ({10000,20000,40000})[d] end
+        assert(T.durationFor('c:10',units(0.5),150)==3,'sells in 30 minutes: nothing is lost either way')
+        assert(T.durationFor('c:10',units(20),150)==3,'sells in 20 hours: 24 hours lose the least')
+        local costs=T.durationCosts('c:10',units(20),150)
+        assert(costs[3]<costs[2] and costs[2]<costs[1],costs[1]..' '..costs[2]..' '..costs[3])""")
+
+    def test_a_far_dearer_long_post_is_avoided_for_slow_items(self):
+        run(self.AUTO + """-- a house that asks 1s for 2 and 8 hours but 10g for 24 hours
+        F.AH.resetDeposits();C_AuctionHouse.CalculateCommodityDeposit=function(_,d) return ({100,100,100000})[d] end
+        assert(T.durationFor('c:10',units(20),150)==2,'slow item: 8 hours, the 24-hour deposit would be lost')
+        assert(T.durationFor('c:10',units(0.5),150)==3,'fast item: it sells, the deposit comes back')""")
+
+    def test_unknown_sales_and_fixed_setting(self):
+        run(self.AUTO + """F.AH.resetDeposits();C_AuctionHouse.CalculateCommodityDeposit=function(_,d) return ({100,200,400})[d] end
+        h.sales.at=now-4*3600
+        assert(T.durationFor('c:10',1,150)==3,'sales older than 3 hours: 24 hours')
         h.sales.at=now;h.sales.pairs=1
         assert(T.durationFor('c:10',1,150)==3,'one pair of scans is too thin')
-        -- the player's own sales win once 3 units were sold
+        F.db.settings.duration=2;assert(T.durationFor('c:10',500,150)==2,'a fixed duration stays')""")
+
+    def test_own_sales_decide_once_three_were_sold(self):
+        run(self.AUTO + """F.AH.resetDeposits();C_AuctionHouse.CalculateCommodityDeposit=function(_,d) return ({100,100,100000})[d] end
         local c=F.Data.char(F.db,F.Engine.owner())
-        c.stats['c:10']={sold=4,days=4*0.01,bought=4,spent=0,earned=0,profit=0}
-        assert(T.durationFor('c:10',1,150)==1,'own sales: about 15 minutes each')
-        F.db.settings.duration=2;assert(T.durationFor('c:10',500,150)==2,'a fixed duration stays')''')
+        c.stats['c:10']={sold=4,days=4*2,bought=4,spent=0,earned=0,profit=0} -- two days per unit
+        assert(T.expectedHours('c:10',1,150)==48,'own sales: two days each')
+        assert(T.durationFor('c:10',1,150)==2,'slow by own sales, dear 24 hours: 8 hours')""")
+
 
 if __name__ == '__main__':
     unittest.main()

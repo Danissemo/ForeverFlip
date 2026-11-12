@@ -852,6 +852,10 @@ end
 -- game directly (twice per item and session); items need a bag location, so the deposit per unit
 -- learned from the last post of the item is used. nil: the caller estimates from the vendor price.
 local depositRates = {}
+-- Forgets the deposits asked for this session (tests, or a patch that changed them).
+function A.resetDeposits()
+    depositRates = {}
+end
 function A.depositFn(id, kind, duration)
     if kind == "commodity" and AH.CalculateCommodityDeposit then
         local cacheKey = id .. ":" .. duration

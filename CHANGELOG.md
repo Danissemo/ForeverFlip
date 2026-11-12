@@ -8,6 +8,10 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Check all stood still on the selling pages.** A check started on Undercuts paused as soon as you
+  looked at My auctions (and the other way round), and went on only after you left the page. The
+  selling pages now share their checks; only checks of other pages rest there.
+
 - **Est./day counted sales that never happened.** Three leaks are closed:
   - A seller who took a lot down and posted the item again at another price or count was counted
     as a sale. Each lot now carries a seller mark; a lot that vanished while its seller posted the
@@ -28,6 +32,17 @@ All notable changes are listed here. The format follows
   reads "Selling..." while the sale runs.
 
 ### Changed
+
+- **Stop.** While anything runs (a Check all, queued searches, the checks of your auctions, a full
+  scan, a sale to a merchant), the Check all button reads **Stop** and ends all of it at once.
+- **Hover to read.** Hovering a table row shows every column of that row in full under the item,
+  and hovering the status line shows all of it.
+- **Auto duration, redesigned.** A deposit comes back when the lot sells and is lost only when it
+  expires, so Auto now compares, for each duration, the deposits expected to be lost per sale
+  (deposit x the chance to expire, over the reposts it takes) and picks the cheapest; when two are
+  close or the deposits are the same (the 1 silver minimum), the longer one. In practice that is
+  24 hours, unless the house asks far more for long posts of an item that sells slowly. Hovering
+  Auto shows the deposit and the expected loss of each duration for the selected item.
 
 - **The evidence behind Est./day is shown.** The deal detail says how many units were seen bought
   at the price, in how many buys, how many from lots bought in part (sure) and how many as whole

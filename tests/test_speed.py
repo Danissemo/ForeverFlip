@@ -106,3 +106,34 @@ class BidCandidateTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SellingPagesAndHoverTests(unittest.TestCase):
+    def test_a_check_of_undercuts_goes_on_while_my_auctions_is_shown(self):
+        run(SETUP + '''local F, D, UI = ForeverFlip, ForeverFlip.Deals, ForeverFlip.UI
+        UI.show('undercuts'); D.batch = { active = true, scope = 'undercuts', keySet = {}, total = 4, done = 1 }
+        UI.show('auctions')
+        assert(not D.batchPaused(), 'the selling pages share their checks')
+        D.batch.scope = 'deals:all'
+        assert(D.batchPaused(), 'a check of deals still rests there')
+        D.batch = nil''')
+
+    def test_hovering_a_row_shows_every_column_in_full(self):
+        run(SETUP + '''local F, D, UI = ForeverFlip, ForeverFlip.Deals, ForeverFlip.UI
+        fullScan(); UI.show('deals'); UI.refresh()
+        local r = UI.dealTable.rows[1]
+        assert(r:IsShown())
+        tooltipLines = {}
+        local lines = {}
+        GameTooltip.AddDoubleLine = function(_, left, right) lines[#lines + 1] = left .. '=' .. right end
+        r.scripts.OnEnter(r)
+        local all = table.concat(lines, ' | ')
+        assert(all:find('Status=') and all:find('Profit='), all)''')
+
+    def test_hovering_the_status_shows_it_in_full(self):
+        run(SETUP + '''local F, UI = ForeverFlip, ForeverFlip.UI
+        UI.show('deals'); UI.status:SetText('a very long status line that does not fit')
+        local shown
+        GameTooltip.SetText = function(_, text) shown = text end
+        UI.statusHover.scripts.OnEnter(UI.statusHover)
+        assert(shown == 'a very long status line that does not fit', tostring(shown))''')

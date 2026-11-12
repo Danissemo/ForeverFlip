@@ -31,8 +31,11 @@ class CategoryStatusTests(unittest.TestCase):
         assert(not D.pending('c:100'),'must not check another category')
         D.list[#D.list+1]=deal(28);UI.show('deals:flip')
         assert(not D.pending('c:28'),'new items must not expand the snapshot')
-        assert(not UI.bulkButton:IsEnabled(),'one batch must not restart after changing category')
+        assert(UI.bulkButton:GetText()=='Stop' and UI.bulkButton:IsEnabled(),'a running batch offers Stop, not a restart')
         assert(UI.status:GetText():find('Vendor deals') and UI.status:GetText():find('0/18'),UI.status:GetText())
+        UI.bulkButton:Click()
+        assert(not select(3,D.batchProgress()) and not D.pending('c:10'),'Stop ends the batch and its queue')
+        assert(UI.bulkButton:GetText()=='Check all')
         ''')
 
     def test_all_deals_batch_includes_vendor_and_resale(self):
@@ -81,7 +84,8 @@ class CategoryStatusTests(unittest.TestCase):
             UI.show(section);assert(not UI.bulkButton:IsEnabled(),section)
         end
         UI.show('deals:vendor');F.Trade.op={state='quote'};UI.refresh();assert(not UI.bulkButton:IsEnabled())
-        F.Trade.op=nil;assert(F.Scan.start());UI.refresh();assert(not UI.bulkButton:IsEnabled())
+        F.Trade.op=nil;assert(F.Scan.start());UI.refresh();assert(UI.bulkButton:GetText()=='Stop','a scan can be stopped')
+        UI.bulkButton:Click();assert(not F.Scan.job,'Stop ends the scan')
         AuctionHouseFrame:Hide();fire('AUCTION_HOUSE_CLOSED');UI.refreshStatus();assert(not UI.bulkButton:IsEnabled())
         ''')
 
