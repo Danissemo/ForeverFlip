@@ -186,8 +186,9 @@ class WindowTests(unittest.TestCase):
         self.assertIn('Danissemo', w.account_text.get())
         w.events.put(('account', ('Danissemo', 'gh')))
         self.pump()
-        self.assertTrue(w.login_button.instate(['disabled']), 'a GitHub CLI sign-in is signed out in the CLI')
         self.assertIn('GitHub CLI', w.account_text.get())
+        self.assertFalse(w.login_button.instate(['disabled']), 'the app sign-in can replace the CLI one')
+        self.assertEqual(w.login_button.cget('text'), 'Sign in with GitHub')
 
     def test_the_code_is_shown_copied_and_signing_in_turns_sharing_on(self):
         w = self.window

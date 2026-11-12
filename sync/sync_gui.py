@@ -170,7 +170,7 @@ class SyncWindow:
             self.login_button.configure(text='Sign out')
         else:
             self.login_button.configure(text='Sign in with GitHub')
-        self.login_button.state(['disabled'] if self.account and self.account[1] != 'helper' else ['!disabled'])
+        self.login_button.state(['!disabled'])  # a sign-in here replaces one of the GitHub CLI
         if self.account:
             self.account_text.set(f'Signed in as {self.account[0]}{SOURCES.get(self.account[1], "")}')
         elif not self.login_running:
