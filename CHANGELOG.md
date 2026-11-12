@@ -47,6 +47,10 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Post, cancel and answer buttons are disabled while the auction house is busy** (a search or
+  the sniper waits for its answer, or a post is on its way). Pressing them then did nothing but say
+  "busy"; they come back by themselves within a second or two.
+
 - **Answer next took three clicks.** The sniper and the checks of other pages kept the way to the
   server busy while the Undercuts page was shown, and a cancel sent then failed without a word
   (the status still said "cancelled"). They rest on the Undercuts page now, and a failed answer

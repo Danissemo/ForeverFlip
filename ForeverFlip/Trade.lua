@@ -71,6 +71,19 @@ function T.readyToBuy(deal)
         and (deal.kind == "commodity" or F.AH.searchedLast(deal.id))
 end
 
+-- The same test without its side effect, for buttons: a post, cancel or answer button is enabled
+-- only while its click would go through (pressing it several times did nothing in game: "the
+-- auction house is busy"). The selling pages hold background searches (Deals.holding), so the
+-- buttons come back within a second or two.
+function T.wayReady()
+    return F.AH.isOpen()
+        and not T.busy()
+        and not T.postingNow()
+        and not F.Deals.searching()
+        and not F.Sniper.inFlight()
+        and F.AH.ready()
+end
+
 -- The way to the server is free: no search waits for its answer and the throttle is ready. When it
 -- is not, background work rests for a few seconds so the next click goes through.
 function T.wayFree()

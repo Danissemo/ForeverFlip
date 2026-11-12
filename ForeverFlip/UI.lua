@@ -3164,7 +3164,7 @@ function UI.refreshSell()
         end
     end
     UI.sellText:SetText(table.concat(lines, "\n"))
-    UI.postButton:SetEnabled(UI.sellPrice:GetText() ~= "")
+    UI.postButton:SetEnabled(UI.sellPrice:GetText() ~= "" and F.Trade.wayReady())
     UI.refreshPostNext()
     UI.postButton:SetText(F.Trade.pendingPost and L("Confirm post") or L("Post"))
 end
@@ -3487,10 +3487,10 @@ function UI.refreshUndercuts()
     UI.fightText:SetText(table.concat(lines, "\n"))
     for id, b in pairs(UI.fightButtons) do
         local o = selected and selected[id]
-        b:SetEnabled(o ~= nil and not o.blocked and F.AH.isOpen())
+        b:SetEnabled(o ~= nil and not o.blocked and F.Trade.wayReady())
     end
     UI.fightNext:SetText(L("Answer next") .. " (" .. act .. ")")
-    UI.fightNext:SetEnabled(act > 0 and F.AH.isOpen())
+    UI.fightNext:SetEnabled(act > 0 and F.Trade.wayReady())
 end
 
 function UI.refreshAuctions()
@@ -3573,7 +3573,7 @@ function UI.refreshAuctions()
         lines[#lines + 1] = string.format(L("Cancel cost besides the deposit: %s."), U.money(cost or 0))
     end
     UI.auctionText:SetText(table.concat(lines, "  ·  "))
-    UI.cancelAuction:SetEnabled(selected ~= nil and not selected.sold)
+    UI.cancelAuction:SetEnabled(selected ~= nil and not selected.sold and F.Trade.wayReady())
     UI.checkOwned:SetEnabled(#owned > 0 and queue == 0)
 end
 
@@ -5539,9 +5539,9 @@ end
 function UI.refreshPostAll()
     local all, worthy = #F.Trade.toPostAll(), #F.Trade.toPostAll(true)
     UI.postAll:SetText(L("Post all") .. " (" .. all .. ")")
-    UI.postAll:SetEnabled(all > 0 and not F.Trade.posting)
+    UI.postAll:SetEnabled(all > 0 and not F.Trade.posting and F.Trade.wayReady())
     UI.postAuction:SetText(L("Post AH-worthy") .. " (" .. worthy .. ")")
-    UI.postAuction:SetEnabled(worthy > 0 and not F.Trade.posting)
+    UI.postAuction:SetEnabled(worthy > 0 and not F.Trade.posting and F.Trade.wayReady())
 end
 
 -- The Best column of the Sell page: where one unit brings the most, and how much.
@@ -5567,7 +5567,7 @@ end
 function UI.refreshPostNext()
     local n = #F.Trade.toPost()
     UI.postNext:SetText(L("Post next bought") .. " (" .. n .. ")")
-    UI.postNext:SetEnabled(n > 0 and not F.Trade.posting)
+    UI.postNext:SetEnabled(n > 0 and not F.Trade.posting and F.Trade.wayReady())
 end
 
 -- Mailbox: one button takes all auction house mail (paced).
