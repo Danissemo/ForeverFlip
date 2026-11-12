@@ -485,10 +485,15 @@ def runtime_check(check_gui=True, check_network=False):
         raise RuntimeError('HTTPS certificate and hostname verification must remain enabled')
     if check_gui:
         import tkinter
+        import sync_gui
         root = tkinter.Tk()
         root.withdraw()
-        root.update_idletasks()
-        root.destroy()
+        try:
+            if sync_gui.Images(root, sync_gui.Scale(root)).get('app-icon') is None:
+                raise RuntimeError(f'The window images are missing from {sync_gui.ASSETS}')
+            root.update_idletasks()
+        finally:
+            root.destroy()
     if check_network:
         url = f'https://raw.githubusercontent.com/{DEFAULT_REPO}/main/shared/index.json'
         with urllib.request.urlopen(url, timeout=20) as response:

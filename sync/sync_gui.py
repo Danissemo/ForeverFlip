@@ -1,9 +1,10 @@
 """Small desktop front end. Tk owns the UI; one worker owns each sync operation.
 
-The look follows the ForeverFlip Sync mock-up: a light blue window with soft waves, the app's icon
-and name, the overall status on the right, and one white rounded card of settings rows, each with
-its icon tile. Everything is drawn by hand on canvases (Tk's own widgets cannot be rounded); the
-hand-drawn widgets keep the ttk-style state()/instate() calls.
+The look follows the ForeverFlip Sync asset kit (sync/assets): a light blue window with soft waves,
+the app's icon and name, the overall status on the right, and one white rounded card of settings
+rows, each with its icon badge. The kit's PNGs (1x-4x, picked for the screen's scale) give the app
+icon, badges, waves, button backgrounds and switches; whatever is missing is drawn by hand on
+canvases instead. The hand-drawn widgets keep the ttk-style state()/instate() calls.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import math
 import os
 import pathlib
 import queue
+import sys
 import threading
 import time
 import tkinter as tk
@@ -24,27 +26,30 @@ from game_location import AmbiguousGame, GameNotFound, normalize_game
 
 SOURCES = {'helper': '', 'gh': ' (GitHub CLI)', 'environment': ' (FF_GITHUB_TOKEN)', 'config': ' (config.json)'}
 
-# Colours of the mock-up.
-TOP = (246, 249, 254)  # window gradient, top
-BOTTOM = (234, 241, 251)  # window gradient, bottom
-WAVE = '#EBF1FC'
-WAVE2 = '#F1F5FD'
+# The kit's images; PyInstaller unpacks them under sys._MEIPASS/assets.
+ASSETS = pathlib.Path(getattr(sys, '_MEIPASS', pathlib.Path(__file__).resolve().parent))/'assets'
+
+# Colours of the asset kit's design tokens (sync/assets/tokens.json).
+TOP = (245, 248, 255)  # window gradient, top
+BOTTOM = (234, 242, 255)  # window gradient, bottom
+WAVE = '#E4EDFE'
+WAVE2 = '#EDF3FF'
 CARD = '#FFFFFF'
-CARD_LINE = '#E3E9F3'
-SHADOW = '#E1E8F4'
-DIVIDER = '#E7ECF4'
-TEXT = '#1C2435'
-NAVY = '#1E2D4A'
-HINT = '#3F5C8F'
-MUTED = '#5B6B86'
-FAINT = '#A9B4C6'
-ACCENT = '#1F6FEB'
-ACCENT_DARK = '#1857C4'
-TILE = '#E8F0FD'
-BUTTON = '#EEF4FE'
-BUTTON_HOVER = '#E2ECFD'
-BUTTON_LINE = '#BCCDEE'
-TRACK_OFF = '#CDD6E4'
+CARD_LINE = '#BDCEFA'
+SHADOW = '#E2EAF8'
+DIVIDER = '#D3DFF6'
+TEXT = '#07163D'
+NAVY = '#07163D'
+HINT = '#304879'
+MUTED = '#304879'
+FAINT = '#7B8BAA'
+ACCENT = '#0066FF'
+ACCENT_DARK = '#004CD5'
+TILE = '#DEEAFF'
+BUTTON = '#EBF2FF'
+BUTTON_HOVER = '#E2EDFF'
+BUTTON_LINE = '#ADC0E8'
+TRACK_OFF = '#BCCBE5'
 TONES = {'ok': '#16A34A', 'busy': ACCENT, 'warn': '#F08C1A', 'error': '#DC2626', 'idle': FAINT}
 
 
@@ -66,15 +71,60 @@ class Scale:
         return int(round(n * self.k))
 
 
+class Images:
+    """The kit's PNGs at the density nearest this screen's scale, loaded once each.
+
+    Tk cannot resample images, so the kit is kept at each common Windows scale: 1x-4x as delivered,
+    1.25x/1.5x/1.75x/2.5x reduced from 4x. get() returns None when an image is missing or Tk cannot
+    read it, so callers draw instead.
+    """
+
+    DENSITIES = (1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4)
+
+    def __init__(self, root, scale, folder=ASSETS):
+        self.root, self.folder = root, folder
+        self.density = min(self.DENSITIES, key=lambda d: (abs(d - scale.k), -d))
+        self.cache = {}
+
+    def get(self, name, density=None):
+        key = (name, density or self.density)
+        if key not in self.cache:
+            path = self.folder/f'{key[1]:g}x'/f'{name}.png'
+            try:
+                self.cache[key] = tk.PhotoImage(master=self.root, file=str(path)) if path.is_file() else None
+            except tk.TclError:
+                self.cache[key] = None
+        return self.cache[key]
+
+    def stretched(self, name, width):
+        """A button background widened to `width`: both rounded ends kept, the middle column repeated."""
+        key = (name, 'w', width)
+        if key in self.cache:
+            return self.cache[key]
+        src = self.get(name)
+        result = None
+        if src is not None:
+            sw, h = src.width(), src.height()
+            cap = min(int(12 * self.density), sw // 2 - 1)
+            width = max(width, 2 * cap + 1)
+            result = tk.PhotoImage(master=self.root, width=width, height=h)
+            copy = lambda *a: result.tk.call(result, 'copy', src, *a)  # noqa: E731 (tk's region copy)
+            copy('-from', 0, 0, cap, h, '-to', 0, 0)
+            copy('-from', cap, 0, cap + 1, h, '-to', cap, 0, width - cap, h)
+            copy('-from', sw - cap, 0, sw, h, '-to', width - cap, 0)
+        self.cache[key] = result
+        return result
+
+
 def fonts(root):
     families = set(tkfont.families(root))
     base = 'Segoe UI' if 'Segoe UI' in families else 'TkDefaultFont'
     semi = 'Segoe UI Semibold' if 'Segoe UI Semibold' in families else base
     return {
-        'title': (semi, 20),
+        'title': (base, 18, 'bold'),
         'subtitle': (base, 10),
         'status': (base, 10),
-        'label': (semi, 10),
+        'label': (base, 10, 'bold'),
         'body': (base, 11),
         'hint': (base, 10),
         'button': (base, 10),
@@ -228,22 +278,33 @@ class Widget:
 class RoundButton(Widget, tk.Canvas):
     """A rounded button: light blue fill, blue outline; "accent" text is blue (Change)."""
 
-    def __init__(self, master, text, command, font, scale, accent=False, bg=CARD, width=None):
+    def __init__(self, master, text, command, font, scale, accent=False, bg=CARD, width=None, images=None):
         self.text, self.command, self.font, self.accent, self.s = text, command, font, accent, scale
-        self.hover = False
+        self.images = images
+        self.hover = self.pressed = False
         self.fixed = width
         tk.Canvas.__init__(self, master, bg=bg, highlightthickness=0, bd=0, cursor='hand2')
         self.bind('<Enter>', lambda _: self.set_hover(True))
         self.bind('<Leave>', lambda _: self.set_hover(False))
+        self.bind('<ButtonPress-1>', self.press)
         self.bind('<ButtonRelease-1>', self.click)
         self.redraw()
 
     def set_hover(self, value):
         self.hover = value
+        if not value:
+            self.pressed = False
         self.redraw()
 
-    def click(self, _event=None):
-        if not self.disabled and self.command:
+    def press(self, _event=None):
+        self.pressed = not self.disabled
+        self.redraw()
+
+    def click(self, event=None):
+        """A mouse release counts only over the button that was pressed; a direct call always does."""
+        was_pressed, self.pressed = self.pressed, False
+        self.redraw()
+        if (event is None or (was_pressed and self.hover)) and not self.disabled and self.command:
             self.command()
 
     def configure(self, cnf=None, **kw):
@@ -261,13 +322,18 @@ class RoundButton(Widget, tk.Canvas):
     def redraw(self):
         s = self.s
         f = tkfont.Font(font=self.font)
-        w = max(self.fixed or s(104), f.measure(self.text) + s(36))
-        h = s(34)
+        w = max(self.fixed or s(106), f.measure(self.text) + s(36))
+        state = 'disabled' if self.disabled else 'pressed' if self.pressed else 'hover' if self.hover else 'default'
+        image = self.images.stretched(f'button-{state}', w) if self.images else None
+        h = image.height() if image else s(32)
         tk.Canvas.configure(self, width=w, height=h)
         self.delete('all')
-        fill = BUTTON_HOVER if self.hover and not self.disabled else BUTTON
-        line = BUTTON_LINE if not self.disabled else '#DCE4F1'
-        rounded(self, 1, 1, w - 1, h - 1, s(8), fill='#F6F8FC' if self.disabled else fill, outline=line, width=1)
+        if image:
+            self.create_image(0, 0, image=image, anchor='nw')
+        else:
+            fill = BUTTON_HOVER if self.hover and not self.disabled else BUTTON
+            line = BUTTON_LINE if not self.disabled else '#CFD8E9'
+            rounded(self, 1, 1, w - 1, h - 1, s(7), fill='#EEF2F9' if self.disabled else fill, outline=line, width=1)
         colour = FAINT if self.disabled else ACCENT if self.accent else TEXT
         self.create_text(w / 2, h / 2, text=self.text, font=self.font, fill=colour)
         tk.Canvas.configure(self, cursor='arrow' if self.disabled else 'hand2')
@@ -276,21 +342,36 @@ class RoundButton(Widget, tk.Canvas):
 class Switch(Widget, tk.Frame):
     """A pill switch with its label, bound to a BooleanVar."""
 
-    def __init__(self, master, text, variable, command, font, scale, bg=CARD):
+    def __init__(self, master, text, variable, command, font, scale, bg=CARD, images=None):
         tk.Frame.__init__(self, master, bg=bg)
-        self.variable, self.command, self.s = variable, command, scale
-        self.W, self.H = scale(42), scale(22)
+        self.variable, self.command, self.s, self.images = variable, command, scale, images
+        self.hover = self.pressed = False
+        sample = images.get('switch-off-default') if images else None
+        self.W, self.H = (sample.width(), sample.height()) if sample else (scale(40), scale(21))
         self.canvas = tk.Canvas(self, width=self.W, height=self.H, bg=bg, highlightthickness=0, bd=0, cursor='hand2')
         self.canvas.pack(side='left')
         self.label = tk.Label(self, text=text, bg=bg, fg=TEXT, font=font, cursor='hand2', padx=scale(10))
         self.label.pack(side='left')
         for widget in (self.canvas, self.label):
+            widget.bind('<ButtonPress-1>', self.press)
             widget.bind('<ButtonRelease-1>', self.toggle)
+            widget.bind('<Enter>', lambda _: self.set_hover(True))
+            widget.bind('<Leave>', lambda _: self.set_hover(False))
         variable.trace_add('write', lambda *_: self.redraw())
         self.redraw()
 
+    def set_hover(self, value):
+        self.hover = value
+        self.redraw()
+
+    def press(self, _event=None):
+        self.pressed = not self.disabled
+        self.redraw()
+
     def toggle(self, _event=None):
+        self.pressed = False
         if self.disabled:
+            self.redraw()
             return
         self.variable.set(not self.variable.get())
         if self.command:
@@ -300,11 +381,16 @@ class Switch(Widget, tk.Frame):
         on = bool(self.variable.get())
         c, w, h = self.canvas, self.W, self.H
         c.delete('all')
-        track = (('#AFC8F5' if on else '#E3E8F0') if self.disabled else (ACCENT if on else TRACK_OFF))
-        rounded(c, 0, 0, w, h, h / 2, fill=track, outline=track)
-        knob = h - self.s(6)
-        x = w - knob - self.s(3) if on else self.s(3)
-        c.create_oval(x, self.s(3), x + knob, self.s(3) + knob, fill='#FFFFFF', outline='#FFFFFF')
+        state = 'disabled' if self.disabled else 'pressed' if self.pressed else 'hover' if self.hover else 'default'
+        image = self.images.get(f'switch-{"on" if on else "off"}-{state}') if self.images else None
+        if image:
+            c.create_image(0, 0, image=image, anchor='nw')
+        else:
+            track = (('#9CBBED' if on else '#D9E1EF') if self.disabled else (ACCENT if on else TRACK_OFF))
+            rounded(c, 0, 0, w, h, h / 2, fill=track, outline=track)
+            knob = h - self.s(5)
+            x = w - knob - self.s(2.5) if on else self.s(2.5)
+            c.create_oval(x, self.s(2.5), x + knob, self.s(2.5) + knob, fill='#FFFFFF', outline='#FFFFFF')
         self.label.configure(fg=FAINT if self.disabled else TEXT)
         cursor = 'arrow' if self.disabled else 'hand2'
         c.configure(cursor=cursor)
@@ -381,16 +467,20 @@ class SyncWindow:
         self.tone_name = 'idle'
         s = self.s = Scale(root)
         f = self.f = fonts(root)
+        img = self.img = Images(root, s)
 
         root.title('ForeverFlip Sync')
         root.configure(bg=hexcolor(BOTTOM))
         root.protocol('WM_DELETE_WINDOW', self.close)
         try:
-            self.icon_image = app_icon_image(root, 32)
-            root.iconphoto(True, self.icon_image)
+            icons = [i for i in (img.get('app-icon', 1), img.get('app-icon', 2)) if i is not None]
+            self.icon_image = icons[0] if icons else app_icon_image(root, 32)
+            root.iconphoto(True, *(icons or [self.icon_image]))
+            if os.name == 'nt' and (ASSETS/'app-icon.ico').is_file():
+                root.iconbitmap(default=str(ASSETS/'app-icon.ico'))  # crisp in the title bar and taskbar
         except tk.TclError:
             pass
-        self.width = s(760)
+        self.width = s(664)
         root.geometry(f'{self.width}x{s(600)}')
         root.minsize(s(620), s(400))
 
@@ -414,7 +504,7 @@ class SyncWindow:
         self.locations = ttk.Combobox(game, textvariable=self.path, state='readonly', width=40)
         self.locations.bind('<<ComboboxSelected>>', lambda _: self.select_game(self.path.get()))
         self.choose_button = RoundButton(self.actions, 'Change', self.choose_game, f['button'], s, accent=True,
-                                         width=s(132))
+                                         width=s(106), images=img)
         self.choose_button.pack(side='right')
 
         github = self.row('github', 'GitHub')
@@ -424,11 +514,11 @@ class SyncWindow:
         tk.Label(self.code_box, text='Copied. Paste it on the page that opened and approve ForeverFlip Sync.',
                  font=f['hint'], bg=TILE, fg=HINT, justify='left', wraplength=s(300)).pack(anchor='w')
         self.login_button = RoundButton(self.actions, 'Sign in with GitHub', self.sign_in_or_out, f['button'], s,
-                                        width=s(132))
+                                        width=s(106), images=img)
         self.login_button.pack(side='right')
 
         sharing = self.row('share', 'Sharing')
-        self.share_button = Switch(sharing, 'Share my full scans', self.share, self.options_changed, f['body'], s)
+        self.share_button = Switch(sharing, 'Share my full scans', self.share, self.options_changed, f['body'], s, images=img)
         self.share_button.pack(anchor='w')
         tk.Label(sharing, textvariable=self.share_hint, font=f['hint'], bg=CARD, fg=HINT, anchor='w',
                  justify='left', wraplength=s(320)).pack(anchor='w', pady=(s(6), 0))
@@ -437,38 +527,38 @@ class SyncWindow:
         tk.Label(addon, textvariable=self.addon_text, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(anchor='w')
         toggles = tk.Frame(addon, bg=CARD)
         toggles.pack(anchor='w', pady=(s(10), 0))
-        Switch(toggles, 'Install updates', self.update_auto, self.addon_options_changed, f['switch'], s).pack(side='left')
-        Switch(toggles, 'Beta tester', self.beta, self.addon_options_changed, f['switch'], s).pack(
+        Switch(toggles, 'Install updates', self.update_auto, self.addon_options_changed, f['switch'], s, images=img).pack(side='left')
+        Switch(toggles, 'Beta tester', self.beta, self.addon_options_changed, f['switch'], s, images=img).pack(
             side='left', padx=(s(28), 0))
         self.update_button = RoundButton(self.actions, 'Update', lambda: self.start_update(install=True), f['button'],
-                                         s, width=s(132))
+                                         s, width=s(106), images=img)
         self.update_button.pack(side='right')
         self.update_button.state(['disabled'])
 
         prices = self.row('database', 'Prices', last=True)
         tk.Label(prices, textvariable=self.last_sync, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(anchor='w')
-        self.auto_button = Switch(prices, 'Sync automatically', self.auto, self.options_changed, f['switch'], s)
+        self.auto_button = Switch(prices, 'Sync automatically', self.auto, self.options_changed, f['switch'], s, images=img)
         self.auto_button.pack(anchor='w', pady=(s(10), 0))
         self.sync_button = RoundButton(self.actions, 'Sync now', lambda: self.start_sync(force=True), f['button'], s,
-                                       width=s(132))
+                                       width=s(106), images=img)
         self.sync_button.pack(side='right')
         self.sync_button.state(['disabled'])
 
         # Footer: the in-game step, and the activity log behind a link.
         self.foot = tk.Frame(self.bg, bg=hexcolor(BOTTOM))
         self.foot_item = self.bg.create_window(0, 0, anchor='nw', window=self.foot)
-        info = tk.Canvas(self.foot, width=s(22), height=s(22), bg=hexcolor(BOTTOM), highlightthickness=0)
-        icon(info, 'info', s(11), s(11), s(22), ACCENT, hexcolor(BOTTOM))
-        info.pack(side='left', padx=(0, s(10)))
+        info = self.picture(self.foot, 'info', s(22), hexcolor(BOTTOM),
+                            lambda c, n: icon(c, 'info', n / 2, n / 2, n, ACCENT, hexcolor(BOTTOM)))
+        info.pack(side='left', padx=(0, s(8)))
         tk.Label(self.foot, text='After a sync, type /reload in game to read the new prices.', font=f['foot'],
                  bg=hexcolor(BOTTOM), fg=TEXT).pack(side='left')
-        self.chevron = tk.Canvas(self.foot, width=s(16), height=s(16), bg=hexcolor(BOTTOM), highlightthickness=0,
-                                 cursor='hand2')
-        self.chevron.pack(side='right', padx=(s(6), 0))
+        self.chevron = self.picture(self.foot, 'chevron-right', s(16), hexcolor(BOTTOM),
+                                    lambda c, n: icon(c, 'chevron', n / 2, n / 2, n, ACCENT, hexcolor(BOTTOM)),
+                                    cursor='hand2')
+        self.chevron.pack(side='right', padx=(s(2), 0))
         self.chevron.bind('<ButtonRelease-1>', lambda _: self.toggle_log())
         self.log_button = LinkButton(self.foot, 'Show activity', self.toggle_log, f['foot'], hexcolor(BOTTOM))
         self.log_button.pack(side='right')
-        self.draw_chevron()
 
         self.log_frame = tk.Frame(self.bg, bg=CARD, highlightthickness=1, highlightbackground=CARD_LINE)
         self.output = tk.Text(self.log_frame, width=1, height=8, wrap='word', state='disabled', font=f['log'],
@@ -496,22 +586,34 @@ class SyncWindow:
         r = 2 * self.row_count
         self.row_count += 1
         pad = (s(14), s(14))
-        tile = tk.Canvas(self.inner, width=s(40), height=s(40), bg=CARD, highlightthickness=0)
-        rounded(tile, 0, 0, s(40), s(40), s(10), fill=TILE, outline=TILE)
-        icon(tile, glyph, s(20), s(20), s(24), ACCENT, TILE)
-        tile.grid(row=r, column=0, sticky='nw', padx=(s(20), s(16)), pady=pad)
+        badge = {'game': 'badge-game', 'github': 'badge-github', 'share': 'badge-sharing', 'puzzle': 'badge-addon',
+                 'database': 'badge-prices'}[glyph]
+        tile = self.picture(self.inner, badge, s(32), CARD, lambda c, n: (
+            rounded(c, 0, 0, n, n, s(8), fill=TILE, outline=TILE), icon(c, glyph, n / 2, n / 2, s(22), ACCENT, TILE)))
+        tile.grid(row=r, column=0, sticky='nw', padx=(s(17), s(13)), pady=pad)
         tk.Label(self.inner, text=title.upper(), font=f['label'], bg=CARD, fg=NAVY, anchor='w', width=8).grid(
-            row=r, column=1, sticky='nw', pady=(s(23), s(14)))
+            row=r, column=1, sticky='nw', pady=(s(19), s(14)))
         rule = tk.Frame(self.inner, bg=DIVIDER, width=1)
-        rule.grid(row=r, column=2, sticky='ns', padx=(s(12), s(22)), pady=pad)
+        rule.grid(row=r, column=2, sticky='ns', padx=(s(8), s(20)), pady=pad)
         content = tk.Frame(self.inner, bg=CARD)
-        content.grid(row=r, column=3, sticky='ew', pady=(s(21), s(14)))
+        content.grid(row=r, column=3, sticky='ew', pady=(s(18), s(14)))
         self.actions = tk.Frame(self.inner, bg=CARD)
-        self.actions.grid(row=r, column=4, sticky='ne', padx=(s(12), s(20)), pady=(s(17), s(14)))
+        self.actions.grid(row=r, column=4, sticky='ne', padx=(s(12), s(14)), pady=(s(14), s(14)))
         if not last:
             tk.Frame(self.inner, bg=DIVIDER, height=1).grid(row=r + 1, column=0, columnspan=5, sticky='ew',
-                                                            padx=s(22))
+                                                            padx=(s(17), s(14)))
         return content
+
+    def picture(self, parent, name, size, bg, draw, cursor=''):
+        """A canvas showing one of the kit's images, or `draw(canvas, size)` when the image is missing."""
+        image = self.img.get(name)
+        w, h = (image.width(), image.height()) if image else (size, size)
+        canvas = tk.Canvas(parent, width=w, height=h, bg=bg, highlightthickness=0, bd=0, cursor=cursor)
+        if image:
+            canvas.create_image(0, 0, image=image, anchor='nw')
+        else:
+            draw(canvas, size)
+        return canvas
 
     def draw_background(self, w, h):
         c, s = self.bg, self.s
@@ -520,21 +622,48 @@ class SyncWindow:
         for i in range(bands):
             y1, y2 = h * i / bands, h * (i + 1) / bands + 1
             c.create_rectangle(0, y1, w, y2, fill=hexcolor(blend(TOP, BOTTOM, i / bands)), outline='', tags='backdrop')
-        # soft waves in the top right corner
-        for colour, dy in ((WAVE2, s(10)), (WAVE, s(0))):
-            pts = [w * 0.48, 0, w * 0.6, s(28) + dy, w * 0.72, s(46) + dy, w * 0.86, s(30) + dy, w, s(70) + dy,
-                   w, 0]
-            c.create_polygon(pts, smooth=True, splinesteps=24, fill=colour, outline='', tags='backdrop')
-        pts = [w * 0.62, s(150), w * 0.78, s(118), w * 0.9, s(150), w, s(126), w, s(170), w * 0.6, s(176)]
-        c.create_polygon(pts, smooth=True, splinesteps=24, fill=WAVE2, outline='', tags='backdrop')
+        # soft waves in the top right corner: the kit's layer (drawn under a 34 px title bar in the kit)
+        waves = self.img.get('header-waves')
+        if waves:
+            c.create_image(w, -s(34), image=waves, anchor='ne', tags='backdrop')
+        else:
+            for colour, dy in ((WAVE2, s(10)), (WAVE, s(0))):
+                pts = [w * 0.48, 0, w * 0.6, s(28) + dy, w * 0.72, s(46) + dy, w * 0.86, s(30) + dy, w, s(70) + dy,
+                       w, 0]
+                c.create_polygon(pts, smooth=True, splinesteps=24, fill=colour, outline='', tags='backdrop')
+            pts = [w * 0.62, s(150), w * 0.78, s(118), w * 0.9, s(150), w, s(126), w, s(170), w * 0.6, s(176)]
+            c.create_polygon(pts, smooth=True, splinesteps=24, fill=WAVE2, outline='', tags='backdrop')
         c.tag_lower('backdrop')
+
+    # The header of the kit: a 48 px app icon at (27, 24), the title 18 px to its right.
+    HEADER_X, HEADER_Y, HEADER_ICON, HEADER_GAP = 27, 24, 48, 18
+
+    def title_end(self):
+        s, f = self.s, self.f
+        return s(self.HEADER_X + self.HEADER_ICON + self.HEADER_GAP) + max(
+            tkfont.Font(font=f['title']).measure('ForeverFlip Sync'),
+            tkfont.Font(font=f['subtitle']).measure('Community prices and addon updates for WoW Forever'))
 
     def draw_header(self, w):
         c, s, f = self.bg, self.s, self.f
         c.delete('header')
-        x, y = s(28), s(32)
-        size = s(64)
-        r = s(14)
+        x, y = s(self.HEADER_X), s(self.HEADER_Y)
+        size = s(self.HEADER_ICON)
+        tx = x + size + s(self.HEADER_GAP)
+        logo = self.img.get('app-icon')
+        if logo:
+            c.create_image(x + size / 2, y + size / 2, image=logo, anchor='center', tags='header')
+        else:
+            self.draw_app_icon(x, y, size)
+        c.create_text(tx, y - s(6), text='ForeverFlip Sync', font=f['title'], fill=NAVY, anchor='nw', tags='header')
+        c.create_text(tx, y + s(31), text='Community prices and addon updates for WoW Forever', font=f['subtitle'],
+                      fill=MUTED, anchor='nw', tags='header')
+        self.draw_status()
+
+    def draw_app_icon(self, x, y, size):
+        """The app icon drawn by hand, for when the kit's image is missing."""
+        c, s = self.bg, self.s
+        r = size * 0.22
         rounded(c, x, y, x + size, y + size, r, fill='#2675F1', tags='header')
         for i in range(size - 2 * r):  # the gradient between the rounded ends
             colour = hexcolor(blend((58, 140, 255), (26, 98, 222), i / max(1, size - 2 * r)))
@@ -547,14 +676,9 @@ class SyncWindow:
         c.create_oval(x + size - 2 * r, y + size - 2 * r, x + size, y + size, fill='#1A62DE', outline='',
                       tags='header')
         before = set(c.find_all())
-        icon(c, 'feather', x + size / 2, y + size / 2, s(44), '#2675F1', '#2675F1')
+        icon(c, 'feather', x + size / 2, y + size / 2, size * 0.69, '#2675F1', '#2675F1')
         for item in set(c.find_all()) - before:
             c.addtag_withtag('header', item)
-        tx = x + size + s(18)
-        c.create_text(tx, y + s(4), text='ForeverFlip Sync', font=f['title'], fill=NAVY, anchor='nw', tags='header')
-        c.create_text(tx, y + s(44), text='Community prices and addon updates for WoW Forever', font=f['subtitle'],
-                      fill=MUTED, anchor='nw', tags='header')
-        self.draw_status()
 
     def draw_status(self):
         c, s, f = self.bg, self.s, self.f
@@ -563,15 +687,13 @@ class SyncWindow:
         text = self.status.get()
         font = tkfont.Font(font=f['status'])
         width = min(font.measure(text), s(240))
-        right = w - s(28)
+        right = w - s(22)
         tx = right - width
-        cy = s(64)
+        cy = s(self.HEADER_Y + self.HEADER_ICON / 2)
         icon_x = tx - s(20)
         rule_x = icon_x - s(26)
-        title_end = s(28) + s(64) + s(18) + tkfont.Font(font=f['subtitle']).measure(
-            'Community prices and addon updates for WoW Forever')
-        if rule_x > title_end + s(12):
-            c.create_line(rule_x, cy - s(18), rule_x, cy + s(18), fill='#D3DCEB', tags='status')
+        if rule_x > self.title_end() + s(12):
+            c.create_line(rule_x, cy - s(18), rule_x, cy + s(18), fill=DIVIDER, tags='status')
         tone = TONES.get(self.tone_name, FAINT)
         before = set(c.find_all())
         glyph = {'ok': 'check', 'busy': 'ring', 'error': 'alert', 'idle': 'ring'}.get(self.tone_name, 'alert')
@@ -582,25 +704,21 @@ class SyncWindow:
             c.addtag_withtag('status', item)
         c.create_text(tx, cy, text=text, font=f['status'], fill=TEXT, anchor='w', width=s(240), tags='status')
 
-    def draw_chevron(self):
-        self.chevron.delete('all')
-        icon(self.chevron, 'chevron', self.s(8), self.s(8), self.s(16), ACCENT, hexcolor(BOTTOM))
-
     def layout(self):
         c, s = self.bg, self.s
         self.inner.update_idletasks()
-        margin = s(24)
+        margin = s(22)  # the kit's panel: x 22, y 100 under the title bar, radius 11
         need = self.inner.winfo_reqwidth() + 2 * margin + s(12)
         w = max(c.winfo_width(), need)
-        card_top = s(126)
+        card_top = s(100)
         card_w = w - 2 * margin
         inner_pad = s(6)
         inner_h = self.inner.winfo_reqheight()
         card_h = inner_h + 2 * inner_pad
         c.delete('card')
-        rounded(c, margin + 1, card_top + s(3), margin + card_w + 1, card_top + card_h + s(4), s(16), fill=SHADOW,
+        rounded(c, margin + 1, card_top + s(3), margin + card_w + 1, card_top + card_h + s(4), s(11), fill=SHADOW,
                 outline=SHADOW, tags='card')
-        rounded(c, margin, card_top, margin + card_w, card_top + card_h, s(16), fill=CARD, outline=CARD_LINE,
+        rounded(c, margin, card_top, margin + card_w, card_top + card_h, s(11), fill=CARD, outline=CARD_LINE,
                 tags='card')
         c.coords(self.inner_item, margin + inner_pad, card_top + inner_pad)
         c.itemconfigure(self.inner_item, width=card_w - 2 * inner_pad)

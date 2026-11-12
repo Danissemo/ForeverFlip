@@ -193,6 +193,7 @@ layers make a changed scan useless instead.
 | `sync/foreverflip_sync.py` | Transfer engine, retry state and command-line entrypoint |
 | `sync/game_location.py` | Forever-specific validation and bounded installation discovery |
 | `sync/sync_gui.py` | Desktop window and background worker |
+| `sync/assets/` | The window's images (ForeverFlip Sync asset kit, 1x to 4x), app icon and design tokens |
 | `tools/build_sync_helper.py` | Windows executable packaging and frozen-runtime verification |
 | `sync/aggregate.py` | The aggregator, run by the data repository's workflow on every upload issue and every 30 minutes |
 | `sync/addon_update.py` | Addon updates from the GitHub releases: version order, beta channel, checks, install with backup |

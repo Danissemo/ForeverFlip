@@ -6,6 +6,13 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The Sync helper wears the ForeverFlip Sync asset kit.** The window's app icon, row badges,
+  header waves, buttons (default, hover, pressed, disabled) and switches are now the kit's images,
+  with its colours and spacing, at the density of the screen's scale (100% to 400%). The executable
+  and the taskbar show the new app icon. Anything missing from a build is drawn as before.
+
 ### Fixed
 
 - **Buy at and Sells at are prices of one unit.** The deals table showed what all the units cost

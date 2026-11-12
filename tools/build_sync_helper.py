@@ -25,7 +25,10 @@ def main():
     work.mkdir(parents=True, exist_ok=True)
     command = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onefile', '--windowed',
                '--name', 'ForeverFlipSync', '--paths', str(ROOT/'sync'), '--distpath', str(output),
-               '--workpath', str(work), '--specpath', str(work)]
+               '--workpath', str(work), '--specpath', str(work),
+               # the window's images (the ForeverFlip Sync asset kit) and the executable's icon
+               '--add-data', f'{ROOT/"sync/assets"}{os.pathsep}assets',
+               '--icon', str(ROOT/'sync/assets/app-icon.ico')]
     # Some Python distributions load this public rejection policy in SSLContext.__new__.
     # Bundle it unchanged next to frozen ssl.py; omitting it breaks even context creation.
     # Standard Python distributions do not require this additional resource.
