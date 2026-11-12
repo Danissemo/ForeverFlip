@@ -373,6 +373,47 @@ local function rememberPrice(k, rows)
     end
 end
 
+-- A full scan read in the last 5 minutes stands for a price search of an item to post: its other
+-- sellers' lots are what the search would return (one search per item, gear by name and then
+-- version by version, took minutes in game). Not for an item the player has listed: the scan may
+-- not tell those lots apart. Returns { rows, at, scan = true } or nil.
+T.SCAN_ROWS = 10
+function T.scanPrice(key)
+    local last = F.Scan.last
+    if not last or type(last.groups) ~= "table" or last.partial or last.scope ~= F.Engine.scope() then
+        return nil
+    end
+    if clock() - (last.at or 0) > 300 then
+        last.groups = nil -- too old to stand for a search: the memory is given back
+        return nil
+    end
+    local item = U.parseKey(key)
+    if not item then
+        return nil
+    end
+    for _, o in ipairs(T.owned or {}) do
+        if o.itemKey and o.itemKey.itemID == item.id then
+            return nil
+        end
+    end
+    -- An item the scan did not see needs no price either: nobody sells it (T.noSellers).
+    local g = last.groups[key]
+    if type(g) ~= "table" or type(g.rows) ~= "table" or #g.rows == 0 then
+        return nil
+    end
+    local rows = {}
+    for _, r in ipairs(g.rows) do
+        rows[#rows + 1] = { unit = r.unit, qty = r.qty }
+    end
+    table.sort(rows, function(a, b)
+        return a.unit < b.unit
+    end)
+    while #rows > T.SCAN_ROWS do
+        rows[#rows] = nil
+    end
+    return { rows = rows, at = last.at, scan = true }
+end
+
 -- The cheapest unit of a check up to 5 minutes old (Check price, Check all), nil without one.
 function T.freshCheapest(key)
     local check = key and T.prices[key]
@@ -953,6 +994,12 @@ T.held = {}
 local function readAhead(list)
     for _, item in ipairs(list) do
         local check = T.prices[item.key]
+        if not (check and clock() - check.at <= 300) then
+            local scanned = T.scanPrice(item.key)
+            if scanned then
+                T.prices[item.key], check = scanned, scanned
+            end
+        end
         if
             not T.held[item.key]
             and not (check and clock() - check.at <= 300)

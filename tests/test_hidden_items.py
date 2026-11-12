@@ -7,6 +7,7 @@ from test_addon import SETUP, run
 HIDE = SETUP + '''local F=ForeverFlip
 local T,UI=F.Trade,F.UI
 fullScan()
+F.Scan.last.groups=nil -- these tests read prices by search (T.scanPrice is tested on its own)
 putBag(0,1,30,1);putBag(0,2,10,20)
 UI.show('sell')
 local function row(key) for _,r in ipairs(UI.sellTable.rows) do if r.key==key and r:IsShown() then return r end end end
@@ -42,10 +43,6 @@ class HiddenItemsTests(unittest.TestCase):
         run(HIDE + '''row('i:30'):Click();run(1.1);answer();UI.refresh()
         assert(UI.sellPrice:GetText()~='');UI.postButton:Click()
         assert(UI.sellPrice:GetText()=='' and UI.sellSelected==nil)''')
-
-
-if __name__ == '__main__':
-    unittest.main()
 
 
 class BestWayTests(unittest.TestCase):
@@ -165,3 +162,19 @@ class ScrollTests(unittest.TestCase):
         assert(n == 12 and seen >= 1, 'the last items are reachable')
         UI.sellTable.wheel(nil, 5)
         assert(UI.sellTable.headers[1]:GetText():find('1%-12'), 'back to the top')""")
+
+
+class ScanPriceTests(unittest.TestCase):
+    def test_a_fresh_scan_prices_the_items_to_post_without_searches(self):
+        run(SETUP + """local F=ForeverFlip;local T=F.Trade
+        for i=1,3 do addAuction(30,20000+i*100,1) end
+        fullScan();putBag(0,1,30,1)
+        local ok,why=T.postAll()
+        assert(not F.Deals.pending('i:30'),'no search for an item the scan priced')
+        assert(T.prices['i:30'] and T.prices['i:30'].scan and T.prices['i:30'].rows[1].unit==20100)
+        now=now+301;F.Scan.last.groups=F.Scan.last.groups;T.prices['i:30']=nil
+        assert(T.scanPrice('i:30')==nil,'after 5 minutes the scan no longer stands for a search')""")
+
+
+if __name__ == '__main__':
+    unittest.main()

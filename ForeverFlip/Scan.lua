@@ -653,6 +653,11 @@ function S.step()
             waitVendor = j.waitVendor,
             -- Units of every item listed in the scan, by key (kept in memory only).
             listed = j.listed,
+            -- Every item's cheapest lots, for 5 minutes: they stand for a price search of an item
+            -- to post (T.scanPrice).
+            groups = not j.partial and j.groups or nil,
+            -- Every item's cheapest lots, for 5 minutes: they stand for a price search (T.prices).
+            groups = not j.partial and j.groups or nil,
             -- The scan named the player's own lots (and left them out of `listed`).
             ownersKnown = j.own > 0,
         }

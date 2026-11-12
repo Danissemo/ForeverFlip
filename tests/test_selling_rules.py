@@ -8,6 +8,7 @@ SELL = SETUP + '''local F=ForeverFlip
 local T=F.Trade
 local c=F.Data.char(F.db,F.Engine.owner())
 fullScan()
+F.Scan.last.groups=nil -- these tests read prices by search (T.scanPrice is tested on its own)
 '''
 
 
