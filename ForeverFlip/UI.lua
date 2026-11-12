@@ -10,7 +10,9 @@ local UI = {}
 F.UI = UI
 
 local ROW = 20
-local LEFT_WIDTH = 168 -- the Buy tab's category list (AuctionHouseFrame.CategoriesList): 168 by 438
+-- The Buy tab's category list (AuctionHouseFrame.CategoriesList) is 168 wide: its art (138) and a
+-- scroll bar beside it. ForeverFlip's menu has no scroll bar, so the list ends with the art.
+local LEFT_WIDTH = 144
 
 local MESSAGES = {
     nothing_to_post = "Nothing bought for resale is waiting in the bags.",
@@ -829,9 +831,6 @@ function UI.create()
     left:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
     left:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
     left:SetWidth(LEFT_WIDTH)
-    left.art:ClearAllPoints()
-    left.art:SetPoint("TOPLEFT", left, "TOPLEFT", 3, -3)
-    left.art:SetSize(138, 433)
     local marble = rawget(left, "Bg")
     if type(marble) == "table" and marble.Hide then
         marble:Hide()
