@@ -3959,6 +3959,16 @@ local function sellAll()
     UI.merchant(true)
 end
 
+local function sellGear()
+    local stacks, money = F.Trade.sellUnusableGear()
+    if stacks > 0 then
+        print(
+            "ForeverFlip: " .. string.format(L("sold %d pieces of gear you cannot use for %s"), stacks, U.money(money))
+        )
+    end
+    UI.merchant(true)
+end
+
 function UI.merchantSelect(on, closing)
     local view, tab = UI.merchantView, UI.merchantTab
     if not view then
@@ -4053,8 +4063,11 @@ local function createMerchantTab()
         view.sellRows[i] = merchantRow(view, -26 - (i - 1) * 18, false)
     end
     local below = -30 - MERCHANT_SELL_ROWS * 18
-    view.sellAll = button(view, "Sell all", 140, sellAll)
+    view.sellAll = button(view, "Sell all", 160, sellAll)
     view.sellAll:SetPoint("TOPRIGHT", view, "TOPRIGHT", -8, below)
+    -- Gear the class cannot use: its own button (bound pieces are never on the list above).
+    view.sellGear = button(view, "Sell gear I can't use", 140, sellGear)
+    view.sellGear:SetPoint("TOPLEFT", view, "TOPLEFT", 8, below)
     view.sellNote = text(view, "GameFontDisableSmall")
     view.sellNote:SetJustifyH("LEFT")
     view.sellNote:SetWordWrap(true)
@@ -4080,6 +4093,8 @@ local function createMerchantTab()
     -- The Merchant tab: one button sells the list at once.
     UI.merchantButton = button(MerchantFrame, "Sell to vendor", 180, sellAll)
     UI.merchantButton:SetPoint("TOPRIGHT", MerchantFrame, "TOPRIGHT", -40, -28)
+    UI.gearButton = button(MerchantFrame, "Sell gear I can't use", 180, sellGear)
+    UI.gearButton:SetPoint("TOPRIGHT", UI.merchantButton, "BOTTOMRIGHT", 0, -2)
 end
 
 function UI.merchantOffers(open)
@@ -4099,7 +4114,25 @@ function UI.merchant(open)
     if not open then
         UI.merchantSelect(false, true)
         UI.merchantButton:Hide()
+        UI.gearButton:Hide()
         return
+    end
+    local gear = F.Trade.unusableGearList()
+    local gearTotal = 0
+    for _, v in ipairs(gear) do
+        gearTotal = gearTotal + v.price
+    end
+    local gearText = #gear > 0 and string.format(L("Gear I can't use (%d): %s"), #gear, U.money(gearTotal))
+        or L("Sell gear I can't use")
+    UI.gearButton:SetText(gearText)
+    UI.merchantView.sellGear:SetText(
+        #gear > 0 and string.format(L("Gear I can't use (%d)"), #gear) or L("No unusable gear")
+    )
+    UI.merchantView.sellGear:SetEnabled(#gear > 0)
+    if #gear > 0 and not UI.merchantView:IsShown() then
+        UI.gearButton:Show()
+    else
+        UI.gearButton:Hide()
     end
     local list = F.Trade.vendorSellList()
     local total = 0
@@ -4117,9 +4150,6 @@ function UI.merchant(open)
     if #list == 0 then
         view.sellNote:SetPoint("TOPLEFT", view, "TOPLEFT", 8, -30)
         view.sellNote:SetPoint("TOPRIGHT", view, "TOPRIGHT", -8, -30)
-    else
-        view.sellNote:SetPoint("TOPLEFT", view, "TOPLEFT", 8, view.noteBelow - 2)
-        view.sellNote:SetPoint("TOPRIGHT", view.sellAll, "TOPLEFT", -6, -2)
     end
     for i, row in ipairs(view.sellRows) do
         local v = list[i]
@@ -4140,12 +4170,10 @@ function UI.merchant(open)
                 "Nothing to sell here: no item in the bags is worth more to a merchant (hidden items and items with a keep rule are left out)."
             )
         )
-    elseif #list > MERCHANT_SELL_ROWS then
-        view.sellNote:SetText(string.format(L("and %d more"), #list - MERCHANT_SELL_ROWS))
     else
-        view.sellNote:SetText(L("Hidden items are kept."))
+        view.sellNote:SetText("")
     end
-    view.sellAll:SetText(#list > 0 and string.format(L("Sell all: %s"), U.money(total)) or L("Sell all"))
+    view.sellAll:SetText(#list > 0 and string.format(L("Sell all (%d): %s"), #list, U.money(total)) or L("Sell all"))
     view.sellAll:SetEnabled(#list > 0)
     local offers = F.Merchant.offers()
     for i, row in ipairs(view.rows) do

@@ -144,20 +144,36 @@ end
 
 -- WoW Forever does not always send REPLICATE_ITEM_LIST_UPDATE (seen in game): the scan is
 -- also taken once the number of replicated auctions changed and stopped growing for a second.
+-- The server sends the list in parts (1024, 2048, 24576 ... auctions), with pauses between them
+-- that can last seconds: reading after one quiet second read a part (in game: 1024 of 300 000).
+-- The answer is taken once the list differs from the one before the request and has not changed
+-- for S.SETTLE seconds; a list far smaller than the house's last full scan waits longer (S.SHORT
+-- quiet seconds, or the end of the wait).
+S.SETTLE = 5
+S.SHORT = 30
 local function polled(j, now)
     if now - (j.polled or 0) < 1 then
         return false
     end
     j.polled = now
-    -- The answer has come when the list differs from the one before the request (size or a few
-    -- auctions: a small house can come back with the same number of auctions) and has stopped
-    -- changing for a second.
     local n = F.AH.replicateCount()
     local mark = F.AH.replicateMark()
-    local ready = n > 0 and mark ~= j.baseMark and mark == j.lastMark
+    if mark ~= j.lastMark then
+        j.quietSince = now
+    end
     j.last, j.lastMark = n, mark
     j.seen = math.max(j.seen or 0, n)
-    return ready
+    if n <= 0 or mark == j.baseMark then
+        return false
+    end
+    local quiet = now - (j.quietSince or now)
+    if quiet < S.SETTLE then
+        return false
+    end
+    local previous = S.last and S.last.scope == j.scope and S.last.total
+        or (F.Data.market(F.db, j.scope).last or {}).total
+    local short = U.finite(previous) and previous > 0 and n < previous * 0.6
+    return not short or quiet >= S.SHORT or now - j.at >= S.ANSWER_WAIT - 5
 end
 
 local function beginReading(j, total)

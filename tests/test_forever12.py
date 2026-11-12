@@ -535,7 +535,7 @@ class ScanAnswerTests(unittest.TestCase):
         -- The server's answer: the same number of auctions, one price changed (the fake client
         -- keeps references, so the change made now is what the answer holds).
         auctions[1].buyout = auctions[1].buyout + 5
-        run(3)
+        run(8)
         assert(S.job == nil or S.job.state ~= 'waiting', 'the new list was noticed by polling')''')
 
     def test_searches_wait_for_the_whole_scan(self):

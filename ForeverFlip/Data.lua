@@ -61,6 +61,7 @@ function D.open(saved)
     end
     db.vendor = type(db.vendor) == "table" and db.vendor or {}
     db.vendorSeen = type(db.vendorSeen) == "table" and db.vendorSeen or {}
+    db.sellable = type(db.sellable) == "table" and db.sellable or {}
     db.deSeen = type(db.deSeen) == "table" and db.deSeen or {}
     db.markets = type(db.markets) == "table" and db.markets or {}
     db.chars = type(db.chars) == "table" and db.chars or {}

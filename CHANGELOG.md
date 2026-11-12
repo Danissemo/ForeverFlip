@@ -63,6 +63,14 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **Selling is more compact:** the rule fields moved into a panel opened with **Rule...**, Check
   price is a small refresh button beside the price, and the list shows 12 rows. Check all is
   narrower.
+- **Full scans are read whole again:** the server sends the list in parts with pauses between
+  them, and a scan was read after one quiet second: in game only 1024, 2048 or 24576 of 300 000
+  auctions, so most deals were missing. The list must now stay unchanged for 5 seconds, and a list
+  far smaller than the last full scan waits longer.
+- **Bag items stay on Selling while a full scan is awaited** (the game then says no item can be
+  posted).
+- **Gear I can't use:** a button at the merchant sells the equipment your class can never use, bound
+  or not (unbound pieces only when the auction house would not pay more).
 - **A purchase or a post goes out only on a free way to the server:** Buy is enabled while no search
   waits for its answer and the server is ready (the background rests while a checked deal is
   selected). A purchase sent behind an unanswered search never left the game (no money spent, "no

@@ -269,6 +269,10 @@ with them, using the same rules.
   game queues a message behind an unanswered one, and on WoW Forever some are never answered, so a
   purchase sent then would never leave. With no money spent 10 seconds after an item purchase, it
   is reported as not gone through and the deal is checked again.
+- **The full scan answer comes in parts** (1024, 2048, 24576 ... auctions, with pauses of seconds
+  between them). It is read once the list has not changed for 5 seconds (`S.SETTLE`); a list far
+  smaller than the house's last full scan (under 60%) waits for 30 quiet seconds (`S.SHORT`) or the
+  end of the wait. Reading after one quiet second read a part in game (1024 of 300 000 auctions).
 - An item search with no answer in 10 seconds is tried again at once by name (a browse lists its
   exact item keys, then each is searched, as for gear), and that item is searched by name from then
   on (`Deals.byName`).

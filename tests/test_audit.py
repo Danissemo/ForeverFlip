@@ -314,3 +314,65 @@ class MerchantLayoutTests(unittest.TestCase):
         assert(row.bag == 0 and row.slot == 1 and type(row.scripts.OnEnter) == 'function', 'the row shows the bag item tooltip')
         fire('MERCHANT_CLOSED')
         assert(not UI.merchantButton:IsShown() and not UI.merchantView:IsShown())''')
+
+
+class ScanPartsTests(unittest.TestCase):
+    def test_a_list_sent_in_parts_is_read_whole(self):
+        run(BASE + '''local S = F.Scan
+        for i = 1, 60 do addAuction(10, 100 + i, 1) end
+        fullScan()
+        local full = S.last.total
+        now = now + 901; F.db.lastScan = 0
+        -- The server sends a tenth of the list, pauses 12 seconds, then the rest.
+        local real = C_AuctionHouse.GetNumReplicateItems
+        local started = now
+        C_AuctionHouse.GetNumReplicateItems = function()
+            return now - started < 12 and math.floor(full / 10) or real()
+        end
+        assert(S.start())
+        run(10)
+        assert(S.job and S.job.state == 'waiting', 'a part far below the last scan is not read')
+        local n = 0
+        while S.busy() do run(0.5); n = n + 1; assert(n < 400) end
+        assert(S.last.total == full, 'the whole list: ' .. S.last.total .. ' of ' .. full)''')
+
+
+class GearSellTests(unittest.TestCase):
+    GEAR = BASE + '''UnitClass = function() return 'Druid', 'DRUID' end
+    C_Item.GetItemInfoInstant = function(id)
+        local kinds = { [81] = { 'INVTYPE_2HWEAPON', 2, 1 }, [82] = { 'INVTYPE_WEAPON', 2, 15 },
+            [83] = { 'INVTYPE_HOLDABLE', 4, 0 }, [84] = { 'INVTYPE_CHEST', 4, 3 } }
+        local k = kinds[id]
+        if not k then return id end
+        return id, '', '', k[1], 0, k[2], k[3]
+    end
+    addItem(81, 'Battle Slayer of the Tiger', 2162, 'gear'); addItem(82, 'Tail Spike', 1854, 'gear')
+    addItem(83, 'Buccaneer Orb', 1148, 'gear'); addItem(84, 'Chain Vest', 900, 'gear')
+    putBag(0, 1, 81, 1); putBag(0, 2, 82, 1); putBag(0, 3, 83, 1); putBag(0, 4, 84, 1)
+    bags[0][2].isBound = true; bags[0][3].isBound = true
+    '''
+
+    def test_gear_the_class_cannot_use(self):
+        run(self.GEAR + '''assert(F.AH.unusableGear(81) == true, 'a druid cannot wield axes')
+        assert(F.AH.unusableGear(82) == false, 'daggers are fine')
+        assert(F.AH.unusableGear(83) == false, 'off-hand items fit every class')
+        assert(F.AH.unusableGear(84) == true, 'no mail for a druid')''')
+
+    def test_the_gear_button_sells_bound_and_unbound_pieces_the_class_cannot_use(self):
+        run(self.GEAR + '''F.db.settings.vendorMargin = 0
+        local ids = {}
+        for _, v in ipairs(T.unusableGearList()) do ids[#ids + 1] = v.id end
+        table.sort(ids)
+        assert(table.concat(ids, ',') == '81,84', table.concat(ids, ','))
+        MerchantFrame:Show(); fire('MERCHANT_SHOW')
+        assert(UI.gearButton:IsShown(), 'its own button at the merchant')
+        UI.gearButton:Click()
+        assert(#soldToVendor == 2)''')
+
+    def test_bag_items_stay_for_sale_while_a_full_scan_is_awaited(self):
+        run(BASE + '''addItem(91, 'Battle Axe', 2000, 'item'); putBag(0, 1, 91, 1)
+        C_AuctionHouse.IsSellItemValid = function() return false end -- what the game says meanwhile
+        replicateIgnored = true; assert(F.Scan.start()); run(2)
+        local found = false
+        for _, b in ipairs(F.AH.bagItems()) do if b.id == 91 then found = true end end
+        assert(found, 'still listed for sale')''')

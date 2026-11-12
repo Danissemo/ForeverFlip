@@ -54,6 +54,78 @@ function A.keyFor(id, link)
     return U.key(kind, id), kind
 end
 
+-- Equipment the player's class can never wear or wield (WoW classic proficiencies). Armor up to its
+-- type the class learns later (mail, plate at 40) counts as wearable; cloaks, rings, necks,
+-- trinkets, off-hand items and other "miscellaneous" equipment fit every class.
+local WEAPONS = {
+    WARRIOR = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 15, 16, 18 },
+    PALADIN = { 0, 1, 4, 5, 6, 7, 8 },
+    HUNTER = { 0, 1, 2, 3, 6, 7, 8, 10, 13, 15, 16, 18 },
+    ROGUE = { 2, 3, 4, 7, 13, 15, 16, 18 },
+    PRIEST = { 4, 10, 15, 19 },
+    SHAMAN = { 0, 1, 4, 5, 10, 13, 15 },
+    MAGE = { 7, 10, 15, 19 },
+    WARLOCK = { 7, 10, 15, 19 },
+    DRUID = { 4, 5, 10, 13, 15 },
+}
+local ARMOR = {
+    WARRIOR = { 1, 2, 3, 4, 6 },
+    PALADIN = { 1, 2, 3, 4, 6, 7 },
+    HUNTER = { 1, 2, 3 },
+    ROGUE = { 1, 2 },
+    PRIEST = { 1 },
+    SHAMAN = { 1, 2, 3, 6, 9 },
+    MAGE = { 1 },
+    WARLOCK = { 1 },
+    DRUID = { 1, 2, 8 },
+}
+local EVERYONE = {
+    INVTYPE_CLOAK = true,
+    INVTYPE_HOLDABLE = true,
+    INVTYPE_FINGER = true,
+    INVTYPE_NECK = true,
+    INVTYPE_TRINKET = true,
+    INVTYPE_BODY = true,
+    INVTYPE_TABARD = true,
+}
+
+local function has(list, value)
+    for _, v in ipairs(list or {}) do
+        if v == value then
+            return true
+        end
+    end
+    return false
+end
+
+-- true: equipment the class can never use; false: usable (or not equipment); nil: unknown.
+function A.unusableGear(id)
+    local info = C_Item and C_Item.GetItemInfoInstant
+    if not info then
+        return nil
+    end
+    local _, _, _, equipLoc, _, classID, subclassID = info(id)
+    if not equipLoc or equipLoc == "" or EVERYONE[equipLoc] or equipLoc == "INVTYPE_BAG" then
+        return false
+    end
+    local class = UnitClass and select(2, UnitClass("player"))
+    if not class or not WEAPONS[class] then
+        return nil
+    end
+    if classID == 2 then
+        if subclassID == 14 or subclassID == 20 then
+            return false -- miscellaneous weapons, fishing poles
+        end
+        return not has(WEAPONS[class], subclassID)
+    elseif classID == 4 then
+        if subclassID == 0 then
+            return false
+        end
+        return not has(ARMOR[class], subclassID)
+    end
+    return false
+end
+
 -- Item data requests, paced at 40 per second.
 local queue, queued, nextPump, sentAt = {}, {}, 0, {}
 function A.requestItem(id)
@@ -580,6 +652,12 @@ function A.readBags()
                 local loc = ItemLocation:CreateFromBagAndSlot(bag, slot)
                 ---@diagnostic disable-next-line: param-type-mismatch
                 local valid = not AH.IsSellItemValid or AH.IsSellItemValid(loc, false)
+                local sellable = F.db and F.db.sellable
+                if valid and sellable then
+                    sellable[info.itemID] = true
+                elseif not valid and ((sellable and sellable[info.itemID]) or F.Scan.busy()) then
+                    valid = true -- the game says no to everything while a full scan is awaited
+                end
                 local key, kind = A.keyFor(info.itemID, info.hyperlink)
                 if valid and not key then
                     kind = kindOfBagItem(info.itemID, loc)

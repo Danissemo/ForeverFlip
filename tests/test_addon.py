@@ -396,7 +396,7 @@ class ScanAnswerTests(unittest.TestCase):
         assert(ForeverFlip.Scan.job.state=='reading')''')
 
     def test_scan_is_taken_without_the_event_once_the_list_stops_growing(self):
-        run(SETUP + '''assert(ForeverFlip.Scan.start());run(3.2)
+        run(SETUP + '''assert(ForeverFlip.Scan.start());run(7.5)
         assert(not ForeverFlip.Scan.job or ForeverFlip.Scan.job.state~='waiting')
         while ForeverFlip.Scan.busy() do run(0.05) end;assert(ForeverFlip.Deals.get('c:10'))''')
 

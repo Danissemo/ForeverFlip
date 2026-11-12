@@ -634,8 +634,12 @@ on the Merchant tab:
   stock bought as vendor deals (never at a loss; those sales are booked in the journal). Left out:
   **Hidden** items, items with a **keep** rule, items without an auction price yet, and stock bought
   for resale (it goes to the auction house).
+- **Gear I can't use (N): total** (below it) sells the equipment in your bags your class can never
+  wear or wield (a druid's axes, a mage's mail): bound pieces, which never go on the list above, and
+  unbound ones the auction house would not pay more for. Cloaks, rings, necks, trinkets and off-hand
+  items fit every class and are kept; so are hidden items and stock bought for resale.
 - The **ForeverFlip** tab lists the same items under **Sell to this merchant**, each with what the
-  merchant pays, and **Sell all** sells them.
+  merchant pays; **Sell all** and **Gear I can't use** sell them.
 - Below, **Buy here, sell on the auction house** lists the items this merchant sells for less than
   they fetch on the auction house: the price here, the expected auction price, the profit per unit
   (after the cut and deposit) and the measured sales per day. **Buy N** purchases the suggested

@@ -1337,6 +1337,66 @@ function T.vendorSellList()
     return out
 end
 
+-- Equipment in the bags the class can never use (AH.unusableGear), to sell to a merchant: bound
+-- pieces, and pieces the auction house would not pay more for. Hidden items and resale stock stay.
+-- { bag, slot, key, id, count, price, link }, dearest first.
+function T.unusableGearList()
+    local c = char()
+    local out = {}
+    if not C_Container then
+        return out
+    end
+    for bag = 0, 4 do
+        for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            local id = info and info.itemID
+            if id and not info.isLocked and F.AH.unusableGear(id) then
+                local key = F.AH.keyFor(id, info.hyperlink)
+                local p = key and c.positions[key]
+                local price = F.AH.vendorPrice(id, true)
+                local auction = not info.isBound and key and T.bestWay(key, id) == "auction"
+                if
+                    price
+                    and price > 0
+                    and not auction
+                    and not (key and T.hidden(key))
+                    and not (p and p.qty > 0 and p.mode ~= "vendor")
+                then
+                    local count = info.stackCount or 1
+                    out[#out + 1] = {
+                        bag = bag,
+                        slot = slot,
+                        key = key or ("i:" .. id),
+                        id = id,
+                        count = count,
+                        link = info.hyperlink,
+                        price = price * count,
+                    }
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        return a.price > b.price
+    end)
+    return out
+end
+
+function T.sellUnusableGear()
+    if not MerchantFrame or not MerchantFrame:IsShown() then
+        return 0, 0
+    end
+    local stacks, money = 0, 0
+    for _, v in ipairs(T.unusableGearList()) do
+        C_Container.UseContainerItem(v.bag, v.slot)
+        stacks, money = stacks + 1, money + v.price
+    end
+    if stacks > 0 then
+        F.Engine.changed()
+    end
+    return stacks, money
+end
+
 -- Sells the whole list (T.vendorSellList) to the open merchant. Returns stacks sold and money.
 function T.sellAllToVendor()
     if not MerchantFrame or not MerchantFrame:IsShown() then
