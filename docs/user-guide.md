@@ -80,8 +80,9 @@ A full scan runs in stages, all shown on the progress bar:
 
 1. **Waiting for the auction house to send the full scan.** The server answers in a few seconds to a
    minute. The status line counts the seconds while ForeverFlip waits for the answer (minutes on a
-   busy server). If it does not answer in 5 minutes, ForeverFlip says so and tries again a minute
-   later.
+   busy server). If it does not answer in 5 minutes, ForeverFlip says so and tries again 15 minutes
+   after that call: the server counts its 15 minutes from every call, so an earlier try would only
+   push the answer further away.
 2. **Reading auctions.** The scan is read in small portions per frame, so the game keeps running
    smoothly.
 3. **Loading item data.** Some items are not in the game's cache yet. ForeverFlip asks the game to
@@ -693,7 +694,7 @@ A key press is an action of yours, like a click, so it may buy, post and cancel.
 | Message | Meaning |
 |---|---|
 | A full scan is allowed once per 15 minutes. | Wait for the countdown on the Full scan button. |
-| The auction house did not answer the full scan in 5 minutes ... | Another addon may have used the 15-minute window. ForeverFlip tries again in a minute. |
+| The auction house did not answer the full scan in 5 minutes ... | Another addon may have used the 15-minute window. ForeverFlip tries again 15 minutes after that call; do not press Full scan sooner. |
 | The auction house returned an empty scan. | Try again later. |
 | The auction house is busy. | The server is throttling requests. Try again in a moment. |
 | Checking the current price first... | Buy was clicked on a deal that is not freshly checked. It is being checked now. |

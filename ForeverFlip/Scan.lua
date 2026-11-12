@@ -8,14 +8,18 @@ local M = F.Market
 local S = {}
 F.Scan = S
 
-S.COOLDOWN = 900
+-- The server allows one full scan per 15 minutes, counted from each call, answered or not: a call
+-- sooner is not answered and starts the 15 minutes again. In game, retries a minute after an
+-- unanswered call kept the scan away (04:08, 04:14, 04:23 unanswered, 04:38 read), and a call
+-- exactly 15:00 after the last one was not answered while 15:02 was. Hence 15 minutes and 20 seconds.
+S.COOLDOWN = 920
 S.ROWS = 40 -- cheapest auctions kept per item
 S.RECOVER = 30 -- seconds to wait for item data of rows the game had not loaded
 S.DAYS = 14 -- daily records kept per item (price, cheapest, units listed and sold)
 -- Seconds to wait for the server's answer to a full scan. Since WoW Forever launched the answer
 -- can take minutes (ForeverForge waits 2, auxForever 0.8.2 waits 10), but a call refused by the
--- 15-minute account limit (another addon used the window) is never answered. 5 minutes, then a
--- new try a minute later.
+-- 15-minute account limit (another addon used the window) is never answered. 5 minutes, then the
+-- next try once 15 minutes passed since that call (S.COOLDOWN), never sooner.
 S.ANSWER_WAIT = 300
 
 local function clock()
@@ -572,10 +576,11 @@ function S.step()
         if polled(j, now) then
             beginReading(j, j.last)
         elseif now - j.at > S.ANSWER_WAIT then
-            -- No answer: try again in a minute instead of waiting the whole 15 minutes. Whether the
-            -- server sent nothing or a list that kept changing tells the two cases apart.
+            -- No answer: the next try waits the whole window counted from this call. Trying sooner
+            -- starts the server's 15 minutes again and keeps the answer away. Whether the server
+            -- sent nothing or a list that kept changing tells the two cases apart.
             S.job = nil
-            F.db.lastScan = now - S.COOLDOWN + 60
+            F.db.lastScan = j.at
             local seen = j.seen or 0
             settle(seen > 0 and "list kept changing" or "no answer", seen)
             F.Engine.notify(seen > 0 and "scan_unsettled" or "scan_timeout")

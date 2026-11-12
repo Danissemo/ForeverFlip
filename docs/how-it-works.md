@@ -51,8 +51,11 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    the call itself. WoW Forever does not always send `REPLICATE_ITEM_LIST_UPDATE`, so the job also
    polls the number of replicated auctions once a second. The scan counts as arrived when that
    number has changed and has stopped growing. Since launch the answer can take minutes, so the
-   job waits up to 5 minutes (`S.ANSWER_WAIT`), showing the seconds; with no answer it gives up
-   and the next attempt is allowed a minute later. Searches and the sniper wait for the answer: when
+   job waits up to 5 minutes (`S.ANSWER_WAIT`), showing the seconds; with no answer it gives up,
+   and the next attempt waits 15 minutes and 20 seconds from that call (`S.COOLDOWN`): the server
+   counts its 15 minutes from every call, answered or not, so an earlier retry starts them again
+   (seen in game: three unanswered calls in a row, each sooner than 15 minutes after the one
+   before). Searches and the sniper wait for the answer: when
    they went on meanwhile, the answer did not come in game.
 2. **Reading.** Rows are read in portions under a time budget per frame. Bid-only auctions and your
    own auctions are skipped. Rows whose item is not in the game cache are deferred; the item data is

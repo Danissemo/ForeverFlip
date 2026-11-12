@@ -14,6 +14,11 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 
 ### Fixed
 
+- **A scan the server did not answer no longer keeps the next ones away.** After 5 minutes without an
+  answer the next try came a minute later, but the server counts its 15 minutes from every call:
+  each early retry started them again (in game: unanswered at 04:08, 04:14 and 04:23, read at
+  04:38). The next try now waits 15 minutes and 20 seconds from the unanswered call, and regular
+  scans keep the same 20 seconds of margin (a call 15:00 after the last one went unanswered).
 - **Full scans no longer read a part of the answer.** The server sends the list in parts; a part
   was taken as the whole once one partial scan had been read, because the next one was measured
   against it (seen: 28 672, 30 720, 73 728 of about 250 000 auctions in a row). Lists are now
