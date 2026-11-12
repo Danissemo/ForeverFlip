@@ -197,6 +197,128 @@ function T.cancel()
     end
 end
 
+-- Buy run: every vendor deal bought click after click (the Buy all to vendor button). The game
+-- takes a purchase only from a click, and an item auction only right after a search of that item:
+-- so the run checks one deal at a time, just before the click that buys it, and the next lot of
+-- the same item is bought without a new search. Check all and the sniper rest meanwhile, so
+-- nothing else takes the way to the server. A deal that can no longer be bought is skipped.
+-- T.run = { key = deal being bought, skipped = { [key] = true }, bought = lots, spent = copper }
+function T.runTargets()
+    local out = {}
+    local wallet = F.Engine.wallet()
+    for _, d in ipairs(F.Deals.list) do
+        if
+            d.mode == "vendor"
+            and d.cost <= wallet
+            and not T.overLimit(d.cost)
+            and not (T.run and T.run.skipped[d.key])
+        then
+            out[#out + 1] = d
+        end
+    end
+    return out
+end
+
+function T.runStart()
+    T.run = { skipped = {}, bought = 0, spent = 0, at = clock() }
+    T.runStep()
+    F.Engine.changed()
+    return T.run ~= nil
+end
+
+function T.runStop()
+    if T.run then
+        T.run = nil
+        F.Engine.changed()
+    end
+end
+
+-- Called every frame: keeps the next deal of the run checked and ready for the next click.
+function T.runStep()
+    local run = T.run
+    if not run then
+        return
+    end
+    if not F.AH.isOpen() then
+        T.run = nil
+        return
+    end
+    F.Deals.holdUntil = clock() + 2 -- Check all and the sniper rest while the run goes on
+    if T.busy() then
+        return
+    end
+    local d = run.key and F.Deals.get(run.key)
+    if d and d.mode ~= "vendor" then
+        d = nil
+    end
+    if d and (d.cost > F.Engine.wallet() or T.overLimit(d.cost)) then
+        run.skipped[d.key], d = true, nil
+    end
+    if not d then
+        run.key, run.checks = nil, 0
+        local next = T.runTargets()[1]
+        if not next then
+            T.run = nil
+            F.Engine.notify(run.bought > 0 and "run_done" or "no_deal")
+            F.Engine.changed()
+            return
+        end
+        run.key, d = next.key, next
+        if F.UI then
+            F.UI.selected = next.key
+        end
+    end
+    if T.readyToBuy(d) or F.Deals.pending(d.key) then
+        return
+    end
+    -- Not checked lately, or another item was searched since: read the lot again. A deal that
+    -- stays unconfirmed after two checks is left out of the run.
+    run.checks = (run.checks or 0) + 1
+    if run.checks > 2 then
+        run.skipped[d.key], run.key = true, nil
+        return
+    end
+    F.Deals.verify(d.key)
+end
+
+-- One click of the run: confirms a quoted purchase, or buys the deal the run has ready.
+function T.runClick()
+    if T.op and T.op.state == "quoted" then
+        return T.confirm(), "confirm"
+    end
+    if not T.run then
+        if not T.runStart() then
+            return false, "no_deal"
+        end
+    end
+    local d = T.run.key and F.Deals.get(T.run.key)
+    if not d or not T.readyToBuy(d) then
+        return false, "run_checking"
+    end
+    local ok, why = T.buy(d.key)
+    if ok then
+        T.run.bought = T.run.bought + 1
+        T.run.spent = T.run.spent + (T.op and T.op.cost or 0)
+        T.run.checks = 0
+    end
+    return ok, why
+end
+
+-- The run's state for its button: "confirm", "ready", "checking", "busy" or nil (no run).
+function T.runState()
+    if T.op and T.op.state == "quoted" then
+        return "confirm"
+    end
+    if not T.run then
+        return nil
+    end
+    if T.busy() then
+        return "busy"
+    end
+    local d = T.run.key and F.Deals.get(T.run.key)
+    return d and T.readyToBuy(d) and "ready" or "checking"
+end
+
 -- Setting spendLimit (gold): what one auction house visit may spend on deals.
 function T.overLimit(cost)
     local limit = tonumber(F.db.settings.spendLimit) or 0
@@ -347,6 +469,7 @@ end
 -- journal (the chat line "You won an auction" tells).
 function T.step()
     T.stepVendor()
+    T.runStep()
     local op = T.op
     if op and op.state == "awaiting" and op.money and clock() - op.at > 30 then
         -- No money spent in 30 seconds: reported, and the deal is checked again. The server can
@@ -2033,7 +2156,8 @@ function T.fightNext()
     for _, plan in ipairs(T.fightPlans()) do
         local waited = T.waiting and T.waiting[plan.auction.auctionID] == plan.cheapest
         if not waited and (plan.verdict == "undercut" or plan.verdict == "vendor") then
-            return T.fight(plan), "cancelled"
+            local ok = T.fight(plan)
+            return ok, ok and "cancelled" or "post_busy"
         end
     end
     return false, "nothing_to_fight"

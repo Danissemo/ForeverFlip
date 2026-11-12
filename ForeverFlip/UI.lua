@@ -83,6 +83,7 @@ local MESSAGES = {
     cancelled = "Auction cancelled. The item comes back by mail; the deposit is lost.",
     spend_limit = "The spending limit of this auction house visit is reached (Settings, Safety tab).",
     no_deal = "No deal to buy right now.",
+    run_done = "Buy all to vendor: done. Sell the items at any merchant (Sell all there).",
     bought_elsewhere = "A purchase made outside ForeverFlip was booked from its mail.",
 }
 
@@ -1511,6 +1512,55 @@ function UI.createDeals(p)
         end
     end)
     UI.ignoreButton:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
+    -- To vendor: every deal bought click after click (F.Trade.runClick). Each click buys one lot
+    -- (a commodity: one click asks the price, the next confirms); the next is checked meanwhile.
+    UI.runButton = button(bar, "Buy all to vendor", 170, function()
+        F.Engine.input()
+        local ok, why = F.Trade.runClick()
+        if not ok and why and why ~= "run_checking" then
+            F.Engine.notify(why)
+        end
+        UI.refresh()
+    end)
+    UI.runButton:SetPoint("LEFT", UI.ignoreButton, "RIGHT", 4, 0)
+    UI.runStop = button(bar, "Stop", 70, function()
+        F.Trade.runStop()
+        UI.refresh()
+    end)
+    UI.runStop:SetPoint("LEFT", UI.runButton, "RIGHT", 4, 0)
+end
+
+-- The Buy all to vendor button: what the next click does, and how many deals are left.
+function UI.refreshRun()
+    local shown = UI.filter == "vendor"
+    local function show(f, on)
+        if on then
+            f:Show()
+        else
+            f:Hide()
+        end
+    end
+    show(UI.runButton, shown)
+    show(UI.runStop, shown and F.Trade.run ~= nil)
+    if not shown then
+        return
+    end
+    local left = #F.Trade.runTargets()
+    local state = F.Trade.runState()
+    local op = F.Trade.op
+    if state == "confirm" then
+        UI.runButton:SetText(L("Confirm") .. " " .. U.money(op.cost))
+        UI.runButton:SetEnabled(true)
+    elseif state == "ready" then
+        UI.runButton:SetText(string.format(L("Buy next (%d left)"), left))
+        UI.runButton:SetEnabled(true)
+    elseif state == "checking" or state == "busy" then
+        UI.runButton:SetText(L("checking..."))
+        UI.runButton:SetEnabled(false)
+    else
+        UI.runButton:SetText(string.format(L("Buy all to vendor (%d)"), left))
+        UI.runButton:SetEnabled(left > 0 and F.AH.isOpen() and not F.Trade.busy())
+    end
 end
 
 function UI.selectDeal(key)
@@ -1632,7 +1682,7 @@ function UI.sureSentence(d, now)
     if parts.flow then
         return string.format(
             L(
-                "Sure %s: only lots that disappeared are known yet (%d near this price in %.1f h), no purchase confirmed: at most %d%% until two full scans track the lots."
+                "|cffffd100Sure|r %s: only lots that disappeared are known yet (%d near this price in %.1f h), no purchase confirmed: at most %d%% until two full scans track the lots."
             ),
             UI.sureText(sure),
             math.floor(parts.units + 0.5),
@@ -1642,7 +1692,7 @@ function UI.sureSentence(d, now)
     end
     local line = string.format(
         L(
-            "Sure %s: %d%% chance real buyers take %d at this price in %d h (%d bought at 95%% of it or more in %.1f h watched; %d%% real buyers)."
+            "|cffffd100Sure|r %s: %d%% chance real buyers take %d at this price in %d h (%d bought at 95%% of it or more in %.1f h watched; %d%% real buyers)."
         ),
         UI.sureText(sure),
         math.floor(parts.p * 100 + 0.5),
@@ -1769,6 +1819,117 @@ local function dealSentence(d)
     )
 end
 
+-- A span of hours in words: "40 min", "3.5 h", "2.1 days".
+function UI.duration(hours)
+    if not U.finite(hours) or hours < 0 then
+        return "?"
+    elseif hours < 1 then
+        return string.format(L("%d min"), math.max(1, math.floor(hours * 60 + 0.5)))
+    elseif hours < 48 then
+        return string.format(L("%.1f h"), hours)
+    end
+    return string.format(L("%.1f days"), hours / 24)
+end
+
+local function gold(s)
+    return "|cffffd100" .. L(s) .. "|r"
+end
+
+-- The selected deal under the table, one subject per line, each line led by its subject:
+--   Buy / Sell / Profit   what it costs, where it goes, what it brings
+--   Demand                buyers a day at the price, how long the units take, how old the data is
+--   Seen                  the purchases the demand rests on
+--   Sure                  how sure the resale is to pay back (UI.sureSentence)
+function UI.dealDetail(d, estimate, h, now)
+    local roi = d.cost > 0 and math.floor(d.profit / d.cost * 100 + 0.5) or 0
+    local each = math.floor(d.cost / math.max(1, d.qty) + 0.5)
+    if d.mode == "vendor" then
+        local lines = {
+            string.format(
+                L("%s %d x %s = %s  ·  %s %s each  ·  %s %s (%d%%), no risk"),
+                gold("Buy"),
+                d.qty,
+                U.money(each),
+                U.money(d.cost),
+                gold("Merchant pays"),
+                U.money(d.exit),
+                gold("Profit"),
+                UI.signed(d.profit),
+                roi
+            ),
+        }
+        if d.vendorHow ~= "seen" then
+            lines[#lines + 1] = L(
+                "The vendor price is from the game's item data, not yet confirmed at a merchant (it is, after one sale)."
+            )
+        end
+        if d.kind ~= "commodity" then
+            lines[#lines + 1] = L("Items are bought one auction per click; the next lot is checked ahead.")
+        end
+        return lines
+    end
+    if d.mode ~= "flip" then
+        return { dealSentence(d), dealOutlook(d, estimate) }
+    end
+    local lines = {
+        string.format(
+            L("%s %d x %s = %s  ·  %s at %s each  ·  %s %s (%d%%) after the %d%% cut"),
+            gold("Buy"),
+            d.qty,
+            U.money(each),
+            U.money(d.cost),
+            gold("Sell"),
+            U.money(d.exit),
+            gold("Profit"),
+            UI.signed(d.profit),
+            roi,
+            math.floor(F.Market.CUT * 100 + 0.5)
+        ),
+    }
+    local floor = U.finite(d.exit) and math.floor(0.85 * d.exit) or nil
+    if estimate and estimate.known then
+        local line =
+            string.format(L("%s ~%.1f a day at %s or more"), gold("Demand"), estimate.perDay, U.money(floor or 0))
+        if estimate.perDay > 0 then
+            line = line
+                .. "  ·  "
+                .. string.format(L("%d sell in about %s"), d.qty, UI.duration(d.qty / estimate.perDay * 24))
+        end
+        if estimate.age then
+            line = line
+                .. "  ·  "
+                .. string.format(L("data %d min old"), math.floor(estimate.age / 60))
+                .. (estimate.stale and L(" (old data)") or "")
+        end
+        lines[#lines + 1] = line
+    else
+        lines[#lines + 1] = gold("Demand")
+            .. " "
+            .. L("Sale estimate unavailable: collect two full scans with usable price data.")
+    end
+    local e = h and F.Market.saleEvidence(h, floor)
+    if e then
+        lines[#lines + 1] = string.format(
+            L("%s %d purchases, %d units (%d from lots bought in part, %d whole lots)  ·  paid %s - %s, median %s"),
+            gold("Seen"),
+            e.buys,
+            math.floor(e.units + 0.5),
+            math.floor(e.sure + 0.5),
+            math.floor(e.lots + 0.5),
+            U.money(e.low),
+            U.money(e.high),
+            U.money(e.median)
+        )
+    else
+        lines[#lines + 1] = gold("Seen") .. " " .. L("No purchase seen at this price yet.")
+    end
+    local sure = UI.sureSentence(d, now)
+    if sure then
+        lines[#lines + 1] = sure
+    end
+    return lines
+end
+
 function UI.refreshDeals()
     local list = F.Deals.visible(UI.filter)
     local now = F.Engine.clock()
@@ -1891,25 +2052,14 @@ function UI.refreshDeals()
     local d = UI.selected and F.Deals.get(UI.selected)
     local op = F.Trade.op
     if d then
-        local lines = { dealSentence(d), dealOutlook(d, estimates[d.key]) }
-        if d.mode == "flip" then
-            lines[#lines + 1] =
-                estimateSentence(estimates[d.key] or saleEstimate(d, history, now), history[d.key], d.exit)
-            local sureLine = UI.sureSentence(d, now)
-            if sureLine then
-                lines[#lines + 1] = sureLine
-            end
-        end
-        if d.kind ~= "commodity" then
-            lines[#lines + 1] =
-                L("Items are bought one auction per click; the next lot is checked after each purchase.")
-        end
+        local lines = UI.dealDetail(d, estimates[d.key] or saleEstimate(d, history, now), history[d.key], now)
         UI.dealText:SetText(table.concat(lines, "\n"))
     else
         UI.dealText:SetText(L("Select a deal. Its price is checked on the auction house before you can buy."))
     end
     UI.checkButton:SetEnabled(d ~= nil and not F.Deals.pending(d.key) and not F.Trade.busy() and not F.Scan.blocking())
     UI.ignoreButton:SetEnabled(d ~= nil)
+    UI.refreshRun()
     UI.confirmButton:SetEnabled(op ~= nil and op.state == "quoted")
     UI.cancelButton:SetEnabled(op ~= nil and (op.state == "quote" or op.state == "quoted"))
     if op and op.state == "quoted" then
@@ -5548,118 +5698,158 @@ local function tooltipLines(tooltip)
     if not usual and not position and onSale == 0 and not advice then
         return
     end
-    local houseName = UI.houseName()
-    tooltip:AddLine("ForeverFlip: " .. houseName, 1, 0.82, 0)
+    local now = F.Engine.clock()
+    local function section(title)
+        tooltip:AddLine("|cff8fb8ff" .. L(title) .. "|r")
+    end
+    local function grey(s)
+        return "|cff999999" .. s .. "|r"
+    end
+    tooltip:AddLine("|cffffd100ForeverFlip|r  " .. grey(UI.houseName()))
     if usual and h then
+        section("Market")
         tipLine(
             tooltip,
-            L("Usual price")
-                .. " |cff999999("
-                .. UI.age(usualAt)
-                .. (sharer and (", " .. L("shared by") .. " " .. sharer) or "")
-                .. ")|r",
+            "  "
+                .. L("Usual price")
+                .. " "
+                .. grey("(" .. UI.age(usualAt) .. (sharer and (", " .. L("shared by") .. " " .. sharer) or "") .. ")"),
             U.money(usual),
-            0.43,
-            0.84,
-            0.74
+            0.85,
+            0.85,
+            0.85
         )
         local today = h.days and h.days[#h.days]
-        if today and today.d == math.floor(F.Engine.clock() / 86400) and today.min then
+        if today and today.d == math.floor(now / 86400) and today.min then
             tipLine(
                 tooltip,
-                string.format(L("Cheapest today (%d listed at the last scan)"), h.units or today.n or 0),
+                "  "
+                    .. L("Cheapest today")
+                    .. " "
+                    .. grey("(" .. string.format(L("%d listed"), h.units or today.n or 0) .. ")"),
                 U.money(today.min)
             )
         end
         local sale = F.Market.salePrice(h)
         if sale then
-            tipLine(tooltip, L("Buyers paid lately (median of sales seen)"), U.money(sale))
+            tipLine(tooltip, "  " .. L("Buyers paid (median)"), U.money(sale))
         end
-        local at = advice and advice.net and advice.post or usual
-        local s = F.Market.saleability(h, at, F.Engine.clock())
-        if s.known then
-            tipLine(
-                tooltip,
-                string.format(L("Sold per day at %s or more"), U.money(math.floor(at * 0.85))),
-                string.format("~%.1f", s.perDay)
-            )
-            local e = F.Market.saleEvidence(h, math.floor(at * 0.85))
-            if e then
-                tipLine(
-                    tooltip,
-                    string.format(L("  seen: %d buys, %d in part / %d whole lots"), e.buys, e.sure, e.lots),
-                    U.money(e.low) .. " - " .. U.money(e.high)
-                )
-            end
-        else
-            tipLine(tooltip, L("Sales"), L("not measured yet (needs two scans)"))
-        end
-        local timing = F.Market.timing(h, F.Engine.clock())
+        local timing = F.Market.timing(h, now)
         if timing.ready and timing.spread >= 0.05 then
             tipLine(
                 tooltip,
-                L("cheapest / dearest time"),
+                "  " .. L("cheapest / dearest time"),
                 slotName(timing.low)
                     .. " / "
                     .. slotName(timing.high)
                     .. string.format(" (+%d%%)", math.floor(timing.spread * 100 + 0.5))
             )
         end
+        section("Demand")
+        local at = advice and advice.net and advice.post or usual
+        local s = F.Market.saleability(h, at, now)
+        if s.known then
+            tipLine(
+                tooltip,
+                "  " .. string.format(L("Bought a day at %s or more"), U.money(math.floor(at * 0.85))),
+                string.format("~%.1f", s.perDay),
+                0.85,
+                0.85,
+                0.85
+            )
+            local e = F.Market.saleEvidence(h, math.floor(at * 0.85))
+            if e then
+                tipLine(
+                    tooltip,
+                    "  "
+                        .. grey(
+                            string.format(
+                                L("%d purchases, %d units (%d from lots bought in part, %d whole lots)"),
+                                e.buys,
+                                math.floor(e.units + 0.5),
+                                math.floor(e.sure + 0.5),
+                                math.floor(e.lots + 0.5)
+                            )
+                        ),
+                    grey(U.money(e.low) .. " - " .. U.money(e.high))
+                )
+            end
+            local trust = F.Deals.trust(key, now)
+            local sure = F.Market.confidence(h, at, 1, now, trust)
+            if sure then
+                tipLine(tooltip, "  " .. L("Sure to sell one at this price in 2 days"), UI.sureText(sure))
+            end
+        else
+            tipLine(tooltip, "  " .. L("Sales"), L("not measured yet (needs two scans)"))
+        end
     end
-    if position and position.qty > 0 then
-        tipLine(
-            tooltip,
-            L("You hold"),
-            string.format(L("%d, paid %s each"), position.qty, U.money(math.floor(position.cost / position.qty))),
-            0.5,
-            0.8,
-            1
-        )
-    end
-    if onSale > 0 then
-        tipLine(
-            tooltip,
-            L("On sale by you"),
-            string.format(L("%d at %s"), onSale, onSalePrice and U.money(math.floor(onSalePrice)) or "?"),
-            0.5,
-            0.8,
-            1
-        )
+    if (position and position.qty > 0) or onSale > 0 then
+        section("Yours")
+        if position and position.qty > 0 then
+            tipLine(
+                tooltip,
+                "  " .. L("You hold"),
+                string.format(L("%d, paid %s each"), position.qty, U.money(math.floor(position.cost / position.qty))),
+                0.5,
+                0.8,
+                1
+            )
+        end
+        if onSale > 0 then
+            tipLine(
+                tooltip,
+                "  " .. L("On sale by you"),
+                string.format(L("%d at %s"), onSale, onSalePrice and U.money(math.floor(onSalePrice)) or "?"),
+                0.5,
+                0.8,
+                1
+            )
+        end
     end
     local deal = F.Deals.get(key)
     if deal then
-        tipLine(tooltip, L("Deal now"), string.format("%s %s", L("profit"), U.money(deal.profit)), 0.25, 1, 0.25)
+        local sure = F.Deals.sure(deal, now)
+        tipLine(
+            tooltip,
+            string.format(L("Deal now: buy %d, profit %s"), deal.qty or 1, U.money(deal.profit)),
+            sure and (L("Sure") .. " " .. UI.sureText(sure)) or "",
+            0.25,
+            1,
+            0.25
+        )
     end
     if advice then
-        if advice.vendor then
-            tipLine(
-                tooltip,
-                L("Vendor pays")
-                    .. (
-                        advice.vendorHow == "seen" and ""
-                        or (" |cff999999(" .. L("not confirmed at a merchant") .. ")|r")
-                    ),
-                U.money(advice.vendor)
-            )
-        end
+        section("Selling one")
         if advice.net then
             tipLine(
                 tooltip,
-                L("Post at") .. " |cff999999(" .. UI.quoteWhy(advice) .. ")|r",
+                "  " .. L("Post at") .. " " .. grey("(" .. UI.quoteWhy(advice) .. ")"),
                 U.money(advice.post),
                 1,
                 1,
                 1
             )
-            tipLine(tooltip, UI.netLabel(advice), U.money(advice.net))
+            tipLine(tooltip, "  " .. UI.netLabel(advice), U.money(advice.net))
             if advice.profit then
-                tipLine(tooltip, L("Profit each"), UI.signed(advice.profit))
+                tipLine(tooltip, "  " .. L("Profit each"), UI.signed(advice.profit))
             end
         end
-        if advice.disenchant then
-            tipLine(tooltip, L("Disenchant (materials after the cut)"), U.money(advice.disenchant))
+        if advice.vendor then
+            tipLine(
+                tooltip,
+                "  "
+                    .. L("Vendor pays")
+                    .. (
+                        advice.vendorHow == "seen" and ""
+                        or (" " .. grey("(" .. L("not confirmed at a merchant") .. ")"))
+                    ),
+                U.money(advice.vendor)
+            )
         end
-        tipLine(tooltip, L(ADVICE[advice.best]), "", 1, 0.82, 0)
+        if advice.disenchant then
+            tipLine(tooltip, "  " .. L("Disenchant (materials after the cut)"), U.money(advice.disenchant))
+        end
+        tipLine(tooltip, "> " .. L(ADVICE[advice.best]), "", 1, 0.82, 0)
     end
     tooltip:Show()
 end

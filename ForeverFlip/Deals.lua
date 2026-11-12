@@ -321,7 +321,9 @@ function D.holding()
     if not ui or not ui.frame or not ui.frame:IsShown() then
         return false
     end
-    if ui.section == "sell" or ui.section == "auctions" then
+    -- The Undercuts page too: its answers cancel auctions, and a cancel sent while a search of
+    -- the sniper waited found the way busy (Answer next took three clicks in game).
+    if ui.section == "sell" or ui.section == "auctions" or ui.section == "undercuts" then
         return true
     end
     return ui.section == "deals" and selectedHold(ui)

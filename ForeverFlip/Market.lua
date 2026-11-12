@@ -735,6 +735,20 @@ M.lotDemand = lotDemand
 -- Undercuts of an item per hour: new lots posted below the cheapest lot, over the hours its lots
 -- were watched (with the same prior hours as the sales, so one scan pair does not decide it).
 -- { perHour, cuts, hours }; nil before the first scan pair.
+-- The median number of units of the item's lots at the last scan (1 when unknown).
+function M.medianLot(h)
+    local seq = M.unpackLots(type(h) == "table" and h.lots or nil)
+    local counts = {}
+    for i = 2, #seq, 3 do
+        counts[#counts + 1] = seq[i]
+    end
+    if #counts == 0 then
+        return 1
+    end
+    table.sort(counts)
+    return math.max(1, counts[math.floor((#counts + 1) / 2)])
+end
+
 -- How sure a resale is to pay back at its Sells at price: a number from 0 to 1, the chance that
 -- real buyers take the units at that price within M.SURE_HOURS while the lot is first in line,
 -- discounted for evidence that is speculation or old.
@@ -747,9 +761,10 @@ M.lotDemand = lotDemand
 --   m     units per purchase at the price (the sale log: units / buys, at least 1): four units
 --         bought at once are one buyer, not four. Purchases are what is uncertain, so the chance
 --         is that of ceil(qty / m) purchases from n / m seen
---   t     selling time: a rival who answers undercuts at c per hour (M.undercutRate) keeps the lot
---         first only (1 - e^(-c H)) / c of the H hours
---   P     P(N >= qty) for N, the units sold in t hours, a negative binomial with a
+--   ahead units of rivals' undercuts that buyers take before yours: c undercuts an hour
+--         (M.undercutRate) x H hours x the item's median lot (M.medianLot); a popular item sells
+--         through them, a slow one does not
+--   P     P(B >= ceil((qty + ahead) / m)) for B, the purchases in H hours, a negative binomial with a
 --         Gamma(n x real x trust + 0.1, (h + 24) / 24 days) rate: a quiet day is assumed until
 --         the scans show sales, so few sales give a modest number however fast they came, and
 --         many sales a high one (F.Trade.saleChances). With no sale seen at the price it stays
@@ -819,11 +834,13 @@ function M.confidence(h, price, qty, now, trust)
     local hours = M.SURE_HOURS
     local cut = M.undercutRate(h)
     local c = cut and cut.perHour or 0
-    local t = c > 1e-9 and (1 - math.exp(-c * hours)) / c or hours
+    -- Each rival undercut puts a lot (the item's median lot) ahead of yours: buyers take it first.
+    local lot = M.medianLot(h)
+    local ahead = c * hours * lot
     local e = M.saleEvidence(h, floor)
     local m = e and e.buys > 0 and math.max(1, e.units / e.buys) or 1
-    local tail = F.Trade.saleChances(units * real * trust / m, s.hours or 0, t, M.SURE_PRIOR, M.SURE_PRIOR_HOURS)
-    local p = tail(math.max(1, math.ceil((qty or 1) / m)))
+    local tail = F.Trade.saleChances(units * real * trust / m, s.hours or 0, hours, M.SURE_PRIOR, M.SURE_PRIOR_HOURS)
+    local p = tail(math.max(1, math.ceil(((qty or 1) + ahead) / m)))
     local sweep = 1 - math.min(1, (s.sweeps or 0) / math.max(1, s.pairs or 1)) / 2
     local age = U.finite(now) and U.finite(s.at) and math.max(0, now - s.at) or 0
     local fresh = 0.5 ^ (math.max(0, age - 6 * 3600) / (48 * 3600))
@@ -834,8 +851,9 @@ function M.confidence(h, price, qty, now, trust)
             perBuy = m,
             real = real,
             hours = s.hours or 0,
-            selling = t,
+            selling = hours,
             rival = c,
+            ahead = ahead,
             sweep = sweep,
             fresh = fresh,
             age = age,

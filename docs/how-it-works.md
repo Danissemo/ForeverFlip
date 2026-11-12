@@ -247,8 +247,8 @@ old data.
 | real | Real-buyer share: `(sure + lots / 2) / (sure + lots)`. A lot bought in part is a sure purchase; a lot that vanished whole may be another reseller (or a repost) and counts half. |
 | trust | Own results of the item: stock that did not sell lowers it (`Deals.trust`). |
 | m | Units per purchase at the price (sale log: units / buys, at least 1). Four units bought at once are one buyer. |
-| t | Selling time: a rival who undercuts at c per hour (`M.undercutRate`) keeps the lot first only `(1 - e^(-c·48)) / c` of the 48 hours. |
-| P | `P(B >= ceil(qty / m))`, B the purchases in t hours: negative binomial of a `Gamma(n·real·trust/m + 0.1, (h + 24) / 24 days)` rate. A quiet day is assumed until the scans show sales. |
+| ahead | Rivals' undercut units that buyers take before yours: c undercuts an hour (`M.undercutRate`) × 48 hours × the item's median lot (`M.medianLot`). A popular item sells through them; a slow one does not. |
+| P | `P(B >= ceil((qty + ahead) / m))`, B the purchases in 48 hours: negative binomial of a `Gamma(n·real·trust/m + 0.1, (h + 24) / 24 days)` rate. A quiet day is assumed until the scans show sales. |
 | sweep | `1 - min(1, sweeps / pairs) / 2`: shelves cleared in one go are speculation. |
 | fresh | `0.5 ^ (max(0, age - 6 h) / 48 h)`: sales data loses half its weight every 2 days after 6 hours. |
 

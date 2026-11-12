@@ -8,6 +8,20 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- **Buy all to vendor** (Deals, To vendor): every vendor deal bought click after click. The game
+  takes a purchase only from a click, and an item auction only right after a search of that item,
+  so each click buys one lot (a stackable: one click asks the price, the next confirms) while the
+  next deal is checked just before its click. The further lots of the same item need no new search.
+  Check all and the sniper rest during the run; a deal that cannot be confirmed is skipped. The
+  button says what the next click does and how many deals are left; Stop ends the run.
+- **A new item tooltip**, in sections: Market (usual price and its age, cheapest today, what
+  buyers paid), Demand (bought a day near the price, the purchases it rests on, Sure to sell one
+  in 2 days), Yours (stock and auctions), the deal now with its Sure, and Selling one (post price,
+  what you get, vendor, disenchant) with the best way out.
+- **The deal under the table, line by line**: Buy x price = cost, where it sells and the profit
+  with its return; Demand a day, how long the units take (minutes, hours or days) and the data's
+  age; the purchases seen; and what Sure is made of.
+
 - **Sure**, a new column on the Deals page: how sure a resale is to pay back at its Sells at
   price, from 0 to 100%. It is the chance that real buyers take the units at that price within
   2 days while your lot is the cheapest. Few sales give a low number however fast they came, and
@@ -32,6 +46,14 @@ All notable changes are listed here. The format follows
   selected bid. Being outbid no longer closes the bid: the auction still runs.
 
 ### Fixed
+
+- **Answer next took three clicks.** The sniper and the checks of other pages kept the way to the
+  server busy while the Undercuts page was shown, and a cancel sent then failed without a word
+  (the status still said "cancelled"). They rest on the Undercuts page now, and a failed answer
+  says the auction house is busy.
+- **Sure counts rivals as lots ahead**, not as the end of your chance: each undercut puts the
+  item's usual lot ahead of yours. A popular item sells through them (Arcane Powder at 280 a day
+  read 30%); a slow one does not.
 
 - **Undercuts: honest chances and a better reckoning of every way out.**
   - Few sales no longer read as sure: four units seen in one hour made a 97% chance to sell. The

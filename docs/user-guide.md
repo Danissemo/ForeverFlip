@@ -224,6 +224,16 @@ purchase by itself when it appears.
 Searching an item yourself in the game's **Buy** tab counts as a check too: if its listings hold a
 deal, the deal is listed as **ready** at once.
 
+### Buy all to vendor
+
+On **Deals → To vendor**, **Buy all to vendor (N)** buys every vendor deal you can afford, click
+after click. The first click checks the best deal; then the button reads **Buy next (N left)** and
+each click buys one lot. For stackable goods one click asks the price and the next confirms it
+(**Confirm**). The next deal is checked while you click, just before its turn: the server sells an
+item only right after a search of that same item, so deals cannot all be checked in advance. While
+the run goes on, Check all and the sniper wait. A deal that cannot be confirmed after two checks
+is skipped. **Stop** ends the run. Sell what you bought at any merchant with **Sell all**.
+
 ## Shopping list and ignored items
 
 The **Shopping list** page holds items you want to buy and the most you pay for one.

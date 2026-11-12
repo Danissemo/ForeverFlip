@@ -561,7 +561,7 @@ class DealTabTests(unittest.TestCase):
         assert(status('c:10'):find('old scan'))
         money=100;UI.refresh();assert(status('c:10'):find('not enough money'))
         money=1000000;UI.selectDeal('c:10');answer();UI.refresh()
-        assert(UI.dealText:GetText():find('Return') and UI.pageText:GetText():find('profit'))''')
+        assert(UI.dealText:GetText():find('Profit') and UI.pageText:GetText():find('profit'))''')
 
     def test_merchant_items_worth_reselling_are_listed_and_bought_by_click(self):
         run('''addItem(60,'Fine Thread',5,'commodity');addItem(61,'Cheap Thing',5,'commodity')
