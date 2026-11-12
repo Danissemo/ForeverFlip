@@ -155,10 +155,10 @@ change pages.
 
 | Status | Meaning |
 |---|---|
-| **ready** (green) | Checked on the auction house in the last 2 minutes. You can buy it. |
+| **ready** (green) | Checked on the auction house in the last 5 minutes. You can buy it. |
 | **checking...** | The exact search for this item is running now. |
 | **queued** | Waiting for its turn to be checked. |
-| **check again** | It was checked more than 2 minutes ago. Click it to check it again. |
+| **check again** | It was checked more than 5 minutes ago. Click it to check it again. |
 | **from scan** | Found by the full scan and not checked yet. |
 | **old scan** | Found by a scan more than 20 minutes ago. The lots may be gone. |
 | **not enough money** (red) | The deal costs more than you carry. |
@@ -185,7 +185,7 @@ by itself.
 
 ## Buying
 
-1. Click a deal. If it has not been checked in the last 2 minutes, it is checked now. Wait for
+1. Click a deal. If it has not been checked in the last 5 minutes, it is checked now. Wait for
    **ready**.
 2. Click **Buy** (or press the [Buy key](#key-bindings)).
    - **Stackable goods (commodities)** are bought by quantity. The game first quotes the total price.
@@ -199,7 +199,7 @@ by itself.
    - **Items and gear** are bought one auction per click, because the server sells one lot per
      purchase. After a purchase the deal is worked out again from the lots its check read, without
      the lot just bought: the next click buys the next lot at once, with no new search, while the
-     check is fresh (2 minutes).
+     check is fresh (5 minutes).
    - A click on **Buy** does not wait for a search in flight (the sniper, a check): that search is
      sent again after the purchase.
 3. When the purchase goes through, the status line shows *Purchase recorded*. The units are added to
@@ -726,7 +726,7 @@ saved in the SavedVariables file (see [Troubleshooting](#troubleshooting)).
 **The scan never starts, or waits forever.** Another addon may have used the account's
 15-minute window. Wait for the countdown, or use `/ff rescan` if the server did not answer.
 
-**Buy stays disabled.** The deal must be **ready** (checked in the last 2 minutes) and no other
+**Buy stays disabled.** The deal must be **ready** (checked in the last 5 minutes) and no other
 search or purchase may be running. Click the deal to check it again.
 
 **Resale estimates look too optimistic.** On a client that reports each auction's time left, sales

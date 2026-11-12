@@ -8,7 +8,11 @@ F.Deals = D
 
 D.list = {} -- deals of the current scope, best first
 D.byName = {} -- item IDs whose plain search got no answer: searched by name instead
-D.FRESH = 120 -- seconds a verification stays valid for buying (a lot bought by someone meanwhile only makes the purchase fail, for nothing)
+-- Seconds a verification stays valid for buying. A lot's buyout never changes: one bought by someone
+-- meanwhile only makes the purchase fail, for nothing. 2 minutes was shorter than checking a page of
+-- gear deals (a browse by name, then each version), so the first ones went back to "check again".
+D.FRESH = 300
+D.SELECTED_HOLD = 120 -- seconds a selected, checked deal holds background searches back
 D.HOLD = 45 -- seconds background searches wait while a freshly checked deal is selected
 D.KEEP = 900 -- seconds an unverified scan deal stays listed
 
@@ -214,7 +218,7 @@ function D.holding()
         return true
     end
     local selected = ui.section == "deals" and D.get(ui.selected) or nil
-    return selected ~= nil and selected.verified ~= nil and clock() - selected.verified <= D.FRESH
+    return selected ~= nil and selected.verified ~= nil and clock() - selected.verified <= D.SELECTED_HOLD
 end
 
 -- The best deal the player can buy now (Buy next key): checked deals first, then by profit.

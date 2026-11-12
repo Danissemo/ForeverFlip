@@ -14,6 +14,13 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 
 ### Fixed
 
+- **Checked deals stay ready for 5 minutes** instead of 2: checking a page of gear deals takes longer
+  than 2 minutes, and the first ones went back to "check again". A lot's buyout never changes, so a
+  lot gone meanwhile only makes the purchase fail. Background searches wait 2 minutes for a selected
+  deal, as before.
+- **Posting needs no price search after a full scan:** for 5 minutes the scan's lots of each item
+  stand for a search (items the player has listed are still searched).
+- **The merchant's lists update by themselves** once the bags settle after Sell all.
 - **A scan the server did not answer no longer keeps the next ones away.** After 5 minutes without an
   answer the next try came a minute later, but the server counts its 15 minutes from every call:
   each early retry started them again (in game: unanswered at 04:08, 04:14 and 04:23, read at
