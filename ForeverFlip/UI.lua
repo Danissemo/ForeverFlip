@@ -2159,8 +2159,8 @@ function UI.refreshSell()
     local function way(item)
         local w = ways[item.key]
         if not w then
-            local name, value = F.Trade.bestWay(item.key, item.id)
-            w = { name = name, value = value }
+            local name, value, quote = F.Trade.bestWay(item.key, item.id)
+            w = { name = name, value = value, quote = quote }
             ways[item.key] = w
         end
         return w
@@ -2281,6 +2281,9 @@ function UI.refreshSell()
         return
     end
     UI.sellCheck:SetEnabled(not F.Deals.pending(item.key) and not F.Trade.busy() and not F.Scan.blocking())
+    -- One sum for the page, the tooltip and the Best column (F.Trade.quote); read first, it also
+    -- takes the prices of a full scan up to 5 minutes old.
+    local quote = F.Trade.quote(item.key, item.id)
     local price, floor, cheapest, why = F.Trade.suggest(item)
     local lines = {}
     if item.position and item.position.mode == "vendor" then
@@ -2331,9 +2334,16 @@ function UI.refreshSell()
                     and string.format(
                         L("Cheapest other seller: %s each. Suggested: %s."),
                         U.money(cheapest),
-                        U.money(price)
+                        U.money(math.max(price, floor or 0))
                     )
                 or L("Nobody else sells it now. Suggested: the usual asking price.")
+        end
+        if quote and quote.net then
+            local line = UI.netLabel(quote) .. ": " .. U.money(quote.net)
+            if quote.profit then
+                line = line .. "; " .. L("profit each") .. " " .. UI.signed(quote.profit)
+            end
+            lines[#lines + 1] = line .. "."
         end
     elseif F.Deals.search and F.Deals.search.key == item.key then
         lines[#lines + 1] = L("Reading current listings...")
@@ -4715,6 +4725,16 @@ function UI.bestText(w)
         return "|cff999999" .. L("AH: no price yet") .. "|r"
     end
     local color = w.name == "vendor" and "|cffffb84d" or w.name == "auction" and "|cff40ff40" or "|cffb070ff"
+    -- The auction house shows the price to post at, the same as the price box of the Sell page; it
+    -- turns red when that price loses money on what the stock cost. Sorting uses what it brings.
+    local q = w.quote
+    if w.name == "auction" and q and q.post then
+        local money = U.money(q.post)
+        if q.profit and q.profit < 0 then
+            money = "|cffff6060" .. money .. "|r"
+        end
+        return color .. L(BEST[w.name]) .. "|r " .. money
+    end
     return color .. L(BEST[w.name]) .. "|r " .. U.money(w.value)
 end
 
@@ -4758,6 +4778,44 @@ function UI.age(at)
         return string.format(L("%d h ago"), math.floor(s / 3600))
     end
     return string.format(L("%d d ago"), math.floor(s / 86400))
+end
+
+-- One way to say where a post price (F.Trade.quote) comes from, on the tooltip and the Sell page.
+local QUOTE_WHY = {
+    undercut = "one step below the cheapest seller %s",
+    normal = "normal price: the cheapest seller %s asks too much",
+    estimate = "usual price; the AH check gives the exact one",
+    last = "your last price",
+    aux = "auxForever's usual price",
+    cost = "guess: your cost plus 25%",
+    vendor = "guess: 1.5 x the vendor price",
+}
+function UI.quoteWhy(q)
+    if q.belowFloor then
+        return string.format(L("the market %s is below your minimum"), U.money(q.market))
+    end
+    local text = L(QUOTE_WHY[q.why] or QUOTE_WHY.estimate)
+    if text:find("%%s") then
+        return string.format(text, U.money(q.cheapest))
+    end
+    return text
+end
+
+-- "You get each, after the 5% cut" (and the deposits expected to be lost, when there are any).
+function UI.netLabel(q)
+    local cut = math.floor(F.Market.CUT * 100 + 0.5)
+    if (q.lost or 0) > 0 then
+        return string.format(L("You get each, after the %d%% cut and %s lost deposits"), cut, U.money(q.lost))
+    end
+    return string.format(L("You get each, after the %d%% cut"), cut)
+end
+
+-- Money with a sign, green when it gains and red when it loses.
+function UI.signed(copper)
+    if copper >= 0 then
+        return "|cff40ff40+" .. U.money(copper) .. "|r"
+    end
+    return "|cffff6060" .. U.money(copper) .. "|r"
 end
 
 -- Item tooltips: the item's prices from the full scans.
@@ -4809,7 +4867,9 @@ local function tooltipLines(tooltip)
     local position = F.Data.char(F.db, F.Engine.owner()).positions[key]
     local onSale, onSalePrice = ownSelling(key)
     local usual, usualAt, sharer = F.Market.usual(h)
-    local advice = F.Market.advice(id, key, h)
+    -- The same sum as the Sell page and its Best column (F.Trade.quote).
+    local quote = F.Trade.quote(key, id)
+    local advice = quote and quote.best and quote or nil
     if not usual and not position and onSale == 0 and not advice then
         return
     end
@@ -4837,12 +4897,16 @@ local function tooltipLines(tooltip)
             )
         end
         local sale = F.Market.salePrice(h)
-        local s = F.Market.saleability(h, usual, F.Engine.clock())
+        if sale then
+            tipLine(tooltip, L("Buyers paid lately (median of sales seen)"), U.money(sale))
+        end
+        local at = advice and advice.net and advice.post or usual
+        local s = F.Market.saleability(h, at, F.Engine.clock())
         if s.known then
             tipLine(
                 tooltip,
-                L("Sold per day (measured between scans)"),
-                string.format("~%.1f", s.perDay) .. (sale and (" " .. L("at") .. " " .. U.money(sale)) or "")
+                string.format(L("Sold per day at %s or more"), U.money(math.floor(at * 0.85))),
+                string.format("~%.1f", s.perDay)
             )
         else
             tipLine(tooltip, L("Sales"), L("not measured yet (needs two scans)"))
@@ -4895,16 +4959,19 @@ local function tooltipLines(tooltip)
                 U.money(advice.vendor)
             )
         end
-        if advice.auction then
+        if advice.net then
             tipLine(
                 tooltip,
-                string.format(
-                    L("Auction house, after the %d%% cut and %d deposits"),
-                    math.floor(F.Market.CUT * 100 + 0.5),
-                    advice.tries
-                ),
-                U.money(advice.auction)
+                L("Post at") .. " |cff999999(" .. UI.quoteWhy(advice) .. ")|r",
+                U.money(advice.post),
+                1,
+                1,
+                1
             )
+            tipLine(tooltip, UI.netLabel(advice), U.money(advice.net))
+            if advice.profit then
+                tipLine(tooltip, L("Profit each"), UI.signed(advice.profit))
+            end
         end
         if advice.disenchant then
             tipLine(tooltip, L("Disenchant (materials after the cut)"), U.money(advice.disenchant))

@@ -122,7 +122,7 @@ class CheckAllTests(unittest.TestCase):
         run(HIDE + """F.db.settings.vendorMargin = 0
         F.Data.market(F.db, F.Engine.scope()).history['i:30'] = { scan = { at = now, market = 2100 } }
         assert(T.bestWay('i:30', 30) == 'vendor')
-        T.prices['i:30'] = { rows = { { unit = 90000, qty = 1 } }, at = now }
+        T.prices['i:30'] = { rows = { { unit = 4000, qty = 1 } }, at = now }
         assert(T.bestWay('i:30', 30) == 'auction', 'the live price says the auction house pays more')""")
 
 

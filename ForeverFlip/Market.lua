@@ -578,22 +578,30 @@ end
 
 -- Deposit of one auction: the game charges at least 1 silver (seen on WoW Forever); it is returned
 -- on a sale and lost when the auction expires. Estimated from the vendor price (Classic rule).
--- What an item is best turned into, for the tooltip (as ForeverForge Auction advises): the vendor
--- price, the auction house after the cut and the deposits of the tries it takes to sell (from your
--- own sale rate of the item once known, else M.POSTINGS), or disenchanting (a character who can).
--- { best, value, vendor, vendorHow, auction, tries, disenchant }; nil when nothing is known.
-M.POSTINGS = 3
+--
+-- What one unit of an item brings, the single sum every page shows (the tooltip, the Sell page and
+-- its Best column, the posting queues through F.Trade.quote):
+--   auction    = post price - the house cut - the deposits expected to be lost
+--   lost       = (tries - 1) x deposit per unit: the deposit comes back with the sale, so only the
+--                posts that expire before it cost money
+--   tries      = posts it takes to sell one unit: from your own sale rate of the item once known,
+--                else from the units measured sold per day at the post price (1 a day or more: one
+--                post), else M.POSTINGS
+-- and compares it with the vendor price and disenchanting (a character who can).
+-- { best, value, post, vendor, vendorHow, auction, tries, lost, disenchant }; nil when nothing is known.
+M.POSTINGS = 2
 M.STACK = 20
--- `live` (optional): the cheapest price of a fresh check, used instead of the scan's prices.
-function M.advice(id, key, h, live)
+-- `post` (optional): the price each to post at (F.Trade.quote); without it the usual price.
+function M.advice(id, key, h, post)
     local item = U.parseKey(key)
     if not item then
         return nil
     end
     local vendor, vendorHow = F.AH.vendorPrice(id, true)
     local out = { vendor = vendor, vendorHow = vendorHow }
-    local price = live or h and (M.salePrice(h) or M.usual(h))
-    if U.finite(price) and price > 0 then
+    local price = post or (h and M.usual(h))
+    price = U.finite(price) and U.stepDown(price, item.kind) or 0
+    if price > 0 then
         local depositFn = F.AH.depositFn(id, item.kind, F.Trade.durationFor and F.Trade.durationFor() or 3)
         -- Commodities are posted as a stack and pay one deposit for it: per unit it is the deposit
         -- of a stack of M.STACK, divided. Other items pay a deposit each.
@@ -602,8 +610,20 @@ function M.advice(id, key, h, live)
         local one = stack / units
         local name = U.itemInfo(id)
         local rate = name and F.Trade.rate(name)
-        out.tries = rate and rate > 0 and math.max(1, math.min(5, math.ceil(1 / rate))) or M.POSTINGS
-        out.auction = math.floor(M.net(U.stepDown(price, item.kind), 1) - out.tries * one + 0.5)
+        local tries = M.POSTINGS
+        if rate and rate > 0 then
+            tries = math.ceil(1 / rate)
+        elseif h then
+            local s = M.saleability(h, price, F.Engine and F.Engine.clock and F.Engine.clock() or 0)
+            if s.known and s.perDay and s.perDay > 0 then
+                tries = math.ceil(1 / s.perDay)
+                out.perDay = s.perDay
+            end
+        end
+        out.tries = math.max(1, math.min(5, tries))
+        out.lost = math.floor((out.tries - 1) * one + 0.5)
+        out.post = price
+        out.auction = M.net(price, 1) - out.lost
     end
     if item.kind == "gear" and F.Disenchant.canDisenchant() then
         out.disenchant = F.Disenchant.value(id)

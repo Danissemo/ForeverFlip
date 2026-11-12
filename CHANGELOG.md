@@ -6,6 +6,26 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **One price for selling, everywhere.** The item tooltip, the Sell page price box and its
+  **Best** column now use one calculation and show the same numbers:
+  - **Post at:** one step below the cheapest other seller from a check or a full scan up to
+    5 minutes old. Without one, the usual price is used as an estimate. The price is never below
+    your break-even or rule minimum.
+  - **You get each:** the post price minus the house cut and the deposits expected to be lost.
+  - **Profit each:** what you get minus what the stock cost.
+- The **Best** column shows the price to post at, the same as the price box, and turns red when
+  that price loses money. Before, it showed the net sum, so the column said 23c while the box said
+  49c.
+- The tooltip no longer prices the auction house from old sales (it said 94c while the market was
+  at 50c). The median of sales seen is now its own line, **Buyers paid lately**.
+- Deposits come back with a sale, so only expired posts are counted as lost. Before, every post
+  was charged, which made cheap, fast-selling items look worse than selling to a vendor.
+- **Post AH-worthy** and the Best column compare the vendor with the price that would really be
+  posted. Before, they used the cheapest seller even when the posting queue would ignore that seller
+  as too expensive.
+
 ## [1.2.0-beta.7] - 2026-11-12
 
 Changes since beta.6. Includes the updated addon and ForeverFlip Sync helper.

@@ -586,6 +586,76 @@ function T.suggest(item)
     return price, floor, cheapest, why
 end
 
+-- One price for an item, the same on every page (the tooltip, the Sell page, its Best column):
+--   post      price each to post at: one step below the cheapest other seller (T.suggest) from a
+--             check or full scan up to 5 minutes old; without one, an estimate from the usual
+--             price (why = "estimate"); never below the floor (break-even, the rule's minimum)
+--   net       what one unit brings after the cut and the deposits expected to be lost (F.Market.advice)
+--   profit    net - what you paid each (stock only)
+-- and the vendor price and disenchanting to compare with. Returns a table (see below) or nil when
+-- the key is not an item.
+function T.quote(key, id)
+    local item = U.parseKey(key)
+    if not item then
+        return nil
+    end
+    id = id or item.id
+    item = { key = key, id = id, kind = item.kind }
+    local check = T.prices[key]
+    if not (check and clock() - check.at <= 300) then
+        local scanned = T.scanPrice(key)
+        if scanned then
+            T.prices[key] = scanned
+        end
+    end
+    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
+    h = type(h) == "table" and h or nil
+    local price, floor, cheapest, why = T.suggest(item)
+    local live = price ~= nil
+    if not price then
+        local rule = T.rule(key) or {}
+        local normal = rule.normal or M.usual(h)
+        if normal then
+            price, why = U.stepDown(normal, item.kind), "estimate"
+        else
+            local fallback, source = T.fallbackPrice(item)
+            if fallback then
+                price, why = U.stepDown(fallback, item.kind), source
+            end
+        end
+    end
+    local q = {
+        key = key,
+        why = why,
+        live = live,
+        cheapest = cheapest,
+        floor = floor,
+        guess = T.GUESSES[why] or false,
+    }
+    if price and floor and price < floor then
+        q.market, q.belowFloor = price, true
+        price = U.stepUp(floor, item.kind)
+    end
+    local position = char().positions[key]
+    if position and position.qty > 0 then
+        q.cost = position.cost / position.qty
+        q.breakEven = M.breakEven(q.cost, 1, item.kind)
+    end
+    -- A guessed price is only a starting point for the Sell page: it brings no money in any sum.
+    local advice = M.advice(id, key, h, not q.guess and price or nil)
+    q.post = price
+    if advice then
+        q.net, q.tries, q.lost, q.perDay = advice.auction, advice.tries, advice.lost, advice.perDay
+        q.post = advice.post or q.post
+        q.vendor, q.vendorHow, q.disenchant = advice.vendor, advice.vendorHow, advice.disenchant
+        q.best, q.value = advice.best, advice.value
+    end
+    if q.net and q.cost then
+        q.profit = q.net - q.cost
+    end
+    return q
+end
+
 -- Posting duration (1 = 2 h, 2 = 8 h, 3 = 24 h). Setting 0 = automatic: the shortest duration that
 -- holds three times the time the lot is expected to take to sell (a shorter post costs a smaller
 -- deposit, and an expired one loses it):
@@ -1164,20 +1234,21 @@ end
 -- Where one unit of an item brings the most: "vendor" when a merchant pays at least what the
 -- auction house leaves after the cut and the deposits, "auction" when the auction house pays more,
 -- "disenchant" when the materials are worth more (a character who can); "unknown" when the auction
--- house has no price for it yet. Returns way, value, advice (F.Market.advice).
+-- house has no price for it yet (a guessed price does not count). Returns way, value, quote
+-- (T.quote): value is what one unit brings that way (for the auction house: after the cut and
+-- the deposits), quote.post the price to post at.
 function T.bestWay(key, id)
-    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
-    local advice = F.Market.advice(id, key, type(h) == "table" and h or nil, T.freshCheapest(key))
-    if not advice then
-        return "unknown", nil, nil
+    local q = T.quote(key, id)
+    if not q or not q.best then
+        return "unknown", nil, q
     end
-    if not advice.auction then
-        return "unknown", advice.vendor, advice
+    if not q.net or q.guess then
+        return "unknown", q.vendor, q
     end
-    if advice.vendor and advice.vendor >= advice.auction and advice.best ~= "disenchant" then
-        return "vendor", advice.vendor, advice
+    if q.vendor and q.vendor >= q.net and q.best ~= "disenchant" then
+        return "vendor", q.vendor, q
     end
-    return advice.best, advice.value, advice
+    return q.best, q.value, q
 end
 
 -- Every sellable bag item, not only purchases: vendor-deal stock and blocked items are left out,

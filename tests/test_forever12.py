@@ -621,7 +621,7 @@ class TooltipTests(unittest.TestCase):
         self.assertIn('You hold = 4, paid 50c each', text)
         self.assertIn('On sale by you = 2 at 80c', text)
         self.assertIn('Vendor pays', text)
-        self.assertNotIn('= -', text.split('Auction house')[1].split('##')[0], 'cloth posted as a stack does not lose to deposits')
+        self.assertNotIn('= -', text.split('You get each')[1].split('##')[0], 'cloth posted as a stack does not lose to deposits')
 
     def test_an_item_without_history_still_shows_stock_and_vendor(self):
         text = self.lines("""local F = ForeverFlip
