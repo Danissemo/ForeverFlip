@@ -3551,32 +3551,140 @@ function UI.refreshShare()
     UI.shareExport:SetEnabled(F.Scan.last ~= nil)
 end
 
+-- The General tab: two columns of numbers under a heading each (what a deal must earn; money and
+-- prices), the options in two columns, and Save, the presets and the language at the bottom. Short
+-- labels; the full explanation is in each one's tooltip.
+local function hint(frame, title, body)
+    frame:SetScript("OnEnter", function(self)
+        if GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(L(title), 1, 0.82, 0, 1, true)
+            GameTooltip:AddLine(L(body), 1, 1, 1, true)
+            GameTooltip:Show()
+        end
+    end)
+    frame:SetScript("OnLeave", function()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
+end
+
+local function heading(p, label, x, y, width)
+    local t = text(p, "GameFontNormal")
+    t:SetPoint("TOPLEFT", p, "TOPLEFT", x, y)
+    t:SetText(L(label))
+    local line = p:CreateTexture(nil, "ARTWORK")
+    line:SetColorTexture(1, 0.82, 0, 0.25)
+    line:SetHeight(1)
+    line:SetPoint("TOPLEFT", p, "TOPLEFT", x, y - 16)
+    line:SetWidth(width)
+    return t
+end
+
 function UI.createGeneralSettings(p)
+    -- { setting, short label, kind, column, full explanation (tooltip) }
     local fields = {
-        { "vendorMinProfit", "Minimum profit of a vendor deal", "money" },
-        { "minProfit", "Minimum profit of a resale", "money" },
-        { "minROI", "Minimum resale return, %", "percent" },
-        { "spendShare", "Money one deal may use, %", "percent" },
-        { "itemShare", "Money one item may hold (stock and new resale), %", "percent" },
-        { "alertMinProfit", "Smallest profit with a sound notice", "money" },
-        { "undercutPercent", "Undercut, % (0 = one price step)", "percent" },
-        { "minPricePercent", "Never post below, % of the usual price", "percent" },
-        { "maxPricePercent", "Ignore sellers above, % of the usual price", "percent+" },
+        { "vendorMinProfit", "Vendor deal", "money", 1, "Minimum profit of a vendor deal" },
+        { "minProfit", "Resale", "money", 1, "Minimum profit of a resale" },
+        { "minROI", "Resale return, %", "percent", 1, "Minimum resale return, %" },
+        { "spendShare", "One deal, % of money", "percent", 2, "Money one deal may use, %" },
+        { "itemShare", "One item, % of money", "percent", 2, "Money one item may hold (stock and new resale), %" },
+        { "alertMinProfit", "Sound notice from", "money", 1, "Smallest profit with a sound notice" },
+        { "undercutPercent", "Undercut, %", "percent", 2, "Undercut, % (0 = one price step)" },
+        { "minPricePercent", "Never post below, %", "percent", 2, "Never post below, % of the usual price" },
+        { "maxPricePercent", "Ignore sellers above, %", "percent+", 2, "Ignore sellers above, % of the usual price" },
     }
+    local COL = { 12, 326 }
+    local WIDTH = 296
+    heading(p, "Minimum profit", COL[1], -6, WIDTH)
+    heading(p, "Money and prices", COL[2], -6, WIDTH)
+    local rows = { 0, 0 }
     UI.settingBoxes = {}
     for i, f in ipairs(fields) do
-        local label = text(p, "GameFontNormal")
-        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -6 - (i - 1) * 22)
-        label:SetWidth(380)
+        local col = f[4]
+        local y = -30 - rows[col] * 26
+        rows[col] = rows[col] + 1
+        local label = text(p, "GameFontHighlight")
+        label:SetPoint("TOPLEFT", p, "TOPLEFT", COL[col], y - 4)
+        label:SetWidth(WIDTH - 100)
         label:SetWordWrap(false)
         label:SetText(L(f[2]))
-        local e = editbox(p, 110)
-        e:SetPoint("LEFT", label, "RIGHT", 10, 0)
+        local e = editbox(p, 86)
+        e:SetPoint("TOPRIGHT", p, "TOPLEFT", COL[col] + WIDTH, y)
+        e:SetJustifyH("RIGHT")
         e.field = f
+        hint(e, f[2], f[5])
         UI.settingBoxes[i] = e
     end
-    local y = -6 - #fields * 22
-    UI.saveButton = button(p, "Save", 110, function()
+
+    -- Options: two columns of check boxes, one short line each.
+    local top = -30 - math.max(rows[1], rows[2]) * 26 - 14
+    heading(p, "Options", COL[1], top, COL[2] + WIDTH - COL[1])
+    local slots = 0
+    local function check(label, body, checked, onClick)
+        local box = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
+        box:SetSize(26, 26)
+        local column, row = slots % 2 + 1, math.floor(slots / 2)
+        slots = slots + 1
+        box:SetPoint("TOPLEFT", p, "TOPLEFT", COL[column] - 4, top - 22 - row * 26)
+        box:SetChecked(checked)
+        box:SetScript("OnClick", onClick)
+        local t = text(p, "GameFontHighlight")
+        t:SetPoint("LEFT", box, "RIGHT", 2, 1)
+        t:SetWidth(WIDTH - 30)
+        t:SetWordWrap(false)
+        t:SetText(L(label))
+        hint(box, label, body)
+        return box
+    end
+    local function toggle(setting, label, body)
+        local checked
+        if setting == "belowMin" then
+            checked = F.db.settings.belowMin == "hold"
+        else
+            checked = F.db.settings[setting]
+        end
+        return check(label, body, checked, function(self)
+            if setting == "sniper" then
+                F.Deals.setSniper(self:GetChecked() and true or false)
+            elseif setting == "belowMin" then
+                F.db.settings.belowMin = self:GetChecked() and "hold" or "min"
+            else
+                F.db.settings[setting] = self:GetChecked() and true or false
+            end
+            UI.refresh()
+        end)
+    end
+    check(
+        "Check deals automatically",
+        "Check found deals on the auction house automatically (one search per second)",
+        F.Engine.autoVerify,
+        function(self)
+            F.Engine.autoVerify = self:GetChecked() and true or false
+        end
+    )
+    toggle("autoScan", "Full scan every 15 minutes", "Full scan every 15 minutes while the auction house is open")
+    UI.sniperBox =
+        toggle("sniper", "Sniper between scans", "Sniper: between scans, re-read the items most often near a deal")
+    toggle("alerts", "Sound for a buyable deal", "Sound and screen notice when a deal can be bought")
+    toggle("tooltipPrices", "Prices in item tooltips", "Price history from the scans in item tooltips")
+    toggle("highlight", "Mark deals in the Buy tab", "Mark deals in the game's Buy tab")
+    toggle("learnBrowsing", "Learn from my searches", "Learn prices and deals from my own searches in the Buy tab")
+    toggle("belowMin", "Keep items below their floor", "Keep items in the bags when the market is below their floor")
+    toggle("disenchant", "Disenchant deals", "Disenchant deals (for a character who knows Disenchant)")
+
+    -- Bottom: Save and the presets on the left, the language on the right.
+    local bar = CreateFrame("Frame", nil, p)
+    bar:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 0, 0)
+    bar:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 0)
+    bar:SetHeight(34)
+    local line = bar:CreateTexture(nil, "ARTWORK")
+    line:SetColorTexture(1, 0.82, 0, 0.25)
+    line:SetHeight(1)
+    line:SetPoint("TOPLEFT", bar, "TOPLEFT", 4, 0)
+    line:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -4, 0)
+    UI.saveButton = button(bar, "Save", 90, function()
         for _, e in ipairs(UI.settingBoxes) do
             local key, kind = e.field[1], e.field[3]
             local v = kind == "money" and U.parseMoney(e:GetText()) or tonumber(e:GetText())
@@ -3592,87 +3700,29 @@ function UI.createGeneralSettings(p)
         UI.loadSettings()
         F.Engine.notify("saved")
     end)
-    UI.saveButton:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y)
-    local presetLabel = text(p, "GameFontNormal")
-    presetLabel:SetPoint("LEFT", UI.saveButton, "RIGHT", 16, 0)
-    presetLabel:SetText(L("Presets:"))
-    local last = presetLabel
-    for _, name in ipairs({ "careful", "balanced", "aggressive" }) do
-        local b = button(p, UI.PRESET_LABELS[name], 110, function()
+    UI.saveButton:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 6)
+    local last = UI.saveButton
+    for i, name in ipairs({ "careful", "balanced", "aggressive" }) do
+        local b = button(bar, UI.PRESET_LABELS[name], 86, function()
             UI.applyPreset(name)
         end)
-        b:SetPoint("LEFT", last, "RIGHT", 6, 0)
+        b:SetPoint("LEFT", last, "RIGHT", i == 1 and 14 or 4, 0)
+        hint(b, "Presets:", "Set the money and profit thresholds in one click.")
         last = b
         UI["preset_" .. name] = b
     end
-    local auto = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-    auto:SetPoint("TOPLEFT", p, "TOPLEFT", 8, y - 28)
-    auto:SetScript("OnClick", function(self)
-        F.Engine.autoVerify = self:GetChecked() and true or false
-    end)
-    auto:SetChecked(F.Engine.autoVerify)
-    local autoText = text(p, "GameFontHighlightSmall")
-    autoText:SetPoint("LEFT", auto, "RIGHT", 2, 0)
-    autoText:SetWidth(250)
-    autoText:SetText(L("Check found deals on the auction house automatically (one search per second)"))
-    local scan = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-    scan:SetPoint("TOPLEFT", p, "TOPLEFT", 300, y - 28)
-    scan:SetScript("OnClick", function(self)
-        F.db.settings.autoScan = self:GetChecked() and true or false
-    end)
-    scan:SetChecked(F.db.settings.autoScan)
-    local scanText = text(p, "GameFontHighlightSmall")
-    scanText:SetPoint("LEFT", scan, "RIGHT", 2, 0)
-    scanText:SetWidth(250)
-    scanText:SetText(L("Full scan every 15 minutes while the auction house is open"))
-    -- Two columns of checkboxes, 26 pixels apart (the page is 438 high, as the Buy tab's list).
-    local slots = 2
-    local function toggle(setting, label)
-        local box = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-        local column, row = slots % 2, math.floor(slots / 2)
-        slots = slots + 1
-        box:SetPoint("TOPLEFT", p, "TOPLEFT", column == 0 and 8 or 300, y - 28 - row * 26)
-        box:SetScript("OnClick", function(self)
-            if setting == "sniper" then
-                F.Deals.setSniper(self:GetChecked() and true or false)
-            elseif setting == "belowMin" then
-                F.db.settings.belowMin = self:GetChecked() and "hold" or "min"
-            else
-                F.db.settings[setting] = self:GetChecked() and true or false
-            end
-            UI.refresh()
-        end)
-        if setting == "belowMin" then
-            box:SetChecked(F.db.settings.belowMin == "hold")
-        else
-            box:SetChecked(F.db.settings[setting])
-        end
-        local t = text(p, "GameFontHighlightSmall")
-        t:SetPoint("LEFT", box, "RIGHT", 2, 0)
-        t:SetWidth(250)
-        t:SetText(L(label))
-        return box
-    end
-    UI.sniperBox = toggle("sniper", "Sniper: between scans, re-read the items most often near a deal")
-    toggle("alerts", "Sound and screen notice when a deal can be bought")
-    toggle("tooltipPrices", "Price history from the scans in item tooltips")
-    toggle("belowMin", "Keep items in the bags when the market is below their floor")
-    toggle("learnBrowsing", "Learn prices and deals from my own searches in the Buy tab")
-    toggle("highlight", "Mark deals in the game's Buy tab")
-    toggle("disenchant", "Disenchant deals (for a character who knows Disenchant)")
-    local lang = text(p, "GameFontNormal")
-    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 28 - math.ceil(slots / 2) * 26 - 4)
-    lang:SetText(L("Language (applies after /reload)"))
-    local en = button(p, "English", 90, function()
-        F.db.settings.language = "en"
-        F.Engine.notify("reload")
-    end)
-    en:SetPoint("LEFT", lang, "RIGHT", 10, 0)
-    local uk = button(p, "Українська", 110, function()
+    local uk = button(bar, "Українська", 90, function()
         F.db.settings.language = "uk"
         F.Engine.notify("reload")
     end)
-    uk:SetPoint("LEFT", en, "RIGHT", 6, 0)
+    uk:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -8, 6)
+    local en = button(bar, "English", 70, function()
+        F.db.settings.language = "en"
+        F.Engine.notify("reload")
+    end)
+    en:SetPoint("RIGHT", uk, "LEFT", -4, 0)
+    hint(en, "Language (applies after /reload)", "Language (applies after /reload)")
+    hint(uk, "Language (applies after /reload)", "Language (applies after /reload)")
     UI.loadSettings()
 end
 
