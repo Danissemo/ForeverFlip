@@ -219,6 +219,10 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   count appeared was posted again, not sold (in game: one seller's 65-80 silver bracers read as
   sales while the item sold at 3-4 silver, and Sells at came out ten times too high). The resale
   cap also stays within three times the median sale.
+- **Sale invoices booked no sale.** The count of an invoice was read from the wrong value (the minute
+  of delivery, nearly always 0): sold stock stayed open, statistics missed the profit and the sale
+  rates counted only failures, which lowered the trust of items that did sell. The count is read
+  right (or from the subject's "(5)"), and invoices saved before are booked once at login.
 - **A vanished lot is a sale only once the next scan confirms it.** Until then it is a suspect: if
   the same price and count comes back as a new lot, it was cancelled and posted again. An item gone
   from the house altogether confirms its suspects; a lot that got smaller is a sale at once (an

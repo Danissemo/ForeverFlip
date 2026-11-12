@@ -2,6 +2,7 @@
 -- click starts a paced run (one mail action every 0.4 s, as fast mail looting errors out); it
 -- stops when the mailbox closes, the bags are full or no auction mail is left.
 local F = ForeverFlip
+local U = F.Util
 local Mail = {}
 F.Mail = Mail
 
@@ -59,7 +60,13 @@ local function read(i)
         snap.link = ok and link or nil
     end
     if GetInboxInvoiceInfo then
-        local kind, item, _, bid, _, deposit, consignment, _, _, count = GetInboxInvoiceInfo(i)
+        -- type, item, player, bid, buyout, deposit, cut, money delay, eta hour, eta minute, count:
+        -- the count is the 11th value. Reading the 10th (the minute of delivery, nearly always 0)
+        -- booked no sale from any invoice. Without a count, the subject's "(5)" tells it.
+        local kind, item, _, bid, _, deposit, consignment, _, _, _, count = GetInboxInvoiceInfo(i)
+        if not U.finite(count) or count < 1 then
+            count = tonumber(type(subject) == "string" and subject:match("%((%d+)%)%s*$")) or 1
+        end
         if type(kind) == "string" then
             snap.invoice = {
                 kind = kind,

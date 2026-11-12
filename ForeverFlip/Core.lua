@@ -259,6 +259,9 @@ function E.handle(event, ...)
             F.Trade.onMoney()
         end
         F.Analytics.recordGold()
+        if event == "PLAYER_ENTERING_WORLD" then
+            F.Trade.repairInvoices()
+        end
         if event == "PLAYER_ENTERING_WORLD" and not F.Share.joined then
             -- The game joins its own channels first; joining ours a few seconds later keeps their order.
             F.Share.later(8, F.Share.join, "join")

@@ -478,7 +478,8 @@ end
 function GetInboxInvoiceInfo(i)
     local inv = inbox[i] and inbox[i].invoice
     if type(inv) == "table" then
-        return inv.kind, inv.item, "Buyer", inv.bid, inv.bid, inv.deposit or 0, inv.cut or 0, 0, 0, inv.count or 1
+        -- the game's order: ..., money delay, eta hour, eta minute, count
+        return inv.kind, inv.item, "Buyer", inv.bid, inv.bid, inv.deposit or 0, inv.cut or 0, 0, 0, 0, inv.count or 1
     end
     return inv
 end

@@ -823,17 +823,52 @@ end
 
 -- "Auction successful": the real money of a sale. Units not booked yet from the own-auction list are
 -- booked here, with the exact amount after the cut.
+local bookInvoice
 function T.onInvoice(inv)
     local c = char()
     local net = inv.bid - inv.cut
     learnCut(inv)
-    local r = rateOf(inv.item)
-    r.sold = r.sold + inv.count
     c.invoices = c.invoices or {}
     table.insert(c.invoices, 1, { at = clock(), item = inv.item, qty = inv.count, net = net, cut = inv.cut })
     while #c.invoices > 200 do
         table.remove(c.invoices)
     end
+    bookInvoice(c, inv.item, inv.count, net, clock())
+end
+
+-- Invoices saved before the count was read right (qty 0): their sales were never booked, so the
+-- stock stayed open and the sale rates counted only failures. Booked once now, the count taken
+-- from the listing's price (gold before the cut / price per unit), else 1.
+function T.repairInvoices()
+    local c = char()
+    if c.invoicesRepaired or type(c.invoices) ~= "table" then
+        return 0
+    end
+    c.invoicesRepaired = true
+    local fixed = 0
+    for i = #c.invoices, 1, -1 do
+        local inv = c.invoices[i]
+        if type(inv) == "table" and type(inv.item) == "string" and (inv.qty or 0) < 1 and U.finite(inv.net) then
+            local bid, count = inv.net + (inv.cut or 0), 1
+            local name = string.lower(inv.item)
+            for _, l in ipairs(c.listings or {}) do
+                if string.lower(l.name or "") == name and U.finite(l.price) and l.price > 0 then
+                    count = math.max(1, math.floor(bid / l.price + 0.5))
+                    break
+                end
+            end
+            inv.qty = count
+            bookInvoice(c, inv.item, count, inv.net, inv.at or clock())
+            fixed = fixed + 1
+        end
+    end
+    return fixed
+end
+
+function bookInvoice(c, item, count, net, at)
+    local inv = { item = item, count = count }
+    local r = rateOf(inv.item)
+    r.sold = r.sold + inv.count
     local name = string.lower(inv.item)
     -- Units already booked from the owned-auction list (T.onOwned) are only matched here.
     local count = inv.count
@@ -872,9 +907,9 @@ function T.onInvoice(inv)
     end
     if key and qty and qty > 0 then
         local amount = math.floor(net * qty / inv.count + 0.5)
-        local cost = F.Data.sale(c, key, inv.item, qty, amount, clock())
+        local cost = F.Data.sale(c, key, inv.item, qty, amount, at)
         F.Data.log(c, {
-            at = clock(),
+            at = at,
             kind = "sell",
             key = key,
             name = inv.item,
