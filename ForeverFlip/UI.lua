@@ -2820,7 +2820,7 @@ function UI.createAuctions(p)
     )
     local bar = footer(p, 56)
     -- Centered on top, as in Auctionator's Cancelling tab: what is on sale and what is on its way.
-    UI.auctionTotal = text(bar, "GameFontNormal")
+    UI.auctionTotal = text(bar, "GameFontHighlight") -- white, as in Auctionator
     UI.auctionTotal:SetPoint("TOP", bar, "TOP", 0, -6)
     UI.auctionText = bar.text
     UI.auctionText:ClearAllPoints()
@@ -3153,10 +3153,7 @@ function UI.refreshAuctions()
     )
     local lines = {}
     if queue == 0 and undercut > 0 then
-        lines[#lines + 1] = string.format(
-            L("Undercut: %d. Cancel and post again a bit cheaper, or wait: cancelling loses the deposit."),
-            undercut
-        )
+        lines[#lines + 1] = string.format(L("Undercut: %d"), undercut)
     end
     if selected and not selected.sold then
         local cost = F.AH.cancelCost(selected.auctionID)
