@@ -204,6 +204,20 @@ local function copyPanel(dst, src)
     end
 end
 
+local function nativeTexture(frame, kind)
+    local field = rawget(frame, kind .. "Texture")
+    if type(field) == "table" and field.GetTexture then
+        return field
+    end
+    local get = frame["Get" .. kind .. "Texture"]
+    if type(get) == "function" then
+        local ok, t = pcall(get, frame)
+        if ok and type(t) == "table" then
+            return t
+        end
+    end
+end
+
 local function nativeCategoryButton()
     local list = AuctionHouseFrame and rawget(AuctionHouseFrame, "CategoriesList")
     if type(list) ~= "table" then
@@ -216,7 +230,7 @@ local function nativeCategoryButton()
     end
     for _, child in ipairs({ target:GetChildren() }) do
         ---@cast child Button
-        if child.GetNormalTexture and child:GetNormalTexture() then
+        if nativeTexture(child, "Normal") then
             return child, list
         end
     end
@@ -260,7 +274,7 @@ function UI.copyNativeRows()
     local native
     for _, child in ipairs({ target:GetChildren() }) do
         ---@cast child Button
-        if child.GetNormalTexture and child:GetNormalTexture() and firstText(child, 0) then
+        if nativeTexture(child, "Normal") and firstText(child, 0) then
             native = child
             break
         end
@@ -276,13 +290,13 @@ function UI.copyNativeRows()
     end
     for _, t in ipairs(UI.tables) do
         for _, r in ipairs(t.rows) do
-            if copyTexture(r.back, native:GetNormalTexture()) then
+            if copyTexture(r.back, nativeTexture(native, "Normal")) then
                 r.back:Show()
                 if r.stripe then
                     r.stripe:Hide()
                 end
             end
-            copyTexture(r.hl, native.GetHighlightTexture and native:GetHighlightTexture())
+            copyTexture(r.hl, nativeTexture(native, "Highlight"))
             if path then
                 r.name:SetFont(path, size, flags)
                 for _, c in ipairs(r.cols) do
@@ -339,6 +353,27 @@ function UI.lookReport()
     local out = {}
     local native, list = nativeCategoryButton()
     out[#out + 1] = "category list: " .. tostring(list ~= nil) .. ", button: " .. tostring(native ~= nil)
+    if list and not native then
+        local box = rawget(list, "ScrollBox")
+        local target = type(box) == "table" and rawget(box, "ScrollTarget") or nil
+        local kinds = {}
+        for _, child in ipairs({ target and target.GetChildren and target:GetChildren() }) do
+            local keys = {}
+            for k, v in pairs(child) do
+                if type(k) == "string" and type(v) == "table" then
+                    keys[#keys + 1] = k
+                end
+            end
+            kinds[#kinds + 1] = tostring(child.GetObjectType and child:GetObjectType())
+                .. "{"
+                .. table.concat(keys, ",")
+                .. "}"
+            if #kinds >= 2 then
+                break
+            end
+        end
+        out[#out + 1] = "list elements: " .. table.concat(kinds, " ")
+    end
     if native then
         ---@cast native Button
         local w, h = native:GetSize()
@@ -348,8 +383,9 @@ function UI.lookReport()
             h or 0,
             tostring(native.GetObjectType and native:GetObjectType())
         )
-        out[#out + 1] = "normal: " .. describeTexture(native:GetNormalTexture())
-        out[#out + 1] = "highlight: " .. describeTexture(native.GetHighlightTexture and native:GetHighlightTexture())
+        out[#out + 1] = "normal: " .. describeTexture(nativeTexture(native, "Normal"))
+        out[#out + 1] = "highlight: " .. describeTexture(nativeTexture(native, "Highlight"))
+        out[#out + 1] = "selected: " .. describeTexture(nativeTexture(native, "Selected"))
         for i, region in ipairs({ native:GetRegions() }) do
             local kind = region.GetObjectType and region:GetObjectType()
             if kind == "Texture" then
@@ -402,15 +438,23 @@ function UI.copyNativeLook()
     end
     ---@cast native Button
     local width, height = native:GetSize()
+    local entries = {}
     for _, c in ipairs(UI.categories or {}) do
-        copyTexture(c.normal, native:GetNormalTexture())
-        copyTexture(c.highlight, native.GetHighlightTexture and native:GetHighlightTexture())
+        entries[#entries + 1] = c
+        for _, sub in ipairs(c.subs or {}) do
+            entries[#entries + 1] = sub
+        end
+    end
+    for _, c in ipairs(entries) do
+        copyTexture(c.normal, nativeTexture(native, "Normal"))
+        copyTexture(c.highlight, nativeTexture(native, "Highlight"))
         local nativeSelected = rawget(native, "SelectedTexture")
         if nativeSelected then
             copyTexture(c.selected, nativeSelected)
         end
         if
-            U.finite(width)
+            not rawget(c, "isSub")
+            and U.finite(width)
             and width >= NAV_WIDTH - 20
             and width <= LEFT_WIDTH - 8
             and U.finite(height)
@@ -756,10 +800,20 @@ function UI.create()
         c:SetPoint("TOPLEFT", left, "TOPLEFT", 6, -6 - (i - 1) * NAV_STEP)
         c.group = group
         UI.categories[i] = c
+        c.subs = {}
+        if #group.pages > 1 then
+            for _, entry in ipairs(group.pages) do
+                local sub = category(left, entry[2], function()
+                    UI.show(entry[1])
+                end)
+                sub:SetSize(NAV_WIDTH - 12, NAV_HEIGHT)
+                sub.id, sub.isSub = entry[1], true
+                sub:Hide()
+                c.subs[#c.subs + 1] = sub
+            end
+        end
     end
     UI.summary = text(left, "GameFontHighlightSmall")
-    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 9, -6 - #UI.GROUPS * NAV_STEP - 12)
-    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -6, -6 - #UI.GROUPS * NAV_STEP - 12)
     UI.summary:SetSpacing(4)
 
     -- Right: one page per category.
@@ -852,8 +906,42 @@ function UI.groupOf(id)
     return UI.GROUPS[1]
 end
 
+function UI.layoutMenu(group, id)
+    local left = UI.leftPanel
+    local y = -6
+    for _, c in ipairs(UI.categories) do
+        c:ClearAllPoints()
+        c:SetPoint("TOPLEFT", left, "TOPLEFT", 6, y)
+        y = y - NAV_STEP
+        if c.group == group then
+            c.selected:Show()
+        else
+            c.selected:Hide()
+        end
+        for _, sub in ipairs(c.subs) do
+            if c.group == group then
+                sub:ClearAllPoints()
+                sub:SetPoint("TOPLEFT", left, "TOPLEFT", 18, y)
+                y = y - NAV_STEP
+                if sub.id == id then
+                    sub.selected:Show()
+                else
+                    sub.selected:Hide()
+                end
+                sub:Show()
+            else
+                sub:Hide()
+            end
+        end
+    end
+    UI.summary:ClearAllPoints()
+    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 9, y - 12)
+    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -6, y - 12)
+end
+
 -- The tabs of the shown group share the page's width; before the window is laid out the width is
--- unknown, so the first refresh after that lays them out again.
+-- unknown, so the first refresh after that lays them out again. With the pages in the menu
+-- (UI.layoutMenu) the tabs stay hidden: they are kept for their state (the open page disabled).
 function UI.layoutTabs(group, id)
     UI.tabsShown = { group = group, id = id }
     for g, tabs in pairs(UI.groupTabs) do
@@ -863,16 +951,12 @@ function UI.layoutTabs(group, id)
             UI.tabsSized = true
         end
         for i, b in ipairs(tabs) do
-            if g == group then
-                if each then
-                    b:SetWidth(each)
-                    b:ClearAllPoints()
-                    b:SetPoint("TOPLEFT", UI.right, "TOPLEFT", 6 + (i - 1) * (each + 4), -4)
-                end
-                b:Show()
-            else
-                b:Hide()
+            if g == group and each then
+                b:SetWidth(each)
+                b:ClearAllPoints()
+                b:SetPoint("TOPLEFT", UI.right, "TOPLEFT", 6 + (i - 1) * (each + 4), -4)
             end
+            b:Hide()
             b:SetEnabled(b.id ~= id)
         end
     end
@@ -896,12 +980,10 @@ function UI.show(id)
     F.db.ui.section = id
     local group = UI.groupOf(id)
     group.current = id
-    local tabbed = #group.pages > 1
     for key, p in pairs(UI.pages) do
         if key == page then
-            -- A page of a group with tabs starts below them.
             p:ClearAllPoints()
-            p:SetPoint("TOPLEFT", UI.right, "TOPLEFT", 3, tabbed and -32 or -3)
+            p:SetPoint("TOPLEFT", UI.right, "TOPLEFT", 3, -3)
             p:SetPoint("BOTTOMRIGHT", UI.right, "BOTTOMRIGHT", -3, 3)
             p:Show()
         else
@@ -909,13 +991,7 @@ function UI.show(id)
         end
     end
     UI.layoutTabs(group, id)
-    for _, c in ipairs(UI.categories) do
-        if c.group == group then
-            c.selected:Show()
-        else
-            c.selected:Hide()
-        end
-    end
+    UI.layoutMenu(group, id)
     UI.refresh()
 end
 

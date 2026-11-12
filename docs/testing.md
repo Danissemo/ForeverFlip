@@ -127,7 +127,7 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 
 | | Area | Check |
 |---|---|---|
-| ⬜ | Menu | Six entries on the left. Deals, Selling and Analytics show tabs above the page; no tab label is cut off; the bottom of every page stays inside the window (look at Analytics → Overview and Selling → My auctions). An entry opens the tab used last. |
+| ⬜ | Menu | Six entries on the left, drawn like the Buy tab's categories. Deals, Selling and Analytics open their pages under them, indented; the bottom of every page stays inside the window (look at Analytics → Overview and Selling → My auctions). An entry opens the tab used last. |
 | ⬜ | Summary | Below the menu, the scan and sniper figures are one per line and end above the money display, in English and Ukrainian. |
 | ⬜ | Scan answer | While the status counts the seconds of waiting, the sniper's rounds stay still; the scan is read when the answer comes (usually well before 300 s). |
 | ⬜ | Vendor price learned | Sell any item to a merchant. Settings → Safety counts it under "confirmed at merchants"; if it differs from the game's data, it is listed with both prices. |
@@ -191,7 +191,7 @@ Check these with 1.2.0-beta.3 (or later).
 | ⬜ | Post feedback | Post AH-worthy with the sniper on: the status says Posting... and then Auction created once the game confirms; a dropped post says press again. With Selling open for a moment, the first press already posts. |
 | ⬜ | Compact Selling | The bottom of Selling → My items has the price row and the post buttons only; the refresh button beside the price checks it again; Rule... opens the min / max / keep panel; 12 rows fit in the list; nothing overlaps. |
 | ⬜ | Posting with the sniper on | With the sniper on, open Selling → My items and post: no "busy" message, the auction is created on the first press (the sniper rests while Selling is open). |
-| ⬜ | New look | Money shows coins everywhere; the tabs above Deals (All ... Bids) stay inside the page; the table text is the normal size; nothing overlaps on any page. |
+| ⬜ | New look | Money shows coins everywhere; the pages of Deals (All ... Bids) open under it in the menu; the table text is the normal size; nothing overlaps on any page. |
 | ⬜ | Whole full scan | After a full scan, the summary shows about as many auctions as the house has (on a large house around 300 000, not 1024 or 24576); `/ff diag` lists the reads with their size. |
 | ⬜ | Gear I can't use | At a merchant, Gear I can't use (N) lists only equipment your class can never use (bound or not) and sells it in one click; cloaks, rings, trinkets and off-hand items stay. |
 | ⬜ | Selling during a scan | While Full scan waits for its answer, Selling → My items still lists the bag items. |

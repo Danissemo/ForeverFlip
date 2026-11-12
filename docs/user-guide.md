@@ -42,7 +42,7 @@ have pages instead (Previous / Next).
   the progress of the current task.
 - **Left column:** six entries and, below them, a short summary of the last scan and of the sniper
   (rounds, prices read, candidates, checks).
-- **Right side:** the selected page. An entry with several pages shows them as tabs above the page.
+- **Right side:** the selected page. An entry with several pages opens them under it in the menu, indented, as the Buy tab opens the subcategories of Weapons.
   Most pages have a table on top and an explanation and buttons at the bottom.
 
 | Entry | Tabs |

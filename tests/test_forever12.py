@@ -357,24 +357,24 @@ class OtherTests(unittest.TestCase):
         a = M.advice(30, 'i:30', h['i:30'])
         assert(a.best == 'auction' and a.auction < 50000)''')
 
-    def test_six_menu_entries_with_tabs_for_grouped_pages(self):
+    def test_six_menu_entries_and_the_open_groups_pages_under_it(self):
         run(SETUP + '''local UI = ForeverFlip.UI
         assert(#UI.categories == 6, #UI.categories)
         UI.show('bids')
         local deals = UI.categories[1]
         assert(deals.selected:IsShown(), 'bids belong to Deals')
-        local tabs = UI.groupTabs[deals.group]
-        assert(#tabs == 5)
+        assert(#deals.subs == 5)
         local shown, current = 0, nil
-        for _, b in ipairs(tabs) do
+        for _, b in ipairs(deals.subs) do
             if b:IsShown() then shown = shown + 1 end
             if b.id == 'bids' then current = b end
         end
-        assert(shown == 5 and not current:IsEnabled(), 'the open page is the disabled tab')
+        assert(shown == 5 and current.selected:IsShown(), 'the pages open under Deals, the open one marked')
+        for _, b in ipairs(UI.groupTabs[deals.group]) do assert(not b:IsShown(), 'no tabs above the page') end
         UI.show('stats'); UI.categories[1].scripts.OnClick(UI.categories[1])
         assert(UI.section == 'bids', 'a group opens the page it showed last')
         UI.show('settings')
-        for _, b in ipairs(tabs) do assert(not b:IsShown()) end''')
+        for _, b in ipairs(deals.subs) do assert(not b:IsShown(), 'a closed group hides its pages') end''')
 
     def test_shopping_for_a_craft_counts_what_the_bags_hold(self):
         run(SETUP + '''fullScan()

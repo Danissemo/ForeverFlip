@@ -69,6 +69,10 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   far smaller than the last full scan waits longer.
 - **Bag items stay on Selling while a full scan is awaited** (the game then says no item can be
   posted).
+- **The menu is the auction house's:** the Buy tab's own category buttons are copied at run time
+  (their textures, from the fields WoW Forever's list keeps them in), the side panel is as narrow as
+  its list, and the pages of an entry open under it, indented, like the subcategories of Weapons;
+  the row of tabs above the page is gone. `/ff look` prints what the native buttons are made of.
 - **New look:** money is shown with gold, silver and copper coins everywhere (price fields keep
   `1g 20s 5c`), table rows use the normal font, the tabs above a page share its width (they ran past
   its edge), and the top buttons sit a little further left. Money shows its two largest coins (gold
