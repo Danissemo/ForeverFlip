@@ -115,26 +115,43 @@ local function inset(parent, atlas)
 end
 
 -- Entry of the left list, styled like the auction house category list.
+-- The side menu entries are the auction house's own category buttons (the Buy tab's Weapons, Armor
+-- ...): the game's AuctionHouseFilterButtonTemplate, 136 by 20, or the same art if a client lacks it.
+local NAV_WIDTH, NAV_HEIGHT, NAV_STEP = 136, 20, 21
 local function category(parent, label, onClick)
-    local row = CreateFrame("Button", nil, parent)
-    row:SetHeight(20)
-    local normal = row:CreateTexture(nil, "BACKGROUND")
-    normal:SetAtlas("auctionhouse-nav-button")
-    normal:SetAllPoints()
-    local highlight = row:CreateTexture(nil, "HIGHLIGHT")
-    highlight:SetAtlas("auctionhouse-nav-button-highlight")
-    highlight:SetAllPoints()
-    local selected = row:CreateTexture(nil, "ARTWORK")
-    selected:SetAtlas("auctionhouse-nav-button-select")
-    selected:SetAllPoints()
+    local ok, row = pcall(CreateFrame, "Button", nil, parent, "AuctionHouseFilterButtonTemplate")
+    if not ok or not row then
+        row = CreateFrame("Button", nil, parent)
+        local normal = row:CreateTexture(nil, "BACKGROUND")
+        normal:SetAtlas("auctionhouse-nav-button")
+        normal:SetAllPoints()
+        local highlight = row:CreateTexture(nil, "HIGHLIGHT")
+        highlight:SetAtlas("auctionhouse-nav-button-highlight")
+        highlight:SetAllPoints()
+    end
+    row:SetSize(NAV_WIDTH, NAV_HEIGHT)
+    local selected = type(row.SelectedTexture) == "table" and row.SelectedTexture or nil
+    if not selected then
+        selected = row:CreateTexture(nil, "ARTWORK")
+        selected:SetAtlas("auctionhouse-nav-button-select")
+        selected:SetAllPoints()
+    end
     selected:Hide()
     row.selected = selected
-    local t = text(row, "GameFontNormalSmall")
+    local t = type(row.Text) == "table" and row.Text or (row.GetFontString and row:GetFontString()) or nil
+    if type(t) ~= "table" or not t.SetText then
+        t = text(row, "GameFontNormalSmall")
+    end
+    t:ClearAllPoints()
     t:SetPoint("LEFT", row, "LEFT", 8, 0)
     t:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    t:SetJustifyH("LEFT")
     t:SetText(L(label))
     row.label = t
+    -- The template's own handlers expect the game's category data: ours replace them.
     row:SetScript("OnClick", onClick)
+    row:SetScript("OnEnter", nil)
+    row:SetScript("OnLeave", nil)
     return row
 end
 
@@ -455,14 +472,13 @@ function UI.create()
         local c = category(left, group.label, function()
             UI.show(group.current or group.pages[1][1])
         end)
-        c:SetPoint("TOPLEFT", left, "TOPLEFT", 6, -6 - (i - 1) * 22)
-        c:SetPoint("TOPRIGHT", left, "TOPRIGHT", -6, -6 - (i - 1) * 22)
+        c:SetPoint("TOPLEFT", left, "TOPLEFT", math.floor((LEFT_WIDTH - NAV_WIDTH) / 2), -8 - (i - 1) * NAV_STEP)
         c.group = group
         UI.categories[i] = c
     end
     UI.summary = text(left, "GameFontHighlightSmall")
-    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -6 - #UI.GROUPS * 22 - 12)
-    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -6 - #UI.GROUPS * 22 - 12)
+    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -8 - #UI.GROUPS * NAV_STEP - 12)
+    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -8 - #UI.GROUPS * NAV_STEP - 12)
     UI.summary:SetSpacing(4)
 
     -- Right: one page per category.
