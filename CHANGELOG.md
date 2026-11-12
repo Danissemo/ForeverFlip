@@ -6,12 +6,25 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0-beta.5] - 2026-11-12
+
+Changes since beta.4. Includes all earlier beta improvements.
+
 ### Changed
 
 - **The Sync helper wears the ForeverFlip Sync asset kit.** The window's app icon, row badges,
   header waves, buttons (default, hover, pressed, disabled) and switches are now the kit's images,
   with its colours and spacing, at the density of the screen's scale (100% to 400%). The executable
   and the taskbar show the new app icon. Anything missing from a build is drawn as before.
+
+- The Sync helper's window follows the new design: a light window with the app's icon and the
+  overall status in the header, one rounded card of settings rows (game, GitHub, sharing, addon,
+  prices) each with its icon, pill switches, the sign-in code shown large, and the activity log
+  behind **Show activity**. The window fits the screen and its content.
+- ForeverFlip Sync opens a desktop window on Windows, with remembered game selection, manual
+  and automatic sync, opt-in sharing and a background worker. Command-line mode remains available.
+- Game discovery accepts installation parents, executables and addon folders, checks Forever
+  product evidence, consults running clients and installation records, and asks when ambiguous.
 
 ### Fixed
 
@@ -53,17 +66,6 @@ All notable changes are listed here. The format follows
 - **Community-history check of shared scans.** A confirmed scan's prices are compared with the
   summaries of the last 3 days: items more than twice or less than half the community's price are
   left out, and a scan mostly out of line is not published ("disputed").
-
-### Changed
-
-- The Sync helper's window follows the new design: a light window with the app's icon and the
-  overall status in the header, one rounded card of settings rows (game, GitHub, sharing, addon,
-  prices) each with its icon, pill switches, the sign-in code shown large, and the activity log
-  behind **Show activity**. The window fits the screen and its content.
-- ForeverFlip Sync opens a desktop window on Windows, with remembered game selection, manual
-  and automatic sync, opt-in sharing and a background worker. Command-line mode remains available.
-- Game discovery accepts installation parents, executables and addon folders, checks Forever
-  product evidence, consults running clients and installation records, and asks when ambiguous.
 
 ## [1.2.0-beta.4] - 2026-11-12
 
@@ -547,7 +549,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v1.2.0-beta.4...HEAD
+[Unreleased]: ../../compare/v1.2.0-beta.5...HEAD
+[1.2.0-beta.5]: ../../compare/v1.2.0-beta.4...v1.2.0-beta.5
 [1.2.0-beta.4]: ../../compare/v1.2.0-beta.3...v1.2.0-beta.4
 [1.2.0]: ../../compare/v1.1.0...v1.2.0
 [1.1.0]: ../../releases/tag/v1.1.0

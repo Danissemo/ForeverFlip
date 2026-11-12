@@ -94,9 +94,10 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> **Current beta: [1.2.0-beta.4](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.4)**
-> adds click priority, safe pause/resume of batch checks and faster local processing, alongside
-> the purchase, posting, scan and accounting fixes since beta.3. See the
+> **Current beta: [1.2.0-beta.5](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.5)**
+> adds the redesigned desktop Sync helper with GitHub sign-in, beta updates and bundled assets,
+> clearer Resale diagnostics, unit prices and fixes for selected-item checks. Includes all beta.4
+> improvements to purchases, posting and responsiveness. See the
 > [current beta checklist](docs/testing.md#current-beta-checklist) and
 > [Beta testing](docs/testing.md#beta-testing).
 

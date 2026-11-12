@@ -1,6 +1,6 @@
 # Testing
 
-Current pre-release: **1.2.0-beta.4**. The current beta checklist below is the acceptance list for
+Current pre-release: **1.2.0-beta.5**. The current beta checklist below is the acceptance list for
 this build. Automated tests load the current TOC files, including the new scheduler and UI behavior.
 
 ## Automated tests
@@ -48,6 +48,8 @@ python -m unittest discover -s tests -p "test_*.py"
 | `test_purchase_confirmation.py` | General auction errors preceding successful purchase, money or chat confirmation; timeout and late recovery without double booking. |
 | `test_resale_diagnostics.py` | Actual sales-data counts, visible spending limits, affordability classification and safe local re-evaluation after money gains. |
 | `test_sync_helper.py` | Forever discovery, retail rejection, upload retries, saved preferences, credential refresh and file-change handling. |
+| `test_github_login.py` | GitHub device sign-in, encrypted token storage, sign-out and credential precedence. |
+| `test_addon_update.py` | Stable/beta selection, download digest and TOC validation, safe installation and rollback. |
 | `test_sync_packaging.py` | TLS verification and isolated packaged-runtime diagnostic behavior; the Windows builder also tests the actual EXE. |
 
 ### Simulated sessions
@@ -165,13 +167,20 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 
 ### Current beta checklist
 
-**1.2.0-beta.4**, changes since beta.3. Record a fresh result for each row; none is marked passed
+**1.2.0-beta.5**, changes since beta.4, with the earlier scheduler and trade checks retained. Record a fresh result for each row; none is marked passed
 merely because the automated suite passed. These scenarios replace the old beta.1/beta.2-specific
 lists, whose timing and posting instructions no longer match the current build.
 
 | | Area | Check |
 |---|---|---|
-| ⬜ | Installed version | After replacing the addon and `/reload`, `/ff` and the addon list show `1.2.0-beta.4`. Saved stock, journal and settings remain. |
+| ⬜ | Installed version | After replacing the addon and `/reload`, `/ff` and the addon list show `1.2.0-beta.5`. Saved stock, journal and settings remain. |
+| ⬜ | Resale diagnostics | With saved complete scans, Sales data counts measured observations. When budget or per-item limits exclude leads, Resale explains that limit. Increasing money rebuilds cached leads without making them live-verified. |
+| ⬜ | Unit prices | For a multi-unit deal, Buy at is the average unit cost, Sells at is the unit listing price and Profit is the whole deal's profit. Compare the tooltip and confirmation total. |
+| ⬜ | Selected Check all | Select the item currently being checked: its search completes. Other checks resume after the 15-second selection hold; the batch does not wait for its own selection. |
+| ⬜ | Sync assets and discovery | Run the new EXE at normal and high display scaling. Icons, header, buttons and switches render. Choose a Forever install or its parent; the remembered selection survives restart. |
+| ⬜ | Sync transfer and retry | Download community prices without signing in. With opt-in sharing, successful submissions persist; interrupted uploads retry without losing unsent scans. Missing-file and network errors name the failed operation. |
+| ⬜ | Sync sign-in | Use the device code to sign in yourself, then enable sharing. Restart and verify the encrypted sign-in is retained; Sign out disables sharing and removes the stored sign-in. |
+| ⬜ | Sync addon updates | Beta tester offers beta.5. Verify archive hash/version checks, backup and safe install; disabling beta never downgrades. Reload or restart when prompted. |
 | ⬜ | Click before batch | Start Check all, then Check price for another item. It runs at the next safe boundary, before the rest of the batch; the status shows the manual request. |
 | ⬜ | Matching batch item | Click an item already queued by Check all. Its existing request is promoted; it is not sent twice, and batch progress completes once. |
 | ⬜ | Gear pause/resume | Start a gear batch with several versions, then check another item. The unsent next version pauses; the single check runs, then the same batch resumes without losing its rows or reporting a false failure. |
@@ -179,7 +188,7 @@ lists, whose timing and posting instructions no longer match the current build.
 | ⬜ | Purchase and confirmation | Buy a commodity: the same button changes from Buy to Confirm with the quoted total. Select another item before confirming: the old quote is dropped. The status shows asking, confirming and waiting. |
 | ⬜ | No false lost race | Buy a gear/item lot. A general AH error must not alone report that another player won. A subsequent purchase event, matching won-chat line or money update records the purchase once; verify its mail and journal. |
 | ⬜ | Slow purchase | With no result, an item purchase times out after 30 seconds without being booked as bought. Later confirmation by money records it once. Do not buy the same lot again before checking the outcome. |
-| ⬜ | Ready lifetime | A checked deal stays ready for five minutes. Selecting a recently checked deal holds background searches for up to two minutes; an actual busy Buy click also gives it time to clear. |
+| ⬜ | Ready lifetime | A checked deal stays ready for five minutes. Selecting a recently checked deal holds background searches for up to 15 seconds; its own pending check continues; an actual busy Buy click also gives it time to clear. |
 | ⬜ | Purchase context | Search another item after checking a gear/item lot, then Buy. When required by the server context the lot is read again; the next hardware click buys. No delayed automatic purchase occurs. |
 | ⬜ | Quiet Selling page | Open My items with several goods in the bags. Rendering the page alone does not launch a bag-wide price check. Check price and Check all still read the requested prices. |
 | ⬜ | Ready post first | Have a ready-priced item followed by one without a price. Post next bought posts the ready one before starting searches for other goods. A recent complete scan can supply its price in the same click. |
@@ -218,7 +227,7 @@ test before a release. The simplest way is **Beta tester** in the
 [ForeverFlip Sync helper](community.md#addon-updates-and-beta-testing): it installs each new beta by
 itself. By hand, install one like a normal release (replace the `ForeverFlip` folder; your saved
 data is kept). Then restart the game and go through the [current beta checklist](#current-beta-checklist).
-For beta.4, check every row against the installed `1.2.0-beta.4` build. The broader in-game list
+For beta.5, check every row against the installed `1.2.0-beta.5` build. The broader in-game list
 above remains the regression checklist; old observations are not new acceptance results.
 
 Report a bug in an [issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose) (the bug

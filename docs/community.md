@@ -54,7 +54,7 @@ the installed version and whether a newer one is out.
 
 - **Update automatically** (on by default): a newer release is installed as soon as it is found, at
   start and every 6 hours. Off, the helper only announces it, and **Update now** installs it.
-- **Beta tester** (off by default): pre-releases (`1.2.0-beta.4`) are offered too. Betas bring new
+- **Beta tester** (off by default): pre-releases (`1.2.0-beta.5`) are offered too. Betas bring new
   features first and may have rough edges; see [Beta testing](testing.md#beta-testing) for what to
   check and how to report. Ticking it looks for a beta at once. Unticking it never downgrades: you
   keep the beta until a release newer than it comes out.
