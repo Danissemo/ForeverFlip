@@ -936,7 +936,15 @@ UI.GROUPS = {
         label = "Analytics",
         pages = { { "analytics", "Overview" }, { "stats", "By item" }, { "journal", "Journal and profit" } },
     },
-    { label = "Settings", pages = { { "settings", "Settings" } } },
+    {
+        label = "Settings",
+        pages = {
+            { "settings", "General" },
+            { "settings:keys", "Key bindings" },
+            { "settings:share", "Sharing" },
+            { "settings:safety", "Safety" },
+        },
+    },
 }
 
 function UI.groupOf(id)
@@ -1012,6 +1020,9 @@ function UI.show(id)
         page, filter, id = "deals", "all", "deals:all"
     end
     UI.section = page
+    if page == "settings" then
+        UI.setSettingsFrame(filter ~= "" and filter or "general")
+    end
     if page == "deals" then
         UI.filter = filter ~= "" and filter or "all"
         UI.dealPage = 1
@@ -3136,6 +3147,69 @@ end
 
 -- Settings page ------------------------------------------------------------------------------------
 -- Four tabs: General, Key bindings, Sharing, Safety.
+-- Settings pages share one look: a gold heading with a thin line under it per section, white
+-- labels, fields and buttons aligned on the right edge, and the full explanation in tooltips.
+local function hint(frame, title, body)
+    frame:SetScript("OnEnter", function(self)
+        if GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(L(title), 1, 0.82, 0, 1, true)
+            GameTooltip:AddLine(L(body), 1, 1, 1, true)
+            GameTooltip:Show()
+        end
+    end)
+    frame:SetScript("OnLeave", function()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
+end
+
+-- A section heading at (x, y); `width` nil spans to the right edge of the page.
+local function heading(p, label, x, y, width)
+    local t = text(p, "GameFontNormal")
+    t:SetPoint("TOPLEFT", p, "TOPLEFT", x, y)
+    t:SetText(L(label))
+    local line = p:CreateTexture(nil, "ARTWORK")
+    line:SetColorTexture(1, 0.82, 0, 0.25)
+    line:SetHeight(1)
+    line:SetPoint("TOPLEFT", p, "TOPLEFT", x, y - 16)
+    if width then
+        line:SetWidth(width)
+    else
+        line:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, y - 16)
+    end
+    return t
+end
+
+-- A row's faint stripe, as the auction house's lists have.
+local function stripe(p, y, height)
+    local t = p:CreateTexture(nil, "BACKGROUND")
+    t:SetAtlas("auctionhouse-rowstripe-1")
+    t:SetPoint("TOPLEFT", p, "TOPLEFT", 6, y)
+    t:SetPoint("TOPRIGHT", p, "TOPRIGHT", -6, y)
+    t:SetHeight(height)
+    return t
+end
+
+-- A check box with a one-line label; the setting's long text is its tooltip.
+local function checkRow(p, x, y, label, body, checked, onClick)
+    local box = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
+    box:SetSize(26, 26)
+    box:SetPoint("TOPLEFT", p, "TOPLEFT", x - 4, y)
+    box:SetChecked(checked)
+    box:SetScript("OnClick", onClick)
+    local t = text(p, "GameFontHighlight")
+    t:SetPoint("LEFT", box, "RIGHT", 2, 1)
+    t:SetWordWrap(false)
+    t:SetText(L(label))
+    box.label = t
+    if body then
+        hint(box, label, body)
+    end
+    return box
+end
+
 function UI.createSettings(p)
     UI.settingTabs, UI.settingFrames = {}, {}
     local tabs = {
@@ -3144,43 +3218,59 @@ function UI.createSettings(p)
         { "share", "Sharing" },
         { "safety", "Safety" },
     }
-    for i, t in ipairs(tabs) do
+    for _, t in ipairs(tabs) do
         local frame = CreateFrame("Frame", nil, p)
-        frame:SetPoint("TOPLEFT", p, "TOPLEFT", 0, -30)
+        frame:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
         frame:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 0)
         UI.settingFrames[t[1]] = frame
         local b = button(p, t[2], 140, function()
             UI.showSettingsTab(t[1])
         end)
-        b:SetPoint("TOPLEFT", p, "TOPLEFT", 8 + (i - 1) * 146, -4)
+        b:Hide()
         UI.settingTabs[t[1]] = b
     end
     UI.createGeneralSettings(UI.settingFrames.general)
     UI.createKeySettings(UI.settingFrames.keys)
     UI.createShareSettings(UI.settingFrames.share)
     UI.createSafetySettings(UI.settingFrames.safety)
-    UI.showSettingsTab("general")
+    UI.setSettingsFrame("general")
 end
 
 -- Safety: the vendor price margin, the spending limit, lots left for others, and what was learned.
 function UI.createSafetySettings(p)
     local fields = {
-        { "vendorMargin", "Vendor prices not yet confirmed at a merchant count less, %" },
-        { "spendLimit", "Gold one auction house visit may spend on deals (0 = no limit)" },
-        { "leaveLots", "Cheap units of a vendor deal left for other buyers" },
+        {
+            "vendorMargin",
+            "Unconfirmed vendor prices count less, %",
+            "Vendor prices not yet confirmed at a merchant count less, %",
+        },
+        {
+            "spendLimit",
+            "Gold one visit may spend (0 = no limit)",
+            "Gold one auction house visit may spend on deals (0 = no limit)",
+        },
+        { "leaveLots", "Cheap units left for other buyers", "Cheap units of a vendor deal left for other buyers" },
     }
+    heading(p, "Limits", 12, -6)
     UI.safetyBoxes = {}
     for i, f in ipairs(fields) do
-        local label = text(p, "GameFontNormal")
-        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -6 - (i - 1) * 23)
-        label:SetWidth(380)
+        local y = -28 - (i - 1) * 28
+        if i % 2 == 1 then
+            stripe(p, y + 2, 28)
+        end
+        local label = text(p, "GameFontHighlight")
+        label:SetPoint("TOPLEFT", p, "TOPLEFT", 14, y - 6)
+        label:SetWordWrap(false)
         label:SetText(L(f[2]))
-        local e = editbox(p, 80)
-        e:SetPoint("LEFT", label, "RIGHT", 10, 0)
+        local e = editbox(p, 86)
+        e:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, y - 2)
+        e:SetJustifyH("RIGHT")
         e.field = f
+        hint(e, f[2], f[3])
         UI.safetyBoxes[i] = e
     end
-    UI.safetySave = button(p, "Save", 110, function()
+    local below = -28 - #fields * 28
+    UI.safetySave = button(p, "Save", 90, function()
         for _, e in ipairs(UI.safetyBoxes) do
             local v = tonumber(e:GetText())
             if v and v >= 0 then
@@ -3193,11 +3283,12 @@ function UI.createSafetySettings(p)
         UI.loadSafety()
         F.Engine.notify("saved")
     end)
-    UI.safetySave:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -6 - #fields * 23 - 4)
-    UI.safetyText = text(p, "GameFontHighlightSmall")
-    UI.safetyText:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -6 - #fields * 23 - 40)
-    UI.safetyText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -6 - #fields * 23 - 40)
-    UI.safetyText:SetSpacing(3)
+    UI.safetySave:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, below - 6)
+    heading(p, "What ForeverFlip learned", 12, below - 40)
+    UI.safetyText = text(p, "GameFontHighlight")
+    UI.safetyText:SetPoint("TOPLEFT", p, "TOPLEFT", 14, below - 64)
+    UI.safetyText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, below - 64)
+    UI.safetyText:SetSpacing(4)
     UI.loadSafety()
 end
 
@@ -3283,9 +3374,13 @@ function UI.noSavedData()
     StaticPopup_Show("FOREVERFLIP_NO_DATA")
 end
 
-function UI.showSettingsTab(id)
+-- Which Settings page shows (general, keys, share, safety); UI.show calls it for settings:<page>.
+function UI.setSettingsFrame(id)
+    if not UI.settingFrames or not UI.settingFrames[id] then
+        id = "general"
+    end
     UI.settingsTab = id
-    for key, frame in pairs(UI.settingFrames) do
+    for key, frame in pairs(UI.settingFrames or {}) do
         if key == id then
             frame:Show()
         else
@@ -3293,7 +3388,10 @@ function UI.showSettingsTab(id)
         end
         UI.settingTabs[key]:SetEnabled(key ~= id)
     end
-    UI.refresh()
+end
+
+function UI.showSettingsTab(id)
+    UI.show(id == "general" and "settings" or ("settings:" .. id))
 end
 
 -- Key bindings: click a button, press the key. Right-click clears; Escape cancels.
@@ -3396,16 +3494,21 @@ function UI.onCapturedKey(key)
 end
 
 function UI.createKeySettings(p)
+    heading(p, "Key bindings", 12, -6)
     UI.keyButtons = {}
     for i, b in ipairs(UI.BINDINGS) do
-        local label = text(p, "GameFontNormal")
-        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -14 - (i - 1) * 34)
-        label:SetWidth(300)
+        local y = -28 - (i - 1) * 30
+        if i % 2 == 1 then
+            stripe(p, y + 2, 30)
+        end
+        local label = text(p, "GameFontHighlight")
+        label:SetPoint("TOPLEFT", p, "TOPLEFT", 14, y - 7)
+        label:SetWordWrap(false)
         label:SetText(L(b[2]))
         local key = button(p, "", 170, function()
             UI.captureKey(b[1])
         end)
-        key:SetPoint("LEFT", label, "RIGHT", 10, 0)
+        key:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, y - 2)
         if key.RegisterForClicks then
             key:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         end
@@ -3419,9 +3522,12 @@ function UI.createKeySettings(p)
         key.command = b[1]
         UI.keyButtons[i] = key
     end
-    UI.keyText = text(p, "GameFontHighlightSmall")
-    UI.keyText:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -14 - #UI.BINDINGS * 34 - 10)
-    UI.keyText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -14 - #UI.BINDINGS * 34 - 10)
+    local below = -28 - #UI.BINDINGS * 30
+    heading(p, "How to set a key", 12, below - 14)
+    UI.keyText = text(p, "GameFontHighlight")
+    UI.keyText:SetPoint("TOPLEFT", p, "TOPLEFT", 14, below - 38)
+    UI.keyText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, below - 38)
+    UI.keyText:SetSpacing(4)
     UI.keyText:SetText(
         L(
             "Click a button, then press the key (with Shift, Ctrl or Alt if you like). Right-click clears a key; Escape cancels. The same keys are in the game's Key Bindings window under AddOns."
@@ -3441,22 +3547,16 @@ end
 
 -- Sharing full scans with other players.
 function UI.createShareSettings(p)
-    local function toggle(y, setting, label)
-        local box = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-        box:SetPoint("TOPLEFT", p, "TOPLEFT", 8, y)
-        box:SetScript("OnClick", function(self)
+    heading(p, "Automatic", 12, -6)
+    local function toggle(row, setting, label)
+        return checkRow(p, 14, -26 - row * 26, label, nil, F.db.settings[setting], function(self)
             F.db.settings[setting] = self:GetChecked() and true or false
         end)
-        box:SetChecked(F.db.settings[setting])
-        local t = text(p, "GameFontHighlight")
-        t:SetPoint("LEFT", box, "RIGHT", 4, 0)
-        t:SetText(L(label))
-        return box
     end
-    toggle(-8, "shareReceive", "Accept full scans shared by guild and group members")
-    toggle(-36, "shareAuto", "Send my full scans to the guild after each scan")
-    toggle(-64, "rawScans", "Keep my full scans for the ForeverFlip Sync helper (community data)")
-    local channel = toggle(-92, "shareChannel", "Share full scans with every ForeverFlip user of the realm")
+    toggle(0, "shareReceive", "Accept full scans shared by guild and group members")
+    toggle(1, "shareAuto", "Send my full scans to the guild after each scan")
+    toggle(2, "rawScans", "Keep my full scans for the ForeverFlip Sync helper (community data)")
+    local channel = toggle(3, "shareChannel", "Share full scans with every ForeverFlip user of the realm")
     channel:HookScript("OnClick", function(self)
         if self:GetChecked() then
             F.Share.join()
@@ -3464,30 +3564,32 @@ function UI.createShareSettings(p)
             F.Share.leave()
         end
     end)
-    local send = text(p, "GameFontNormal")
-    send:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -132)
-    send:SetText(L("Send my last scan to:"))
-    UI.shareGuild = button(p, "Guild", 100, function()
+
+    heading(p, "Send my last scan", 12, -140)
+    local to = text(p, "GameFontHighlight")
+    to:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -168)
+    to:SetText(L("Send my last scan to:"))
+    UI.shareGuild = button(p, "Guild", 90, function()
         local _, why = F.Share.send("GUILD")
         F.Engine.notify(why)
     end)
-    UI.shareGuild:SetPoint("LEFT", send, "RIGHT", 10, 0)
-    UI.shareGroup = button(p, "Group", 100, function()
+    UI.shareGuild:SetPoint("LEFT", to, "RIGHT", 10, 0)
+    UI.shareGroup = button(p, "Group", 90, function()
         local _, why = F.Share.send((IsInRaid and IsInRaid()) and "RAID" or "PARTY")
         F.Engine.notify(why)
     end)
     UI.shareGroup:SetPoint("LEFT", UI.shareGuild, "RIGHT", 4, 0)
-    local whisper = text(p, "GameFontNormal")
-    whisper:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -164)
-    whisper:SetText(L("Player:"))
-    UI.shareName = editbox(p, 140)
-    UI.shareName:SetPoint("LEFT", whisper, "RIGHT", 10, 0)
-    UI.shareWhisper = button(p, "Send", 100, function()
+    UI.shareWhisper = button(p, "Send", 80, function()
         local _, why = F.Share.send("WHISPER", UI.shareName:GetText())
         F.Engine.notify(why)
     end)
-    UI.shareWhisper:SetPoint("LEFT", UI.shareName, "RIGHT", 8, 0)
-    UI.shareExport = button(p, "Export as text", 150, function()
+    UI.shareWhisper:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, -163)
+    UI.shareName = editbox(p, 120)
+    UI.shareName:SetPoint("RIGHT", UI.shareWhisper, "LEFT", -8, 0)
+    local whisper = text(p, "GameFontHighlight")
+    whisper:SetPoint("RIGHT", UI.shareName, "LEFT", -10, 0)
+    whisper:SetText(L("Player:"))
+    UI.shareExport = button(p, "Export as text", 140, function()
         local snap = F.Share.snapshot()
         if not snap then
             F.Engine.notify("no_scan")
@@ -3498,19 +3600,21 @@ function UI.createShareSettings(p)
             F.Share.encode(snap)
         )
     end)
-    UI.shareExport:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -198)
-    UI.shareImport = button(p, "Import text", 150, function()
+    UI.shareExport:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -194)
+    UI.shareImport = button(p, "Import text", 140, function()
         UI.showText(L("Paste a shared scan (Ctrl+V), then press Import."), "", function(textValue)
             local merged, why = F.Share.import(textValue)
             F.Engine.notify(merged and "share_received" or why)
             return merged ~= nil
         end)
     end)
-    UI.shareImport:SetPoint("LEFT", UI.shareExport, "RIGHT", 6, 0)
+    UI.shareImport:SetPoint("LEFT", UI.shareExport, "RIGHT", 4, 0)
+
+    heading(p, "State", 12, -232)
     UI.shareText = text(p, "GameFontHighlightSmall")
-    UI.shareText:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -236)
-    UI.shareText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -236)
-    UI.shareText:SetSpacing(3)
+    UI.shareText:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -256)
+    UI.shareText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -14, -256)
+    UI.shareText:SetSpacing(4)
 end
 
 function UI.refreshShare()
@@ -3549,37 +3653,6 @@ function UI.refreshShare()
     UI.shareGroup:SetEnabled(not busy and F.Scan.last ~= nil)
     UI.shareWhisper:SetEnabled(not busy and F.Scan.last ~= nil)
     UI.shareExport:SetEnabled(F.Scan.last ~= nil)
-end
-
--- The General tab: two columns of numbers under a heading each (what a deal must earn; money and
--- prices), the options in two columns, and Save, the presets and the language at the bottom. Short
--- labels; the full explanation is in each one's tooltip.
-local function hint(frame, title, body)
-    frame:SetScript("OnEnter", function(self)
-        if GameTooltip then
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(L(title), 1, 0.82, 0, 1, true)
-            GameTooltip:AddLine(L(body), 1, 1, 1, true)
-            GameTooltip:Show()
-        end
-    end)
-    frame:SetScript("OnLeave", function()
-        if GameTooltip then
-            GameTooltip:Hide()
-        end
-    end)
-end
-
-local function heading(p, label, x, y, width)
-    local t = text(p, "GameFontNormal")
-    t:SetPoint("TOPLEFT", p, "TOPLEFT", x, y)
-    t:SetText(L(label))
-    local line = p:CreateTexture(nil, "ARTWORK")
-    line:SetColorTexture(1, 0.82, 0, 0.25)
-    line:SetHeight(1)
-    line:SetPoint("TOPLEFT", p, "TOPLEFT", x, y - 16)
-    line:SetWidth(width)
-    return t
 end
 
 function UI.createGeneralSettings(p)
@@ -3623,19 +3696,10 @@ function UI.createGeneralSettings(p)
     heading(p, "Options", COL[1], top, COL[2] + WIDTH - COL[1])
     local slots = 0
     local function check(label, body, checked, onClick)
-        local box = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-        box:SetSize(26, 26)
         local column, row = slots % 2 + 1, math.floor(slots / 2)
         slots = slots + 1
-        box:SetPoint("TOPLEFT", p, "TOPLEFT", COL[column] - 4, top - 22 - row * 26)
-        box:SetChecked(checked)
-        box:SetScript("OnClick", onClick)
-        local t = text(p, "GameFontHighlight")
-        t:SetPoint("LEFT", box, "RIGHT", 2, 1)
-        t:SetWidth(WIDTH - 30)
-        t:SetWordWrap(false)
-        t:SetText(L(label))
-        hint(box, label, body)
+        local box = checkRow(p, COL[column], top - 22 - row * 26, label, body, checked, onClick)
+        box.label:SetWidth(WIDTH - 30)
         return box
     end
     local function toggle(setting, label, body)

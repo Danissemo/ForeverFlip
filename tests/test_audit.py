@@ -517,3 +517,15 @@ class NativeMenuLayoutTests(unittest.TestCase):
         assert(sub.normal:GetAtlas() == 'auctionhouse-nav-button-secondary', 'sub-entries have the secondary art')
         local sw = sub:GetSize()
         assert(sw == 137, 'sub-entries are as wide as the top ones')''')
+
+
+class SettingsMenuTests(unittest.TestCase):
+    def test_settings_pages_open_from_the_menu(self):
+        run(BASE + '''UI.show('settings:keys')
+        local settings = UI.categories[#UI.categories]
+        assert(settings.group.label == 'Settings' and #settings.subs == 4, 'four pages under Settings')
+        assert(UI.settingFrames.keys:IsShown() and not UI.settingFrames.general:IsShown(), 'key bindings shown')
+        UI.show('settings')
+        assert(UI.settingFrames.general:IsShown() and UI.settingsTab == 'general', 'general is the first page')
+        UI.settingTabs.safety:Click()
+        assert(UI.section == 'settings' and UI.settingFrames.safety:IsShown(), 'the old shortcut opens the page')''')

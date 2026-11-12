@@ -52,7 +52,7 @@ have pages instead (Previous / Next).
 | **Crafting** | |
 | **Selling** | My items (the Sell my items page) · My auctions |
 | **Analytics** | Overview · By item (Statistics by item) · Journal and profit |
-| **Settings** | |
+| **Settings** | General · Key bindings · Sharing · Safety |
 
 ForeverFlip remembers the last page you opened, and each entry opens the tab you used last.
 
