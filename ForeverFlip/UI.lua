@@ -1467,8 +1467,13 @@ function UI.refreshDeals()
             )
         elseif UI.filter == "flip" then
             empty:SetText(
-                L(
-                    "No resale yet. Resale needs sales data from 2 full scans (15 minutes apart; the automatic scan does it). Until a third scan at most 2 units are bought."
+                string.format(
+                    L(
+                        "No resale meets the current prices, sales data and spending limits.\nBudget: %s; item limit: %s. Sales data: %d items.\nWhole lots that disappeared need a later scan to rule out reposting."
+                    ),
+                    U.money(F.Deals.budget()),
+                    U.money(math.floor(F.Engine.wallet() * (F.db.settings.itemShare or 0.3))),
+                    F.Scan.last.stats.salesReady or 0
                 )
             )
         else
@@ -4354,7 +4359,7 @@ function UI.refreshSummary()
                 s.items,
                 s.vendorKnown,
                 s.belowVendor,
-                s.collecting
+                s.salesReady or 0
             )
             .. UI.sniperSummary()
     )

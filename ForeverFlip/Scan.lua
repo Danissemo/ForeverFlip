@@ -463,10 +463,17 @@ local function finish(j, done)
             table.insert(j.waitVendor[g.id], waiting)
         end
         local deal, reason = F.Deals.evaluate(g, vendor, h, now)
+        if h and M.saleability(h, value, now).known then
+            stats.salesReady = (stats.salesReady or 0) + 1
+        end
         if deal then
             deals[#deals + 1] = deal
         elseif reason == "collecting" then
             stats.collecting = stats.collecting + 1
+        end
+        if not deal and reason then
+            stats.reasons = stats.reasons or {}
+            stats.reasons[reason] = (stats.reasons[reason] or 0) + 1
         end
         local cheap = g.rows[1] and g.rows[1].unit
         local near = deal ~= nil
@@ -608,15 +615,68 @@ end
 local function beginFinish(j, now)
     j.state, j.cursor, j.finishAt = "finishing", 1, now
     j.deals, j.waitVendor, j.hot, j.listed = {}, {}, {}, {}
-    j.stats = { items = 0, vendorKnown = 0, belowVendor = 0, collecting = 0 }
+    j.stats = { items = 0, vendorKnown = 0, belowVendor = 0, collecting = 0, salesReady = 0, reasons = {} }
+end
+
+-- A money gain can make leads affordable without another server scan. Reuse only the short-lived
+-- local rows, in slices; live-verified results and items already bought from this scan stay intact.
+function S.onMoney()
+    local last = S.last
+    if not last or not last.groups then
+        return
+    end
+    local wallet, previous = F.Engine.wallet(), last.wallet
+    last.wallet = wallet
+    S.repricing = nil
+    if S.job or not previous or wallet <= previous or clock() - last.at > 300 then
+        return
+    end
+    S.repricing = { last = last, cursor = nil }
+end
+
+local function reprice()
+    local work = S.repricing
+    if not work then
+        return
+    end
+    local last = work.last
+    if last ~= S.last or not last.groups or last.scope ~= F.Engine.scope() or clock() - last.at > 300 then
+        S.repricing = nil
+        return
+    end
+    local history = F.Data.market(F.db, last.scope).history
+    local done = budget(2, 100)
+    while true do
+        local key, group = next(last.groups, work.cursor)
+        if not key then
+            S.repricing = nil
+            return
+        end
+        work.cursor = key
+        local live = F.Deals.get(key)
+        if not (live and live.verified) and not (last.purchased and last.purchased[key]) then
+            group = last.checkedGroups and last.checkedGroups[key] or group
+            local deal = F.Deals.evaluate(group, F.AH.vendorPrice(group.id), history[key], last.at)
+            if deal then
+                F.Deals.add(deal, last.scope)
+            elseif live and live.found == last.at then
+                F.Deals.remove(key)
+            end
+        end
+        if done() then
+            return
+        end
+    end
 end
 
 -- Called every frame while a scan runs.
 function S.step()
     local j = S.job
     if not j then
+        reprice()
         return
     end
+    S.repricing = nil
     if j.scope ~= F.Engine.scope() or not F.AH.isOpen() then
         S.stop()
         return
@@ -709,6 +769,7 @@ function S.step()
         end
         S.last = {
             at = j.finishAt,
+            wallet = F.Engine.wallet(),
             scope = j.scope,
             total = j.total,
             partial = j.partial,
@@ -838,6 +899,20 @@ function S.restore(scope)
     for _, g in ipairs(saved.pool or {}) do
         waitVendor[g.id] = waitVendor[g.id] or {}
         table.insert(waitVendor[g.id], g)
+    end
+    if saved.stats.salesReady == nil then
+        local ready = 0
+        for _, h in pairs(F.Data.market(F.db, scope).history) do
+            if
+                type(h) == "table"
+                and type(h.scan) == "table"
+                and h.scan.at == saved.at
+                and M.saleability(h, h.scan.market, saved.at).known
+            then
+                ready = ready + 1
+            end
+        end
+        saved.stats.salesReady = ready
     end
     S.last = {
         at = saved.at,

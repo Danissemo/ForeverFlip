@@ -750,8 +750,15 @@ saved in the SavedVariables file (see [Troubleshooting](#troubleshooting)).
 
 **No deals after a scan.**
 - Vendor deals depend on the market at that moment; often there are none.
-- Resale deals need sales data, so they appear after two or three scans.
-- Check the minimums in Settings, or try the Aggressive preset.
+- Two scans can measure partial purchases; whole lots that disappear need a later scan to rule
+  out reposting. Scan count alone never guarantees a profitable offer.
+- The Sales data figure counts items with measured observations, including observed zero sales;
+  it is not the number of missing-data rejections or the number of resale offers.
+- An empty Resale page shows the current spending budget and per-item limit. For example, with
+  6s 6c, an 80% spending share allows 4s 84c and a 30% item share allows at most 1s 81c per item
+  before existing stock. Sales history can be present while no purchase fits those limits.
+- Money gains re-evaluate local scan rows while the five-minute cache is still available. Leads
+  still need a fresh live check before buying; this does not launch another full scan.
 - `/ff diag` shows how many items are still collecting data.
 
 **The scan never starts, or waits forever.** Another addon may have used the account's

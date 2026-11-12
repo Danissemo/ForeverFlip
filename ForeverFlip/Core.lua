@@ -277,6 +277,7 @@ function E.handle(event, ...)
     elseif event == "PLAYER_MONEY" or event == "PLAYER_ENTERING_WORLD" then
         if event == "PLAYER_MONEY" then
             F.Trade.onMoney()
+            F.Scan.onMoney()
         end
         F.Analytics.recordGold()
         if event == "PLAYER_ENTERING_WORLD" then

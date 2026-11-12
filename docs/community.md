@@ -26,60 +26,79 @@ data adds everyone's history and keeps the full scans.
 
 ## For players
 
-### Getting community prices (no account needed)
+### Open the desktop helper
 
-1. Download the helper: **ForeverFlipSync.exe** from the
-   [latest ForeverFlip release](https://github.com/Danissemo/ForeverFlip/releases/latest). With Python
-   3.12 installed you can also run [`sync/foreverflip_sync.py`](../sync/foreverflip_sync.py).
-2. Start it while you play, or once before you play:
+1. Start **ForeverFlipSync.exe**. The Windows build opens a small window, without a console.
+2. Check **Game installation**. The helper remembers your selection. It looks at running clients,
+   Windows installation records and common folders on local drives; it does not recursively scan
+   every drive. If several clients are found, choose the one you play.
+3. If necessary, press **Choose game...**. Select the `_forever_` folder or its parent installation
+   folder. Retail and Classic folders are not accepted. The command-line `--game` option also
+   accepts `Wow.exe` or a folder inside the Forever addon directory.
+4. Leave **Sync automatically** on, or press **Sync now** when you want one pass. Community prices
+   can be downloaded without a GitHub account. Sharing your scans is off until you enable it.
+5. In game, use `/reload` to save new scans and read updated community prices. After the helper
+   first creates the **ForeverFlip_Shared** addon, restart the game so it discovers the new addon.
 
-   ```bash
-   ForeverFlipSync.exe --download-only
-   ```
-
-   It finds `C:\World of Warcraft\_forever_` by itself. For another folder, add
-   `--game "D:\Games\World of Warcraft\_forever_"`.
-3. It writes the **ForeverFlip_Shared** addon into `Interface/AddOns`. ForeverFlip reads it at the
-   next `/reload` or login. **Settings → Sharing** then shows "Community data: N scans, updated …".
-
-The helper downloads only the auction houses you use (taken from ForeverFlip's saved data), every
-15 minutes and whenever the game saves.
+The status line shows progress or a retry message; the log gives the result. Automatic mode checks
+for changed saves every five seconds, refreshes community prices every fifteen minutes and checks
+pending uploads about once a minute. A failed attempt keeps unsent scans and retries after thirty
+seconds. File changes made during a transfer are processed on the next pass. The window stays
+responsive while parsing and network work run in the background.
 
 ### Contributing your scans
 
-1. In the game: **Settings → Sharing → Keep my full scans for the ForeverFlip Sync helper**. Every full
-   scan is then kept, auction by auction; the last 2 are saved. They are several megabytes each, so
-   the saved-data file grows and logging out takes a moment longer.
-2. Any GitHub account can upload; nobody has to add you. The account must be at least 7 days old.
-   Give the helper a token of it, in one of these ways:
-   - log in with the [GitHub CLI](https://cli.github.com) once (`gh auth login`); the helper uses its
-     token;
-   - create a classic token with the scopes **gist** and **public_repo** and set it in the
-     environment variable `FF_GITHUB_TOKEN`, or put `{"token": "..."}` into
-     `%APPDATA%\ForeverFlipSync\config.json`.
-3. Run the helper without `--download-only`. After each `/reload` or logout it shares the new full
-   scans, each once:
-   1. it checks the scan first and refuses to send one that is incomplete, more than 7 days old or
-      whose seal does not match (see below);
-   2. it puts the scan, unchanged and compressed, into a **secret gist** of your account and opens an
-      issue **Scan upload: ...** in the data repository that points to it;
-   3. the repository checks the scan again, archives it and answers in the issue within minutes;
-   4. the helper prints the answer and deletes the gist.
+1. In game: **Settings → Sharing → Keep my full scans for the ForeverFlip Sync helper**. Up to
+   eight full scans are retained until the helper acknowledges them. They can occupy several
+   megabytes each and are written when the game saves, including `/reload` and logout.
+2. Sign in once with the [GitHub CLI](https://cli.github.com): `gh auth login`. Any account at
+   least seven days old can contribute. Sharing needs the **gist** and **public_repo** permissions.
+   Existing `FF_GITHUB_TOKEN` or `config.json` credentials also work; the window never displays them.
+3. Enable **Share my full scans**, then press **Sync now**. If you signed in after opening the
+   window, the next manual sync refreshes the sign-in state; restarting is not required.
+4. The helper checks each scan, uploads its compressed contents to a secret gist, and opens a
+   **Scan upload: ...** issue in the data repository. After the repository finishes checking and
+   archiving it, the helper shows its answer and removes the temporary gist.
 
-The helper keeps its state in `%APPDATA%\ForeverFlipSync\state.json`. Uploads are public: the issue and
-the archived file name show your GitHub login, the realm and the faction.
+A failed upload is not acknowledged as sent. Completed uploads are saved immediately, even if a
+later download fails, and invalid scans are tracked separately from successful uploads. A sharing
+failure does not prevent an independent attempt to download community prices.
 
-### Options
+The helper keeps configuration and state in `%APPDATA%\ForeverFlipSync`. Uploads are public: the
+issue and archived file identify the GitHub account, realm and faction. The sharing checkbox is
+remembered and applies to command-line runs too, unless an explicit command-line override is used.
+
+### Command-line options
 
 | Option | Meaning |
 |---|---|
-| `--once` | One upload and download, then exit |
-| `--download-only` | Never upload |
-| `--game <folder>` | The WoW Forever folder (with `Interface` and `WTF`) |
-| `--repo <owner/name>` | Another data repository |
-| `--interval <seconds>` | How often to look for a new save (default 60) |
+| `--gui` | Open the desktop window explicitly |
+| `--console` | Use the console instead of the window |
+| `--once` | Run one sync and exit; a failure returns a nonzero exit code |
+| `--download-only` | Never upload, regardless of the saved sharing setting |
+| `--upload` | Enable sharing explicitly for this run |
+| `--paused` | Open the window with automatic sync paused |
+| `--game <path>` | Forever client folder, parent installation folder, executable or addon subfolder |
+| `--repo <owner/name>` | Another community data repository |
+| `--interval <seconds>` | Console check interval, default 60 seconds |
 
-`config.json` accepts the same settings as `game`, `repo` and `token`.
+For example, `ForeverFlipSync.exe --console --upload --once` sends eligible scans and downloads
+prices once; `--console --download-only` only receives prices. An invalid explicit game path is
+reported instead of silently selecting a different installation.
+
+`config.json` accepts `game`, `repo`, `upload`, `automatic` and the legacy `token` setting. Use
+GitHub CLI sign-in or an environment credential rather than putting a new secret into this file.
+
+### Build and diagnose the helper
+
+On Windows, install PyInstaller and run `python tools/build_sync_helper.py`. The build bundles any
+SSL runtime resource required by the active Python distribution, then runs the frozen executable's
+TLS-verification and GUI smoke check. HTTPS certificate and hostname checks remain enabled.
+The release workflow uses the same builder.
+
+For a local diagnostic without syncing, run `ForeverFlipSync.exe --self-test --self-test-report
+runtime.json`. Add `--self-test-network` to test the public community index as well. This does not
+load credentials, share scans or change the game's saved data.
 
 ## What is shared and how it is used
 
@@ -134,6 +153,9 @@ layers make a changed scan useless instead.
 |---|---|
 | `ForeverFlip/Raw.lua` | Captures and seals full scans into `ForeverFlipRaw`; imports `ForeverFlipShared` |
 | `sync/ffscan.py` | Formats: SavedVariables reader, FFR1 full scans, the seal, the checks, FF1 summaries, `Data.lua` |
-| `sync/foreverflip_sync.py` | The helper: checks, gist and issue uploads, downloads |
+| `sync/foreverflip_sync.py` | Transfer engine, retry state and command-line entrypoint |
+| `sync/game_location.py` | Forever-specific validation and bounded installation discovery |
+| `sync/sync_gui.py` | Desktop window and background worker |
+| `tools/build_sync_helper.py` | Windows executable packaging and frozen-runtime verification |
 | `sync/aggregate.py` | The aggregator, run by the data repository's workflow on every upload issue and every 30 minutes |
 | `tests/test_sync.py` | Tests of all of the above, including the addon reading what Python writes |

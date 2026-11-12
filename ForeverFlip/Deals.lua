@@ -900,6 +900,10 @@ end
 -- bought (the auction for gear and items, the cheapest units for commodities). No search is sent;
 -- the deal keeps the time of its check, so it is checked again once that is too old.
 function D.afterPurchase(op)
+    if F.Scan.last then
+        F.Scan.last.purchased = F.Scan.last.purchased or {}
+        F.Scan.last.purchased[op.key] = true
+    end
     local d = D.get(op.key)
     if not d or type(d.rows) ~= "table" then
         D.verify(op.key)
@@ -941,6 +945,17 @@ function D.verifyCallback(k, rows, complete, callback)
             market = d and d.market or (history and history.scan and history.scan.market),
             link = d and d.link or (rows[1] and rows[1].link),
         }
+        local last = F.Scan.last
+        if last and last.groups and last.groups[k] and last.scope == F.Engine.scope() then
+            -- A negative check supersedes the old scan too. Keep only the prefix evaluation
+            -- uses (40 lots and the following price), so a wallet gain can reuse the newest rows.
+            local checked = { key = g.key, kind = g.kind, id = g.id, market = g.market, link = g.link, rows = {} }
+            for i = 1, math.min(41, #rows) do
+                checked.rows[i] = rows[i]
+            end
+            last.checkedGroups = last.checkedGroups or {}
+            last.checkedGroups[k] = checked
+        end
         local live, reason = D.evaluate(g, F.AH.vendorPrice(item.id), history, clock())
         if live then
             live.verified = clock()

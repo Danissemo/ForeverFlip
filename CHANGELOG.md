@@ -6,6 +6,29 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The Sync helper now bundles its Python distribution's required TLS policy resource. Frozen
+  builds verify TLS and Tk at build time, preventing a missing-file error before HTTPS starts.
+- Sync errors name what failed: the missing file, the GitHub answer or the lost connection,
+  instead of a bare "[Errno 2] No such file or directory".
+- Sync uploads are acknowledged only after successful submission; partial progress is persisted,
+  failed uploads can retry, and missing credentials can be refreshed without restarting.
+- SavedVariables parsing no longer copies the remaining file for every table key.
+- Resale now distinguishes missing sales observations from spending limits. The Sales data
+  counter shows items with measured observations, and the empty list shows the current purchase
+  budget and per-item limit instead of always asking for two scans.
+- A money gain re-evaluates still-cached scan leads locally in small slices. Results remain
+  unverified; live checks (including negative results) and items already bought supersede old
+  scan rows. An unaffordable first lot is reported as budget-limited.
+
+### Changed
+
+- ForeverFlip Sync opens a desktop window on Windows, with remembered game selection, manual
+  and automatic sync, opt-in sharing and a background worker. Command-line mode remains available.
+- Game discovery accepts installation parents, executables and addon folders, checks Forever
+  product evidence, consults running clients and installation records, and asks when ambiguous.
+
 ## [1.2.0-beta.4] - 2026-11-12
 
 Changes since beta.3. This is a pre-release; use the current beta checklist before reporting results.

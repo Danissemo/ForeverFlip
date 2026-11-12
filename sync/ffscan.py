@@ -66,7 +66,7 @@ class _Reader:
             return self.table()
         if c in "\"'":
             return self.string()
-        if c == "[" and re.match(r"\[=*\[", s[self.i:]):
+        if c == "[" and re.compile(r"\[=*\[").match(self.s, self.i):
             return self.long_string()
         m = re.compile(r"-?(0[xX][0-9a-fA-F]+|\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?)").match(s, self.i)
         if m:
@@ -96,7 +96,7 @@ class _Reader:
             if c == "\\":
                 nxt = s[self.i + 1]
                 if nxt.isdigit():
-                    m = re.match(r"\d{1,3}", s[self.i + 1:])
+                    m = re.compile(r"\d{1,3}").match(s, self.i + 1)
                     out.append(chr(int(m.group(0))))
                     self.i += 1 + len(m.group(0))
                     continue
@@ -107,7 +107,7 @@ class _Reader:
             self.i += 1
 
     def long_string(self):
-        m = re.match(r"\[(=*)\[", self.s[self.i:])
+        m = re.compile(r"\[(=*)\[").match(self.s, self.i)
         close = "]" + m.group(1) + "]"
         start = self.i + len(m.group(0))
         end = self.s.find(close, start)
@@ -125,7 +125,7 @@ class _Reader:
             if self.s[self.i] == "}":
                 self.i += 1
                 break
-            if self.s[self.i] == "[" and not re.match(r"\[=*\[", self.s[self.i:]):
+            if self.s[self.i] == "[" and not re.compile(r"\[=*\[").match(self.s, self.i):
                 self.i += 1
                 key = self.value()
                 self.skip()

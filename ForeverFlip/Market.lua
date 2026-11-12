@@ -731,6 +731,9 @@ function M.evaluate(rows, ctx)
             take = math.floor((flipBudget - cost) / r.unit)
         end
         if take < 1 then
+            if cost == 0 then
+                reason = "budget"
+            end
             break
         end
         qty, cost = qty + take, cost + take * r.unit
