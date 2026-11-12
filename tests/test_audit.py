@@ -336,6 +336,32 @@ class ScanPartsTests(unittest.TestCase):
         while S.busy() do run(0.5); n = n + 1; assert(n < 400) end
         assert(S.last.total == full, 'the whole list: ' .. S.last.total .. ' of ' .. full)''')
 
+    def test_a_partial_answer_does_not_lower_the_measure_of_the_next(self):
+        run(BASE + '''local S = F.Scan
+        for i = 1, 60 do addAuction(10, 100 + i, 1) end
+        fullScan()
+        local full = S.last.total
+        assert(F.Data.market(F.db, F.Engine.scope()).peak.total == full, 'a complete scan sets the measure')
+        -- The server only ever sends a tenth: read at the end of the wait, marked partial.
+        local real = C_AuctionHouse.GetNumReplicateItems
+        now = now + 901; F.db.lastScan = 0
+        assert(S.start())
+        C_AuctionHouse.GetNumReplicateItems = function() return math.floor(full / 10) end
+        run(S.SHORT - 10)
+        assert(S.job and S.job.state == 'waiting', 'a part is not read after a few quiet seconds')
+        local n = 0
+        while S.busy() do run(1); n = n + 1; assert(n < 600) end
+        assert(S.last.partial and S.last.total == math.floor(full / 10), 'read but marked partial')
+        assert(S.reference(F.Engine.scope()) == full, 'the measure stays the complete list')
+        -- The next answer of the same small size is again held back.
+        now = now + 901; F.db.lastScan = 0
+        C_AuctionHouse.GetNumReplicateItems = real
+        assert(S.start())
+        C_AuctionHouse.GetNumReplicateItems = function() return math.floor(full / 10) + 1 end
+        run(S.SHORT - 10)
+        assert(S.job and S.job.state == 'waiting', 'still a part')
+        C_AuctionHouse.GetNumReplicateItems = real''')
+
 
 class GearSellTests(unittest.TestCase):
     GEAR = BASE + '''UnitClass = function() return 'Druid', 'DRUID' end

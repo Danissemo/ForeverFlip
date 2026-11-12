@@ -150,7 +150,34 @@ end
 -- for S.SETTLE seconds; a list far smaller than the house's last full scan waits longer (S.SHORT
 -- quiet seconds, or the end of the wait).
 S.SETTLE = 5
-S.SHORT = 30
+S.SHORT = 60
+
+-- The size of a complete list of this house: the largest complete scan of the last day (saved as
+-- `peak`), else the last scan. Measuring against the last scan alone let partial answers pass once
+-- one had been taken (in game: 28 672, 30 720, 73 728 of about 250 000 auctions, read one after the
+-- other).
+S.PEAK_AGE = 86400
+function S.reference(scope)
+    local market = F.Data.market(F.db, scope)
+    local best = 0
+    local peak = market.peak
+    if type(peak) == "table" and U.finite(peak.total) and clock() - (peak.at or 0) <= S.PEAK_AGE then
+        best = peak.total
+    end
+    local last = S.last and S.last.scope == scope and S.last or market.last
+    local total = type(last) == "table" and not last.partial and last.total or nil
+    if U.finite(total) and total > best then
+        best = total
+    end
+    return best
+end
+
+-- A list far smaller than a complete one of this house: a part of the answer.
+function S.isShort(scope, n)
+    local ref = S.reference(scope)
+    return ref > 0 and U.finite(n) and n < ref * 0.6
+end
+
 local function polled(j, now)
     if now - (j.polled or 0) < 1 then
         return false
@@ -170,10 +197,7 @@ local function polled(j, now)
     if quiet < S.SETTLE then
         return false
     end
-    local previous = S.last and S.last.scope == j.scope and S.last.total
-        or (F.Data.market(F.db, j.scope).last or {}).total
-    local short = U.finite(previous) and previous > 0 and n < previous * 0.6
-    return not short or quiet >= S.SHORT or now - j.at >= S.ANSWER_WAIT - 5
+    return not S.isShort(j.scope, n) or quiet >= S.SHORT or now - j.at >= S.ANSWER_WAIT - 5
 end
 
 local function beginReading(j, total)
@@ -184,7 +208,8 @@ local function beginReading(j, total)
     j.groups, j.order, j.deferred = {}, {}, {}
     j.read, j.skipped, j.own = 0, 0, 0
     F.AH.refreshPlayer()
-    j.lots = F.AH.canTrackLots()
+    j.partial = S.isShort(j.scope, total) or nil
+    j.lots = F.AH.canTrackLots() and not j.partial
     j.raw = F.Raw.active() and {} or nil
 end
 
@@ -264,6 +289,10 @@ function S.onReplicate()
         return
     end
     if j.state ~= "waiting" then
+        return
+    end
+    if U.finite(total) and total > 0 and S.isShort(j.scope, total) then
+        -- The event also comes for a part of the answer: the polling waits for the rest.
         return
     end
     if not U.finite(total) or total <= 0 then
@@ -449,6 +478,7 @@ local function finish(j, done)
             and not (
                 (j.unreadable or 0) > j.total * 0.005
                 or (type(previous) == "table" and (previous.total or 0) > 0 and j.total < previous.total * 0.6)
+                or S.isShort(j.scope, j.total)
             )
         j.tidyKeys, j.tidyAt = {}, 1
         for key in pairs(history) do
@@ -602,10 +632,14 @@ function S.step()
         if not finish(j, budget(6, 300)) then
             return
         end
+        if not j.partial then
+            F.Data.market(F.db, j.scope).peak = { total = j.total, at = j.finishAt }
+        end
         S.last = {
             at = j.finishAt,
             scope = j.scope,
             total = j.total,
+            partial = j.partial,
             read = j.read,
             skipped = j.skipped,
             own = j.own,
@@ -617,7 +651,7 @@ function S.step()
             ownersKnown = j.own > 0,
         }
         S.job, S.finishedAt = nil, clock()
-        settle("read", j.total)
+        settle(j.partial and "read, partial" or "read", j.total)
         F.Raw.finish(j)
         S.setHot(j.hot)
         if F.Analytics then
@@ -696,6 +730,7 @@ function S.save()
     F.Data.market(F.db, last.scope).last = {
         at = last.at,
         total = last.total,
+        partial = last.partial,
         read = last.read,
         skipped = last.skipped,
         own = last.own,
@@ -730,6 +765,7 @@ function S.restore(scope)
         at = saved.at,
         scope = scope,
         total = saved.total or 0,
+        partial = saved.partial,
         read = saved.read or 0,
         skipped = saved.skipped or 0,
         own = saved.own or 0,

@@ -3947,12 +3947,12 @@ end
 -- Sniper figures for the summary on the left.
 function UI.sniperSummary()
     if not F.db.settings.sniper then
-        return "\n" .. L("Sniper: off")
+        return "\n\n" .. L("Sniper: off")
     end
     if not F.Sniper.active() then
-        return "\n" .. string.format(L("Sniper: %d checks"), F.Deals.snipes or 0)
+        return "\n\n" .. string.format(L("Sniper: %d checks"), F.Deals.snipes or 0)
     end
-    return "\n"
+    return "\n\n"
         .. string.format(
             L("Sniper: %d rounds\nRead %d · found %d · checks %d"),
             F.Sniper.rounds,
