@@ -73,6 +73,12 @@ class MyBidsTests(unittest.TestCase):
         local r = row()
         assert(r and r.status == 'won' and r.profit == 1500, tostring(r and r.status))''')
 
+    def test_without_a_named_bidder_your_own_highest_bid_leads(self):
+        run(BIDS + '''live(600, 500, nil)
+        assert(row().status == 'leading', 'the highest bid is the one you placed')
+        live(700, 650, nil)
+        assert(row().status == 'outbid', 'a higher bid than yours')''')
+
     def test_a_bid_from_the_game_window_is_tracked(self):
         run(BIDS + '''c.bids = {}
         live(700, 650, 'Player-1')

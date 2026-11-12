@@ -232,8 +232,12 @@ function T.runTargets()
     return out
 end
 
+-- A run ends by itself when the To vendor page is left or no click came for T.RUN_IDLE seconds:
+-- it holds Check all and the sniper while it lasts.
+T.RUN_IDLE = 60
+
 function T.runStart()
-    T.run = { skipped = {}, bought = 0, spent = 0, at = clock() }
+    T.run = { skipped = {}, bought = 0, spent = 0, at = clock(), clicked = clock() }
     T.runStep()
     F.Engine.changed()
     return T.run ~= nil
@@ -252,8 +256,11 @@ function T.runStep()
     if not run then
         return
     end
-    if not F.AH.isOpen() then
+    local ui = F.UI
+    local away = ui and ui.frame and (not ui.frame:IsShown() or ui.section ~= "deals" or ui.filter ~= "vendor")
+    if not F.AH.isOpen() or away or clock() - (run.clicked or run.at) > T.RUN_IDLE then
         T.run = nil
+        F.Engine.changed()
         return
     end
     F.Deals.holdUntil = clock() + 2 -- Check all and the sniper rest while the run goes on
@@ -281,7 +288,10 @@ function T.runStep()
             F.UI.selected = next.key
         end
     end
-    if T.readyToBuy(d) or F.Deals.pending(d.key) then
+    -- Checked and still fresh (and, for an item, its search is the last one): ready, even when the
+    -- way to the server is busy for a moment. Only a stale check is sent again.
+    local fresh = T.canBuy(d) and (d.kind == "commodity" or F.AH.searchedLast(d.id))
+    if fresh or F.Deals.pending(d.key) then
         return
     end
     -- Not checked lately, or another item was searched since: read the lot again. A deal that
@@ -296,6 +306,9 @@ end
 
 -- One click of the run: confirms a quoted purchase, or buys the deal the run has ready.
 function T.runClick()
+    if T.run then
+        T.run.clicked = clock()
+    end
     if T.op and T.op.state == "quoted" then
         return T.confirm(), "confirm"
     end

@@ -786,7 +786,8 @@ function A.bids()
                 bid = b.bidAmount,
                 buyout = (b.buyoutAmount or 0) > 0 and b.buyoutAmount or nil,
                 band = b.timeLeft,
-                leading = b.bidder ~= nil and me ~= nil and b.bidder == me,
+                -- nil when the server does not name the highest bidder (Bids.onLive decides then).
+                leading = b.bidder ~= nil and me ~= nil and (b.bidder == me) or nil,
             }
         end
     end

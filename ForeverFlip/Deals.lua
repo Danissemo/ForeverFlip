@@ -137,10 +137,23 @@ end
 
 -- How sure a deal is to pay back at its Sells at price (0 to 1, Market.confidence), and the parts
 -- of it: a vendor deal is sure (a merchant pays at once); a resale is reckoned from its sales.
+D.SURE_KEEP = 30
+D.sureCache = {}
 function D.sure(d, now)
     if not d then
         return nil
     end
+    now = now or clock()
+    local c = D.sureCache[d.key]
+    if c and c.deal == d and now - c.at < D.SURE_KEEP then
+        return c.sure, c.parts
+    end
+    local sure, parts = D.sureNow(d, now)
+    D.sureCache[d.key] = { deal = d, at = now, sure = sure, parts = parts }
+    return sure, parts
+end
+
+function D.sureNow(d, now)
     if d.mode == "vendor" then
         return 1
     end
@@ -789,7 +802,7 @@ function D.onResults(itemID, searchKey)
         -- searches only its own ending's versions), and other deals of the item can be answered
         -- from this sweep (D.shareSweep). A version not read to its end answers no other deal.
         local okNamed, named, all, mixed = pcall(F.AH.versionRows, searchKey)
-        if s.shared then
+        if s.shared and s.every then
             if not okNamed or not wholeVersion or mixed then
                 s.every = false
             elseif named then

@@ -53,6 +53,21 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Buy all to vendor skipped good deals** when the auction house was busy for a moment right
+  after a check; only a check that went stale is sent again now. The run also ends by itself when
+  you leave To vendor or click nothing for a minute: it held Check all and the sniper until the
+  auction house closed.
+- **A house that really shrank was never scanned.** A list smaller than the day's largest scan
+  but not a whole number of the server's parts is read after a quiet minute, as the house it is;
+  before, every scan of a smaller house (at night, after many auctions ended) was dropped for a day.
+- **My bids could advise bidding against yourself** when the server does not name the highest
+  bidder: you lead then while the highest bid is the one you placed.
+- **Undercuts text jumped back to the top** every minute (its first line holds the time left); it
+  keeps its place while the same auction is selected.
+- Sure is kept 30 seconds per deal instead of being reckoned for every deal four times a second;
+  gear version rows are only collected when a sweep can answer other deals; an unused detail
+  function and 70 translations of texts no longer in the addon are gone.
+
 - **A buy out showed different figures on Undercuts and on the Shopping list.** The deal read
   "allows up to 99s (saving 75s 5c)" while Undercuts read "expected 70s 51c". Both now give what
   the bought units bring once resold after the cut (75s 5c); Undercuts adds, named as such, the

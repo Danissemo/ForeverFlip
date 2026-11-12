@@ -360,6 +360,20 @@ class ScanPartsTests(unittest.TestCase):
         while S.busy() do run(1); n = n + 1; assert(n < 900) end
         assert(S.last.total == full, 'waited past 5 minutes for the rest: ' .. S.last.total)''')
 
+    def test_a_house_that_shrank_is_read_after_a_quiet_minute(self):
+        run(BASE + '''local S = F.Scan
+        for i = 1, 60 do addAuction(10, 100 + i, 1) end
+        fullScan()
+        local full = S.last.total
+        now = now + 901; F.db.lastScan = 0
+        assert(S.start())
+        C_AuctionHouse.GetNumReplicateItems = function() return math.floor(full / 2) + 1 end
+        run(S.SETTLE + 2)
+        assert(S.job and S.job.state == 'waiting', 'smaller than the day: waits a quiet minute first')
+        local n = 0
+        while S.busy() do run(1); n = n + 1; assert(n < 900) end
+        assert(S.last.total == math.floor(full / 2) + 1 and not S.last.partial, 'read as the house it is: ' .. tostring(S.last.total) .. ' of ' .. full .. ' ' .. tostring(S.last.partial) .. ' ' .. tostring(F.Engine.message))''')
+
     def test_a_part_of_another_addons_scan_waits_for_the_rest(self):
         run(BASE + '''local S = F.Scan
         for i = 1, 60 do addAuction(10, 100 + i, 1) end
@@ -381,12 +395,12 @@ class ScanPartsTests(unittest.TestCase):
         fullScan()
         local full = S.last.total
         assert(F.Data.market(F.db, F.Engine.scope()).peak.total == full, 'a complete scan sets the measure')
-        -- The server only ever sends a tenth: never read; the last complete scan stays.
+        -- The server stops at a whole number of its parts: never read; the last complete scan stays.
         local real = C_AuctionHouse.GetNumReplicateItems
         local before = S.last
         now = now + 901; F.db.lastScan = 0
         assert(S.start())
-        C_AuctionHouse.GetNumReplicateItems = function() return math.floor(full / 10) end
+        C_AuctionHouse.GetNumReplicateItems = function() return 1024 end
         run(S.SHORT + 10)
         assert(S.job and S.job.state == 'waiting', 'a part is not read, however quiet')
         local n = 0

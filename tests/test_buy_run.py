@@ -52,6 +52,22 @@ class BuyRunTests(unittest.TestCase):
         UI.show('deals:flip'); UI.refresh()
         assert(not UI.runButton:IsShown(), 'only on To vendor')''')
 
+    def test_a_busy_moment_does_not_skip_a_checked_deal(self):
+        run(RUN + '''T.runClick(); answer(); run(0.1)
+        local key = T.run.key
+        throttleReady = false
+        for _ = 1, 5 do T.runStep() end
+        throttleReady = true
+        assert(T.run.key == key and not T.run.skipped[key], 'still the deal to buy')''')
+
+    def test_the_run_ends_when_the_page_is_left_or_no_click_comes(self):
+        run(RUN + '''T.runStart(); assert(T.run)
+        UI.show('deals:flip'); T.runStep()
+        assert(not T.run, 'left the page')
+        UI.show('deals:vendor'); T.runStart()
+        now = now + T.RUN_IDLE + 1; T.runStep()
+        assert(not T.run, 'no click for a minute')''')
+
     def test_a_deal_that_stays_unconfirmed_is_skipped(self):
         run(RUN + '''T.runStart()
         local first = T.run.key

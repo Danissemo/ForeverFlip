@@ -768,10 +768,12 @@ function UI.scrollText(parent, rows, top, bottom)
             GameTooltip:Hide()
         end
     end)
-    function box.set(lines)
-        local key = lines[1] or ""
+    -- `key` names the subject (the selected auction): another subject starts at the top, the
+    -- same one keeps its place while its numbers change.
+    function box.set(lines, key)
+        key = key or lines[1] or ""
         if key ~= box.key then
-            box.key, box.offset = key, 0 -- another subject starts at the top
+            box.key, box.offset = key, 0
         end
         box.lines = lines
         scrollTo(box.offset)
@@ -1827,26 +1829,6 @@ function UI.saleEvidenceLine(h, floor)
         line = line .. " " .. string.format(L("%d one-off sweeps counted at a ceiling."), e.sweeps)
     end
     return line
-end
-
-local function estimateSentence(estimate, h, exit)
-    if not estimate.known then
-        return L("Sale estimate unavailable: collect two full scans with usable price data.")
-    end
-    local value = estimate.perDay == 0 and "0" or string.format("~%.1f", estimate.perDay)
-    local floor = U.finite(exit) and math.floor(0.85 * exit) or nil
-    local sentence = floor and string.format(L("Bought per day at %s or more: %s."), U.money(floor), value)
-        or string.format(L("Estimated disappeared/day: %s."), value)
-    if estimate.age then
-        sentence = sentence
-            .. " "
-            .. string.format(L("Data %d min old"), math.floor(estimate.age / 60))
-            .. (estimate.stale and L(" (old data).") or ".")
-    end
-    if h then
-        sentence = sentence .. "\n" .. UI.saleEvidenceLine(h, floor)
-    end
-    return sentence
 end
 
 local function dealSentence(d)
@@ -3640,7 +3622,7 @@ function UI.refreshUndercuts()
         lines[1] = L("Anti-undercut: when another seller lists your item cheaper, every way out is priced")
         lines[2] = L("from the measured sales (wait, undercut, buy out, raise, a merchant), and you choose.")
     end
-    UI.fightBox.set(lines)
+    UI.fightBox.set(lines, selected and selected.auction.auctionID or #plans)
     for id, b in pairs(UI.fightButtons) do
         local o = selected and selected[id]
         b:SetEnabled(o ~= nil and not o.blocked and F.Trade.wayReady())

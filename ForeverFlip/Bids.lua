@@ -338,7 +338,14 @@ function B.onLive()
             c.bids[r.auctionID] = b
         end
         if b then
-            b.leading, b.next, b.highest, b.buyout, b.band = r.leading, r.minBid, r.bid, r.buyout, r.band
+            local leading = r.leading
+            if leading == nil then
+                -- The highest bidder is not named: the player leads while the highest bid is still
+                -- the amount the player bid (never advise bidding against yourself).
+                leading = not U.finite(r.bid) or not U.finite(b.amount) or r.bid <= b.amount
+            end
+            r.leading = leading
+            b.leading, b.next, b.highest, b.buyout, b.band = leading, r.minBid, r.bid, r.buyout, r.band
             b.outbid = not r.leading and (b.outbid or now) or nil
             b.seen = now
             local latest = now + (B.BAND_MAX[r.band] or B.BAND_MAX[3])

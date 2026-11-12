@@ -220,8 +220,13 @@ local function polled(j, now)
     if quiet < S.SETTLE then
         return false
     end
-    -- A part of the answer is never read: the rest is waited for (S.step ends the wait).
-    return not S.isShort(j.scope, n)
+    -- A whole number of the server's parts is never read: the rest is waited for (S.step ends the
+    -- wait). A list only smaller than the day's largest (the house can shrink, by night or after
+    -- many auctions ended) is read once it stayed the same for S.SHORT seconds.
+    if n % S.PART == 0 then
+        return false
+    end
+    return not S.isShort(j.scope, n) or quiet >= S.SHORT
 end
 
 local function beginReading(j, total)
@@ -232,7 +237,9 @@ local function beginReading(j, total)
     j.groups, j.order, j.deferred = {}, {}, {}
     j.read, j.skipped, j.own = 0, 0, 0
     F.AH.refreshPlayer()
-    j.partial = S.isShort(j.scope, total) or nil
+    -- Only a whole number of the server's parts is a part; a smaller house read after a quiet
+    -- minute is the house as it is.
+    j.partial = (U.finite(total) and total > 0 and total % S.PART == 0) or nil
     j.lots = F.AH.canTrackLots() and not j.partial
     j.raw = F.Raw.active() and {} or nil
 end
