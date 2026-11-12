@@ -1216,7 +1216,7 @@ function UI.selectDeal(key)
     if op and op.key ~= key and (op.state == "quote" or op.state == "quoted") then
         F.Trade.cancel() -- Confirm must never buy an item other than the selected one
     end
-    UI.selected = key
+    UI.selected, UI.selectedAt = key, F.Engine.clock()
     local d = key and F.Deals.get(key)
     if d and (not d.verified or F.Engine.clock() - d.verified > F.Deals.FRESH) then
         F.Deals.verify(key)

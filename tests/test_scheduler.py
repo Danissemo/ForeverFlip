@@ -114,13 +114,12 @@ class SchedulerTests(unittest.TestCase):
         T.op=nil;run(0.1);assert(D.search.key=='i:30');answer()
         assert(T.prices['i:30'])''')
 
-    def test_fresh_selected_deal_keeps_buy_available_until_it_expires(self):
+    def test_fresh_selected_deal_keeps_buy_available_for_a_moment(self):
         run(SETUP + '''fullScan();local D,T=ForeverFlip.Deals,ForeverFlip.Trade
         local UI=ForeverFlip.UI;UI.selected='c:10';D.verify('c:10');answer()
         ForeverFlip.Engine.autoVerify=true;ForeverFlip.db.settings.sniper=true
         run(2);assert(not D.search and T.canBuy(D.get('c:10')),'background must leave time to click Buy')
-        run(45);assert(not D.search,'still ready: the way stays free for Buy')
-        run(80);assert(D.search,'background resumes once the selected deal is no longer ready')''')
+        run(D.SELECTED_HOLD);assert(D.search,'background resumes: a deal only looked at does not stop it')''')
 
     def test_replace_keeps_pending_foreground_requests(self):
         run(SETUP + '''fullScan();local D=ForeverFlip.Deals;throttleReady=false

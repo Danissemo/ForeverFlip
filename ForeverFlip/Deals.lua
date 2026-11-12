@@ -12,7 +12,10 @@ D.byName = {} -- item IDs whose plain search got no answer: searched by name ins
 -- meanwhile only makes the purchase fail, for nothing. 2 minutes was shorter than checking a page of
 -- gear deals (a browse by name, then each version), so the first ones went back to "check again".
 D.FRESH = 300
-D.SELECTED_HOLD = 120 -- seconds a selected, checked deal holds background searches back
+-- Seconds a selected, checked deal holds background searches back, counted from its selection or
+-- its check, whichever is later: long enough to press Buy, short enough that Check all never looks
+-- stuck behind a deal the player only looked at (120 seconds did, in game).
+D.SELECTED_HOLD = 15
 D.HOLD = 45 -- seconds background searches wait while a freshly checked deal is selected
 D.KEEP = 900 -- seconds an unverified scan deal stays listed
 
@@ -212,10 +215,21 @@ function D.searching()
     return D.search ~= nil and not D.search.waitKey
 end
 
--- The player is about to buy: a Buy click found the way busy (holdUntil), or a checked deal is
--- selected on the Deals page. Every search that is not a click of the player waits then, the
+-- A checked deal the player selected moments ago (D.SELECTED_HOLD): they are about to buy it.
+local function selectedHold(ui)
+    local selected = D.get(ui.selected)
+    if not selected or not selected.verified then
+        return false
+    end
+    return clock() - math.max(selected.verified, ui.selectedAt or 0) <= D.SELECTED_HOLD
+end
+
+-- The player is about to buy: a Buy click found the way busy (holdUntil), or a checked deal was
+-- just selected on the Deals page. Every search that is not a click of the player waits then, the
 -- searches of Check all and the next step of a gear search too, so the way frees within a second.
-function D.buyHolding()
+-- The search of the selected item itself never waits (`key`): the player is waiting for it, and
+-- holding it behind its own selection stopped Check all for good (seen in game).
+function D.buyHolding(key)
     if clock() < (D.holdUntil or 0) then
         return true
     end
@@ -223,8 +237,10 @@ function D.buyHolding()
     if not ui or not ui.frame or not ui.frame:IsShown() or ui.section ~= "deals" then
         return false
     end
-    local selected = D.get(ui.selected)
-    return selected ~= nil and selected.verified ~= nil and clock() - selected.verified <= D.SELECTED_HOLD
+    if key ~= nil and key == ui.selected then
+        return false
+    end
+    return selectedHold(ui)
 end
 
 -- Background work (the sniper, automatic checks) waits while the player is about to buy or post:
@@ -245,8 +261,7 @@ function D.holding()
     if ui.section == "sell" or ui.section == "auctions" then
         return true
     end
-    local selected = ui.section == "deals" and D.get(ui.selected) or nil
-    return selected ~= nil and selected.verified ~= nil and clock() - selected.verified <= D.SELECTED_HOLD
+    return ui.section == "deals" and selectedHold(ui)
 end
 
 -- The best deal the player can buy now (Buy next key): checked deals first, then by profit.
@@ -372,7 +387,7 @@ local function startRequest(r)
     if
         D.clearing
         or D.search
-        or (priority(r) > 0 and D.buyHolding())
+        or (priority(r) > 0 and D.buyHolding(r.key))
         or not F.AH.isOpen()
         or F.Trade.busy()
         or F.Trade.postingNow()
@@ -990,7 +1005,7 @@ function D.step()
         and not F.Scan.blocking()
         and not F.Trade.busy()
         and not F.Trade.postingNow()
-        and (priority(s) == 0 or not D.buyHolding())
+        and (priority(s) == 0 or not D.buyHolding(s.key))
     then
         s.waitKey, s.at = nil, now
         if not pcall(F.AH.searchKey, s.keys[s.keyIndex]) then

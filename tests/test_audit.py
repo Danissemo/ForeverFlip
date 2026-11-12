@@ -634,6 +634,35 @@ class BuyWayTests(unittest.TestCase):
         now = now + 6; run(1.1)
         assert(D.search or #D.requests == 0, 'it goes on afterwards')''')
 
+    def test_selecting_a_checked_deal_holds_check_all_only_briefly(self):
+        run(BASE + '''local D = F.Deals
+        UI.frame:Show(); UI.show('deals:all')
+        D.list = {{key='c:10', kind='commodity', id=10, verified=now, cost=1, profit=1, lots={}}}
+        D.byKey = nil
+        local get = D.get
+        D.get = function(k) if k == 'c:10' then return D.list[1] end return get(k) end
+        UI.selected, UI.selectedAt = 'c:10', now
+        assert(D.buyHolding('c:30'), 'another search waits while the player is about to buy')
+        assert(not D.buyHolding('c:10'), 'the selected item is never held behind its own selection')
+        now = now + D.SELECTED_HOLD + 1
+        assert(not D.buyHolding('c:30'), 'a deal only looked at no longer holds Check all')
+        D.list[1].verified = now
+        assert(D.buyHolding('c:30'), 'a fresh check of it holds again, briefly')
+        D.get = get''')
+
+    def test_a_held_gear_search_of_the_selected_item_goes_on(self):
+        run(BASE + '''local D = F.Deals
+        UI.frame:Show(); UI.show('deals:all')
+        local s = {key='g:20:x', item={kind='gear', id=20}, source='batch', waitKey=true, keys={{itemID=20}},
+          keyIndex=1, phase='keys', at=now, callbacks={}}
+        D.search = s
+        local get = D.get
+        D.get = function(k) if k == 'g:20:x' then return {key=k, verified=now} end return get(k) end
+        UI.selected, UI.selectedAt = 'g:20:x', now
+        D.step()
+        assert(not s.waitKey, 'the next step of its own search is sent')
+        D.get = get; D.search = nil''')
+
     def test_one_button_buys_and_confirms_a_commodity(self):
         run(BASE + '''fullScan()
         local key

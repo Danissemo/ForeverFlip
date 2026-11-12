@@ -8,6 +8,10 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Check all no longer stops behind a selected deal.** Selecting a checked deal held the
+  background checks back for two minutes, so Buy would go at once; when the selected deal was the
+  one Check all was reading, its own search waited for itself and the check stood still. The
+  selected item's search is never held now, and a selection holds the others for 15 seconds.
 - The Sync helper now bundles its Python distribution's required TLS policy resource. Frozen
   builds verify TLS and Tk at build time, preventing a missing-file error before HTTPS starts.
 - Sync errors name what failed: the missing file, the GitHub answer or the lost connection,
