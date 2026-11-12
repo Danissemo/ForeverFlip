@@ -400,9 +400,14 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
     Post next bought skips hidden items too.
   - Each click either reads a missing price or posts one item. Below the floor, an item is posted at
     the floor (`belowMin = "min"`) or skipped for the session (`"hold"`).
-- **Duration** (`T.durationFor`): 2, 8 or 24 hours from the setting. With **Auto**, it is the
-  shortest duration that the measured sales fill: the units sell within 2 hours → 2 h; within 8
-  hours → 8 h; else 24 h. Shorter posts cost smaller deposits.
+- **Duration** (`T.durationFor`): 2, 8 or 24 hours from the setting. With **Auto**, the expected
+  time to sell is worked out, and the shortest duration of at least three times that is taken
+  (`T.SAFETY`): within 40 minutes → 2 h; within 2.7 hours → 8 h; else 24 h. The time is the item's
+  own: days from purchase to sale per unit sold, once 3 were sold (`stats`). Until then the
+  market's: the units ahead of yours (other sellers' at or below your price from a fresh check,
+  else all units of the last scan) plus yours, over the units sold per day near the price. Sales
+  not measured, measured from one pair of scans only, or older than 3 hours: 24 h. Shorter posts
+  cost smaller deposits; an expired post loses its deposit.
 - **Posting** uses `PostCommodity` or `PostItem`. Before an item is posted, its deposit per unit is
   read from the game (`CalculateItemDeposit`) and kept for deal evaluation. If the game asks for a
   confirmation (`AUCTION_HOUSE_POST_WARNING`), the next click confirms.
