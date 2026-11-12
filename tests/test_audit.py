@@ -529,3 +529,14 @@ class SettingsMenuTests(unittest.TestCase):
         assert(UI.settingFrames.general:IsShown() and UI.settingsTab == 'general', 'general is the first page')
         UI.settingTabs.safety:Click()
         assert(UI.section == 'settings' and UI.settingFrames.safety:IsShown(), 'the old shortcut opens the page')''')
+
+
+class MerchantRefreshTests(unittest.TestCase):
+    def test_the_sell_list_empties_once_the_bags_settle(self):
+        run(BASE + '''F.db.settings.vendorMargin = 0
+        addItem(71, 'Murloc Fin', 28, 'commodity'); putBag(0, 1, 71, 4)
+        F.Data.market(F.db, F.Engine.scope()).history['c:71'] = { scan = { at = now, market = 20 } }
+        MerchantFrame:Show(); fire('MERCHANT_SHOW'); UI.merchantTab:Click()
+        assert(UI.merchantView.sellRows[1]:IsShown(), 'listed before the sale')
+        F.Trade.sellAllToVendor(); run(0.1); fire('BAG_UPDATE_DELAYED')
+        assert(not UI.merchantView.sellRows[1]:IsShown(), 'gone without another click')''')

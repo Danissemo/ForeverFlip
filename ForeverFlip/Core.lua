@@ -130,6 +130,7 @@ local events = {
     "MAIL_INBOX_UPDATE",
     "MERCHANT_SHOW",
     "MERCHANT_UPDATE",
+    "BAG_UPDATE_DELAYED",
     "LOOT_OPENED",
     "UNIT_SPELLCAST_START",
     "UNIT_SPELLCAST_SUCCEEDED",
@@ -287,6 +288,12 @@ function E.handle(event, ...)
     elseif event == "MERCHANT_UPDATE" then
         F.Merchant.watchBuyback(false)
         F.Merchant.learnBuyback()
+    elseif event == "BAG_UPDATE_DELAYED" then
+        -- Items sold to a merchant leave the bags a moment after the click: the merchant lists
+        -- are built again once the bags settled, not on the next click.
+        if MerchantFrame and MerchantFrame:IsShown() and F.UI and F.UI.merchant then
+            F.UI.merchant(true)
+        end
     elseif
         event == "UNIT_SPELLCAST_START"
         or event == "UNIT_SPELLCAST_SUCCEEDED"
