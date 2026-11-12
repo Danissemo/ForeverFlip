@@ -3895,7 +3895,7 @@ end
 -- A ForeverFlip tab beside Merchant and Buyback: what to sell to this merchant (one button sells it
 -- all) and what to buy here for the auction house. The Merchant tab gets a button that sells the
 -- same list at once.
-local MERCHANT_SELL_ROWS, MERCHANT_BUY_ROWS = 9, 5
+local MERCHANT_SELL_ROWS, MERCHANT_BUY_ROWS = 7, 4
 
 local function merchantRow(parent, y, withButton)
     local row = CreateFrame("Frame", nil, parent)
@@ -3911,6 +3911,28 @@ local function merchantRow(parent, y, withButton)
     row.text:SetWordWrap(withButton and true or false)
     row.value = text(row, "GameFontHighlightSmall")
     row.value:SetJustifyH("RIGHT")
+    if row.EnableMouse then
+        row:EnableMouse(true)
+    end
+    row:SetScript("OnEnter", function(self)
+        if not GameTooltip then
+            return
+        end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.bag and GameTooltip.SetBagItem then
+            GameTooltip:SetBagItem(self.bag, self.slot)
+        elseif self.index and GameTooltip.SetMerchantItem then
+            GameTooltip:SetMerchantItem(self.index)
+        elseif self.link and GameTooltip.SetHyperlink then
+            GameTooltip:SetHyperlink(self.link)
+        end
+        GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
     if withButton then
         row.buy = button(row, "Buy", 64, function(self)
             local ok, why = F.Merchant.buy(self.offer)
@@ -3936,7 +3958,7 @@ local function sellAll()
     UI.merchant(true)
 end
 
-function UI.merchantSelect(on)
+function UI.merchantSelect(on, closing)
     local view, tab = UI.merchantView, UI.merchantTab
     if not view then
         return
@@ -3970,7 +3992,7 @@ function UI.merchantSelect(on)
             end
         end
     end
-    if on then
+    if not closing then
         UI.merchant(true)
     end
 end
@@ -4029,24 +4051,25 @@ local function createMerchantTab()
     for i = 1, MERCHANT_SELL_ROWS do
         view.sellRows[i] = merchantRow(view, -26 - (i - 1) * 18, false)
     end
+    local below = -30 - MERCHANT_SELL_ROWS * 18
+    view.sellAll = button(view, "Sell all", 140, sellAll)
+    view.sellAll:SetPoint("TOPRIGHT", view, "TOPRIGHT", -8, below)
     view.sellNote = text(view, "GameFontDisableSmall")
-    view.sellNote:SetPoint("TOPLEFT", view, "TOPLEFT", 8, -28 - MERCHANT_SELL_ROWS * 18)
-    view.sellNote:SetPoint("TOPRIGHT", view, "TOPRIGHT", -8, -28 - MERCHANT_SELL_ROWS * 18)
     view.sellNote:SetJustifyH("LEFT")
-    view.sellAll = button(view, "Sell all", 150, sellAll)
-    view.sellAll:SetPoint("TOPRIGHT", view, "TOPRIGHT", -8, -44 - MERCHANT_SELL_ROWS * 18)
+    view.sellNote:SetWordWrap(true)
     local line = view:CreateTexture(nil, "ARTWORK")
     line:SetColorTexture(1, 0.82, 0, 0.25)
     line:SetHeight(1)
-    line:SetPoint("TOPLEFT", view, "TOPLEFT", 6, -74 - MERCHANT_SELL_ROWS * 18)
-    line:SetPoint("TOPRIGHT", view, "TOPRIGHT", -6, -74 - MERCHANT_SELL_ROWS * 18)
+    line:SetPoint("TOPLEFT", view, "TOPLEFT", 6, below - 28)
+    line:SetPoint("TOPRIGHT", view, "TOPRIGHT", -6, below - 28)
     local buyTitle = text(view, "GameFontNormal")
-    local buyTop = -82 - MERCHANT_SELL_ROWS * 18
+    local buyTop = below - 34
+    view.noteBelow = below
     buyTitle:SetPoint("TOPLEFT", view, "TOPLEFT", 8, buyTop)
     buyTitle:SetText(L("Buy here, sell on the auction house"))
     local offers = { rows = {} }
     for i = 1, MERCHANT_BUY_ROWS do
-        offers.rows[i] = merchantRow(view, buyTop - 20 - (i - 1) * 30, true)
+        offers.rows[i] = merchantRow(view, buyTop - 20 - (i - 1) * 29, true)
     end
     view.buyNote = text(view, "GameFontDisableSmall")
     view.buyNote:SetPoint("TOPLEFT", view, "TOPLEFT", 8, buyTop - 24)
@@ -4073,7 +4096,7 @@ function UI.merchant(open)
         createMerchantTab()
     end
     if not open then
-        UI.merchantSelect(false)
+        UI.merchantSelect(false, true)
         UI.merchantButton:Hide()
         return
     end
@@ -4082,17 +4105,26 @@ function UI.merchant(open)
     for _, v in ipairs(list) do
         total = total + v.price
     end
-    if #list > 0 then
+    local view = UI.merchantView
+    if #list > 0 and not view:IsShown() then
         UI.merchantButton:SetText(string.format(L("Sell to vendor (%d): %s"), #list, U.money(total)))
         UI.merchantButton:Show()
     else
         UI.merchantButton:Hide()
     end
-    local view = UI.merchantView
+    view.sellNote:ClearAllPoints()
+    if #list == 0 then
+        view.sellNote:SetPoint("TOPLEFT", view, "TOPLEFT", 8, -30)
+        view.sellNote:SetPoint("TOPRIGHT", view, "TOPRIGHT", -8, -30)
+    else
+        view.sellNote:SetPoint("TOPLEFT", view, "TOPLEFT", 8, view.noteBelow - 2)
+        view.sellNote:SetPoint("TOPRIGHT", view.sellAll, "TOPLEFT", -6, -2)
+    end
     for i, row in ipairs(view.sellRows) do
         local v = list[i]
         if v then
             row.icon:SetTexture(icon(v.id))
+            row.bag, row.slot = v.bag, v.slot
             local name = v.link or (v.id and U.itemInfo(v.id)) or v.key
             row.text:SetText(name .. (v.count > 1 and (" x" .. v.count) or ""))
             row.value:SetText(U.money(v.price))
@@ -4108,9 +4140,9 @@ function UI.merchant(open)
             )
         )
     elseif #list > MERCHANT_SELL_ROWS then
-        view.sellNote:SetText(string.format(L("and %d more; hidden items are kept"), #list - MERCHANT_SELL_ROWS))
+        view.sellNote:SetText(string.format(L("and %d more"), #list - MERCHANT_SELL_ROWS))
     else
-        view.sellNote:SetText(L("Hidden items and items with a keep rule are kept."))
+        view.sellNote:SetText(L("Hidden items are kept."))
     end
     view.sellAll:SetText(#list > 0 and string.format(L("Sell all: %s"), U.money(total)) or L("Sell all"))
     view.sellAll:SetEnabled(#list > 0)
@@ -4130,6 +4162,7 @@ function UI.merchant(open)
                 )
             )
             row.buy.offer = o
+            row.index, row.link = o.index, o.link
             row.buy:SetText(L("Buy") .. " " .. o.qty)
             row:Show()
         else

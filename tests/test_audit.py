@@ -297,3 +297,20 @@ class QuietTests(unittest.TestCase):
         assert(T.buy('i:40'))
         fire('AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED')
         assert(not T.op and F.Engine.message == 'buy_dropped', tostring(F.Engine.message))""")
+
+
+class MerchantLayoutTests(unittest.TestCase):
+    def test_one_sell_button_at_a_time_and_tooltips_on_rows(self):
+        run(BASE + '''F.db.settings.vendorMargin = 0
+        addItem(71, 'Murloc Fin', 28, 'commodity'); putBag(0, 1, 71, 4)
+        F.Data.market(F.db, F.Engine.scope()).history['c:71'] = { scan = { at = now, market = 20 } }
+        MerchantFrame:Show(); fire('MERCHANT_SHOW')
+        assert(UI.merchantButton:IsShown(), 'the Merchant tab has the button')
+        UI.merchantTab:Click()
+        assert(not UI.merchantButton:IsShown(), 'the ForeverFlip tab has Sell all instead')
+        UI.merchantSelect(false)
+        assert(UI.merchantButton:IsShown(), 'back on the Merchant tab')
+        local row = UI.merchantView.sellRows[1]
+        assert(row.bag == 0 and row.slot == 1 and type(row.scripts.OnEnter) == 'function', 'the row shows the bag item tooltip')
+        fire('MERCHANT_CLOSED')
+        assert(not UI.merchantButton:IsShown() and not UI.merchantView:IsShown())''')
