@@ -262,7 +262,9 @@ candidate or part of Post all.
 (`C_AuctionHouse.SendSearchQuery`) reads the item's current listings and the deal is evaluated again
 with them, using the same rules.
 
-- A check is valid for **45 seconds** (`D.FRESH`). After that, Buy requires a new check.
+- A check is valid for **2 minutes** (`D.FRESH`). After that, Buy requires a new check. A lot
+  bought by someone meanwhile only makes the purchase fail, for nothing. Background searches wait
+  45 seconds (`D.HOLD`) while a freshly checked deal is selected, to leave time for Buy.
 - Unchecked scan deals stay listed for **15 minutes** (`D.KEEP`).
 - Searches run **one at a time**. Requests from your clicks form a first-in, first-out queue and are
   accepted even while the server is throttling. Background work (automatic checks, sniper) only uses

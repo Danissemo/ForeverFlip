@@ -37,25 +37,25 @@ class TableTests(unittest.TestCase):
         runtime().execute(DEALS + '''
         click('Name');assert(keys()=='c:20,c:30,c:10',keys())
         click('Name');assert(keys()=='c:10,c:30,c:20',keys())
-        click('Price');assert(keys()=='c:30,c:20,c:10',keys())
-        click('Price');assert(keys()=='c:10,c:20,c:30',keys())
+        click('Cost');assert(keys()=='c:30,c:20,c:10',keys())
+        click('Cost');assert(keys()=='c:10,c:20,c:30',keys())
         click('Qty');assert(keys()=='c:10,c:20,c:30',keys())
         click('Qty');assert(keys()=='c:20,c:30,c:10',keys())
-        click('Sells at');assert(keys()=='c:30,c:20,c:10',keys())
+        click('Sells at');assert(keys()=='c:30,c:10,c:20',keys())
         click('Sells at');assert(keys()=='c:10,c:20,c:30',keys())
         click('Profit');assert(keys()=='c:20,c:10,c:30',keys())
         click('Profit');assert(keys()=='c:30,c:10,c:20',keys())
         click('Status');assert(keys()=='c:10,c:30,c:20',keys())
-        click('Status');assert(keys()=='c:20,c:30,c:10',keys())
+        click('Status');assert(keys()=='c:20,c:10,c:30',keys()) -- c:10 and c:30 are both fresh now: a tie, by key
         ''')
 
     def test_sort_survives_refresh_filter_switches_and_live_data_changes(self):
         runtime().execute(DEALS + '''
-        click('Price');UI.refresh();assert(keys()=='c:30,c:20,c:10')
+        click('Cost');UI.refresh();assert(keys()=='c:30,c:20,c:10')
         UI.show('deals:vendor');assert(keys()=='c:30,c:10')
         UI.show('deals:flip');assert(keys()=='c:20')
         UI.show('deals:all');assert(keys()=='c:30,c:20,c:10')
-        a.maxUnit=5;UI.refresh();assert(keys()=='c:20,c:30,c:10')
+        a.cost=5;UI.refresh();assert(keys()=='c:20,c:30,c:10')
         ''')
 
     def test_sort_happens_before_pagination_and_ties_stay_deterministic(self):
@@ -73,8 +73,8 @@ class TableTests(unittest.TestCase):
             if page<3 then assert(UI.next:IsEnabled());UI.next:Click() end
         end
         local count=0;for _ in pairs(seen) do count=count+1 end;assert(count==30)
-        click('Price');assert(UI.dealPage==1 and UI.dealTable.rows[1].key=='c:10')
-        click('Price');assert(UI.dealTable.rows[1].key=='c:39')
+        click('Cost');assert(UI.dealPage==1 and UI.dealTable.rows[1].key=='c:10')
+        click('Cost');assert(UI.dealTable.rows[1].key=='c:39')
         click('Profit');assert(UI.dealTable.rows[1].key=='c:10')
         click('Profit');assert(UI.dealTable.rows[1].key=='c:10')
         ''')
@@ -83,7 +83,7 @@ class TableTests(unittest.TestCase):
         runtime().execute(DEALS + '''
         local dealHeader
         for _,w in ipairs(widgets) do
-            if w.template=='AuctionHouseTableHeaderStringTemplate' and w:GetText()=='Price' then dealHeader=w.parent end
+            if w.template=='AuctionHouseTableHeaderStringTemplate' and w:GetText()=='Cost' then dealHeader=w.parent end
         end
         for _,w in ipairs(widgets) do
             if w.template=='AuctionHouseTableHeaderStringTemplate' and w.parent~=dealHeader then
@@ -124,7 +124,7 @@ class SniperControlTests(unittest.TestCase):
         assert(not UI.checkButton:IsEnabled(),'queued request must disable duplicates')
         local found=false
         for _,r in ipairs(UI.dealTable.rows) do
-            if r.key=='c:10' then found=true;local t=r.cols[5]:GetText();assert(t:find('queued') or t:find('checking'),t) end
+            if r.key=='c:10' then found=true;local t=r.cols[6]:GetText();assert(t:find('queued') or t:find('checking'),t) end
         end
         assert(found)
         ''')

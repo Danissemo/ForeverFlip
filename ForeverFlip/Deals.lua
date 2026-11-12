@@ -7,7 +7,9 @@ local D = {}
 F.Deals = D
 
 D.list = {} -- deals of the current scope, best first
-D.FRESH = 45 -- seconds a verification stays valid for buying
+D.byName = {} -- item IDs whose plain search got no answer: searched by name instead
+D.FRESH = 120 -- seconds a verification stays valid for buying (a lot bought by someone meanwhile only makes the purchase fail, for nothing)
+D.HOLD = 45 -- seconds background searches wait while a freshly checked deal is selected
 D.KEEP = 900 -- seconds an unverified scan deal stays listed
 
 local function clock()
@@ -292,13 +294,16 @@ local function startRequest(r)
     D.sent[#D.sent + 1] = now
     r.attempts = (r.attempts or 0) + 1
     local ok
-    if r.item.kind == "gear" and F.AH.canSearchGear() and F.Sniper.inFlight() then
+    -- Gear, and items whose plain search got no answer, are searched by name: a browse lists their
+    -- exact item keys, then each key is searched.
+    local byName = (r.item.kind == "gear" or D.byName[r.item.id]) and F.AH.canSearchGear()
+    if byName and F.Sniper.inFlight() then
         -- The sniper's browse is still out: its answer would be read as this one's.
         D.search = nil
         D.sent[#D.sent] = nil
         return false
     end
-    if r.item.kind == "gear" and F.AH.canSearchGear() then
+    if byName then
         -- Gear: a browse by name first (its item-key versions), then each version (see AH.lua).
         r.phase, r.keys, r.keyIndex, r.found, r.foundIDs, r.allComplete = "browse", nil, 0, {}, {}, true
         -- A browse somebody else sent just before may answer in place of this one.
@@ -532,7 +537,10 @@ function D.onResults(itemID, searchKey)
         D.learn(itemID, searchKey)
         return
     end
-    local ok, rows, complete = pcall(F.AH.rows, s.item)
+    -- The answer comes under the item's exact key (it may carry an item level): read it there, not
+    -- under the plain key of the request, which would find no rows.
+    local exact = type(searchKey) == "table" and s.item.kind ~= "commodity" and searchKey or nil
+    local ok, rows, complete = pcall(F.AH.rows, s.item, exact)
     if not ok then
         finishSearch(nil, false)
         return
@@ -547,7 +555,11 @@ function D.onResults(itemID, searchKey)
     local enough = complete or (d and last and last.unit > (d.exit or 0) * 1.2)
     if not enough and s.pages < 3 and F.AH.ready() then
         s.pages, s.at = s.pages + 1, clock()
-        pcall(F.AH.more, s.item)
+        if exact then
+            pcall(F.AH.moreKey, exact)
+        else
+            pcall(F.AH.more, s.item)
+        end
         return
     end
     finishSearch(rows, complete or enough)
@@ -759,7 +771,7 @@ function D.reportUnanswered(batch)
         "ForeverFlip: "
             .. string.format(
                 F.Locale.text(
-                    "no answer for: %s. The server does not answer for items nobody else sells; the next full scan tells for sure."
+                    "no answer for: %s. Either nobody else sells them, or the server did not answer their search: the next check searches them by name."
                 ),
                 table.concat(names, ", ")
             )
@@ -869,6 +881,9 @@ function D.step()
     end
     s = D.search
     if s and now - s.at > 10 then
+        if s.item.kind == "item" and not s.phase then
+            D.byName[s.item.id] = true
+        end
         finishSearch(nil, false)
     end
     if D.search or F.Trade.busy() or F.Scan.blocking() or not F.AH.isOpen() then
@@ -894,7 +909,7 @@ function D.step()
     -- Leave the player time to click Buy on the selected, freshly checked deal.
     local ui = F.UI
     local selected = ui and ui.section == "deals" and ui.frame:IsShown() and D.get(ui.selected)
-    if selected and selected.verified and now - selected.verified <= D.FRESH then
+    if selected and selected.verified and now - selected.verified <= D.HOLD then
         return
     end
     r = D.backgroundRetry

@@ -220,6 +220,7 @@ function E.handle(event, ...)
     elseif event == "AUCTION_HOUSE_SHOW_ERROR" then
         F.Trade.onError()
     elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
+        F.Trade.onDropped()
         F.Scan.onDropped()
         F.Deals.onDropped()
     elseif event == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then

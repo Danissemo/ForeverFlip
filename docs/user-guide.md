@@ -70,7 +70,7 @@ history, because the listings are separate, and counts the 15% cut.
 |---|---|
 | **Full scan** | Asks the server for every auction of the house. The button shows a countdown while the 15-minute cooldown runs. |
 | **Sniper: ON / OFF** | Turns the [sniper](#sniper) on or off. |
-| **Check all** | Searches every entry of the open page on the auction house again, one search after another, and the page shows what was found: deals are kept, updated or dropped (All, To vendor, Resale, From the list); the items on the **Shopping list** are checked as shopping deals; **Bids** reads the best bid of every candidate; **My items** and **My auctions** read the current price of every item (the Best column and the suggested prices use it); **Crafting** reads every material and product, and the recipes are priced with those prices for 5 minutes. While it runs the button shows `Checking <page>: done/total`. Afterwards it shows `Checked ...`. Searches without an answer are sent once more by themselves; what still has none is shown as `(N without an answer)` and named in the chat. On WoW Forever the server does not answer a search for an item nobody else sells, so these are usually items only you have; an item a full scan of the last 20 minutes did not see is not searched at all. |
+| **Check all** | Searches every entry of the open page on the auction house again, one search after another, and the page shows what was found: deals are kept, updated or dropped (All, To vendor, Resale, From the list); the items on the **Shopping list** are checked as shopping deals; **Bids** reads the best bid of every candidate; **My items** and **My auctions** read the current price of every item (the Best column and the suggested prices use it); **Crafting** reads every material and product, and the recipes are priced with those prices for 5 minutes. While it runs the button shows `Checking <page>: done/total`. Afterwards it shows `Checked ...`. Searches without an answer are sent once more by themselves; what still has none is shown as `(N without an answer)` and named in the chat. Either nobody else sells them (WoW Forever does not answer a search for an item only you have), or the server did not answer their search: the next check searches them by name, like gear. An item a full scan of the last 20 minutes did not see is not searched at all. |
 | Auction house (bottom bar, beside the money display) | Which auction house is open: **Alliance AH** (blue), **Horde AH** (red) or **Neutral AH, 15% cut** (gold, at Booty Bay, Gadgetzan or Everlook). Each house keeps its own scans, prices and deals; the window title says it too. |
 | Status line | The current task (`Reading auctions 12000 / 231000`, `Evaluating items ...`), the last message, or the number of deals and how many are checked. The sniper's own figures are in the summary on the left. |
 
@@ -140,12 +140,12 @@ weapons and armor priced below the expected value of their materials.
 | Column | Meaning |
 |---|---|
 | Item | Icon and name. Hover for the game tooltip; right-click for the price history. |
-| Price | The highest unit price you pay in this deal (the last lot taken). |
-| Qty | Units to buy (their total price is in the line under the table). |
-| Sells at | The price one unit sells at. A resale counts on the usual asking price, but never more than what a quarter of the sales seen reached (green); `*` means no sales were seen yet, so it is only the asking price. A vendor deal shows the vendor price (orange; `*` = not yet confirmed at a merchant). Shopping, disenchant and bid deals show their kind. |
-| Profit | Money you keep. For a resale: after the auction cut and the deposit risk. For a shopping deal: the saving against your price. For a disenchant deal: the material value minus the cost. |
+| Qty | Units to buy. |
+| Cost | What buying all of them costs (the highest unit price is in the line under the table). |
+| Sells at | What selling all of them brings, after the auction cut and the deposits. For a resale the price per unit is worked out from the market: just below the next other seller, at most the usual price and at most what a quarter of the sales seen reached; only as many units are bought as sell in a day at that price, and your own unsold stock of the item lowers the estimate. Green for a resale, `*` when no sales were seen yet (the price is then only the asking price). Orange for a vendor deal, `*` when the vendor price is not yet confirmed at a merchant. |
+| Profit | Sells at minus Cost: the money you keep. For a shopping deal: the saving against your price. For a disenchant deal: the material value minus the cost. |
+| Est./day | For a resale: units per day that disappear near the Sells at price (how popular it is at that price). For other deals: the kind of deal. Hover the header for what it counts. |
 | Status | See below. |
-| Profit/day | Profit, Sells at and the measured sales in one figure: what the deal earns per day. A resale earns its profit times the share of its units the market takes in a day (units sold per day near the Sells at price, at most all of them); 16 units of which 8 sell a day earn half the profit a day. A vendor deal pays all of it at once. `?` = sales not measured yet (two full scans needed). The units per day themselves are in the line under the table. |
 
 Click a column header to sort by it, and click it again to reverse the order. Use **<** and **>** to
 change pages.
@@ -154,10 +154,10 @@ change pages.
 
 | Status | Meaning |
 |---|---|
-| **ready** (green) | Checked on the auction house in the last 45 seconds. You can buy it. |
+| **ready** (green) | Checked on the auction house in the last 2 minutes. You can buy it. |
 | **checking...** | The exact search for this item is running now. |
 | **queued** | Waiting for its turn to be checked. |
-| **check again** | It was checked more than 45 seconds ago. Click it to check it again. |
+| **check again** | It was checked more than 2 minutes ago. Click it to check it again. |
 | **from scan** | Found by the full scan and not checked yet. |
 | **old scan** | Found by a scan more than 20 minutes ago. The lots may be gone. |
 | **not enough money** (red) | The deal costs more than you carry. |
@@ -184,7 +184,7 @@ by itself.
 
 ## Buying
 
-1. Click a deal. If it has not been checked in the last 45 seconds, it is checked now. Wait for
+1. Click a deal. If it has not been checked in the last 2 minutes, it is checked now. Wait for
    **ready**.
 2. Click **Buy** (or press the [Buy key](#key-bindings)).
    - **Stackable goods (commodities)** are bought by quantity. The game first quotes the total price.
@@ -198,7 +198,7 @@ by itself.
    - **Items and gear** are bought one auction per click, because the server sells one lot per
      purchase. After a purchase the deal is worked out again from the lots its check read, without
      the lot just bought: the next click buys the next lot at once, with no new search, while the
-     check is fresh (45 seconds).
+     check is fresh (2 minutes).
    - A click on **Buy** does not wait for a search in flight (the sniper, a check): that search is
      sent again after the purchase.
 3. When the purchase goes through, the status line shows *Purchase recorded*. The units are added to
@@ -706,7 +706,7 @@ saved in the SavedVariables file (see [Troubleshooting](#troubleshooting)).
 **The scan never starts, or waits forever.** Another addon may have used the account's
 15-minute window. Wait for the countdown, or use `/ff rescan` if the server did not answer.
 
-**Buy stays disabled.** The deal must be **ready** (checked in the last 45 seconds) and no other
+**Buy stays disabled.** The deal must be **ready** (checked in the last 2 minutes) and no other
 search or purchase may be running. Click the deal to check it again.
 
 **Resale estimates look too optimistic.** On a client that reports each auction's time left, sales

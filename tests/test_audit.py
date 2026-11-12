@@ -178,3 +178,54 @@ class VendorMarginTests(unittest.TestCase):
         assert(db.settings.vendorMargin == 20, 'a margin set again by the player stays')
         local fresh = D.open({})
         assert(fresh.settings.vendorMargin == 0, 'new players start without a margin')''')
+
+
+class ItemAnswerTests(unittest.TestCase):
+    def test_an_answer_under_the_exact_item_key_is_read_there(self):
+        run(BASE + '''fullScan()
+        F.AH.rows = function(item, key)
+            if key and key.itemLevel == 5 then return { { unit = 900, qty = 1, auctionID = 7 } }, true end
+            return {}, false
+        end
+        local got
+        T.checkPrice('i:30', function(_, rows, complete) got = { rows = rows, complete = complete } end, true)
+        assert(D.search and D.search.key == 'i:30')
+        fire('ITEM_SEARCH_RESULTS_UPDATED', { itemID = 30, itemLevel = 5 })
+        assert(got and got.complete and #got.rows == 1, 'read under the key the server answered with')''')
+
+    def test_an_item_without_an_answer_is_searched_by_name_next_time(self):
+        run(BASE + '''enableBrowse(); fullScan()
+        F.AH.search = function() end -- the server never answers the plain search
+        T.checkPrice('i:30', function() end, true)
+        run(11)
+        assert(D.byName[30], 'remembered')
+        T.checkPrice('i:30', function() end, true); run(1)
+        assert(D.search and D.search.phase == 'browse', 'searched by name, like gear')''')
+
+
+class PostFeedbackTests(unittest.TestCase):
+    SELL = BASE + '''putBag(0, 1, 30, 1)
+    local item = F.AH.bagItems()[1]
+    '''
+
+    def test_auction_created_only_when_the_game_says_so(self):
+        run(self.SELL + '''local ok, why = T.post(item, 1, 50000, 3)
+        assert(ok and why == 'post_sent', tostring(why))
+        fire('AUCTION_HOUSE_AUCTION_CREATED', 77)
+        assert(F.Engine.message == 'posted', 'confirmed by the game')''')
+
+    def test_a_dropped_post_is_said_at_once(self):
+        run(self.SELL + '''assert(T.post(item, 1, 50000, 3))
+        fire('AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED')
+        assert(F.Engine.message == 'post_dropped' and not T.postingNow(), 'press again works at once')''')
+
+    def test_an_unconfirmed_post_is_said_after_ten_seconds(self):
+        run(self.SELL + '''assert(T.post(item, 1, 50000, 3))
+        run(12)
+        assert(F.Engine.message == 'post_unconfirmed', tostring(F.Engine.message))''')
+
+    def test_the_selling_page_reads_the_queue_prices_ahead(self):
+        run(self.SELL + '''F.db.settings.vendorMargin = 0
+        F.Data.market(F.db, F.Engine.scope()).history['i:30'] = { scan = { at = now, market = 90000 } }
+        UI.show('sell'); UI.refresh()
+        assert(D.pending('i:30'), 'the price of the AH-worthy item is being read already')''')

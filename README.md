@@ -53,7 +53,7 @@
 - **Disenchant deals** for enchanters.
 - **Bids** on auctions about to end.
 - **Crafting:** what is worth crafting, priced from your recipes, auction and merchant prices.
-- **Live check:** nothing can be bought until an exact search confirms the deal in the last 45 seconds.
+- **Live check:** nothing can be bought until an exact search confirms the deal in the last 2 minutes.
 - **Alerts:** a sound, a screen message and a green mark in the game's Buy tab.
 
 **Selling**
@@ -165,7 +165,7 @@ The Key Bindings window has five bindings (also set on **Settings → Key bindin
 
 ### The Buy button stays grey
 
-A deal can be bought only when it is **ready**, checked in the last 45 seconds, while no other search
+A deal can be bought only when it is **ready**, checked in the last 2 minutes, while no other search
 or purchase runs. Click the deal to check it again.
 
 ### The scan does not start

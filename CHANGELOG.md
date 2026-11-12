@@ -46,11 +46,20 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 - **The end of a full scan** no longer stalls the game on a large history: forgetting old items
   and sweeping vanished ones run a slice per frame, and the scan is copied into the saved data on
   logout instead of at once.
-- **Deals: Sells at and Profit/day.** The Cost column became **Sells at**, the price a unit sells
-  at (for a resale: at most what a quarter of the sales seen reached, `*` when no sales were seen);
-  Est./day became **Profit/day**, which joins the profit, that price and the measured sales into
-  what the deal earns per day. The Selling page says what buyers paid lately and how many units a
-  day sell at the suggested price.
+- **Deals columns: Name, Qty, Cost, Sells at, Profit, Est./day, Status.** Cost is what buying all
+  the units costs; **Sells at** is what selling them brings after the cut and the deposits, from the
+  price the market really pays (just below the next seller, at most the usual price and what a
+  quarter of the sales seen reached, only as many units as sell in a day); Profit is the difference;
+  Est./day is how many sell a day at that price. The headers explain them on hover. The Selling page
+  says what buyers paid lately and how many units a day sell at the suggested price.
+- **A check stays valid for 2 minutes** (was 45 seconds) before a deal says check again; background
+  searches still wait only 45 seconds for a selected deal.
+- **Searches of items answered under their exact key** (with an item level) are read under that key:
+  they ended as "without an answer" (WoW Forever scrolls). An item whose search gets no answer at all
+  is searched by name the next time, like gear.
+- **Posting says what really happened:** "Posting..." until the game confirms the auction, a post
+  the server throws away or never confirms is reported, and a search in flight steps aside for the
+  post. The Selling page reads the prices of the posting queues ahead, so the first press posts.
 - **Selling is more compact:** the rule fields moved into a panel opened with **Rule...**, Check
   price is a small refresh button beside the price, and the list shows 12 rows. Check all is
   narrower.

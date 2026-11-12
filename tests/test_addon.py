@@ -205,7 +205,7 @@ class TradeTests(unittest.TestCase):
         assert(ForeverFlip.Trade.checkPrice('i:30'));answer()
         local price,floor,cheapest=ForeverFlip.Trade.suggest(item)
         assert(cheapest==30000 and price==29900 and floor==21100)
-        local ok,why=ForeverFlip.Trade.post(item,1,29900,3);assert(ok and why=='posted')
+        local ok,why=ForeverFlip.Trade.post(item,1,29900,3);assert(ok and why=='post_sent')
         assert(lastCall('PostItem')[6]==29900)
         assert(#c.listings==0,'booked when the game creates the auction');fire('AUCTION_HOUSE_AUCTION_CREATED',777)
         assert(#c.listings==1)
@@ -219,7 +219,7 @@ class TradeTests(unittest.TestCase):
         run(SETUP + '''putBag(0,1,30,1);postNeedsConfirm=true
         local item=ForeverFlip.AH.bagItems()[1]
         local ok,why=ForeverFlip.Trade.post(item,1,29900,3);assert(ok and why=='confirm')
-        ok,why=ForeverFlip.Trade.post(item,1,29900,3);assert(ok and why=='posted' and lastCall('ConfirmPostItem'))
+        ok,why=ForeverFlip.Trade.post(item,1,29900,3);assert(ok and why=='post_sent' and lastCall('ConfirmPostItem'))
         postNeedsConfirm=false;now=now+60;ForeverFlip.Trade.post(item,1,29900,3);fire('AUCTION_HOUSE_POST_WARNING')
         assert(ForeverFlip.Trade.pendingPost);ForeverFlip.Trade.post(item,1,29900,3);assert(lastCall('ConfirmPostItem'))''')
 
@@ -429,7 +429,7 @@ class FeatureTests(unittest.TestCase):
         putBag(0,1,30,1);putBag(0,2,10,15)
         local T=ForeverFlip.Trade;assert(#T.toPost()==1,'vendor deals are not posted')
         local ok,why=T.postNext();assert(ok and why=='checking');answer()
-        ok,why=T.postNext();assert(ok and why=='posted' and lastCall('PostItem')[6]==29900)
+        ok,why=T.postNext();assert(ok and why=='post_sent' and lastCall('PostItem')[6]==29900)
         c.positions['i:30'].cost=40000;T.prices['i:30'].at=now;postNeedsConfirm=false
         fire('AUCTION_HOUSE_AUCTION_CREATED',9);assert(#T.toPost()==0,'listed items are not posted twice')''')
 
@@ -518,7 +518,7 @@ class DealTabTests(unittest.TestCase):
     def test_status_shows_money_and_old_scan_and_detail_shows_return(self):
         run(SETUP + '''fullScan();local UI=ForeverFlip.UI;local D=ForeverFlip.Deals
         local d=D.get('c:10');d.found=now-1300;UI.refresh()
-        local function status(key) for _,r in ipairs(UI.dealTable.rows) do if r.key==key then return r.cols[5]:GetText() end end end
+        local function status(key) for _,r in ipairs(UI.dealTable.rows) do if r.key==key then return r.cols[6]:GetText() end end end
         assert(status('c:10'):find('old scan'))
         money=100;UI.refresh();assert(status('c:10'):find('not enough money'))
         money=1000000;UI.selectDeal('c:10');answer();UI.refresh()

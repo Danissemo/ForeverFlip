@@ -270,6 +270,12 @@ function T.step()
         F.Engine.notify("quote_expired")
         F.Engine.changed()
     end
+    local l = T.lastPost
+    if l and #l.ids == 0 and clock() - l.at > 10 then
+        T.lastPost = nil
+        F.Engine.notify("post_unconfirmed")
+        F.Engine.changed()
+    end
     T.posting = T.postingNow()
     T.stepChecks()
     if
@@ -492,6 +498,12 @@ function T.post(item, qty, price, duration)
     if T.postingNow() or not F.AH.isOpen() then
         return false, "busy"
     end
+    -- A post sent while another message waits for the server is often dropped: a search in flight
+    -- steps aside (it is sent again later), and a busy server is said so.
+    F.Deals.yieldToPurchase()
+    if not F.AH.ready() then
+        return false, "post_busy"
+    end
     if not U.finite(qty) or qty < 1 or qty > item.count or not U.finite(price) or price < 1 then
         return false, "values"
     end
@@ -535,7 +547,18 @@ function T.post(item, qty, price, duration)
     }
     T.ownedDue = clock() + 3
     F.Engine.changed()
-    return true, "posted"
+    -- "Auction created" only when the game reports it (T.onAuctionCreated).
+    return true, "post_sent"
+end
+
+-- AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED right after a post: the server threw it away.
+function T.onDropped()
+    local l = T.lastPost
+    if l and #l.ids == 0 and clock() - l.at <= 3 then
+        T.lastPost = nil
+        F.Engine.notify("post_dropped")
+        F.Engine.changed()
+    end
 end
 
 -- The game asks to confirm a post (price far from the market, etc.): the next Post click confirms.
@@ -854,6 +877,8 @@ end
 
 -- One click posts the first item of the queue whose price is known; items whose search is still on
 -- the way are passed over until their answer comes.
+T.readAhead = readAhead
+
 local function postFirst(list, quantity)
     readAhead(list)
     local waiting = false

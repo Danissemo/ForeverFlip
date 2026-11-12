@@ -41,7 +41,7 @@ class RuleTests(unittest.TestCase):
         run(SELL + '''putBag(0,1,30,1);putBag(0,2,10,20)
         T.setRule('c:10',{keep=20})
         local ok,why=T.postAll();assert(ok and why=='checking');run(1.1);answer()
-        ok,why=T.postAll();assert(ok and why=='posted',why)
+        ok,why=T.postAll();assert(ok and why=='post_sent',why)
         local post=lastCall('PostItem');assert(post and post[6]==29900,post and post[6])
         assert(not lastCall('PostCommodity'),'cloth is kept in the bags')''')
 

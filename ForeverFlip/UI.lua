@@ -53,6 +53,10 @@ local MESSAGES = {
     buy_failed = "The purchase failed (someone was faster). The deal is checked again.",
     buy_unknown = "No answer from the auction house. Settle the purchase in the Journal.",
     posted = "Auction created.",
+    post_sent = "Posting... waiting for the auction house to confirm.",
+    post_busy = "The auction house is busy: press again in a moment.",
+    post_dropped = "The auction house threw the post away (too many messages): press again.",
+    post_unconfirmed = "The auction house did not confirm the post: check My auctions, then press again.",
     sold = "Sale recorded.",
     verify_first = "Checking the current price first...",
     no_money = "Not enough money.",
@@ -614,12 +618,12 @@ function UI.createDeals(p)
         list,
         {
             { "Name" },
-            { "Price", 76 },
             { "Qty", 50 },
-            { "Sells at", 76 },
-            { "Profit", 76 },
+            { "Cost", 80 },
+            { "Sells at", 80 },
+            { "Profit", 80 },
+            { "Est./day", 64 },
             { "Status", 88, "LEFT" },
-            { "Profit/day", 76 },
         },
         DEAL_ROWS,
         function(row)
@@ -629,37 +633,38 @@ function UI.createDeals(p)
             if UI.dealSort == index then
                 UI.dealDescending = not UI.dealDescending
             else
-                UI.dealSort, UI.dealDescending = index, index == 5 or index == 7
+                UI.dealSort, UI.dealDescending = index, index == 5 or index == 6
             end
             UI.dealPage = 1
             UI.refresh()
         end
     )
     UI.dealTable.paged = true -- the deals have pages (Previous / Next)
-    local estimateHeader = UI.dealTable.headers[7]
-    estimateHeader:SetScript("OnEnter", function(self)
-        if GameTooltip then
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(
-                L("Profit/day")
-                    .. "\n\n"
-                    .. L(
-                        "The profit the deal makes per day: for a resale, its profit times the share of its units the market takes in a day (Est./day near the Sells at price, at most all of them); a vendor deal pays all of it at once.\n\nEst./day counts units that disappeared per day near the resale price, not a sale probability: expired or cancelled lots can count. Two usable full scans are required; '?' means not measured yet, 0 means none disappeared. Grey: data older than 3 hours."
-                    ),
-                1,
-                1,
-                1,
-                1,
-                true
-            )
-            GameTooltip:Show()
-        end
-    end)
-    estimateHeader:SetScript("OnLeave", function()
-        if GameTooltip then
-            GameTooltip:Hide()
-        end
-    end)
+    -- Header tooltips: what Sells at and Est./day are made of.
+    local function headerTip(header, title, body)
+        header:SetScript("OnEnter", function(self)
+            if GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(L(title) .. "\n\n" .. L(body), 1, 1, 1, 1, true)
+                GameTooltip:Show()
+            end
+        end)
+        header:SetScript("OnLeave", function()
+            if GameTooltip then
+                GameTooltip:Hide()
+            end
+        end)
+    end
+    headerTip(
+        UI.dealTable.headers[4],
+        "Sells at",
+        "What selling all the units brings, after the auction cut and the deposits. The resale price per unit is just below the next other seller, at most the usual price and at most what a quarter of the sales seen reached; only as many units as sell in a day at that price are bought, and your own unsold stock of the item lowers the estimate. * means no sales were seen yet: the price is the asking price. A vendor deal sells at the vendor price (* = not yet confirmed at a merchant)."
+    )
+    headerTip(
+        UI.dealTable.headers[6],
+        "Est./day",
+        "Estimated units that disappeared per day near the Sells at price, not a sale probability. Expired/cancelled lots can count.\n\nTwo usable full scans are required. Zero means none disappeared; '-' means unknown. Vendor deals need no auction-house resale.\n\nGrey estimates use data older than 3 hours. Checking a current price does not refresh sale history. Short observations are smoothed: one unit gone in 15 minutes counts as about 5-6 a day, not 96."
+    )
     UI.prev = button(p, "<", 26, function()
         UI.dealPage = math.max(1, UI.dealPage - 1)
         UI.refresh()
@@ -792,44 +797,30 @@ end
 -- What the deal sells at, per unit: the vendor price, or the resale price the deal counts on (the
 -- usual asking price, at most what a quarter of the sales seen reached). A resale price with no
 -- sales seen yet is only the asking price: marked with "*".
-local MODE_LABELS = { shop = "shopping list", disenchant = "disenchant", bid = "bid" }
+-- Sells at: what selling all the deal's units brings after the cut and the deposits (its cost plus
+-- its profit). Green for a resale, orange for a vendor deal; "*" when the price is not backed by
+-- sales seen (a resale) or by a merchant (a vendor deal).
 local function sellsAtText(d, history)
-    if MODE_LABELS[d.mode] then
-        return L(MODE_LABELS[d.mode]) -- bought for the list, to disenchant, or a bid
-    end
-    if not U.finite(d.exit) then
-        return "-"
-    end
+    local total = (d.cost or 0) + (d.profit or 0)
     if d.mode == "vendor" then
         local mark = d.vendorHow and d.vendorHow ~= "seen" and " |cffffd100*|r" or ""
-        return "|cffffb84d" .. U.money(d.exit) .. "|r" .. mark
+        return "|cffffb84d" .. U.money(total) .. "|r" .. mark
     elseif d.mode == "flip" then
         local seen = F.Market.saleCap(history[d.key]) ~= nil
-        return "|cff40ff40" .. U.money(d.exit) .. "|r" .. (seen and "" or " |cffffd100*|r")
+        return "|cff40ff40" .. U.money(total) .. "|r" .. (seen and "" or " |cffffd100*|r")
     end
-    return U.money(d.exit)
+    return U.money(total)
 end
 
--- Profit per day: a resale's profit times the share of its units sold in a day; nil when its sales
--- are not measured yet. Other deals pay at once.
-local function profitPerDay(d, estimate)
+local MODE_LABELS = { vendor = "vendor", shop = "shopping list", disenchant = "disenchant", bid = "bid" }
+local function estimateText(d, estimate)
     if d.mode ~= "flip" then
-        return d.profit
+        return L(MODE_LABELS[d.mode] or d.mode)
+    elseif not estimate.known then
+        return "-"
     end
-    if not estimate.known then
-        return nil
-    end
-    local share = (d.qty or 1) > 0 and math.min(1, (estimate.perDay or 0) / d.qty) or 0
-    return math.floor(d.profit * share)
-end
-
-local function profitDayText(d, estimate)
-    local value = profitPerDay(d, estimate)
-    if not value then
-        return "?"
-    end
-    local shown = U.money(value)
-    return d.mode == "flip" and estimate.stale and "|cff999999" .. shown .. "|r" or shown
+    local value = estimate.perDay == 0 and "0" or string.format("~%.1f", estimate.perDay)
+    return estimate.stale and "|cff999999" .. value .. "|r" or value
 end
 
 local function estimateSentence(estimate)
@@ -899,15 +890,15 @@ function UI.refreshDeals()
             local name = nameOf(d.key, d.link)
             return string.lower(U.linkName(name) or name)
         elseif field == 2 then
-            return d.maxUnit or 0
-        elseif field == 3 then
             return d.qty
+        elseif field == 3 then
+            return d.cost
         elseif field == 4 then
-            return d.exit or 0
+            return (d.cost or 0) + (d.profit or 0)
         elseif field == 5 then
             return d.profit
-        elseif field == 7 then
-            return profitPerDay(d, estimates[d.key])
+        elseif field == 6 then
+            return estimates[d.key].perDay
         end
         if F.Deals.search and F.Deals.search.key == d.key then
             return 0
@@ -926,7 +917,7 @@ function UI.refreshDeals()
     end
     table.sort(list, function(a, b)
         local av, bv = values[a.key], values[b.key]
-        if UI.dealSort == 7 and (av == nil) ~= (bv == nil) then
+        if UI.dealSort == 6 and (av == nil) ~= (bv == nil) then
             return av ~= nil
         end
         if av == bv then
@@ -946,12 +937,12 @@ function UI.refreshDeals()
             r.key, r.link = d.key, d.link
             r.icon:SetTexture(icon(d.id))
             r.name:SetText(nameOf(d.key, d.link))
-            r.cols[1]:SetText(U.money(d.maxUnit or 0))
-            r.cols[2]:SetText(d.qty)
+            r.cols[1]:SetText(d.qty)
+            r.cols[2]:SetText(U.money(d.cost))
             r.cols[3]:SetText(sellsAtText(d, history))
             r.cols[4]:SetText(U.money(d.profit))
-            r.cols[5]:SetText(dealStatus(d))
-            r.cols[6]:SetText(profitDayText(d, estimates[d.key]))
+            r.cols[5]:SetText(estimateText(d, estimates[d.key]))
+            r.cols[6]:SetText(dealStatus(d))
             if d.key == UI.selected then
                 r.selected:Show()
             else
@@ -1466,7 +1457,7 @@ function UI.createSell(p)
         local qty = tonumber(UI.sellQty:GetText())
         local ok, why = F.Trade.post(item, qty, price, F.Trade.durationFor(item.key, qty))
         F.Engine.notify(why)
-        if ok and why == "posted" then
+        if ok and why == "post_sent" then
             UI.sellSelected = nil
             UI.sellPrice:SetText("")
         end
@@ -1674,6 +1665,12 @@ function UI.refreshSell()
     UI.sellHiddenTab:SetEnabled(not hiddenView)
     UI.sellHide:SetText(L(hiddenView and "Return to sale" or "Hide"))
     UI.sellHide:SetEnabled(UI.sellSelected ~= nil)
+    local clockNow = F.Engine.clock()
+    if not hiddenView and F.AH.isOpen() and clockNow - (UI.readAheadAt or 0) >= 30 then
+        UI.readAheadAt = clockNow
+        F.Trade.readAhead(F.Trade.toPostAll(true))
+        F.Trade.readAhead(F.Trade.toPost())
+    end
     UI.ruleToggle:SetEnabled(UI.sellSelected ~= nil and not hiddenView)
     local rule = UI.sellSelected and F.Trade.rule(UI.sellSelected.key)
     UI.ruleToggle:SetText(L("Rule...") .. (rule and " |cff40ff40*|r" or ""))
