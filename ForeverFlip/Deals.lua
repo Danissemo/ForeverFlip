@@ -198,8 +198,25 @@ end
 D.requests = {}
 D.queued = {} -- queued key -> request; batch setup remains linear even for a whole category
 D.sent = {} -- successful or attempted new searches during the last rolling minute
+-- A search waits for an answer. A gear search between two of its steps (waitKey: its next version
+-- is not sent yet) has nothing on the way: a purchase may go meanwhile.
 function D.searching()
-    return D.search ~= nil
+    return D.search ~= nil and not D.search.waitKey
+end
+
+-- The player is about to buy: a Buy click found the way busy (holdUntil), or a checked deal is
+-- selected on the Deals page. Every search that is not a click of the player waits then, the
+-- searches of Check all and the next step of a gear search too, so the way frees within a second.
+function D.buyHolding()
+    if clock() < (D.holdUntil or 0) then
+        return true
+    end
+    local ui = F.UI
+    if not ui or not ui.frame or not ui.frame:IsShown() or ui.section ~= "deals" then
+        return false
+    end
+    local selected = D.get(ui.selected)
+    return selected ~= nil and selected.verified ~= nil and clock() - selected.verified <= D.SELECTED_HOLD
 end
 
 -- Background work (the sniper, automatic checks) waits while the player is about to buy or post:
@@ -302,6 +319,7 @@ local function startRequest(r)
     if
         D.clearing
         or D.search
+        or ((r.fast or r.source ~= "manual") and D.buyHolding())
         or not F.AH.isOpen()
         or F.Trade.busy()
         or F.Scan.blocking()
@@ -895,7 +913,13 @@ function D.step()
     D.batchRetry()
     local now = clock()
     local s = D.search
-    if s and s.waitKey and F.AH.ready() and not F.Scan.blocking() then
+    if
+        s
+        and s.waitKey
+        and F.AH.ready()
+        and not F.Scan.blocking()
+        and (s.source == "manual" and not s.fast or not D.buyHolding())
+    then
         s.waitKey, s.at = nil, now
         if not pcall(F.AH.searchKey, s.keys[s.keyIndex]) then
             finishSearch(nil, false)

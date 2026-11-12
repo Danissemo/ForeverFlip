@@ -211,6 +211,14 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 
 ### Added
 
+- **Buying is one button.** Gear and items are bought in one click; a commodity in two, as the
+  game wants: the first asks the price of the whole quantity, and the same button then shows
+  "Confirm" and the total. A selected checked deal, or a Buy click that found the way busy, holds
+  Check all and the next steps of gear searches back, so the purchase goes within a second.
+- **Sales no longer count reposts.** A lot that vanished while a new lot of the same price and
+  count appeared was posted again, not sold (in game: one seller's 65-80 silver bracers read as
+  sales while the item sold at 3-4 silver, and Sells at came out ten times too high). The resale
+  cap also stays within three times the median sale.
 - **Anti-undercut (Selling → Undercuts).** For every auction of yours another seller undercut, each
   way out is priced in expected money from the item's measured sales (Poisson chances of selling in
   the time left or the new duration): wait, undercut (cancel and post one step below), buy out the

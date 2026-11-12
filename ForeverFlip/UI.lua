@@ -1156,16 +1156,19 @@ function UI.createDeals(p)
         F.Trade.cancel()
     end)
     UI.cancelButton:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
-    UI.confirmButton = button(bar, "Confirm purchase", 150, function()
+    -- One button buys: gear and items in one click; a commodity in two, as the game wants (the
+    -- first click asks the price of the whole quantity, the same button then shows "Confirm" and the
+    -- total, and the second click buys). UI.confirmButton stays for older key bindings, hidden.
+    local function buyClick()
         local op = F.Trade.op
-        if op and UI.selected and op.key ~= UI.selected then
+        if op and UI.selected and op.key ~= UI.selected and (op.state == "quote" or op.state == "quoted") then
             F.Trade.cancel()
             return
         end
-        F.Trade.confirm()
-    end)
-    UI.confirmButton:SetPoint("RIGHT", UI.cancelButton, "LEFT", -4, 0)
-    UI.buyButton = button(bar, "Buy", 86, function()
+        if op and op.state == "quoted" then
+            F.Trade.confirm()
+            return
+        end
         if UI.selected then
             local ok, why = F.Trade.buy(UI.selected)
             if not ok then
@@ -1175,8 +1178,13 @@ function UI.createDeals(p)
                 F.Engine.notify(why)
             end
         end
+    end
+    UI.confirmButton = button(bar, "Confirm purchase", 150, function()
+        F.Trade.confirm()
     end)
-    UI.buyButton:SetPoint("RIGHT", UI.confirmButton, "LEFT", -4, 0)
+    UI.confirmButton:Hide()
+    UI.buyButton = button(bar, "Buy", 170, buyClick)
+    UI.buyButton:SetPoint("RIGHT", UI.cancelButton, "LEFT", -4, 0)
     UI.checkButton = button(bar, "Check price", 116, function()
         if UI.selected then
             F.Engine.message = nil -- the status shows this check, not an older message
@@ -1478,14 +1486,18 @@ function UI.refreshDeals()
         UI.dealText:SetText(L("Select a deal. Its price is checked on the auction house before you can buy."))
     end
     UI.checkButton:SetEnabled(d ~= nil and not F.Deals.pending(d.key) and not F.Trade.busy() and not F.Scan.blocking())
-    UI.buyButton:SetEnabled(d ~= nil and F.Trade.canBuy(d) and true or false)
     UI.ignoreButton:SetEnabled(d ~= nil)
     UI.confirmButton:SetEnabled(op ~= nil and op.state == "quoted")
     UI.cancelButton:SetEnabled(op ~= nil and (op.state == "quote" or op.state == "quoted"))
     if op and op.state == "quoted" then
-        UI.confirmButton:SetText(L("Confirm") .. " " .. U.money(op.cost))
+        UI.buyButton:SetText(L("Confirm") .. " " .. U.money(op.cost))
+        UI.buyButton:SetEnabled(true)
+    elseif op and op.state == "quote" then
+        UI.buyButton:SetText(L("Asking the price..."))
+        UI.buyButton:SetEnabled(false)
     else
-        UI.confirmButton:SetText(L("Confirm purchase"))
+        UI.buyButton:SetText(d and d.kind == "commodity" and L("Buy (2 clicks)") or L("Buy"))
+        UI.buyButton:SetEnabled(d ~= nil and F.Trade.canBuy(d) and true or false)
     end
 end
 

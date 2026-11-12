@@ -617,3 +617,32 @@ class RepostTests(unittest.TestCase):
         M.bucketAdd(h.sales.b, 290, 3); M.bucketAdd(h.sales.b, 400, 2); M.bucketAdd(h.sales.b, 6500, 2); M.bucketAdd(h.sales.b, 8000, 1)
         local cap = M.saleCap(h)
         assert(cap <= 3 * 400, 'at most three times the median sale: ' .. tostring(cap))''')
+
+
+class BuyWayTests(unittest.TestCase):
+    def test_a_busy_buy_click_holds_check_all_back(self):
+        run(BASE + '''local D = F.Deals
+        D.holdUntil = now + 5
+        D.enqueue('c:10', function() end, 'x', true)
+        run(1.1)
+        assert(not D.search, 'a Check all search waits while the player is buying')
+        now = now + 6; run(1.1)
+        assert(D.search or #D.requests == 0, 'it goes on afterwards')''')
+
+    def test_one_button_buys_and_confirms_a_commodity(self):
+        run(BASE + '''fullScan()
+        local key
+        for _, d in ipairs(F.Deals.list) do if d.kind == 'commodity' then key = d.key end end
+        if not key then return end
+        UI.show('deals:all'); UI.selectDeal(key)
+        local n = 0
+        while F.Deals.pending(key) or F.Deals.search do if F.Deals.search then answer() end run(1.1); n = n + 1; assert(n < 30) end
+        UI.refresh()
+        assert(UI.buyButton:GetText():find('2', 1, true), UI.buyButton:GetText())
+        UI.buyButton:Click()
+        if F.Trade.op and F.Trade.op.state == 'quote' then fire('COMMODITY_PRICE_UPDATED', F.Trade.op.cost, F.Trade.op.cost) end
+        UI.refresh()
+        if F.Trade.op and F.Trade.op.state == 'quoted' then
+            assert(UI.buyButton:GetText():find('Confirm', 1, true), 'the same button confirms')
+            assert(not UI.confirmButton:IsShown())
+        end''')

@@ -189,7 +189,8 @@ by itself.
    **ready**.
 2. Click **Buy** (or press the [Buy key](#key-bindings)).
    - **Stackable goods (commodities)** are bought by quantity. The game first quotes the total price.
-     When the status line says *Price confirmed*, click **Confirm purchase**.
+     The button reads **Buy (2 clicks)**: the first click asks the price, the same button then
+     shows **Confirm** and the total, and the second click buys.
      - If the quoted price is higher than the checked deal, the purchase is cancelled and the deal is
        checked again.
      - If the quote is about to expire when you confirm, ForeverFlip asks for a new quote instead,
@@ -200,8 +201,9 @@ by itself.
      purchase. After a purchase the deal is worked out again from the lots its check read, without
      the lot just bought: the next click buys the next lot at once, with no new search, while the
      check is fresh (5 minutes).
-   - A click on **Buy** does not wait for a search in flight (the sniper, a check): that search is
-     sent again after the purchase.
+   - While a checked deal is selected, Check all and the next steps of gear searches wait, so the
+     way to the server is free when you click. If a search was still on its way, the click says so
+     and everything else waits 5 seconds: click again a moment later.
 3. When the purchase goes through, the status line shows *Purchase recorded*. The units are added to
    your stock at their real cost and logged in the journal.
 
