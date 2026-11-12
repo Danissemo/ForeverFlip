@@ -807,6 +807,7 @@ function UI.create()
                     UI.show(entry[1])
                 end)
                 sub:SetSize(NAV_WIDTH - 12, NAV_HEIGHT)
+                sub.label:SetFontObject(GameFontHighlightSmall)
                 sub.id, sub.isSub = entry[1], true
                 sub:Hide()
                 c.subs[#c.subs + 1] = sub
@@ -2892,6 +2893,144 @@ function UI.refreshJournal()
         )
     end
     UI.journalLines:SetText(#lines > 0 and table.concat(lines, "\n") or L("No trades yet."))
+end
+
+-- /ff dump: how the auction house window is built, frame by frame: name, type, size, anchors,
+-- strata and level, and every texture (atlas or file, coordinates, colour, layer, size, anchors)
+-- and text (font, size, colour, justification, anchors). Shown in a box to copy, to rebuild
+-- ForeverFlip's window with the same sizes, distances, fonts and colours.
+local function num(v)
+    v = tonumber(v)
+    if not v then
+        return "?"
+    end
+    if v == math.floor(v) then
+        return tostring(v)
+    end
+    return string.format("%.2f", v)
+end
+
+local function pointsOf(region)
+    local out = {}
+    if not region.GetNumPoints then
+        return ""
+    end
+    for i = 1, region:GetNumPoints() do
+        local ok, point, rel, relPoint, x, y = pcall(region.GetPoint, region, i)
+        if ok and point then
+            local relName = rel and (rel.GetDebugName and rel:GetDebugName() or rel.GetName and rel:GetName())
+                or "parent"
+            out[#out + 1] =
+                string.format("%s>%s.%s(%s,%s)", point, tostring(relName), tostring(relPoint), num(x), num(y))
+        end
+    end
+    return table.concat(out, " ")
+end
+
+local function regionLine(region, indent)
+    local kind = region.GetObjectType and region:GetObjectType()
+    local name = region.GetDebugName and region:GetDebugName() or "?"
+    name = name:gsub("^AuctionHouseFrame%.?", "AH.")
+    local w, h = 0, 0
+    if region.GetSize then
+        w, h = region:GetSize()
+    end
+    local parts = { indent .. kind .. " " .. name, "size " .. num(w) .. "x" .. num(h) }
+    if region.IsShown and not region:IsShown() then
+        parts[#parts + 1] = "hidden"
+    end
+    if kind == "Texture" then
+        local atlas = region.GetAtlas and region:GetAtlas()
+        parts[#parts + 1] = atlas and ("atlas " .. atlas) or ("file " .. tostring(region:GetTexture()))
+        local c = { region:GetTexCoord() }
+        for i, v in ipairs(c) do
+            c[i] = num(v)
+        end
+        parts[#parts + 1] = "coords " .. table.concat(c, ",")
+        local layer, sub = region:GetDrawLayer()
+        parts[#parts + 1] = "layer " .. tostring(layer) .. ":" .. tostring(sub)
+        local r, g, b, a = region:GetVertexColor()
+        parts[#parts + 1] = "color " .. num(r) .. "," .. num(g) .. "," .. num(b) .. "," .. num(a)
+        parts[#parts + 1] = "blend " .. tostring(region:GetBlendMode())
+    elseif kind == "FontString" then
+        local path, size, flags = region:GetFont()
+        local r, g, b, a = region:GetTextColor()
+        local object = region.GetFontObject and region:GetFontObject()
+        parts[#parts + 1] = string.format("text '%s'", tostring(region:GetText()))
+        parts[#parts + 1] = "font "
+            .. tostring(object and object.GetName and object:GetName() or "")
+            .. " "
+            .. tostring(path)
+            .. " "
+            .. num(size)
+            .. " "
+            .. tostring(flags)
+        parts[#parts + 1] = "color " .. num(r) .. "," .. num(g) .. "," .. num(b) .. "," .. num(a)
+        parts[#parts + 1] = "justify " .. tostring(region:GetJustifyH()) .. "/" .. tostring(region:GetJustifyV())
+        local layer = region:GetDrawLayer()
+        parts[#parts + 1] = "layer " .. tostring(layer)
+    end
+    parts[#parts + 1] = "at " .. pointsOf(region)
+    return table.concat(parts, " | ")
+end
+
+local function dumpFrame(frame, depth, out, limit)
+    if #out >= limit or depth > 7 then
+        return
+    end
+    local indent = string.rep("  ", depth)
+    local w, h = frame:GetSize()
+    local name = (frame.GetDebugName and frame:GetDebugName() or "?"):gsub("^AuctionHouseFrame%.?", "AH.")
+    out[#out + 1] = string.format(
+        "%s%s %s | size %sx%s | %s | strata %s level %s | at %s",
+        indent,
+        tostring(frame:GetObjectType()),
+        name,
+        num(w),
+        num(h),
+        frame:IsShown() and "shown" or "hidden",
+        tostring(frame:GetFrameStrata()),
+        num(frame:GetFrameLevel()),
+        pointsOf(frame)
+    )
+    if not frame:IsShown() and depth > 1 then
+        return -- hidden branches (other tabs) only by their own line
+    end
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if #out >= limit then
+            return
+        end
+        local ok, line = pcall(regionLine, region, indent .. "  ")
+        out[#out + 1] = ok and line or (indent .. "  ? " .. tostring(line))
+    end
+    for _, child in ipairs({ frame:GetChildren() }) do
+        dumpFrame(child, depth + 1, out, limit)
+    end
+end
+
+function UI.dumpAuctionHouse()
+    local out = {}
+    local root = AuctionHouseFrame
+    if type(root) ~= "table" or not root.GetChildren then
+        return "The auction house window is not open."
+    end
+    out[#out + 1] = string.format(
+        "ForeverFlip %s dump of the auction house window (UI scale %s)",
+        F.version,
+        num(UIParent and UIParent:GetEffectiveScale() or 1)
+    )
+    local ok, err = pcall(dumpFrame, root, 0, out, 4000)
+    if not ok then
+        out[#out + 1] = "error: " .. tostring(err)
+    end
+    if #out >= 4000 then
+        out[#out + 1] = "(cut at 4000 lines)"
+    end
+    return table.concat(out, "\n")
+end
+
+function UI.showDump()
+    UI.showText(L("Auction house window: press Ctrl+C to copy, then paste it into the message."), UI.dumpAuctionHouse())
 end
 
 -- CSV export: the journal of the character in a text box to copy (Ctrl+A, Ctrl+C).

@@ -468,3 +468,11 @@ class LookReportTests(unittest.TestCase):
         run(BASE + '''local lines = UI.lookReport()
         assert(#lines >= 1 and lines[1]:find('category list'), lines[1])
         SlashCmdList.FOREVERFLIP('look')''')
+
+
+class DumpTests(unittest.TestCase):
+    def test_the_dump_opens_a_box_to_copy(self):
+        run(BASE + '''SlashCmdList.FOREVERFLIP('dump')
+        local w = UI.exportFrame
+        assert(w and w:IsShown(), 'a box to copy')
+        assert(w.box:GetText():find('dump of the auction house window', 1, true), w.box:GetText():sub(1, 200))''')

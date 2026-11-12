@@ -681,6 +681,7 @@ A key press is an action of yours, like a click, so it may buy, post and cancel.
 | Command | Action |
 |---|---|
 | `/ff`, `/foreverflip` | Version and a short hint. |
+| `/ff dump` | How the auction house window is built, frame by frame (sizes, anchors, textures, fonts, colours), in a box to copy: for rebuilding ForeverFlip's look. Open it on the Buy tab. |
 | `/ff diag` | Statistics of the last full scan: auctions total, read, skipped and your own; items; items with a known vendor price; items below vendor price; items still collecting sales data; deals; then how the last 5 full scan requests ended (read, no answer, list kept changing, dropped by the server, closed while waiting) and how many auctions the server had sent. |
 | `/ff rescan` | Clears the scan cooldown. Use it when the server did not answer a scan and you do not want to wait 15 minutes. The server may still refuse. |
 | `/ff bags` | Lists bag items that are not on the Sell page, with the reason: `bound`, `not_sellable` (the auction house refuses it) or `unknown_kind` (the game has not told what it is yet). Open the auction house first. |

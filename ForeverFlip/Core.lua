@@ -561,6 +561,13 @@ SLASH_FOREVERFLIP2 = "/foreverflip"
 SlashCmdList.FOREVERFLIP = function(msg)
     msg = string.lower(msg or "")
     local L = F.Locale.text
+    if msg == "dump" then
+        -- The auction house window frame by frame, in a box to copy (open it on the Buy tab).
+        if F.UI and F.UI.showDump then
+            F.UI.showDump()
+        end
+        return
+    end
     if msg == "look" then
         -- The auction house's own category button, layer by layer, against ForeverFlip's.
         for _, line in ipairs(F.UI.lookReport()) do

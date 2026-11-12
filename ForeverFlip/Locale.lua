@@ -392,6 +392,7 @@ T.uk = {
     ["The auction house is still answering a search: press Buy again in a moment."] = "Аукціон ще відповідає на пошук: натисніть «Купити» ще раз за мить.",
     ["No answer to the purchase in 30 seconds (no money spent yet). If the money leaves later it is booked then; check before buying the same lot again."] = "Немає відповіді на покупку за 30 секунд (гроші ще не списано). Якщо гроші спишуться пізніше, покупку буде записано; перевірте, перш ніж купувати той самий лот знову.",
     ["The purchase went through after all: booked now."] = "Покупка все ж відбулася: записано зараз.",
+    ["Auction house window: press Ctrl+C to copy, then paste it into the message."] = "Вікно аукціону: натисніть Ctrl+C, щоб скопіювати, і вставте в повідомлення.",
     ["reload"] = "Мову збережено. Введіть /reload.",
     ["The game kept refusing an auction mail: taking mail stopped. Take it by hand."] = "Гра постійно відмовляла в листі аукціону: збір пошти зупинено. Заберіть його вручну.",
     ["Buying: waiting for the auction house..."] = "Покупка: чекаємо на аукціон...",
