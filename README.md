@@ -39,7 +39,7 @@
 **Finding deals**
 
 - **Full scans:** every auction of the house, often more than 200 000, read in small portions so
-  the game never freezes. One per 15 minutes, automatic while the auction house is open, and scans
+  the game never freezes. One per 15 minutes, optionally automatic while the auction house is open, and scans
   of other addons are read too.
 - **Fast sniper:** browse rounds read the lowest price of every item in seconds; hot items and your
   shopping list are re-read 100 at a time; every suspicious price is checked at once.
@@ -117,7 +117,7 @@
 ## 🚀 Quick start
 
 1. Open the auction house and click the **ForeverFlip** tab.
-2. Click **Full scan**, or wait for the automatic one, and let the progress bar finish.
+2. Click **Full scan** and let the progress bar finish. Automatic scans and the sniper can be enabled in Settings.
 3. Open **Deals → To vendor** and click a deal. It is checked live; when it says **ready**,
    click **Buy**. For stackable goods, also click **Confirm purchase** once the game quotes the price.
 4. Sell vendor deals, and everything else a merchant pays the most for, at any merchant with

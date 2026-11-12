@@ -81,15 +81,52 @@ local function read(i)
     return snap
 end
 
--- MAIL_INBOX_UPDATE: what each mail holds before anything is taken.
+-- Invoice identity survives inbox updates and taking gold from a mail that still holds items.
+local function signature(snap)
+    local inv = snap.invoice or {}
+    return table.concat({
+        tostring(snap.sender),
+        tostring(snap.subject),
+        tostring(snap.link),
+        tostring(inv.kind),
+        tostring(inv.item),
+        tostring(inv.bid),
+        tostring(inv.count),
+        tostring(inv.deposit),
+        tostring(inv.cut),
+    }, "\031")
+end
+
+-- Match surviving mail as a multiset: identical letters remain distinct occurrences.
 function Mail.snapshot()
-    Mail.snap = {}
+    local previous, current, counts = {}, {}, {}
+    for _, snap in pairs(Mail.snap) do
+        local sig = signature(snap)
+        local p = previous[sig] or { count = 0, recorded = 0 }
+        p.count = p.count + 1
+        p.recorded = p.recorded + (snap.recorded and 1 or 0)
+        previous[sig] = p
+    end
     for i = 1, (GetInboxNumItems and GetInboxNumItems() or 0) do
         local ok, snap = pcall(read, i)
         if ok then
-            Mail.snap[i] = snap
+            current[i] = snap
+            local sig = signature(snap)
+            counts[sig] = (counts[sig] or 0) + 1
         end
     end
+    for sig, p in pairs(previous) do
+        -- Removed letters were the recorded ones whose attachments the player took.
+        p.recorded = math.max(0, p.recorded - math.max(0, p.count - (counts[sig] or 0)))
+    end
+    for _, snap in pairs(current) do
+        local p = previous[signature(snap)]
+        if p and p.recorded > 0 then
+            snap.recorded = true
+            p.recorded = p.recorded - 1
+        end
+    end
+    Mail.snap = current
 end
 
 local function subjectItem(subject, names)

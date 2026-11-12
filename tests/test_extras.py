@@ -10,6 +10,21 @@ fullScan()
 
 
 class ApiTests(unittest.TestCase):
+    def test_undercut_scan_notification_uses_selected_locale(self):
+        run(EXTRA + '''F.Locale.apply('uk');F.Trade.fightCount=function() return 1 end
+        F.Trade.toldFights=nil;F.Trade.afterScan()
+        assert(printed[#printed]:find(F.Locale.text('%d of your auctions were undercut and are worth answering: Selling, Undercuts.'):format(1),1,true))
+        ''')
+
+    def test_cheapest_today_does_not_return_yesterdays_price(self):
+        run(EXTRA + '''local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
+        h.days={{d=math.floor(now/86400)-1,min=1,m=100,n=10}}
+        local usual,cheap=ForeverFlipAPI.GetPrice(10)
+        assert(usual and cheap==nil,'historical daily minimum is not today')
+        h.days[1].d=math.floor(now/86400)
+        local _,today=ForeverFlipAPI.GetPrice(10);assert(today==1)
+        ''')
+
     def test_get_price_and_deal(self):
         run(EXTRA + '''assert(ForeverFlipAPI.IsReady() and ForeverFlipAPI.version==1)
         local usual,cheap,_,_,age=ForeverFlipAPI.GetPrice(link(10))

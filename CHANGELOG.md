@@ -8,6 +8,16 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- Audit: prevent duplicate accounting after bid wins, manual purchase settlement, repeated inbox
+  updates and merchant buyback events; distribute sale invoices across matching listings and use
+  exact sold-lot totals. Preserve gear variant names in bids and localize undercut scan notices.
+- Reject inconsistent shared-scan chunks, out-of-window history, truncated saved-data input,
+  corrupt compressed uploads and incomplete or duplicate-entry update archives. Deduplicate scan
+  uploads within one pass and defer accepted-issue completion until local registry persistence.
+- Keep historical-only shared observations for their retention period, release five-minute scan
+  working data, refresh time-dependent analytics and align crafting shopping limits with costs.
+- Return today's minimum from the public price API only when the daily record is from today.
+
 - The tooltip line "On sale by you" divided the price of one unit by the quantity again (164 Fish
   Bowls at 53c each read as 0c).
 
@@ -35,6 +45,10 @@ All notable changes are listed here. The format follows
   reads "Selling..." while the sale runs.
 
 ### Changed
+
+- Remove the obsolete immediate vendor seller and unused scan/search helpers; play-session tests
+  now use the paced production vendor seller. Reconcile data-schema and freshness documentation
+  with current defaults and retention limits.
 
 - **An empty Resale page says why.** It lists what the last scan rejected its items for, the most
   common first, with numbers: sales not measured yet, not bought at the resale price, too few

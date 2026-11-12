@@ -91,7 +91,7 @@ A full scan runs in stages, all shown on the progress bar:
    disenchant deal and bids ending soon. Its sales since the previous scan are recorded.
 
 The server allows **one full scan per 15 minutes per account**. With **Full scan every 15 minutes** on
-(Settings, on by default), ForeverFlip starts the next scan by itself when the cooldown ends, if the
+(Settings, off by default), ForeverFlip starts the next scan by itself when the cooldown ends, if the
 auction house is open and no other action is running.
 
 If another addon (Auctionator, TSM, auxForever, ...) requests a full scan, ForeverFlip reads the
@@ -163,8 +163,8 @@ change pages.
 | **old scan** | Found by a scan more than 20 minutes ago. The lots may be gone. |
 | **not enough money** (red) | The deal costs more than you carry. |
 
-Deals that have not been checked are dropped 15 minutes after the scan that found them. A deal that
-no longer holds when checked disappears from the list.
+Unchecked deals remain leads until refreshed or removed. A deal that no longer holds when checked
+disappears from the list; buying always requires a fresh check.
 
 ### Details of the selected deal
 
@@ -535,9 +535,9 @@ throttle got stuck.
 | Never post below, % of the usual price | 0 | A floor for every post. 0 turns it off. |
 | Ignore sellers above, % of the usual price | 200 | A cheapest seller above this is ignored, and the item is posted at its usual price. |
 | **Presets** | | **Careful**, **Balanced** (the defaults) and **Aggressive** set the profit, return and money limits in one click. |
-| Check found deals automatically | on | Checks the best unchecked deals by itself. This option is reset when you log in. |
-| Full scan every 15 minutes | on | Starts a full scan whenever the cooldown ends and the auction house is open. |
-| Sniper | on | See [Sniper](#sniper). |
+| Check found deals automatically | off | Checks the best unchecked deals by itself when enabled; saved between logins. |
+| Full scan every 15 minutes | off | Starts a full scan whenever the cooldown ends and the auction house is open. |
+| Sniper | off | See [Sniper](#sniper). |
 | Sound and screen notice | on | See [Alerts](#alerts). |
 | Price history in item tooltips | on | See [Item tooltips](#item-tooltips). |
 | Keep items in the bags when the market is below their floor | off | Off: such items are posted at the floor. On: they are skipped. |
@@ -576,7 +576,7 @@ On the **Settings → Sharing** tab:
 | Send my price history: Guild / Group | Sends your price history once: per item the daily records of the last 7 days (cheapest and usual price, units listed, units seen sold), which hold every full scan of those days, and the prices of your last scan. Sending each scan would not fit: an addon message holds 255 characters and one scan already takes minutes. |
 | Player + Send | Sends it to one player (whisper channel; they need ForeverFlip and must accept shared scans). |
 | Export as text / Import text | The price history as a text you can send anywhere, for example in Discord, and import on another account or by a friend. |
-| Keep my full scans for the ForeverFlip Sync helper | Off by default. Keeps every full scan auction by auction for the [community sharing](community.md) through GitHub: up to 8 scans (two hours) until the helper has uploaded them; scans it uploaded are dropped. The game writes them only at `/reload` or logout, so reload now and then in a long session. A partial answer is not kept. |
+| Keep my full scans for the ForeverFlip Sync helper | On by default. Keeps every full scan auction by auction for the [community sharing](community.md) through GitHub: up to 8 scans (two hours) until the helper has uploaded them; uploaded older scans are dropped. The game writes them only at `/reload` or logout, so reload now and then in a long session. A partial answer is not kept. |
 | Share full scans with every ForeverFlip user of the realm | On by default. A hidden chat channel (`ForeverFlipPrices`, never shown in chat): after logging in ForeverFlip asks who has a newer scan, one player answers and sends it, and everyone who is behind keeps it. Your new scans are offered the same way. |
 
 The tab also shows the community data the Sync helper wrote, and how many full scans are kept for it.
@@ -783,8 +783,8 @@ The result of `/ff diag` helps too.
 
 ## A typical session
 
-1. Open the auction house. The automatic scan starts as soon as the cooldown allows, and the sniper
-   watches the house between scans.
+1. Open the auction house and start a full scan. If enabled in Settings, automatic scans start when
+   the cooldown allows, and the sniper watches the house between scans.
 2. Buy the **ready** vendor deals and react to alerts (bind the Buy key to be quick).
 3. Check the **Resale** page after a few scans. Buy deals with a good return and a good Est./day.
 4. Use **Selling → My items → Post next bought** (or Post all) to list your purchases.

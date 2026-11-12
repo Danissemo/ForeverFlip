@@ -47,6 +47,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from collections import Counter
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -250,7 +251,7 @@ def accept_upload(hub: Hub, issue: dict, entries: list[dict], uploaders: dict, n
         raise ValueError("the gist does not match the SHA-256 in the issue (it was changed)")
     try:
         scan = ffscan.decode_raw(gzip.decompress(packed).decode("utf-8"))
-    except (OSError, EOFError, UnicodeDecodeError) as exc:
+    except (OSError, EOFError, UnicodeDecodeError, zlib.error) as exc:
         raise ValueError("the file is not a gzip-compressed scan") from exc
     why = ffscan.check(scan, now) or limits(entries, author, scan, digest, now)
     if why:
@@ -446,13 +447,15 @@ STATUS_TEXT = {
 }
 
 
-def process(hub, data: pathlib.Path, now: float) -> list[str]:
+def process(hub, data: pathlib.Path, now: float, defer_completion: bool = False) -> list[str]:
     """Handles the open upload issues and the waiting scans; returns a report."""
     shared = data / "shared"
     shared.mkdir(parents=True, exist_ok=True)
     entries, uploaders = load_registry(data), load_uploaders(data)
     loaded: dict[str, ffscan.RawScan] = {}
     report = []
+    accepted = []
+    registered = {entry["issue"]: entry for entry in entries if entry.get("issue") is not None}
 
     def load(entry):
         if entry["name"] not in loaded:
@@ -462,6 +465,10 @@ def process(hub, data: pathlib.Path, now: float) -> list[str]:
 
     for issue in hub.scan_issues():
         number = issue["number"]
+        if number in registered:
+            # A previous run saved this scan but failed while acknowledging its issue.
+            accepted.append(registered[number])
+            continue
         try:
             entry, scan = accept_upload(hub, issue, entries, uploaders, now)
         except (ValueError, urllib.error.URLError) as exc:
@@ -480,24 +487,55 @@ def process(hub, data: pathlib.Path, now: float) -> list[str]:
         if entry["status"] == "trusted":
             publish(shared, entry, scan, None)
         report.append(f"archived #{number} as {entry['archive']}/{entry['name']} ({entry['status']})")
-        hub.comment(number, f"✅ Archived unchanged as `{entry['name']}` in "
-                            f"[{entry['archive']}](https://github.com/{hub.repo}/releases/tag/{entry['archive']}): "
-                            f"{entry['auctions']} auctions. {STATUS_TEXT[entry['status']]}")
-        hub.close(number, completed=True)
+        accepted.append(entry)
 
     report += confirm_pending(entries, load, shared, now)
     save_registry(data, entries)
     write_index(shared)
+    # Workflows defer completion until the generated files have been pushed.
+    if not defer_completion:
+        report += acknowledge_entries(hub, accepted)
     report.append(f"done: {len(entries)} scans in the registry")
     return report
+
+
+def acknowledge_entries(hub, entries: list[dict]) -> list[str]:
+    """Acknowledge registered scans; failed notifications remain retryable."""
+    report = []
+    for entry in entries:
+        number = entry["issue"]
+        status = STATUS_TEXT.get(entry["status"], f"Current status: {entry['status']}.")
+        try:
+            hub.comment(number, f"✅ Archived unchanged as `{entry['name']}` in "
+                                f"[{entry['archive']}](https://github.com/{hub.repo}/releases/tag/{entry['archive']}): "
+                                f"{entry['auctions']} auctions. {status}")
+            hub.close(number, completed=True)
+        except (urllib.error.URLError, OSError) as exc:
+            report.append(f"#{number} completion pending: {exc}")
+    return report
+
+
+def complete_registered(hub, data: pathlib.Path) -> list[str]:
+    """Complete only open issues already present in the persisted registry."""
+    registered = {entry["issue"]: entry for entry in load_registry(data) if entry.get("issue") is not None}
+    entries = [registered[issue["number"]] for issue in hub.scan_issues() if issue["number"] in registered]
+    return acknowledge_entries(hub, entries)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", required=True, help="checkout of the data repository")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--defer-completion", action="store_true",
+                      help="keep accepted issues open until registry and summaries are committed and pushed")
+    mode.add_argument("--complete-only", action="store_true",
+                      help="acknowledge registered open issues without processing uploads or changing data")
     args = parser.parse_args()
     hub = Hub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
-    for line in process(hub, pathlib.Path(args.data), time.time()):
+    data = pathlib.Path(args.data)
+    report = (complete_registered(hub, data) if args.complete_only
+              else process(hub, data, time.time(), defer_completion=args.defer_completion))
+    for line in report:
         print(line)
 
 

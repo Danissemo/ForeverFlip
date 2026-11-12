@@ -143,7 +143,9 @@ flight or queued and no candidate is waiting.
 5. **Fail soft.** Every event and frame handler runs under `xpcall`. API calls that may be missing
    on WoW Forever are guarded (`C_Item.GetItemInfo` vs `GetItemInfo`,
    `C_MerchantFrame.GetItemInfo` vs `GetMerchantItemInfo`, `SendSellSearchQuery`).
-6. **Bounded storage.** Every saved collection has a cap or an expiry:
+6. **Bounded event history.** Transient records have caps or expiry; user catalogues such as shopping
+   lists, posting rules, recipes and lifetime item statistics remain until explicitly changed.
+   Do not discard accounting or settings as cache data.
 
    | Data | Limit |
    |---|---|
@@ -158,6 +160,10 @@ flight or queued and no candidate is waiting.
    | Bid candidates | 100 |
    | Gold records | 60 days |
    | Bids | 2 days |
+   | Raw full scans | 8; uploaded older scans removed |
+
+Full-scan working groups expire after five minutes; the lightweight listed-unit snapshot remains
+available for its twenty-minute no-seller check. Market analytics refreshes its cache each minute.
 
 ## Adding a feature
 

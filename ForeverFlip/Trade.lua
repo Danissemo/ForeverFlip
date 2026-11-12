@@ -185,6 +185,10 @@ local function awaitInvoice(c, name, qty)
     c.awaitMail[k] = w
 end
 
+function T.awaitBuyerInvoice(name, qty)
+    awaitInvoice(char(), name, qty)
+end
+
 local function bought(op)
     F.Engine.spent = (F.Engine.spent or 0) + (op.cost or 0)
     local c = char()
@@ -364,6 +368,8 @@ function T.settle(index, wasBought)
     end
     table.remove(c.unknown, index)
     if wasBought then
+        F.Engine.spent = (F.Engine.spent or 0) + u.cost
+        awaitInvoice(c, u.name, u.qty)
         F.Data.addPosition(c, u.key, u.name, u.qty, u.cost, u.mode, u.exit, clock())
         F.Data.log(c, { at = clock(), kind = "buy", key = u.key, name = u.name, qty = u.qty, amount = u.cost })
     end
@@ -883,7 +889,8 @@ function T.onOwned()
                         -- The invoice of this sale comes later by mail: it must not book it again.
                         l.awaiting = (l.awaiting or 0) + qty
                         local unit = a.price or l.price
-                        local net = M.net(unit, qty)
+                        local gross = a.total and a.total * qty / math.max(a.qty, 1) or unit * qty
+                        local net = M.net(gross, 1)
                         local cost = F.Data.sale(c, l.key, l.name, qty, net, clock())
                         F.Data.log(c, {
                             at = clock(),
@@ -1012,31 +1019,38 @@ function bookInvoice(c, item, count, net, at)
         F.Engine.changed()
         return
     end
-    local listing, known
+    local allocations, order = {}, {}
+    local function allocate(key, qty)
+        if not allocations[key] then
+            allocations[key] = 0
+            order[#order + 1] = key
+        end
+        allocations[key] = allocations[key] + qty
+        count = count - qty
+    end
     for _, l in ipairs(c.listings) do
-        if string.lower(l.name or "") == name then
-            known = true
-            if l.open > 0 then
-                listing = l
-                break
+        if count > 0 and string.lower(l.name or "") == name and l.open > 0 then
+            local qty = math.min(count, l.open)
+            l.open = l.open - qty
+            allocate(l.key, qty)
+        end
+    end
+    -- Remaining units may have been posted outside ForeverFlip, even if an older listing exists.
+    for key, p in pairs(c.positions) do
+        if count > 0 and string.lower(p.name or "") == name and p.mode ~= "vendor" then
+            local qty = math.min(count, math.max(0, p.qty - (allocations[key] or 0)))
+            if qty > 0 then
+                allocate(key, qty)
             end
         end
     end
-    local key, qty
-    if listing then
-        key, qty = listing.key, math.min(count, listing.open)
-        listing.open = listing.open - qty
-    elseif not known then
-        -- Posted outside ForeverFlip (or the listing is older than three days): book against stock.
-        for k, p in pairs(c.positions) do
-            if string.lower(p.name or "") == name and p.mode ~= "vendor" then
-                key, qty = k, math.min(count, p.qty)
-                break
-            end
-        end
-    end
-    if key and qty and qty > 0 then
-        local amount = math.floor(net * qty / inv.count + 0.5)
+    local allocated, distributed = 0, 0
+    for _, key in ipairs(order) do
+        local qty = allocations[key]
+        allocated = allocated + qty
+        local cumulative = math.floor(net * allocated / inv.count + 0.5)
+        local amount = cumulative - distributed
+        distributed = cumulative
         local cost = F.Data.sale(c, key, inv.item, qty, amount, at)
         F.Data.log(c, {
             at = at,
@@ -1056,9 +1070,6 @@ end
 -- a purchase ForeverFlip made is only matched; any other purchase (the game's Buy tab, another
 -- addon) is booked as stock bought elsewhere ("other": counted, never posted automatically).
 function T.onBuyerInvoice(inv, link)
-    if F.Bids.won(inv.item) then
-        return
-    end
     local c = char()
     local count = math.max(1, inv.count or 1)
     local w = type(c.awaitMail) == "table" and c.awaitMail[string.lower(inv.item)]
@@ -1068,6 +1079,9 @@ function T.onBuyerInvoice(inv, link)
     end
     if count <= 0 then
         F.Engine.changed()
+        return
+    end
+    if F.Bids.won(inv.item, true) then
         return
     end
     local id = type(link) == "string" and tonumber(link:match("item:(%d+)"))
@@ -1418,7 +1432,7 @@ function T.checkOwned()
             queue[#queue + 1] = a.key
         end
     end
-    T.checkQueue, T.checkingOwned = queue, seen
+    T.checkQueue, T.checkingOwned, T.checkTotal = queue, seen, #queue
     F.Engine.changed()
     return #queue
 end
@@ -1800,6 +1814,7 @@ end
 function T.afterScan()
     local n = T.fightCount()
     if n > 0 and n ~= T.toldFights then
+        local L = F.Locale.text
         print(
             "ForeverFlip: "
                 .. string.format(L("%d of your auctions were undercut and are worth answering: Selling, Undercuts."), n)
@@ -2030,7 +2045,6 @@ local function bookVendorSale(job, v)
     end
     local p = c.positions[v.key]
     if p and p.qty > 0 then
-        F.Merchant.expectSale(v.id, v.count)
         local name = p.name or v.key
         local cost = F.Data.sale(c, v.key, name, v.count, v.price, clock())
         F.Data.log(c, {
@@ -2074,6 +2088,13 @@ function T.stepVendor()
         for _, v in ipairs(job.sent) do
             if not slotHolds(v) then
                 bookVendorSale(job, v)
+            elseif v.expected then
+                F.Merchant.cancelExpectedSale(v.id, v.count)
+            end
+        end
+        for _, v in ipairs(job.queue) do
+            if v.expected then
+                F.Merchant.cancelExpectedSale(v.id, v.count)
             end
         end
         job.sent, job.queue = {}, {}
@@ -2090,6 +2111,9 @@ function T.stepVendor()
         elseif v.tries < 3 then
             table.insert(job.queue, 1, v) -- not taken: sent again
         else
+            if v.expected then
+                F.Merchant.cancelExpectedSale(v.id, v.count)
+            end
             job.failed = job.failed + 1
         end
     end
@@ -2103,6 +2127,10 @@ function T.stepVendor()
             end
             if slotHolds(v) then
                 v.at, v.tries = t, (v.tries or 0) + 1
+                if not v.expected then
+                    F.Merchant.expectSale(v.id, v.count)
+                    v.expected = true
+                end
                 C_Container.UseContainerItem(v.bag, v.slot)
                 job.sent[#job.sent + 1] = v
             end
@@ -2134,34 +2162,6 @@ end
 -- True while a vendor sale is under way (the Sell all button waits).
 function T.sellingToVendor()
     return T.vendorJob ~= nil
-end
-
-function T.sellToVendor()
-    local c = char()
-    local sold = 0
-    for _, v in ipairs(T.vendorItems()) do
-        local item = U.parseKey(v.key)
-        local price = F.AH.vendorPrice(item.id, true) or 0 -- the sale is booked at the real price
-        C_Container.UseContainerItem(v.bag, v.slot)
-        F.Merchant.expectSale(item.id, v.count)
-        local p = c.positions[v.key]
-        local name = p and p.name or v.key
-        local cost = F.Data.sale(c, v.key, name, v.count, price * v.count, clock())
-        F.Data.log(c, {
-            at = clock(),
-            kind = "vendor",
-            key = v.key,
-            name = name,
-            qty = v.count,
-            amount = price * v.count,
-            profit = price * v.count - cost,
-        })
-        sold = sold + 1
-    end
-    if sold > 0 then
-        F.Engine.changed()
-    end
-    return sold
 end
 
 -- Summary for the journal.

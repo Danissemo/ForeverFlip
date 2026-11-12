@@ -102,6 +102,7 @@ function sim.buy(n)
                     if o.auctionID == cheapest.id then
                         o.status = 1
                         o.quantity = take
+                        o.buyoutAmount = math.floor(unit * take) -- the game reports the whole sale
                     end
                 end
                 mail("Auction successful: " .. cheapest.name, cheapest.name, math.floor(unit * take), take, "seller")

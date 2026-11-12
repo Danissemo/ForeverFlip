@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'sync'))
 import foreverflip_sync as helper
-from test_sync import make_scan, market
+from test_sync import make_scan, market, lua_literal
 
 
 class GameLocationTests(unittest.TestCase):
@@ -112,8 +112,36 @@ class UploadRetryTests(unittest.TestCase):
         self.upload(); self.upload()
         self.assertEqual(self.hub.create_issue.call_count, 1)
 
+    def test_duplicate_saved_scans_are_uploaded_only_once_in_one_pass(self):
+        scan = {'scope': self.scan.scope, 'at': self.scan.at, 'realm': self.scan.realm,
+                'faction': self.scan.faction, 'addon': self.scan.addon, 'count': len(self.scan.rows),
+                'seal': self.scan.seal, 'rows': helper.ffscan.rows_text(self.scan)}
+        text = 'ForeverFlipRaw = ' + lua_literal({'scans': [scan]})
+        second = self.game/'SecondAccount.lua'
+        for path in (self.saved, second):
+            path.write_text(text, encoding='utf-8')
+        with patch.object(helper, 'log'):
+            helper.upload_new_scans(self.game, self.hub, self.state, paths=[self.saved, second])
+        self.assertEqual(len(self.state['pending']), 1)
+
+    def test_truncated_saved_file_is_skipped(self):
+        self.saved.write_text('ForeverFlipRaw = {', encoding='utf-8')
+        with patch.object(helper, 'log'):
+            scans = list(helper.shareable_scans(self.game, self.state, paths=[self.saved]))
+        self.assertEqual(scans, [])
+
 
 class ParserWorkTests(unittest.TestCase):
+    def test_truncated_tables_and_strings_raise_lua_error(self):
+        for text in ('A = {', 'A = { x=1,', 'A = {[1', 'A = {[1]', 'A = "abc' + chr(92)):
+            with self.subTest(text=text), self.assertRaises(helper.ffscan.LuaError):
+                helper.ffscan.lua_assignments(text)
+
+    def test_invalid_table_keys_raise_lua_error(self):
+        for text in ('A = {[{}] = 1}', 'A = {[nil] = 1}'):
+            with self.subTest(text=text), self.assertRaises(helper.ffscan.LuaError):
+                helper.ffscan.lua_assignments(text)
+
     def test_reader_does_not_copy_the_remaining_file_for_every_table_key(self):
         class Text(str):
             copied = 0

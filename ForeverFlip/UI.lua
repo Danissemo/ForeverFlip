@@ -2812,20 +2812,19 @@ function UI.createAuctions(p)
         end
     end)
     UI.cancelAuction:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
-    UI.cancelUndercut = button(bar, "Cancel undercut", 170, function()
-        local _, why = F.Trade.cancelNextUndercut()
-        F.Engine.notify(why)
+    UI.refreshOwned = button(bar, "Refresh", 100, function()
+        F.Trade.ownedDue = 0
     end)
-    UI.cancelUndercut:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
+    UI.refreshOwned:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
     UI.checkOwned = button(bar, "Check prices", 130, function()
         F.Trade.checkOwned()
         UI.refreshAuctions()
     end)
-    UI.checkOwned:SetPoint("RIGHT", UI.cancelAuction, "LEFT", -4, 0)
-    UI.refreshOwned = button(bar, "Refresh", 100, function()
-        F.Trade.ownedDue = 0
-    end)
-    UI.refreshOwned:SetPoint("RIGHT", UI.checkOwned, "LEFT", -4, 0)
+    UI.checkOwned:SetPoint("LEFT", UI.refreshOwned, "RIGHT", 4, 0)
+    -- The undercut advice and the cancel cost sit between the buttons, never over them.
+    UI.auctionText:ClearAllPoints()
+    UI.auctionText:SetPoint("LEFT", UI.checkOwned, "RIGHT", 8, 0)
+    UI.auctionText:SetPoint("RIGHT", UI.cancelAuction, "LEFT", -8, 0)
 end
 
 -- Selling, Undercuts (anti-undercut): every undercut auction, the advice, and every option priced
@@ -3067,9 +3066,6 @@ function UI.refreshAuctions()
             or 4
         return ({ nameOf(a.key or "", a.link), a.qty, a.price, cheapest, rank, a.timeLeft })[column]
     end)
-    local undercutN = #F.Trade.undercutList()
-    UI.cancelUndercut:SetText(L("Cancel undercut") .. " (" .. undercutN .. ")")
-    UI.cancelUndercut:SetEnabled(undercutN > 0 and F.AH.isOpen())
     local selected, undercut = nil, 0
     for i, r in ipairs(UI.auctionTable.rows) do
         local a = owned[i]
@@ -3120,7 +3116,7 @@ function UI.refreshAuctions()
     -- (sold, the gold on its way by mail), centered as in Auctionator's Cancelling tab.
     local onSale, pending = 0, 0
     for _, a in ipairs(F.Trade.owned or {}) do
-        local value = (a.price or 0) * (a.qty or 1)
+        local value = a.total or (a.price or 0) * (a.qty or 1)
         if a.sold then
             pending = pending + value
         else
@@ -3133,9 +3129,7 @@ function UI.refreshAuctions()
             or ""
     )
     local lines = {}
-    if queue > 0 then
-        lines[#lines + 1] = string.format(L("Checking prices: %d left."), queue)
-    elseif undercut > 0 then
+    if queue == 0 and undercut > 0 then
         lines[#lines + 1] = string.format(
             L("Undercut: %d. Cancel and post again a bit cheaper, or wait: cancelling loses the deposit."),
             undercut
@@ -4630,6 +4624,16 @@ function UI.refreshStatus()
         return
     elseif batch and batchTotal > 0 and UI.completedBatch ~= batch then
         UI.completedBatch, UI.batchSummaryAt = batch, F.Engine.clock()
+    end
+    -- Check prices of My auctions: its progress belongs up here, with the other running work.
+    local ownedLeft = F.Trade.checksRemaining()
+    if ownedLeft > 0 then
+        local ownedTotal = math.max(F.Trade.checkTotal or ownedLeft, ownedLeft)
+        UI.status:SetText(
+            string.format(L("Checking prices of your auctions: %d/%d"), ownedTotal - ownedLeft, ownedTotal)
+        )
+        UI.progress:SetValue((ownedTotal - ownedLeft) / ownedTotal)
+        return
     end
     local msg = F.Engine.message
     if msg and F.Engine.clock() - (F.Engine.messageAt or 0) < 20 then

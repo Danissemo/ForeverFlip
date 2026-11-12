@@ -932,13 +932,20 @@ function A.owned()
     for i = 1, (AH.GetNumOwnedAuctions and AH.GetNumOwnedAuctions() or 0) do
         local a = AH.GetOwnedAuctionInfo(i)
         if a and a.itemKey then
+            -- A listed auction reports the price of one unit; a sold one reports the whole sale
+            -- (as Auctionator reads it). Kept apart: price is always one unit, total the lot.
+            local qty = a.quantity or 1
+            local sold = a.status == 1
+            local buyout = a.buyoutAmount or a.bidAmount
+            local total = buyout and (sold and buyout or buyout * qty)
             out[#out + 1] = {
                 auctionID = a.auctionID,
                 id = a.itemKey.itemID,
                 link = a.itemLink,
-                qty = a.quantity or 1,
-                price = a.buyoutAmount,
-                sold = a.status == 1,
+                qty = qty,
+                price = buyout and (sold and math.floor(buyout / math.max(qty, 1) + 0.5) or buyout),
+                total = total,
+                sold = sold,
                 timeLeft = a.timeLeftSeconds,
             }
         end

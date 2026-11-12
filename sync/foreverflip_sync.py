@@ -223,6 +223,7 @@ def shareable_scans(game: pathlib.Path, state: dict, paths=None):
                 while len(rejected) > 500:
                     del rejected[next(iter(rejected))]
                 continue
+            done.add(ident)
             yield scan, ident, when
 
 

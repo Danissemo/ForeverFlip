@@ -163,7 +163,7 @@ function C.shopMaterials(recipeID, count)
     local added = 0
     for _, m in ipairs(r.r) do
         local kind = F.AH.kindOf(m[1])
-        local unit = usual(history, m[1])
+        local unit = C.materialCost(history, m[1])
         if kind and kind ~= "gear" and unit then
             local key = U.key(kind, m[1])
             local name = U.itemInfo(m[1])

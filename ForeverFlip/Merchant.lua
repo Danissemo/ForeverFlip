@@ -183,6 +183,10 @@ function V.expectSale(id, qty)
     V.expected[id] = (V.expected[id] or 0) + qty
 end
 
+function V.cancelExpectedSale(id, qty)
+    V.expected[id] = math.max(0, (V.expected[id] or 0) - qty)
+end
+
 local function buybackEntries()
     local list = {}
     for i = 1, (GetNumBuybackItems and GetNumBuybackItems() or 0) do

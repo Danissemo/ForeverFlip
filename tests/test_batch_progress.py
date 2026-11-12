@@ -23,7 +23,9 @@ class BatchProgressTests(unittest.TestCase):
         assert(#T.checkQueue==0 and D.search and #D.requests==19)
         for remaining=20,1,-1 do
             UI.refreshAuctions()
-            assert(UI.auctionText:GetText():find('Checking prices: '..remaining..' left.',1,true),UI.auctionText:GetText())
+            UI.refreshStatus()
+            assert(UI.status:GetText():find('Checking prices of your auctions: '..(20-remaining)..'/20',1,true),UI.status:GetText())
+            assert(not UI.auctionText:GetText():find('Checking prices:'), 'progress belongs in the status bar')
             assert(not UI.checkOwned:IsEnabled(),'batch cannot restart while accepted requests remain')
             local waiting=#D.requests
             UI.checkOwned:Click();assert(#D.requests==waiting)
@@ -39,7 +41,8 @@ class BatchProgressTests(unittest.TestCase):
         assert(UI.checkOwned:IsEnabled() and not UI.auctionText:GetText():find('Checking prices:'))
         assert(not D.search and #D.requests==0)
         fire('AUCTION_HOUSE_SHOW');UI.show('auctions');UI.checkOwned:Click();run(0.1);UI.refreshAuctions()
-        assert(not UI.checkOwned:IsEnabled() and UI.auctionText:GetText():find('Checking prices: 20 left.',1,true))
+        UI.refreshStatus()
+        assert(not UI.checkOwned:IsEnabled() and UI.status:GetText():find('Checking prices of your auctions: 0/20',1,true),UI.status:GetText())
         ''')
 
 

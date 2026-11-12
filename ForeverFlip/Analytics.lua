@@ -244,7 +244,7 @@ function A.market(now)
     now = now or F.Engine.clock()
     local scope = F.Engine.scope()
     local last = F.Scan.last
-    local stamp = scope .. ":" .. tostring(last and last.at)
+    local stamp = scope .. ":" .. tostring(last and last.at) .. ":" .. math.floor(now / 60)
     if cache and cache.stamp == stamp then
         return cache
     end

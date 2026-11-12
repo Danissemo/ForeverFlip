@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 import urllib.error
+from unittest.mock import patch
 
 from test_addon import SETUP, runtime
 
@@ -246,6 +247,99 @@ class FakeHub:
 
 
 class AggregatorTests(unittest.TestCase):
+    def test_deferred_completion_persists_scan_and_leaves_issue_open(self):
+        hub = FakeHub()
+        hub.add_upload(make_scan(self.now - 60, market()), 'Alice', 1)
+        aggregate.process(hub, self.data, self.now, defer_completion=True)
+        self.assertEqual(len(aggregate.load_registry(self.data)), 1)
+        self.assertEqual(hub.closed, {})
+        self.assertEqual(hub.comments, {})
+
+    def test_completion_only_cli_acknowledges_registered_issues_and_retries(self):
+        hub = FakeHub()
+        for number in (1, 2):
+            hub.add_upload(make_scan(self.now - 60, market()), 'Alice', number)
+        issues = list(hub.issues)
+        aggregate.save_registry(self.data, [{'issue': 1, 'name': 'scan.ffr.gz', 'archive': 'raw-day',
+                                             'at': self.now, 'status': 'pending', 'auctions': 50}])
+        registry = self.data/'registry/scans.jsonl'
+        before = registry.read_bytes()
+        with patch.object(sys, 'argv', ['aggregate.py', '--data', str(self.data), '--complete-only']), \
+             patch.dict(aggregate.os.environ, {'GITHUB_REPOSITORY': 'Owner/Data', 'GITHUB_TOKEN': 'test'}), \
+             patch.object(aggregate, 'Hub', return_value=hub), \
+             patch.object(aggregate, 'process', side_effect=AssertionError('completion must not process scans')):
+            with patch.object(hub, 'close', side_effect=urllib.error.URLError('offline')):
+                aggregate.main()
+            self.assertEqual(hub.closed, {})
+            hub.issues = issues
+            aggregate.main()
+        self.assertEqual(hub.closed, {1: True})
+        self.assertEqual(hub.archive, {})
+        self.assertEqual(registry.read_bytes(), before)
+        self.assertFalse((self.data/'shared').exists())
+
+    def test_confirmation_failure_leaves_accepted_issue_open_for_retry(self):
+        hub = FakeHub()
+        hub.add_upload(make_scan(self.now - 60, market()), 'Alice', 1)
+        issues = list(hub.issues)
+        with patch.object(aggregate, 'confirm_pending', side_effect=OSError('archive unavailable')):
+            with self.assertRaises(OSError):
+                aggregate.process(hub, self.data, self.now)
+        self.assertNotIn(1, hub.closed)
+        self.assertEqual(aggregate.load_registry(self.data), [])
+        hub.issues = issues  # GitHub returns issues that remain open on the next run.
+        result = self.run_aggregator(hub, self.data, self.now)
+        self.assertEqual(result[1]['status'], 'pending')
+        self.assertTrue(hub.closed[1])
+
+    def test_failed_completion_is_retried_without_refusing_registered_scan(self):
+        hub = FakeHub()
+        hub.add_upload(make_scan(self.now - 60, market()), 'Alice', 1)
+        issues = list(hub.issues)
+        with patch.object(hub, 'close', side_effect=urllib.error.URLError('offline')):
+            report = aggregate.process(hub, self.data, self.now)
+        self.assertTrue(any('completion pending' in line for line in report))
+        self.assertEqual(len(aggregate.load_registry(self.data)), 1)
+        hub.issues = issues
+        result = self.run_aggregator(hub, self.data, self.now)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[1]['status'], 'pending')
+        self.assertTrue(hub.closed[1])
+        self.assertNotIn('refused', hub.comments[1])
+
+    def test_later_completion_failure_preserves_successful_processing(self):
+        hub = FakeHub()
+        hub.add_upload(make_scan(self.now - 700, market()), 'Alice', 1)
+        hub.add_upload(make_scan(self.now - 60, market()), 'Alice', 2)
+        close = hub.close
+
+        def interrupted(number, completed):
+            if number == 2:
+                raise OSError('connection reset')
+            close(number, completed)
+
+        with patch.object(hub, 'close', side_effect=interrupted):
+            report = aggregate.process(hub, self.data, self.now)
+        self.assertEqual(len(aggregate.load_registry(self.data)), 2)
+        self.assertTrue(hub.closed[1])
+        self.assertNotIn(2, hub.closed)
+        self.assertTrue(any('#2 completion pending' in line for line in report))
+
+    def test_corrupt_deflate_upload_is_refused_and_next_issue_is_processed(self):
+        import base64
+        import hashlib
+        hub = FakeHub()
+        hub.add_upload(make_scan(self.now - 60, market()), 'Owner', 1)
+        fields = aggregate.parse_issue(hub.issues[0]['body'])
+        packed = b'\x1f\x8b\x08\x00' + b'\x00' * 6 + b'\x06' + b'\x00' * 8
+        hub.gists[fields['gist']]['files']['scan.001.b64']['content'] = base64.b64encode(packed).decode()
+        hub.issues[0]['body'] = hub.issues[0]['body'].replace(fields['sha256'], hashlib.sha256(packed).hexdigest())
+        hub.add_upload(make_scan(self.now - 60, market()), 'Owner', 2)
+        result = self.run_aggregator(hub, self.data, self.now)
+        self.assertFalse(hub.closed[1])
+        self.assertTrue(hub.closed[2])
+        self.assertEqual(list(result), [2])
+
     def run_aggregator(self, hub, data, now):
         aggregate.process(hub, data, now)
         return {e['issue']: e for e in aggregate.load_registry(data)}

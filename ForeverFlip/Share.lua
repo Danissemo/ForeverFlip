@@ -150,13 +150,17 @@ end
 
 local function dayRecords(text, noSales)
     local days = {}
-    for o, min, m, n, s in (text or ""):gmatch("(%w+)%.(%w+)%.(%w+)%.(%w+)%.(%w+)") do
+    for record in (text or ""):gmatch("[^/]+") do
+        local o, min, m, n, s = record:match("^(%w+)%.(%w+)%.(%w+)%.(%w+)%.(%w+)$")
         local function v(x)
-            local value = S.dec(x)
-            return value and value > 0 and value or nil
+            local value = x and S.dec(x)
+            return U.finite(value) and value > 0 and value or nil
         end
-        days[#days + 1] =
-            { o = S.dec(o) or 0, min = v(min), m = v(m), n = S.dec(n) or 0, s = not noSales and S.dec(s) or 0 }
+        local offset = o and S.dec(o)
+        if U.finite(offset) and offset >= 0 and offset < S.HISTORY_DAYS then
+            days[#days + 1] =
+                { o = offset, min = v(min), m = v(m), n = S.dec(n) or 0, s = not noSales and S.dec(s) or 0 }
+        end
     end
     return days
 end
@@ -489,6 +493,11 @@ function S.onMessage(prefix, text, channel, sender)
     end
     local key = sender .. "/" .. id
     local r = S.inbox[key]
+    -- All chunks of a transfer must agree on its size. Counting an out-of-range chunk against
+    -- the first size could complete a sparse parts table, which table.concat cannot read.
+    if r and r.total ~= total then
+        return
+    end
     if not r then
         r = { parts = {}, got = 0, total = total, started = now }
         S.inbox[key] = r
@@ -502,7 +511,7 @@ function S.onMessage(prefix, text, channel, sender)
         local name = Ambiguate and Ambiguate(sender, "none") or sender
         -- Decoded and merged a slice per frame (S.work): a scan of 20 000 items took over 100 ms in
         -- one go, a stall when it arrived.
-        S.pending[#S.pending + 1] = { text = table.concat(r.parts), from = name, how = channel }
+        S.pending[#S.pending + 1] = { text = table.concat(r.parts, "", 1, r.total), from = name, how = channel }
     end
 end
 

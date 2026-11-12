@@ -36,7 +36,7 @@ open; hardcore realms have their own). Anything ForeverFlip does not know return
 | `ForeverFlipAPI.version` | `1`. Raised when a function is added. |
 | `ForeverFlipAPI.IsReady()` | `true` once ForeverFlip's saved data has loaded. |
 | `ForeverFlipAPI.GetPrice(item)` | `usual, cheapestToday, sellsAt, perDay, age`. `usual` is the typical asking price of the last full scan (the player's own, or a newer one shared by another player). `cheapestToday` is the lowest price seen today. `sellsAt` is the median of the sales seen (nil with fewer than 3). `perDay` is units sold per day near the usual price (nil if unknown). `age` is seconds since the usual price was measured. |
-| `ForeverFlipAPI.GetDeal(item)` | `mode, profit, cost, qty, fresh`. `mode` is `"vendor"`, `"flip"`, `"shop"` or `"disenchant"`. `fresh` is true when the deal was checked on the auction house in the last 2 minutes. nil when the item has no deal. |
+| `ForeverFlipAPI.GetDeal(item)` | `mode, profit, cost, qty, fresh`. `mode` is `"vendor"`, `"flip"`, `"shop"` or `"disenchant"`. `fresh` is true when the deal was checked on the auction house in the last 5 minutes. nil when the item has no deal. |
 
 The functions read ForeverFlip's tables when called; nothing runs every frame.
 

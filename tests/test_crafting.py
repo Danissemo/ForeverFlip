@@ -36,6 +36,13 @@ class CraftingTests(unittest.TestCase):
         run(CRAFT + '''F.Crafting.rememberMerchantPrice(10,10)
         fire('TRADE_SKILL_SHOW');assert(F.Crafting.profits()[1].cost==20)''')
 
+    def test_shopping_limit_uses_the_same_material_cost_as_profit(self):
+        run(CRAFT + '''F.Crafting.rememberMerchantPrice(10,10)
+        fire('TRADE_SKILL_SHOW');local p=F.Crafting.profits()[1]
+        assert(F.Crafting.shopMaterials(2963,1)==1)
+        local e=F.Shopping.entry('c:10')
+        assert(e.max*e.qty==p.cost,'shopping must not spend above the recipe material estimate')''')
+
     def test_missing_material_price_is_reported(self):
         run(CRAFT + '''C_TradeSkillUI.GetRecipeSchematic=function() return {name='X',outputItemID=50,quantityMin=1,
           reagentSlotSchematics={{quantityRequired=1,reagents={{itemID=51}}}}} end

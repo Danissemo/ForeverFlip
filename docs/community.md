@@ -161,6 +161,11 @@ load credentials, share scans or change the game's saved data.
 
 ## Safeguards
 
+The data workflow processes scans with `aggregate.py --defer-completion`, commits and pushes
+the registry and summaries, then runs `--complete-only`. Accepted upload issues stay open if
+processing or publishing fails, so the next run can retry them. Completion retries only
+acknowledge already registered scans; they do not upload or process scans again.
+
 A scan comes from the player's own computer, so nothing can prove that it was not changed. Several
 layers make a changed scan useless instead.
 

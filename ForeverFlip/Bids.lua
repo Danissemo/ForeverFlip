@@ -196,7 +196,7 @@ function B.place(key)
     end
     local c = B.get(key)
     local item = U.parseKey(key)
-    local name = c and U.itemInfo(c.id) or (item and item.name) or key
+    local name = (item and item.name) or (c and U.itemInfo(c.id)) or key
     local bids = char()
     bids.bids = bids.bids or {}
     bids.bids[o.auctionID] = {
@@ -223,13 +223,16 @@ local function openBid(name)
 end
 
 -- "You won an auction for X" or the "Auction won" mail of a bid: the item becomes stock.
-function B.won(name)
+function B.won(name, fromInvoice)
     local id, b = openBid(name)
     if not id then
         return false
     end
     local c = char()
     c.bids[id] = nil
+    if not fromInvoice then
+        F.Trade.awaitBuyerInvoice(b.name, b.qty)
+    end
     local vendor = F.AH.vendorPrice((U.parseKey(b.key) or {}).id or 0)
     local mode = vendor and b.value and vendor * b.qty >= b.value and "vendor" or "flip"
     F.Data.addPosition(c, b.key, b.name, b.qty, b.amount, mode, nil, F.Engine.clock())

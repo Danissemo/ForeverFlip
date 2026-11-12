@@ -567,6 +567,9 @@ function API.GetPrice(item)
         return nil
     end
     local today = h.days and h.days[#h.days]
+    if today and today.d ~= math.floor(E.clock() / 86400) then
+        today = nil
+    end
     local s = F.Market.saleability(h, usual, E.clock())
     return usual,
         today and today.min or nil,
@@ -576,7 +579,7 @@ function API.GetPrice(item)
 end
 
 -- The current deal of an item: mode ("vendor", "flip", "shop", "disenchant"), profit, cost, units,
--- and whether it was checked on the auction house in the last 45 seconds.
+-- and whether it was checked on the auction house in the last five minutes.
 function API.GetDeal(item)
     local key = keyOf(item)
     local d = key and F.Deals.get(key)

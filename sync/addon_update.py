@@ -135,12 +135,20 @@ def check_package(data: bytes, version: str) -> zipfile.ZipFile:
     except zipfile.BadZipFile as exc:
         raise UpdateError("the release file is not a zip archive") from exc
     total = 0
+    members = set()
+    files = set()
     for info in archive.infolist():
         name = info.filename
         parts = name.split("/")
         if (name.startswith("/") or "\\" in name or ":" in name or parts[0] != ADDON
                 or any(p in ("..", ".") for p in parts) or len(parts) < 2):
             raise UpdateError(f"unexpected file in the release: {name}")
+        normalized = name.rstrip("/").casefold()
+        if normalized in members:
+            raise UpdateError(f"duplicate file in the release: {name}")
+        members.add(normalized)
+        if not info.is_dir():
+            files.add(normalized)
         total += info.file_size
     if total > MAX_UNPACKED:
         raise UpdateError("the release unpacks too large")
@@ -150,6 +158,10 @@ def check_package(data: bytes, version: str) -> zipfile.ZipFile:
         raise UpdateError("the release has no ForeverFlip.toc") from exc
     if toc_version(toc) != version:
         raise UpdateError(f"the release's TOC says {toc_version(toc)}, not {version}")
+    for line in toc.splitlines():
+        name = line.strip().replace("\\", "/")
+        if name and not name.startswith("#") and f"{ADDON}/{name}".casefold() not in files:
+            raise UpdateError(f"the release's TOC lists a missing file: {name}")
     return archive
 
 

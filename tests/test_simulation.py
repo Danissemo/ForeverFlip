@@ -53,7 +53,13 @@ for tick = 1, %(ticks)d do
     fire('OWNED_AUCTIONS_UPDATED')
     for i = #owned, 1, -1 do if owned[i].status == 1 then table.remove(owned, i) end end
     sim.mail()
-    F.Trade.sellToVendor()
+    MerchantFrame:Show(); fire('MERCHANT_SHOW')
+    F.Trade.sellAllToVendor()
+    for i=1,100 do
+        if not F.Trade.sellingToVendor() then break end
+        run(0.1)
+    end
+    MerchantFrame:Hide(); fire('MERCHANT_CLOSED')
     sim.drawAll()
     for _, p in ipairs(sim.check()) do problems[#problems + 1] = 'tick ' .. tick .. ': ' .. p end
 end

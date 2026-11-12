@@ -16,6 +16,26 @@ fullScan()
 
 
 class ShareTests(unittest.TestCase):
+    def test_changed_chunk_total_cannot_complete_a_sparse_message(self):
+        run(SHARE + '''Sh.onMessage(Sh.PREFIX,'mixed:1:3:a','GUILD','Friend')
+        Sh.onMessage(Sh.PREFIX,'mixed:4:4:d','GUILD','Friend')
+        Sh.onMessage(Sh.PREFIX,'mixed:3:3:c','GUILD','Friend')
+        assert(#Sh.pending==0,'missing chunk 2 must keep the message incomplete')
+        Sh.onMessage(Sh.PREFIX,'mixed:2:3:b','GUILD','Friend')
+        assert(#Sh.pending==1 and Sh.pending[1].text=='abc','original transfer remains usable')''')
+
+    def test_history_days_reject_out_of_window_and_malformed_offsets(self):
+        run(SHARE + '''local function decode(days)
+            local text='FF3|Realm-Alliance|'..Sh.enc(now)..'|c:10,2s,2s,a,'..days
+            return Sh.decode(text).items[1].days
+        end
+        assert(#decode('zzzzzz.1.2s.a.1')==0,'unbounded day offset')
+        assert(#decode(Sh.enc(Sh.HISTORY_DAYS)..'.1.2s.a.1')==0,'outside shared window')
+        assert(#decode('.1.2s.a.1')==0,'missing day offset')
+        assert(#decode('0.1.2s.a.1.2')==0,'extra fields must not be partially read')
+        local valid=decode('0.1.2s.a.1/'..Sh.enc(Sh.HISTORY_DAYS-1)..'.1.2s.a.1')
+        assert(#valid==2 and valid[2].o==Sh.HISTORY_DAYS-1,'window boundary is valid')''')
+
     def test_encode_and_decode_keep_every_item(self):
         run(SHARE + '''local snap=Sh.snapshot();assert(snap and #snap.items>0)
         local back=Sh.decode(Sh.encode(snap));assert(back.scope==snap.scope and back.at==snap.at and #back.items==#snap.items)

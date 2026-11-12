@@ -756,6 +756,12 @@ end
 
 -- Called every frame while a scan runs.
 function S.step()
+    local last = S.last
+    if last and clock() - (last.at or 0) > 300 then
+        -- Both posting-price reuse and money-gain repricing expire after five minutes.
+        last.groups, last.checkedGroups = nil, nil
+        S.repricing = nil
+    end
     local j = S.job
     if not j then
         reprice()
@@ -1026,17 +1032,14 @@ function S.stale(h, now)
     local seen = type(h) == "table"
             and math.max(h.scan and h.scan.at or 0, type(h.shared) == "table" and h.shared.at or 0)
         or 0
-    return now - seen > 14 * 86400
-end
-
--- Forgets every stale item at once (the end of a scan does it a slice per frame).
-function S.prune(scope, now)
-    local history = F.Data.market(F.db, scope).history
-    for key, h in pairs(history) do
-        if S.stale(h, now) then
-            history[key] = nil
-        end
+    -- A shared snapshot can contain only historical days when its latest scan did not see the
+    -- item. Retain those observations for their normal lifetime without claiming a current price.
+    local days = type(h) == "table" and type(h.days) == "table" and h.days
+    local day = days and days[#days]
+    if type(day) == "table" and U.finite(day.d) then
+        seen = math.max(seen, day.d * 86400)
     end
+    return now - seen > 14 * 86400
 end
 
 -- Item data arrived: an item of the last scan without a known vendor price may be a vendor deal.

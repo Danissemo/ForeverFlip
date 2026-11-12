@@ -301,10 +301,10 @@ with them, using the same rules.
   auction" (hidden from addons on newer clients) or its price leaving the wallet (`PLAYER_MONEY`). A
   purchase the server throws away (`AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED` right after it) is
   reported at once.
-- A check is valid for **2 minutes** (`D.FRESH`). After that, Buy requires a new check. A lot
+- A check is valid for **5 minutes** (`D.FRESH`). After that, Buy requires a new check. A lot
   bought by someone meanwhile only makes the purchase fail, for nothing. Background searches wait
-  45 seconds (`D.HOLD`) while a freshly checked deal is selected, to leave time for Buy.
-- Unchecked scan deals stay listed for **15 minutes** (`D.KEEP`).
+  15 seconds (`D.SELECTED_HOLD`) while a freshly checked deal is selected, to leave time for Buy.
+- Unchecked scan deals remain leads until refreshed or removed; buying still requires a fresh exact check.
 - Searches run **one at a time**. Requests from your clicks form a first-in, first-out queue and are
   accepted even while the server is throttling. Background work (automatic checks, sniper) only uses
   an idle slot and never replaces a request of yours.
@@ -320,7 +320,7 @@ with them, using the same rules.
 - The throttle check (`IsThrottledMessageSystemReady`) can stay "not ready" for good after a message
   the server never answered. It is watched every frame; after 5 seconds of "not ready" one message
   goes through.
-- **Automatic checks** (setting on by default): when nothing else runs, the best deal that has not
+- **Automatic checks** (setting off by default): when nothing else runs, the best deal that has not
   been checked in 5 minutes is checked. The same deal is not retried within 2 minutes. Automatic
   checks pause while the selected deal is freshly checked, to leave you time to click Buy.
 - **Check all** captures the whole current page before sending anything, so it is not
@@ -614,8 +614,8 @@ crafts.
 
 - **No automatic trading.** Every purchase, bid, post, cancel, vendor sale and mail action starts with
   a click or a key binding. Background activity is limited to read-only queries.
-- **Buy only on a fresh check.** The Buy button is enabled only for a deal checked in the last 45
-  seconds, and the purchase uses the lots from that check.
+- **Buy only on a fresh check.** The Buy button is enabled only for a deal checked in the last 5
+  minutes, and the purchase uses the lots from that check.
 - **Commodity quotes are compared.** If the server's quote is higher than the checked cost, the
   purchase is cancelled.
 - **Stale quotes are refreshed.** A quote older than 25 seconds, or with less than 2 seconds left

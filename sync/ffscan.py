@@ -94,6 +94,8 @@ class _Reader:
                 self.i += 1
                 return "".join(out)
             if c == "\\":
+                if self.i + 1 >= len(s):
+                    raise LuaError("unfinished string escape")
                 nxt = s[self.i + 1]
                 if nxt.isdigit():
                     m = re.compile(r"\d{1,3}").match(s, self.i + 1)
@@ -122,18 +124,22 @@ class _Reader:
         result, n = {}, 1
         while True:
             self.skip()
+            if self.i >= len(self.s):
+                raise LuaError("unfinished table")
             if self.s[self.i] == "}":
                 self.i += 1
                 break
             if self.s[self.i] == "[" and not re.compile(r"\[=*\[").match(self.s, self.i):
                 self.i += 1
                 key = self.value()
+                if key is None or not isinstance(key, (str, int, float, bool)):
+                    raise LuaError("invalid table key")
                 self.skip()
-                if self.s[self.i] != "]":
+                if self.i >= len(self.s) or self.s[self.i] != "]":
                     raise LuaError("expected ]")
                 self.i += 1
                 self.skip()
-                if self.s[self.i] != "=":
+                if self.i >= len(self.s) or self.s[self.i] != "=":
                     raise LuaError("expected =")
                 self.i += 1
                 result[key] = self.value()

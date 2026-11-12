@@ -71,6 +71,18 @@ class VersionTests(unittest.TestCase):
 
 
 class PackageTests(unittest.TestCase):
+    def test_missing_toc_runtime_file_is_refused(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w') as zf:
+            zf.writestr('ForeverFlip/ForeverFlip.toc', '## Version: 1.2.0\nCore.lua\n')
+        with self.assertRaisesRegex(au.UpdateError, 'Core.lua'):
+            au.check_package(buffer.getvalue(), '1.2.0')
+
+    def test_duplicate_case_insensitive_members_are_refused(self):
+        data = package('1.2.0', {'Core.lua': 'one', 'core.lua': 'two'})
+        with self.assertRaisesRegex(au.UpdateError, 'duplicate'):
+            au.check_package(data, '1.2.0')
+
     def test_a_good_package_passes(self):
         archive = au.check_package(package('1.2.0'), '1.2.0')
         self.assertIn('ForeverFlip/Core.lua', archive.namelist())

@@ -20,8 +20,6 @@ D.SELECTED_HOLD = 15
 D.PER_MINUTE = 200
 -- Shortest gap between two searches of the player or of Check all (was 0.4 s and 1 s).
 D.GAP = 0.2
-D.HOLD = 45 -- seconds background searches wait while a freshly checked deal is selected
-D.KEEP = 900 -- seconds an unverified scan deal stays listed
 
 local function clock()
     return F.Engine.clock()
@@ -275,7 +273,7 @@ function D.batchPaused()
 end
 
 -- Background work (the sniper, automatic checks) waits while the player is about to buy or post:
--- a freshly checked deal is selected (D.HOLD seconds), or the Selling page is open. A purchase or
+-- a freshly checked deal is selected (D.SELECTED_HOLD seconds), or the Selling page is open. A purchase or
 -- a post sent while the sniper's messages are in flight is often thrown away by the server, and
 -- the throttle stays busy.
 function D.holding()
@@ -1009,11 +1007,6 @@ function D.verify(key, callback, source)
         return D.request(key, done, source, true)
     end
     return D.enqueue(key, done, callback or D.verifyCallback)
-end
-
--- The player buys: only an unsent continuation can be parked; a sent query keeps its response.
-function D.yieldToPurchase()
-    return parkSearch()
 end
 
 -- A purchase went through: the deal is evaluated again from the rows of its check, less what was
