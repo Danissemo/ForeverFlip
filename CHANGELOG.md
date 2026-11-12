@@ -71,7 +71,8 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   posted).
 - **Merchant buy list redrawn:** each item shows its icon, its name in its quality colour, the price
   here and on the auction house, the profit each and the sales a day, with Buy N and the cost of the
-  purchase on the right.
+  purchase on the right. More offers than its four rows scroll with the mouse wheel; the title
+  counts them.
 - **Gear I can't use:** a button at the merchant sells the equipment your class can never use, bound
   or not (unbound pieces only when the auction house would not pay more).
 - **A purchase or a post goes out only on a free way to the server:** Buy is enabled while no search

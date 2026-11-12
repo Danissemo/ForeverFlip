@@ -4109,6 +4109,7 @@ local function createMerchantTab()
     view.noteBelow = below
     buyTitle:SetPoint("TOPLEFT", view, "TOPLEFT", 8, buyTop)
     buyTitle:SetText(L("Buy here, sell on the auction house"))
+    view.buyTitle = buyTitle
     local offers = { rows = {} }
     for i = 1, MERCHANT_BUY_ROWS do
         offers.rows[i] = merchantRow(view, buyTop - 20 - (i - 1) * MERCHANT_BUY_HEIGHT, true)
@@ -4117,6 +4118,19 @@ local function createMerchantTab()
     view.buyNote:SetPoint("TOPLEFT", view, "TOPLEFT", 8, buyTop - 24)
     UI.offerPanel = view -- the buy rows (UI.offerPanel.rows)
     view.rows = offers.rows
+    -- More offers than rows: the mouse wheel over the buy list scrolls it.
+    view.buyOffset = 0
+    local function wheel(_, delta)
+        view.buyOffset = math.max(0, (view.buyOffset or 0) - delta)
+        UI.merchant(true)
+    end
+    for _, row in ipairs(view.rows) do
+        if row.EnableMouseWheel then
+            row:EnableMouseWheel(true)
+            row:SetScript("OnMouseWheel", wheel)
+        end
+    end
+    view.buyWheel = wheel
 
     -- The Merchant tab: one button sells the list at once.
     UI.merchantButton = button(MerchantFrame, "Sell to vendor", 180, sellAll)
@@ -4204,8 +4218,22 @@ function UI.merchant(open)
     view.sellAll:SetText(#list > 0 and string.format(L("Sell all (%d): %s"), #list, U.money(total)) or L("Sell all"))
     view.sellAll:SetEnabled(#list > 0)
     local offers = F.Merchant.offers()
+    view.buyOffset = math.max(0, math.min(view.buyOffset or 0, #offers - MERCHANT_BUY_ROWS))
+    view.buyTitle:SetText(
+        L("Buy here, sell on the auction house")
+            .. (
+                #offers > MERCHANT_BUY_ROWS
+                    and string.format(
+                        " |cff999999(%d-%d / %d)|r",
+                        view.buyOffset + 1,
+                        view.buyOffset + MERCHANT_BUY_ROWS,
+                        #offers
+                    )
+                or ""
+            )
+    )
     for i, row in ipairs(view.rows) do
-        local o = offers[i]
+        local o = offers[view.buyOffset + i]
         if o then
             local id = tonumber(o.link and o.link:match("item:(%d+)"))
             row.icon:SetTexture(icon(id or 0))

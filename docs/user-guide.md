@@ -643,7 +643,9 @@ on the Merchant tab:
 - Below, **Buy here, sell on the auction house** lists the items this merchant sells for less than
   they fetch on the auction house. Each row shows the item (hover it for its tooltip), **Vendor** (the
   price here) and **AH** (the expected auction price), the profit each after the cut and deposit, the
-  measured sales per day, and on the right **Buy N** with the cost of the purchase under it. **Buy N** purchases the suggested
+  measured sales per day, and on the right **Buy N** with the cost of the purchase under it. Four
+  rows show at a time, best first; with more offers the title shows which (for example `1-4 / 9`)
+  and the mouse wheel over the list scrolls it. **Buy N** purchases the suggested
   quantity (no more than about one day of sales, within your budget and what your bags hold), one
   stack per purchase, so items that do not stack are bought one by one. They are booked as stock for
   resale.

@@ -376,3 +376,20 @@ class GearSellTests(unittest.TestCase):
         local found = false
         for _, b in ipairs(F.AH.bagItems()) do if b.id == 91 then found = true end end
         assert(found, 'still listed for sale')''')
+
+
+class MerchantScrollTests(unittest.TestCase):
+    def test_more_offers_than_rows_scroll_with_the_mouse_wheel(self):
+        run(BASE + '''local h = F.Data.market(F.db, F.Engine.scope()).history
+        merchantItems = {}
+        for i = 1, 7 do
+            local id = 600 + i
+            addItem(id, 'Ware ' .. i, 5, 'commodity')
+            h['c:' .. id] = { scan = { at = now, market = 500 + i }, flow = { hours = 20, sold = { 48, 48, 48, 48 }, pairs = 3, at = now, market = 500 + i } }
+            merchantItems[i] = { id = id, price = 100 }
+        end
+        MerchantFrame:Show(); fire('MERCHANT_SHOW'); UI.merchantTab:Click()
+        local view = UI.merchantView
+        assert(view.buyTitle:GetText():find('1%-4 / 7'), view.buyTitle:GetText())
+        view.buyWheel(nil, -1); view.buyWheel(nil, -1); view.buyWheel(nil, -1); view.buyWheel(nil, -1)
+        assert(view.buyTitle:GetText():find('4%-7 / 7'), 'scrolled to the end: ' .. view.buyTitle:GetText())''')
