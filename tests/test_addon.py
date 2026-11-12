@@ -277,6 +277,25 @@ class UITests(unittest.TestCase):
         local n=0;for _,line in ipairs(printed) do if line:find('boom') then n=n+1 end end
         assert(n==1 and #ForeverFlip.db.errors==1 and ForeverFlip.db.errors[1].message:find('boom'))''')
 
+    def test_auction_house_tab_without_libahtab(self):
+        # No Auctionator or TSM: no LibAHTab. The tab sits on a plain frame after the game's tabs,
+        # and opens the page; if the client's tab template fails, a plain button replaces it.
+        lua = runtime(False)
+        lua.execute('''assert(LibStub==nil);fire('AUCTION_HOUSE_SHOW')
+        local UI=ForeverFlip.UI;local tab=UI.tab
+        assert(tab and tab.template=='AuctionHouseFrameDisplayModeTabTemplate' and tab.parent~=AuctionHouseFrame)
+        assert(not UI.frame:IsShown());tab:Click();assert(UI.frame:IsShown())''')
+        lua = runtime(False)
+        lua.execute('''local create=CreateFrame
+        CreateFrame=function(kind,name,parent,template)
+            if template=='AuctionHouseFrameDisplayModeTabTemplate' then error('no such template') end
+            return create(kind,name,parent,template)
+        end
+        fire('AUCTION_HOUSE_SHOW');local UI=ForeverFlip.UI
+        assert(UI.tab and UI.tab.template=='UIPanelButtonTemplate')
+        UI.tab:Click();assert(UI.frame:IsShown())
+        assert(ForeverFlip.db.errors[1].message:find('no such template'))''')
+
     def test_item_info_comes_from_c_item_when_the_global_is_missing(self):
         run('''assert(GetItemInfo==nil);addItem(5,'Thing',123,'item')
         assert(ForeverFlip.AH.vendorPrice(5)==123 and ForeverFlip.db.vendor[5]==123)''')

@@ -4646,39 +4646,54 @@ function UI.attach()
             return
         end
     end
+    -- Without LibAHTab (it comes with Auctionator or TSM) the tab is built the way LibAHTab builds
+    -- it: the button sits on a plain frame after the game's last tab, not on AuctionHouseFrame.
+    -- Any step that fails falls back to a plain button, so the page stays reachable.
     local tabs = AuctionHouseFrame.Tabs
-    local b = CreateFrame("Button", "ForeverFlipTab", AuctionHouseFrame, "AuctionHouseFrameDisplayModeTabTemplate")
-    b:SetText("ForeverFlip")
-    if PanelTemplates_TabResize then
-        PanelTemplates_TabResize(b, 20, nil, 70)
-    end
+    local root = CreateFrame("Frame", nil, AuctionHouseFrame)
+    root:SetSize(10, 10)
     if tabs and #tabs > 0 then
-        b:SetPoint("TOPLEFT", tabs[#tabs], "TOPRIGHT", 3, 0)
+        root:SetPoint("TOPLEFT", tabs[#tabs], "TOPRIGHT")
     else
-        b:SetPoint("TOPLEFT", AuctionHouseFrame, "BOTTOMLEFT", 20, 0)
+        root:SetPoint("TOPLEFT", AuctionHouseFrame, "BOTTOMLEFT", 20, 0)
     end
+    local function call(f, ...)
+        if f then
+            pcall(f, ...)
+        end
+    end
+    local ok, b = pcall(function()
+        local tab = CreateFrame("Button", "ForeverFlipTab", root, "AuctionHouseFrameDisplayModeTabTemplate")
+        tab:SetText("ForeverFlip")
+        if PanelTemplates_TabResize then
+            PanelTemplates_TabResize(tab, 20, nil, 70)
+        end
+        return tab
+    end)
+    if not ok or not b then
+        F.Engine.report("AH tab: " .. tostring(b))
+        b = CreateFrame("Button", "ForeverFlipTabButton", root, "UIPanelButtonTemplate")
+        b:SetSize(100, 22)
+        b:SetText("ForeverFlip")
+    end
+    b:SetPoint("TOPLEFT", root, "TOPLEFT", 3, 0)
+    call(PanelTemplates_DeselectTab, b)
+    UI.frame:Hide()
     b:SetScript("OnClick", function()
-        AuctionHouseFrame:SetDisplayMode({})
-        if PanelTemplates_DeselectTab then
-            for _, t in ipairs(tabs or {}) do
-                PanelTemplates_DeselectTab(t)
-            end
+        call(AuctionHouseFrame.SetDisplayMode, AuctionHouseFrame, {})
+        AuctionHouseFrame.displayMode = nil
+        for _, t in ipairs(tabs or {}) do
+            call(PanelTemplates_DeselectTab, t)
         end
-        if PanelTemplates_SelectTab then
-            PanelTemplates_SelectTab(b)
-        end
-        if AuctionHouseFrame.SetTitle then
-            AuctionHouseFrame:SetTitle("ForeverFlip: " .. UI.houseName())
-        end
+        call(PanelTemplates_SelectTab, b)
+        call(AuctionHouseFrame.SetTitle, AuctionHouseFrame, "ForeverFlip: " .. UI.houseName())
         UI.frame:Show()
     end)
-    if hooksecurefunc then
-        hooksecurefunc(AuctionHouseFrame, "SetDisplayMode", function(_, mode)
+    if hooksecurefunc and AuctionHouseFrame.SetDisplayMode then
+        pcall(hooksecurefunc, AuctionHouseFrame, "SetDisplayMode", function(_, mode)
             if type(mode) == "table" and #mode > 0 then
                 UI.frame:Hide()
-                if PanelTemplates_DeselectTab then
-                    PanelTemplates_DeselectTab(b)
-                end
+                call(PanelTemplates_DeselectTab, b)
             end
         end)
     end
