@@ -1778,6 +1778,26 @@ function UI.createSell(p)
             UI.refresh()
         end
     )
+    local noteHeader = UI.sellTable.headers[6]
+    noteHeader:SetScript("OnEnter", function(self)
+        if GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(L("Note"), 1, 0.82, 0, 1, true)
+            GameTooltip:AddLine(
+                L("resale: bought for resale. vendor deal: bought to sell to a vendor. other: bought elsewhere."),
+                1,
+                1,
+                1,
+                true
+            )
+            GameTooltip:Show()
+        end
+    end)
+    noteHeader:SetScript("OnLeave", function()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
 
     UI.sellView = "sale"
     UI.sellSaleTab = button(p, "For sale", 130, function()
@@ -2155,12 +2175,9 @@ function UI.refreshSell()
             if hiddenView then
                 r.cols[5]:SetText(item.away and L("not in the bags") or L("hidden"))
             else
+                -- One word in the narrow column; the header's tooltip says what each means.
                 local note = p
-                    and (
-                        p.mode == "vendor" and L("sell to a vendor")
-                        or p.mode == "other" and L("bought elsewhere")
-                        or L("bought for resale")
-                    )
+                    and (p.mode == "vendor" and L("vendor deal") or p.mode == "other" and L("other") or L("resale"))
                 r.cols[5]:SetText(note or "")
             end
             if UI.sellSelected and UI.sellSelected.key == item.key then

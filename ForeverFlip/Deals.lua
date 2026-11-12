@@ -459,7 +459,7 @@ function D.onBrowse()
         return false
     end
     local keys = F.AH.gearKeys(s.item.id)
-    if #keys == 0 and not F.AH.browseFull() and s.pages < 3 then
+    if #keys == 0 and not F.AH.browseFull() and s.pages < 3 and not F.Scan.blocking() then
         s.pages, s.at = s.pages + 1, clock()
         pcall(F.AH.browseMore)
         return true
@@ -891,7 +891,7 @@ function D.step()
     D.batchRetry()
     local now = clock()
     local s = D.search
-    if s and s.waitKey and F.AH.ready() then
+    if s and s.waitKey and F.AH.ready() and not F.Scan.blocking() then
         s.waitKey, s.at = nil, now
         if not pcall(F.AH.searchKey, s.keys[s.keyIndex]) then
             finishSearch(nil, false)

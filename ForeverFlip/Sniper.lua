@@ -260,7 +260,8 @@ function S.step()
         S.nextRound = t + S.PAUSE
     end
     if q then
-        if q.more and F.AH.ready() and #S.candidates == 0 and not F.Deals.holding() then
+        -- No next page while a full scan waits for its answer: any query then can keep it away.
+        if q.more and F.AH.ready() and #S.candidates == 0 and not F.Deals.holding() and not F.Scan.blocking() then
             q.more, q.at, q.answered = false, t, false
             pcall(F.AH.browseMore)
         end

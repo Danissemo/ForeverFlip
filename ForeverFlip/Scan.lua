@@ -223,6 +223,7 @@ function S.auto()
         and S.cooldown() <= 0
         and not F.Trade.busy()
         and not F.Deals.searching()
+        and not (F.Sniper and F.Sniper.query)
         and F.AH.ready()
     then
         S.start()
