@@ -715,6 +715,73 @@ function UI.scrollBar(parent, anchor, height, onScroll, wheel)
     return bar
 end
 
+-- A block of text lines that scrolls like the tables: the same scrollbar on the right, the mouse
+-- wheel, one line per step. Lines do not wrap (each says one thing, short); hovering shows the
+-- whole block. box.set(lines) replaces them and keeps the place when the text stays alike.
+function UI.scrollText(parent, rows, top, bottom)
+    local LINE = 14
+    local box = { offset = 0, lines = {}, rows = rows }
+    box.text = text(parent, "GameFontHighlightSmall")
+    box.text:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -(top or 6))
+    box.text:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -(8 + SCROLL_WIDTH), -(top or 6))
+    box.text:SetJustifyH("LEFT")
+    if box.text.SetJustifyV then
+        box.text:SetJustifyV("TOP")
+    end
+    box.text:SetWordWrap(false)
+    box.text:SetSpacing(2)
+    local anchor = CreateFrame("Frame", nil, parent)
+    anchor:SetSize(1, 1)
+    anchor:SetPoint("BOTTOMRIGHT", parent, "TOPRIGHT", -(SCROLL_WIDTH + 4), -(top or 6))
+    local function render()
+        local shown = {}
+        for i = box.offset + 1, math.min(#box.lines, box.offset + rows) do
+            shown[#shown + 1] = box.lines[i]
+        end
+        box.text:SetText(table.concat(shown, "\n"))
+        box.bar.update(box.offset, #box.lines, rows)
+    end
+    local function scrollTo(offset)
+        box.offset = math.max(0, math.min(math.max(0, #box.lines - rows), offset))
+        render()
+    end
+    local function wheel(_, delta)
+        scrollTo(box.offset - (delta or 0))
+    end
+    box.bar = UI.scrollBar(parent, anchor, rows * LINE, scrollTo, wheel)
+    if parent.EnableMouseWheel then
+        parent:EnableMouseWheel(true)
+        parent:SetScript("OnMouseWheel", wheel)
+    end
+    if parent.EnableMouse then
+        parent:EnableMouse(true)
+    end
+    parent:SetScript("OnEnter", function(self)
+        if GameTooltip and #box.lines > rows then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(table.concat(box.lines, "\n"), 1, 1, 1, 1, true)
+            GameTooltip:Show()
+        end
+    end)
+    parent:SetScript("OnLeave", function()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
+    function box.set(lines)
+        local key = lines[1] or ""
+        if key ~= box.key then
+            box.key, box.offset = key, 0 -- another subject starts at the top
+        end
+        box.lines = lines
+        scrollTo(box.offset)
+    end
+    function box.full()
+        return table.concat(box.lines, "\n")
+    end
+    return box
+end
+
 -- A results table: header buttons and rows. `columns` = { {label, width, align}, ... }; the first
 -- column is the item (icon and name) and takes the remaining width.
 UI.tables = {}
@@ -1831,8 +1898,8 @@ local function dealSentence(d)
     )
 end
 
--- A span of hours in words: "40 min", "3.5 h", "2.1 days".
-function UI.duration(hours)
+-- A span of hours in words: "40 min", "3.5 h", "2.1 days" (UI.duration takes seconds).
+function UI.hoursText(hours)
     if not U.finite(hours) or hours < 0 then
         return "?"
     elseif hours < 1 then
@@ -1905,7 +1972,7 @@ function UI.dealDetail(d, estimate, h, now)
         if estimate.perDay > 0 then
             line = line
                 .. "  ·  "
-                .. string.format(L("%d sell in about %s"), d.qty, UI.duration(d.qty / estimate.perDay * 24))
+                .. string.format(L("%d sell in about %s"), d.qty, UI.hoursText(d.qty / estimate.perDay * 24))
         end
         if estimate.age then
             line = line
@@ -3277,7 +3344,9 @@ function UI.createUndercuts(p)
         end
     )
     local bar = footer(p, 146, "GameFontHighlightSmall")
-    UI.fightText = bar.text
+    bar.text:Hide()
+    UI.fightBox = UI.scrollText(bar, 7)
+    UI.fightText = UI.fightBox.text
     UI.fightButtons = {}
     local last
     for _, id in ipairs({ "wait", "undercut", "buyout", "raise", "vendor" }) do
@@ -3322,99 +3391,195 @@ local function percent(p)
     return string.format("%d%%", math.floor((p or 0) * 100 + 0.5))
 end
 
--- One line per option: what it does, its chance and its expected money; the advice is marked.
-local function optionLine(plan, o)
+-- Each option in two lines: its name, expected money and chance first (the advice marked), then in
+-- grey what it does. Blocked options say why.
+local function optionLines(plan, o)
     local a = plan.auction
     local v = OPTION[o.id]
-    local head = (plan.best == o and "> " or "   ") .. v[1] .. L(v[2]) .. "|r: "
-    if o.blocked == "floor" then
-        return head
-            .. string.format(L("not offered: %s is below your floor of %s."), U.money(plan.new), U.money(plan.floor))
-    elseif o.blocked == "many" then
-        return head .. string.format(L("not offered: %d cheaper units are too many to buy."), o.units)
-    elseif o.blocked == "money" then
-        return head
-            .. string.format(L("not offered: the cheaper units cost %s, more than one deal may use."), U.money(o.cost))
+    local best = plan.best == o
+    local head = (best and "> " or "   ") .. v[1] .. L(v[2]) .. "|r"
+    local function detail(s)
+        -- Money ends its colour with |r: the grey is taken up again after each amount.
+        return "      |cffaaaaaa" .. s:gsub("|r", "|r|cffaaaaaa") .. "|r"
     end
-    local function sells(units)
-        return string.format(L("sells %.1f of %d"), units or 0, o.id == "raise" and a.qty + o.units or a.qty)
+    if o.blocked == "floor" then
+        return {
+            head .. "  " .. L("not offered"),
+            detail(string.format(L("%s would be below your floor of %s"), U.money(plan.new), U.money(plan.floor))),
+        }
+    elseif o.blocked == "many" then
+        return {
+            head .. "  " .. L("not offered"),
+            detail(string.format(L("%d cheaper units are too many to buy"), o.units)),
+        }
+    elseif o.blocked == "money" then
+        return {
+            head .. "  " .. L("not offered"),
+            detail(string.format(L("the cheaper units cost %s, more than one deal may use"), U.money(o.cost))),
+        }
     end
     local value = o.ev and U.money(math.floor(math.max(0, o.ev))) or "?"
+    local advised = best and ("  |cff40ff40" .. L("(advised)") .. "|r") or ""
+    local function sells(units, of)
+        return string.format(L("sells %.1f of %d on average"), units or 0, of)
+    end
     if o.id == "wait" then
         if o.unknown then
-            return head .. L("keep it. How soon it sells is unknown: no sales were measured yet.")
+            return {
+                head .. "  " .. L("chance unknown") .. advised,
+                detail(L("keep it: no sales were measured yet, so how soon it sells is unknown")),
+            }
         end
-        return head
-            .. string.format(
-                L("keep it behind %d cheaper units: %s chance all of yours sell in the %s left (%s); expected %s."),
-                plan.ahead + (plan.ownAhead or 0),
+        return {
+            head .. "  " .. string.format(
+                L("expected %s  ·  %s chance all sell in the %s left"),
+                value,
                 percent(o.p),
-                UI.duration(a.timeLeft or 0),
-                sells(o.units),
-                value
-            )
+                UI.duration(a.timeLeft or 0)
+            ) .. advised,
+            detail(
+                string.format(
+                    L("keep it behind %d cheaper units; %s"),
+                    plan.ahead + (plan.ownAhead or 0),
+                    sells(o.units, a.qty)
+                )
+            ),
+        }
     elseif o.id == "undercut" then
         if o.guess then
-            return head
-                .. string.format(
-                    L("cancel (about %s lost) and post at %s; brings %s if it sells (chance unknown)."),
+            return {
+                head .. "  " .. string.format(L("brings %s if it sells (chance unknown)"), value) .. advised,
+                detail(
+                    string.format(L("cancel (about %s lost) and post at %s"), U.money(plan.cancel), U.money(plan.new))
+                ),
+            }
+        end
+        return {
+            head .. "  " .. string.format(
+                L("expected %s  ·  %s chance to sell  ·  %s a rival answers first"),
+                value,
+                percent(o.p),
+                percent(o.answered)
+            ) .. advised,
+            detail(
+                string.format(
+                    L("cancel (about %s lost) and post at %s for %d h; %s"),
                     U.money(plan.cancel),
                     U.money(plan.new),
-                    value
+                    o.hours,
+                    sells(o.units, a.qty)
                 )
-        end
-        return head
-            .. string.format(
-                L(
-                    "cancel (about %s lost) and post at %s for %d h: %s chance to sell, %s chance a rival answers first (%s); expected %s."
-                ),
-                U.money(plan.cancel),
-                U.money(plan.new),
-                o.hours,
-                percent(o.p),
-                percent(o.answered),
-                sells(o.units),
-                value
-            )
+            ),
+        }
     elseif o.id == "buyout" then
+        local price = a.price or 0
         if o.unknown then
-            return head
-                .. string.format(
-                    L("buy the %d cheaper units for %s and sell them at your price; chance unknown."),
-                    o.units,
-                    U.money(o.cost)
-                )
+            return {
+                head .. "  " .. L("chance unknown") .. advised,
+                detail(
+                    string.format(
+                        L("buy the %d cheaper units for %s and resell them at %s"),
+                        o.units,
+                        U.money(o.cost),
+                        U.money(price)
+                    )
+                ),
+            }
         end
-        -- The bought units alone bring what the Shopping list deal shows; the expected sum also
-        -- counts your own auction and the chance that not all of it sells.
-        local price = plan.auction.price or 0
-        return head
-            .. string.format(
-                L(
-                    "buy the %d cheaper units for %s and resell them at %s: %s once they sell. Expected for yours and theirs together, chances counted: %s."
-                ),
-                o.units,
-                U.money(o.cost),
-                U.money(price),
-                UI.signed(F.Market.net(price, o.units) - o.cost),
-                value
-            )
+        return {
+            head .. "  " .. string.format(
+                L("expected %s with yours  ·  %s on the bought units once sold"),
+                value,
+                UI.signed(F.Market.net(price, o.units) - o.cost)
+            ) .. advised,
+            detail(
+                string.format(
+                    L("buy the %d cheaper units for %s and resell them at %s"),
+                    o.units,
+                    U.money(o.cost),
+                    U.money(price)
+                )
+            ),
+        }
     elseif o.id == "raise" then
-        return head
-            .. string.format(
-                L(
-                    "buy the %d units below %s for %s, cancel yours and post all at %s: %s chance all sell in a day (%s); expected %s."
-                ),
-                o.units,
-                U.money(o.target),
-                U.money(o.cost),
-                U.money(o.target),
-                percent(o.p),
-                sells(o.expect),
-                value
+        return {
+            head
+                .. "  "
+                .. string.format(L("expected %s  ·  %s chance all sell in a day"), value, percent(o.p))
+                .. advised,
+            detail(
+                string.format(
+                    L("buy the %d units below %s for %s, cancel yours and post all at %s; %s"),
+                    o.units,
+                    U.money(o.target),
+                    U.money(o.cost),
+                    U.money(o.target),
+                    sells(o.expect, a.qty + o.units)
+                )
+            ),
+        }
+    end
+    return {
+        head .. "  " .. string.format(L("brings %s at once"), value) .. advised,
+        detail(L("cancel and sell to a merchant")),
+    }
+end
+
+-- What the selected undercut is about, one line each: the auction, its sales, rivals, the unsold.
+local function situationLines(plan)
+    local a = plan.auction
+    local gold = function(s)
+        return "|cffffd100" .. L(s) .. "|r"
+    end
+    local lines = {
+        string.format(
+            L("%s %d at %s, %s left  ·  %d cheaper units ahead, the cheapest at %s"),
+            gold("Your auction"),
+            a.qty or 1,
+            U.money(a.price or 0),
+            UI.duration(a.timeLeft or 0),
+            plan.ahead + (plan.ownAhead or 0),
+            U.money(plan.cheapest)
+        ),
+    }
+    if plan.rate then
+        lines[#lines + 1] = string.format(
+            L("%s about %.1f a day at your price (%.0f seen in %d h of scans)%s"),
+            gold("Sales"),
+            plan.rate,
+            plan.sold or 0,
+            math.floor(plan.hours or 0),
+            plan.thin and ("  ·  " .. L("few seen, chances kept wide")) or ""
+        )
+    else
+        lines[#lines + 1] = gold("Sales") .. " " .. L("none measured yet: two full scans measure them")
+    end
+    if (plan.answers or 0) >= 0.5 then
+        lines[#lines + 1] = string.format(
+            L("%s answer about %.1f times a day: an undercut lasts about %s"),
+            gold("Rivals"),
+            plan.answers,
+            UI.duration(86400 / plan.answers)
+        )
+    end
+    if plan.war then
+        lines[#lines + 1] = "|cffff6060"
+            .. L("Price war")
+            .. "|r  "
+            .. (
+                (plan.rounds or 0) > 0
+                    and string.format(L("you answered %d times today and were undercut again"), plan.rounds)
+                or L("rivals answer within hours; each new post costs a deposit")
             )
     end
-    return head .. string.format(L("cancel and sell to a merchant: %s."), value)
+    if plan.fallback then
+        lines[#lines + 1] = string.format(
+            L("%s a unit coming back is worth %s posted again"),
+            gold("Unsold"),
+            U.money(math.floor(plan.fallback / math.max(1, a.qty or 1)))
+        )
+    end
+    return lines
 end
 
 function UI.refreshUndercuts()
@@ -3461,49 +3626,21 @@ function UI.refreshUndercuts()
     end
     local lines = {}
     if selected then
-        if selected.rate then
-            lines[#lines + 1] = string.format(
-                L(
-                    "Sales at your price: about %.1f a day (%.0f units seen sold in %d h of scans)%s. Values are expected money; an unsold unit is worth %s posting again."
-                ),
-                selected.rate,
-                selected.sold or 0,
-                math.floor(selected.hours or 0),
-                selected.thin and L("; few sales seen, so the chances are kept wide") or "",
-                U.money(math.floor(selected.fallback / math.max(1, selected.auction.qty or 1)))
-            )
-        end
-        if (selected.answers or 0) >= 0.5 then
-            lines[#lines + 1] = string.format(
-                L("Rivals answer about %.1f times a day here: a step down lasts until the next answer."),
-                selected.answers
-            )
-        end
-        if selected.war then
-            lines[#lines + 1] = "|cffff6060"
-                .. string.format(
-                    L("Price war: you answered %d times in a day and were undercut again; each round costs a deposit."),
-                    selected.rounds
-                )
-                .. "|r"
-        end
+        lines = situationLines(selected)
         for _, o in ipairs(selected.options) do
-            lines[#lines + 1] = optionLine(selected, o)
+            for _, line in ipairs(optionLines(selected, o)) do
+                lines[#lines + 1] = line
+            end
         end
     elseif #plans > 0 then
-        lines[#lines + 1] = string.format(
-            L(
-                "Undercut: %d; acting pays on %d. Click a row: every way out is priced (wait, undercut, buy out the cheaper lots, raise, a merchant) and you choose."
-            ),
-            #plans,
-            act
-        )
+        lines[1] = string.format(L("|cffffd100Undercut:|r %d of your auctions  ·  acting pays on %d"), #plans, act)
+        lines[2] = L("Click a row: every way out is priced (wait, undercut, buy out, raise, a merchant),")
+        lines[3] = L("the best is advised, and you choose. Answer next takes the advised step for you.")
     else
-        lines[#lines + 1] = L(
-            "Anti-undercut: when another seller lists your item cheaper, every way out is priced from the measured sales (wait, undercut, buy out the cheaper lots, raise, a merchant), the best is advised, and you choose."
-        )
+        lines[1] = L("Anti-undercut: when another seller lists your item cheaper, every way out is priced")
+        lines[2] = L("from the measured sales (wait, undercut, buy out, raise, a merchant), and you choose.")
     end
-    UI.fightText:SetText(table.concat(lines, "\n"))
+    UI.fightBox.set(lines)
     for id, b in pairs(UI.fightButtons) do
         local o = selected and selected[id]
         b:SetEnabled(o ~= nil and not o.blocked and F.Trade.wayReady())

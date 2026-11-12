@@ -72,6 +72,20 @@ class BuyoutFigureTests(unittest.TestCase):
         assert(text:find('resell at') and text:find('75s') and not text:find('saving'), text)''')
 
 
+class ScrollTextTests(unittest.TestCase):
+    def test_the_undercuts_text_scrolls_like_the_tables(self):
+        run(SETUP + '''local UI = ForeverFlip.UI
+        UI.show('undercuts')
+        local lines = {}
+        for i = 1, 12 do lines[i] = 'line ' .. i end
+        UI.fightBox.set(lines)
+        assert(UI.fightText:GetText():find('line 7') and not UI.fightText:GetText():find('line 8'), 'seven shown')
+        UI.fightBox.bar.forward:Click()
+        local shown = UI.fightText:GetText()
+        assert(shown:find('line 8') and shown:sub(1, 6) == 'line 2', shown)
+        assert(UI.fightBox.full():find('line 12'), 'the whole text stays readable')''')
+
+
 class UndercutsHoldTests(unittest.TestCase):
     def test_background_searches_rest_on_the_undercuts_page(self):
         run(SETUP + '''local UI = ForeverFlip.UI

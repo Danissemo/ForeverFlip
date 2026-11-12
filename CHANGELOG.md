@@ -8,6 +8,12 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- **Undercuts: the text above the buttons scrolls** like the tables (the same scrollbar, the
+  mouse wheel; hovering shows it whole) and reads line by line: your auction and what is ahead of
+  it, its sales, rivals, what an unsold unit is worth, then each way out as a headline (expected
+  money and chance, the advised one marked) with what it does in grey below. A price war no longer
+  says "you answered 0 times".
+
 - **Buy all to vendor** (Deals, To vendor): every vendor deal bought click after click. The game
   takes a purchase only from a click, and an item auction only right after a search of that item,
   so each click buys one lot (a stackable: one click asks the price, the next confirms) while the

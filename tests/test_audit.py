@@ -633,7 +633,7 @@ class AntiUndercutTests(unittest.TestCase):
             if o.ev and not o.blocked then assert(o.ev <= best.ev, o.id .. ' beats the advice') end
         end
         UI.show('undercuts'); UI.undercutTable.rows[1]:Click()
-        local text = UI.fightText:GetText()
+        local text = UI.fightBox.full()
         assert(text:find('> ', 1, true) and text:find('chance', 1, true), text)''')
 
     def test_undercut_below_the_floor_is_not_offered(self):
@@ -698,7 +698,7 @@ class UndercutModelTests(unittest.TestCase):
         assert(fire_.undercut.answered > 0.9 and fire_.undercut.ev < calm.undercut.ev,
             fire_.undercut.ev .. ' vs ' .. calm.undercut.ev)
         UI.show('undercuts'); UI.undercutTable.rows[1]:Click()
-        assert(UI.fightText:GetText():find('Rivals answer', 1, true), UI.fightText:GetText())''')
+        assert(UI.fightBox.full():find('answer about', 1, true), UI.fightBox.full())''')
 
     def test_raise_clears_the_shelf_below_the_next_seller(self):
         run(self.PLAN + '''T.prices['i:30'].rows = {{unit = 20000, qty = 2}, {unit = 40000, qty = 1}}
@@ -707,7 +707,7 @@ class UndercutModelTests(unittest.TestCase):
         assert(o and not o.blocked and o.target < 40000 and o.target > 25000, tostring(o and o.target))
         assert(o.units == 2 and o.cost == 40000 and o.ev, 'buys the two cheaper units')
         UI.show('undercuts'); UI.undercutTable.rows[1]:Click()
-        assert(UI.fightText:GetText():find('post all at', 1, true), UI.fightText:GetText())
+        assert(UI.fightBox.full():find('post all at', 1, true), UI.fightBox.full())
         assert(T.fight(plan, 'raise'))
         local e = F.Shopping.entry('i:30')
         assert(e and e.max < o.target and e.qty == 2 and e.resell == o.target)
