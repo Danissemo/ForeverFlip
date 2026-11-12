@@ -94,7 +94,7 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> **Current beta: [1.2.0-beta.6](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.6)**
+> **Current beta: [1.2.0-beta.7](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.7)**
 > posts all available units of an item across bag stacks and fixes scan uploads after delayed
 > GitHub sign-in discovery in the Sync helper, together with its window icon. Includes all earlier
 > beta improvements. Download the new helper EXE as well as updating the addon. See the

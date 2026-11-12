@@ -6,6 +6,23 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0-beta.7] - 2026-11-12
+
+Changes since beta.6. Includes the updated addon and ForeverFlip Sync helper.
+
+### Fixed
+
+- The **ForeverFlip** tab appears at the auction house without LibAHTab (no Auctionator or
+  TradeSkillMaster installed). The tab is built the way LibAHTab builds it; if the client still
+  cannot create it, a plain **ForeverFlip** button opens the page and the cause is reported once.
+
+### Changed
+
+- The Ukrainian tester workbook and the in-game checklist were rewritten: a start sheet with setup,
+  status legend, progress count and bug reporting; each check split into preparation, numbered
+  steps, expected result and importance; installation, tooltips, Buy tab marks, merchant tab and
+  saved data checks added; checks that only ran automated tests removed.
+
 ## [1.2.0-beta.6] - 2026-11-12
 
 Changes since beta.5. Includes the updated addon and ForeverFlip Sync helper.

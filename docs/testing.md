@@ -1,6 +1,6 @@
 # Тестування
 
-Ці інструкції призначені для **ForeverFlip і ForeverFlip Sync 1.2.0-beta.6**.
+Ці інструкції призначені для **ForeverFlip і ForeverFlip Sync 1.2.0-beta.7**.
 Виберіть перевірку, виконайте кроки й запишіть, що сталося. Читати код не потрібно.
 
 [Завантажити бланк тестувальника (Excel)](tester-checklist.uk.xlsx): там та сама інструкція,
@@ -22,7 +22,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 **Show activity**, **Beta tester** тощо. **Пачка** — купка одного предмета в комірці сумки,
 **лот** — предмет або пачка на аукціоні.
 
-1. Завантажте з [випуску beta.6](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.6) архів аддона й `ForeverFlipSync.exe`.
+1. Завантажте з [випуску beta.7](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.7) архів аддона й `ForeverFlipSync.exe`.
 2. Установіть аддон (START-1), увімкніть показ помилок і українську мову (START-2).
 3. Для купівлі й продажу беріть дешеві речі: купівля витрачає золото, виставлення — заставу.
 4. Спершу пройдіть картки **Обов’язково** (36 шт.), потім — **За можливості**, якщо є умови.
@@ -32,7 +32,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 <a id="current-beta-checklist"></a>
 ### Чек-лист поточної бети
 
-57 перевірок для аддона й помічника beta.6. Кожна картка містить умови, кроки та
+57 перевірок для аддона й помічника beta.7. Кожна картка містить умови, кроки та
 очікуваний результат. Складні ситуації (неповна відповідь сервера, збій купівлі, збій зв’язку
 помічника) перевіряють [автотести](#автоперевірки-складних-ситуацій), а не тестувальник.
 
@@ -40,7 +40,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 
 ##### START-1 — Аддон установлюється й запускається
 
-*Обов’язково.* **Потрібно:** Архів `ForeverFlip-1.2.0-beta.6.zip` зі сторінки випуску.
+*Обов’язково.* **Потрібно:** Архів `ForeverFlip-1.2.0-beta.7.zip` зі сторінки випуску.
 
 1. Закрийте гру.
 2. Якщо в `Interface\AddOns` уже є стара тека ForeverFlip — видаліть її.
@@ -64,7 +64,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 
 **Має статися:**
 
-- У чаті видно версію 1.2.0-beta.6.
+- У чаті видно версію 1.2.0-beta.7.
 - Після `/reload` підписи аддона українською.
 
 ##### START-3 — Вкладка ForeverFlip на аукціоні
@@ -702,7 +702,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 
 ##### SYNC-1 — Запуск і вигляд вікна
 
-*Обов’язково.* **Потрібно:** `ForeverFlipSync.exe` зі сторінки випуску beta.6. Старий помічник закрито.
+*Обов’язково.* **Потрібно:** `ForeverFlipSync.exe` зі сторінки випуску beta.7. Старий помічник закрито.
 
 1. Запустіть `ForeverFlipSync.exe`. (Якщо Windows показує попередження SmartScreen — напишіть це в примітці.)
 2. Подивіться на вікно: іконка, рядки Game, GitHub, Sharing, Addon, Prices.
@@ -782,7 +782,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 
 **Має статися:**
 
-- У рядку Addon видно 1.2.0-beta.6.
+- У рядку Addon видно 1.2.0-beta.7.
 - З «Beta tester» помічник може пропонувати бета-версії; без нього — лише стабільні.
 - Вимкнення «Beta tester» нічого не встановлює саме.
 
@@ -843,7 +843,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 
 ```text
 ID перевірки: POST-2
-Версії аддона / помічника: 1.2.0-beta.6 / 1.2.0-beta.6
+Версії аддона / помічника: 1.2.0-beta.7 / 1.2.0-beta.7
 Результат: ✅ Пройдено / ❌ Не пройдено / ⏭ Пропущено
 Що було перед початком:
 Що натиснув/натиснула:
@@ -854,7 +854,7 @@ ID перевірки: POST-2
 <a id="beta-testing"></a>
 ## Як тестувати бету
 
-Використовуйте [випуск beta.6](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.6)
+Використовуйте [випуск beta.7](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.7)
 або ввімкніть **Beta tester** у [помічнику Sync](community.md#addon-updates-and-beta-testing)
 для оновлень аддона. Відповідний EXE помічника завантажуйте окремо. Автотести не підтверджують
 час відповіді живого аукціону чи справжнє прийняття скану GitHub.
