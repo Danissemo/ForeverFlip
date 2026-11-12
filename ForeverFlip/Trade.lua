@@ -43,7 +43,14 @@ end
 -- The way to the server is free: no search waits for its answer and the throttle is ready. When it
 -- is not, background work rests for a few seconds so the next click goes through.
 function T.wayFree()
-    if not F.Deals.searching() and F.AH.ready() then
+    if
+        not T.busy()
+        and not T.postingNow()
+        and not F.Deals.searching()
+        and not F.Sniper.inFlight()
+        and not F.Scan.blocking()
+        and F.AH.ready()
+    then
         return true
     end
     F.Deals.holdUntil = clock() + 5
@@ -258,8 +265,13 @@ end
 
 function T.onError()
     local op = T.op
-    if op and op.state == "awaiting" and op.kind ~= "commodity" and clock() - op.at <= 10 then
-        failed(op)
+    if op and op.state == "awaiting" and op.kind ~= "commodity" then
+        -- AUCTION_HOUSE_SHOW_ERROR has no auction ID and may belong to another action. It can
+        -- also precede the successful purchase's money/event/chat update. Keep the operation
+        -- awaiting confirmation (and block a second Buy) until success or the normal timeout.
+        -- The wallet may already have changed before PLAYER_MONEY is dispatched.
+        T.onMoney()
+        F.Engine.changed()
     end
 end
 
@@ -1059,7 +1071,7 @@ local function readAhead(list)
             and not T.noSellers(item.key)
             and not F.Deals.pending(item.key)
         then
-            T.checkPrice(item.key)
+            T.checkPrice(item.key, nil, true)
         end
     end
 end
@@ -1069,10 +1081,17 @@ end
 T.readAhead = readAhead
 
 local function postFirst(list, quantity)
-    readAhead(list)
     local waiting = false
     for _, item in ipairs(list) do
         if not T.held[item.key] then
+            -- Local scan data can price this click immediately; only network read-ahead waits.
+            local check = T.prices[item.key]
+            if not (check and clock() - check.at <= 300) then
+                local scanned = T.scanPrice(item.key)
+                if scanned then
+                    T.prices[item.key] = scanned
+                end
+            end
             local price, floor, _, why = T.suggest(item)
             if T.GUESSES[why] then
                 price = nil -- a guess needs the player's own look on the Sell page
@@ -1096,6 +1115,8 @@ local function postFirst(list, quantity)
             end
         end
     end
+    -- A ready item gets this hardware click before any bulk search can occupy the connection.
+    readAhead(list)
     if waiting then
         return true, "checking"
     end
@@ -1229,7 +1250,8 @@ function T.cancelNextUndercut()
     if not a then
         return false, "nothing_undercut"
     end
-    return T.cancelAuction(a), "cancelled"
+    local ok = T.cancelAuction(a)
+    return ok, ok and "cancelled" or "post_busy"
 end
 
 -- My auctions: price checks one item after another (one search per second), and cancelling.
@@ -1246,14 +1268,18 @@ function T.checksRemaining()
 end
 
 -- Own units on sale of an item.
+local ownedSource, ownedCounts
 local function ownedUnits(key)
-    local n = 0
-    for _, a in ipairs(T.owned or {}) do
-        if a.key == key and not a.sold then
-            n = n + (a.qty or 1)
+    if ownedSource ~= T.owned then
+        ownedSource, ownedCounts = T.owned, {}
+        for _, a in ipairs(T.owned or {}) do
+            local itemKey = a.key
+            if itemKey and not a.sold then
+                ownedCounts[itemKey] = (ownedCounts[itemKey] or 0) + (a.qty or 1)
+            end
         end
     end
-    return n
+    return ownedCounts and ownedCounts[key] or 0
 end
 
 -- True when a recent full scan saw no more units of the item than the player has listed: nobody
@@ -1297,7 +1323,7 @@ end
 function T.stepChecks()
     local q = T.checkQueue
     if q and #q > 0 then
-        if F.Deals.enqueue(q[1], rememberOwnedPrice) then
+        if F.Deals.enqueue(q[1], rememberOwnedPrice, rememberOwnedPrice, true) then
             table.remove(q, 1)
         end
     end
@@ -1343,6 +1369,9 @@ function T.cancelAuction(a)
         return false
     end
     if T.cancelled[a.auctionID] and clock() - T.cancelled[a.auctionID] < 30 then
+        return false
+    end
+    if not T.wayFree() then
         return false
     end
     if not pcall(F.AH.cancel, a.auctionID) then

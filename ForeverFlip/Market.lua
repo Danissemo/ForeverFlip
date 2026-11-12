@@ -316,16 +316,25 @@ function M.trackSales(prev, cur, dt)
             k = k + 1
         end
     end
-    local free = {}
+    local free, minimum = {}, {}
     for n = 1, nc do
         if not used[n] then
             local p = cur[3 * n - 2]
             free[p] = free[p] or {}
             table.insert(free[p], n)
+            -- A conservative lower bound per price/time band rejects whole incompatible buckets.
+            -- It stays valid after removals: an old minimum may cause extra work, never a miss.
+            minimum[p] = minimum[p] or {}
+            local qty, band = cur[3 * n - 1], cur[3 * n]
+            for b = band, 3 do
+                minimum[p][b] = math.min(minimum[p][b] or math.huge, qty)
+            end
         end
     end
     for i = 1, np do
-        local list = not match[i] and free[prev[3 * i - 2]]
+        local price, qty, band = prev[3 * i - 2], prev[3 * i - 1], prev[3 * i]
+        local bound = minimum[price] and minimum[price][band]
+        local list = not match[i] and bound and bound <= qty and free[price]
         if list then
             for n, c in ipairs(list) do
                 if compatible(prev, i, cur, c) then

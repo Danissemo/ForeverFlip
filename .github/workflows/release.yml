@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag such as v1.0.0 to publish a GitHub release with the packaged addon. A tag with a
-# suffix (v1.2.0-beta.1) publishes a pre-release for testers, with the notes of version 1.2.0.
+# suffix (v1.2.0-beta.4) publishes a pre-release with that beta's own changelog notes.
 on:
   push:
     tags: ["v*"]
@@ -56,21 +56,8 @@ jobs:
 
       - name: Extract release notes from CHANGELOG.md
         run: |
-          version=${GITHUB_REF_NAME#v}
-          base=${version%%-*}
-          if [ "$base" != "$version" ]; then
-            {
-              echo "> [!WARNING]"
-              echo "> Beta for testing. What to check in game:"
-              echo "> [the ${base} checklist](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/testing.md#in-game-checklist),"
-              echo "> how to report: [Beta testing](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/testing.md#beta-testing)."
-              echo
-            } > release-notes.md
-          fi
-          awk -v v="$base" '
-            /^## \[/ { if (found) exit; if (index($0, "[" v "]")) { found = 1; next } }
-            found && !/^\[[^]]*\]: / { print }
-          ' CHANGELOG.md >> release-notes.md
+          python tools/release_notes.py --version "${GITHUB_REF_NAME#v}" \
+            --repository "$GITHUB_REPOSITORY" --output release-notes.md
 
       - uses: actions/download-artifact@v8
         with:

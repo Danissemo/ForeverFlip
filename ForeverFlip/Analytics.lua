@@ -111,9 +111,9 @@ end
 -- A large history is worked out a slice per frame (A.step): 20 000 items took about 150 ms in one
 -- go. Meanwhile the page shows the previous result (or "working out"); a small one is done at once.
 local cache, building
-A.SYNC = 2000
+A.SYNC = 200
 
-local function rowOf(rows, key, h, now)
+local function rowOf(key, h, now)
     local market = type(h) == "table" and type(h.scan) == "table" and h.scan.market
     if U.finite(market) and market > 0 then
         local s = F.Market.saleability(h, market, now)
@@ -141,66 +141,71 @@ local function rowOf(rows, key, h, now)
             r.gap = market * 0.95 - cheap
             r.score = r.gap * math.min(r.perDay or 0, 10)
         end
-        rows[#rows + 1] = r
+        return r
     end
 end
 
-local function summarize(stamp, scope, rows)
-    local function top(filter, value, limit)
-        local out = {}
-        for _, r in ipairs(rows) do
-            if filter(r) then
-                out[#out + 1] = r
-            end
-        end
-        table.sort(out, function(a, b)
-            local x, y = value(a), value(b)
-            if x ~= y then
-                return x > y
-            end
-            return a.key < b.key
-        end)
-        for i = #out, (limit or 50) + 1, -1 do
-            out[i] = nil
-        end
-        return out
+-- A bounded worst-first heap keeps only the fifty rows the page can show. Sorting the whole
+-- history in six different ways used to make the final, unsliced build step the most expensive.
+local VIEWS = { "liquid", "gaps", "falling", "rising", "cheapNow", "sellNow" }
+local function better(a, b)
+    return a.value > b.value or a.value == b.value and a.row.key < b.row.key
+end
+
+local function ranked(heap, row, value)
+    if not value then
+        return
     end
-    return {
-        stamp = stamp,
-        scope = scope,
-        items = #rows,
-        liquid = top(function(r)
-            return r.perDay and r.perDay > 0
-        end, function(r)
-            return r.perDay
-        end),
-        gaps = top(function(r)
-            return r.score and r.score > 0
-        end, function(r)
-            return r.score
-        end),
-        falling = top(function(r)
-            return r.change and r.change < -0.05
-        end, function(r)
-            return -r.change
-        end),
-        rising = top(function(r)
-            return r.change and r.change > 0.05
-        end, function(r)
-            return r.change
-        end),
-        -- Time of the week: usually cheap right now (buy), usually dear right now (sell stock).
-        cheapNow = top(function(r)
-            return r.timing and r.timing.now <= 0.93 and (r.perDay or 0) >= 0.5
-        end, function(r)
-            return -r.timing.now
-        end),
-        sellNow = top(function(r)
-            return r.timing and r.timing.now >= 1.07 and F.Data.char(F.db, F.Engine.owner()).positions[r.key] ~= nil
-        end, function(r)
-            return r.timing.now
-        end),
-    }
+    local entry = { row = row, value = value }
+    if #heap < 50 then
+        local i = #heap + 1
+        heap[i] = entry
+        while i > 1 do
+            local parent = math.floor(i / 2)
+            if not better(heap[parent], entry) then
+                break
+            end
+            heap[i], heap[parent] = heap[parent], entry
+            i = parent
+        end
+    elseif better(entry, heap[1]) then
+        heap[1] = entry
+        local i = 1
+        while i * 2 <= #heap do
+            local child = i * 2
+            if child < #heap and better(heap[child], heap[child + 1]) then
+                child = child + 1
+            end
+            if not better(heap[i], heap[child]) then
+                break
+            end
+            heap[i], heap[child] = heap[child], heap[i]
+            i = child
+        end
+    end
+end
+
+local function collect(b, r)
+    b.items = b.items + 1
+    ranked(b.top.liquid, r, r.perDay and r.perDay > 0 and r.perDay)
+    ranked(b.top.gaps, r, r.score and r.score > 0 and r.score)
+    ranked(b.top.falling, r, r.change and r.change < -0.05 and -r.change)
+    ranked(b.top.rising, r, r.change and r.change > 0.05 and r.change)
+    ranked(b.top.cheapNow, r, r.timing and r.timing.now <= 0.93 and (r.perDay or 0) >= 0.5 and -r.timing.now)
+    ranked(b.top.sellNow, r, r.timing and r.timing.now >= 1.07 and b.positions[r.key] ~= nil and r.timing.now)
+end
+
+local function summarize(b)
+    local result = { stamp = b.stamp, scope = b.scope, items = b.items }
+    for _, view in ipairs(VIEWS) do
+        local heap, rows = b.top[view], {}
+        table.sort(heap, better)
+        for i, entry in ipairs(heap) do
+            rows[i] = entry.row
+        end
+        result[view] = rows
+    end
+    return result
 end
 
 -- Works on the result being built until `done()`; true when it is ready.
@@ -213,13 +218,16 @@ function A.build(done)
     while b.i <= #b.keys do
         local key = b.keys[b.i]
         b.i = b.i + 1
-        rowOf(b.rows, key, history[key], b.now)
+        local row = rowOf(key, history[key], b.now)
+        if row then
+            collect(b, row)
+        end
         if done and done() then
             return false
         end
     end
     building = nil
-    cache = summarize(b.stamp, b.scope, b.rows)
+    cache = summarize(b)
     F.Engine.changed()
     return true
 end
@@ -245,7 +253,20 @@ function A.market(now)
         for key in pairs(F.Data.market(F.db, scope).history) do
             keys[#keys + 1] = key
         end
-        building = { stamp = stamp, scope = scope, keys = keys, i = 1, rows = {}, now = now }
+        local top = {}
+        for _, view in ipairs(VIEWS) do
+            top[view] = {}
+        end
+        building = {
+            stamp = stamp,
+            scope = scope,
+            keys = keys,
+            i = 1,
+            items = 0,
+            top = top,
+            now = now,
+            positions = char().positions,
+        }
     end
     if #building.keys <= A.SYNC then
         A.build()

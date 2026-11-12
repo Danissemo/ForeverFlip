@@ -180,7 +180,7 @@ class TradeTests(unittest.TestCase):
         end
         assert(not D.get('i:40') or D.get('i:40').lots[1].unit>4000,'the cheap lots are all bought')''')
 
-    def test_purchase_without_answer_is_settled_in_the_journal(self):
+    def test_item_purchase_without_answer_times_out_and_books_late_money(self):
         run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false
         local D,T,U=ForeverFlip.Deals,ForeverFlip.Trade,ForeverFlip.Util
         local key=U.key('gear',20,'Northern Shortsword of Nature Protection')

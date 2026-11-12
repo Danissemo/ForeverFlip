@@ -94,12 +94,11 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> Want to help test the next version? Beta builds are on the
-> [releases page](https://github.com/Danissemo/ForeverFlip/releases), marked **Pre-release**. See
-> [Beta testing](docs/testing.md#beta-testing) for how to report, and the
-> [in-game checklist](docs/testing.md#in-game-checklist) for what to check (testers of an earlier beta:
-> [fixed since beta.1](docs/testing.md#fixed-since-120-beta1),
-> [new since beta.2](docs/testing.md#new-since-120-beta2)).
+> **Current beta: [1.2.0-beta.4](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.4)**
+> adds click priority, safe pause/resume of batch checks and faster local processing, alongside
+> the purchase, posting, scan and accounting fixes since beta.3. See the
+> [current beta checklist](docs/testing.md#current-beta-checklist) and
+> [Beta testing](docs/testing.md#beta-testing).
 
 > [!TIP]
 > To update, replace the `ForeverFlip` folder. Your data lives in

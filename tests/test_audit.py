@@ -1,6 +1,8 @@
-"""Findings of the two latency audits of 1.2.0-beta.2 that were confirmed and fixed: stuck states,
-queue fairness, request budgets, purchases bound to what is on screen, the price field, posting and
-cancelling twice, late answers, mail that never goes away, and one failing part stopping the rest."""
+"""Current regression coverage for scheduling, trading, selling, accounting and UI behavior.
+
+The beta.4 priority and work-budget scenarios live in test_foreground.py/test_optimization.py;
+historical regressions here still exercise the current addon and remain part of the checker.
+"""
 
 import unittest
 
@@ -134,6 +136,9 @@ class SellingTests(unittest.TestCase):
 
     def test_an_auction_is_cancelled_once(self):
         run(self.SELL + '''local a = { auctionID = 5, qty = 1 }
+        T.checkPrice('i:30')
+        assert(not T.cancelAuction(a), 'the selected item has a price check in flight')
+        answer();run(1.1)
         assert(T.cancelAuction(a))
         assert(not T.cancelAuction(a), 'the same auction is not cancelled twice')''')
 
@@ -147,8 +152,6 @@ class MailTests(unittest.TestCase):
         assert(not F.Mail.job and F.Engine.message == 'mail_stuck', tostring(F.Engine.message))''')
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 
 class AnalyticsInFramesTests(unittest.TestCase):
@@ -224,11 +227,13 @@ class PostFeedbackTests(unittest.TestCase):
         run(12)
         assert(F.Engine.message == 'post_unconfirmed', tostring(F.Engine.message))''')
 
-    def test_the_selling_page_reads_the_queue_prices_ahead(self):
+    def test_post_all_reads_queue_prices_when_requested(self):
         run(self.SELL + '''F.db.settings.vendorMargin = 0
         F.Data.market(F.db, F.Engine.scope()).history['i:30'] = { scan = { at = now, market = 90000 } }
         UI.show('sell'); UI.refresh()
-        assert(D.pending('i:30'), 'the price of the AH-worthy item is being read already')''')
+        assert(not D.pending('i:30'), 'rendering does not start a bag-wide search')
+        T.postAll(true)
+        assert(D.pending('i:30'), 'Post all prepares the queue on request')''')
 
 
 class MerchantTests(unittest.TestCase):
@@ -646,3 +651,7 @@ class BuyWayTests(unittest.TestCase):
             assert(UI.buyButton:GetText():find('Confirm', 1, true), 'the same button confirms')
             assert(not UI.confirmButton:IsShown())
         end''')
+
+
+if __name__ == '__main__':
+    unittest.main()

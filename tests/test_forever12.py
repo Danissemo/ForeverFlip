@@ -523,7 +523,7 @@ class SniperGearTests(unittest.TestCase):
         local errs = {}
         ForeverFlip.Engine.report = function(e) errs[#errs + 1] = tostring(e) end
         assert(D.request(key, D.verifyCallback, 'sniper', true))
-        answer(); run(1)
+        answer(); run(1); if D.search then answer() end
         assert(#errs == 0, table.concat(errs, ' | '))
         assert(D.get(key) and D.get(key).verified, 'the gear deal is checked')''')
 

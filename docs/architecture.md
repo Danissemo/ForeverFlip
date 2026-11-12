@@ -85,6 +85,12 @@ C_AuctionHouse.ReplicateItems (hooked): Scan.onOtherScan when another addon star
 `F.Engine.changed()` marks the UI dirty. `F.Engine.notify(key)` sets the status message, which the
 UI translates through `MESSAGES` and `F.Locale`.
 
+`Engine.input()` marks a hardware callback for feedback on the next frame and holds new automatic
+queries for half a second. It never replays the protected action later. `Engine.workSlice(ms)`
+reduces local scan, receive and analytics slices to 2 ms while input, a purchase or a single-item
+check is pending. These are cooperative budgets, checked between work units, not OS threads or
+hard real-time deadlines. The normal dirty refresh remains limited to four times a second.
+
 ### Scope and owner
 
 - `Engine.scope()` = `<realm>-<faction>` identifies an auction house (` (HC)` follows the realm on
@@ -97,15 +103,27 @@ UI translates through `MESSAGES` and `F.Locale`.
 Only one exact search is in flight at a time (`F.Deals.search`). Requests come from three sources,
 in this order:
 
-1. **The player's requests:** clicks, Check price, Check all, own-auction checks. They form
-   a FIFO queue (`D.requests`). A repeated key shares the running query, and every distinct callback
-   is completed exactly once.
+1. **The player's requests:** single-item clicks before Check all, posting preparation and
+   own-auction batches. Requests remain FIFO within their priority class (`D.requests`); the
+   `priority` field is independent of `fast` pacing. A repeated key shares the query and promotes
+   queued batch work when clicked individually. Every distinct callback completes exactly once.
 2. **A background retry slot** (`D.backgroundRetry`), used after a throttled or dropped request.
 3. **Automatic checks and the sniper's candidates,** started only when nothing else is waiting.
 
 Gear is searched in two steps inside one request: a browse by the item's name lists its item-key
 versions (`phase = "browse"`), then each version is searched (`phase = "keys"`) and the rows are
-merged. The sniper's browse round in flight gives way (`F.Sniper.yield`).
+merged. Once the sniper's sent browse reply is drained, its unsent pagination gives way
+(`F.Sniper.yield`).
+
+An already sent query cannot be cancelled by clearing a Lua field: its reply must still be
+drained, or time out, before another request owns the connection. Only an unsent gear-version
+step (`waitKey`) can be parked in the queue; it resumes with the same keys and accumulated rows.
+Sniper pagination also waits for manual work and pending trades. Merely rendering Selling no
+longer starts price requests for bag contents; explicit checks and posting queues do that work.
+
+Scan recovery preserves its cursor between frames. Analytics builds bounded top-50 heaps along
+with its incremental rows, and sorts only those small heaps at completion. Own-unit totals are
+indexed by the immutable own-auction snapshot; a new server snapshot replaces the index.
 
 No search runs while a purchase or a full scan is in progress, also while the scan waits for its
 answer (`F.Scan.blocking`): queries sent meanwhile kept the answer from coming in game. Browse and key queries of the sniper

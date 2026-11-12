@@ -163,6 +163,7 @@ end
 
 -- A frame budget: true once `ms` milliseconds (or `count` steps without a timer) are used.
 local function budget(ms, count)
+    ms = F.Engine.workSlice(ms)
     local t0 = debugprofilestop and debugprofilestop()
     local n = 0
     return function()

@@ -92,9 +92,11 @@ If you add a game API call, add a fake for it to `mock.lua`, based on behaviour 
    git push origin v1.2.3
    ```
 
-For a beta, set the version to `x.y.z-beta.N` in both files and tag `vx.y.z-beta.N`: the workflow
-publishes it as a pre-release, with the changelog notes of `x.y.z` and a note for testers. Set the
-version back to `x.y.z` for the release itself.
+For a beta, set the version to `x.y.z-beta.N` in both files, give it its own dated changelog
+section and tag `vx.y.z-beta.N`. The workflow publishes it as a pre-release, using that exact
+section and links to the checklist at that tag. Only older betas without their own section fall
+back to the `x.y.z` notes. Empty or missing notes stop publication. Set the version back to
+`x.y.z` for the stable release itself.
 
 The `Release` workflow checks that the tag matches the TOC version, runs the tests, builds
 `ForeverFlip-x.y.z.zip` and `ForeverFlipSync.exe` and publishes a GitHub release (GitHub shows the

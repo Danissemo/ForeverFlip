@@ -1,5 +1,8 @@
 # Testing
 
+Current pre-release: **1.2.0-beta.4**. The current beta checklist below is the acceptance list for
+this build. Automated tests load the current TOC files, including the new scheduler and UI behavior.
+
 ## Automated tests
 
 The tests run the real addon files in **Lua 5.1** inside Python (through
@@ -17,7 +20,7 @@ python -m unittest discover -s tests -p "test_*.py"
 |---|---|
 | `test_addon.py` | Utilities, market maths, full scan pipeline, verification, buying, posting, own auctions, mail, merchant, accounting, analytics, time-of-week pattern. Also provides the `runtime()` helper the other suites use. |
 | `test_demand.py` | Sales estimates and their display. |
-| `test_scheduler.py` | The exact-search queue: FIFO order, sharing, background retry, timeouts. |
+| `test_scheduler.py` | The exact-search queue: FIFO within priority classes, response ownership, sharing, background retry and timeouts. |
 | `test_batch_progress.py`, `test_status_batch.py` | Check all: capture, progress and completion. |
 | `test_status_ui.py`, `test_tables.py` | Status line, tables, sorting, paging, localisation of the UI. |
 | `test_accuracy.py` | Game deposits, neutral auction houses, stale quotes. |
@@ -37,8 +40,12 @@ python -m unittest discover -s tests -p "test_*.py"
 | `test_extras.py` | `ForeverFlipAPI`, aux fallback, CSV export, realm gold, presets. |
 | `test_forever12.py` | 1.2: vendor prices from the buyback list and the margin, the stuck throttle, owner names, gear searched by browse and version, other addons' full scans, the scan wait, disenchant rules and learning, the realm channel, the trust filter, the spending limit, cheap lots left, Buy next, the saved-data guard, hardcore scopes, tooltip advice. |
 | `test_simulation.py` | Simulated play sessions (see below), with and without the player and other addons acting meanwhile, a `/reload` with the saved data written and read back as text, switching between a faction and a neutral house, and a full scan of 100 000 auctions read in small frames. |
-| `test_audit.py` | Findings of the latency audits of 1.2.0-beta.2: stuck quotes and requests, queue order, the request budget, purchases bound to the selected deal, the price field, posting and cancelling twice, late answers, mail the game refuses, one failing part of the frame update. |
+| `test_audit.py` | Current regression coverage: stuck quotes and requests, queue order, the request budget, purchases bound to the selected deal, the price field, posting and cancelling twice, late answers, mail the game refuses, one failing part of the frame update. |
+| `test_release.py` | Exact beta release notes, legacy fallback, refusal of missing notes, and current-version archive contents. |
 | `test_locale.py` | Every `L("...")` string has a Ukrainian translation, and no key is translated twice. |
+| `test_foreground.py` | Interactive promotion, wire ownership, safe gear pause/resume, trade exclusion, status priority and posting before read-ahead. |
+| `test_optimization.py` | Bounded analytics rankings and build slices, lot comparison work, scan recovery fairness, browse chunks, input painting and indexed own-unit counts. |
+| `test_purchase_confirmation.py` | General auction errors preceding successful purchase, money or chat confirmation; timeout and late recovery without double booking. |
 
 ### Simulated sessions
 
@@ -88,7 +95,9 @@ The simulated client cannot prove how the live server behaves. Before a release,
 list on a live realm. If something goes wrong, note the chat line (`ForeverFlip error: ...`), type
 `/reload` and copy the `errors` section from the SavedVariables file.
 
-✅ = confirmed in game on WoW Forever, ⬜ = still to check.
+✅ = observed in an earlier in-game check on WoW Forever, ⬜ = still to check. These marks are
+not a claim that beta.4 has passed a new live run. Use the unchecked current beta table for fresh
+acceptance results; automated mocks cannot establish server timing.
 
 | | Area | Check |
 |---|---|---|
@@ -151,71 +160,61 @@ Do a full game restart after installing 1.2 (Bindings.xml has a new key).
 | ⬜ | Shop materials | With materials in the bags, Shop materials adds only what is missing. |
 | ⬜ | Saved data guard | Rename `ForeverFlip.lua` in SavedVariables while the game is closed, start the game: the window asks Reload / Continue. Put the file back afterwards. |
 
-### Fixed since 1.2.0-beta.1
+### Current beta checklist
 
-Fixed in 1.2.0-beta.2; testers of beta.1 should look at these again.
-
-| | Area | Check |
-|---|---|---|
-| ⬜ | Sniper gear checks | Leave the sniper on at a house with gear deals for 10 minutes: no error (it was `Deals.lua:692`), gear deals turn checked. |
-| ⬜ | House badge | At a faction auction house the bar beside the money display (at the bottom) and the window title name it in blue (Alliance) or red (Horde); in Booty Bay, Gadgetzan or Everlook the neutral house in gold. Go from one to the other and back: each shows its own last scan and deals, none from the other house. |
-| ⬜ | Full scan answer | Press Full scan: the status counts the waited seconds (`35 / 300 s`), the sniper and checks stay still meanwhile, and the scan is read when the answer comes, also on a small house; the button shows no stale countdown while waiting. |
-| ⬜ | End of a full scan | On a large house the game does not stall when the scan finishes reading. |
-| ⬜ | Sales after a partial scan | When a scan comes back much smaller than the one before, Analytics shows no burst of sales of the missing items. |
-| ⬜ | Sell page | Items in the bags and in the reagent bag are listed on Selling → My items, also ones the auction house has not shown yet; `/ff bags` says why an item is not listed. |
-| ⬜ | A sale booked once | Sell an item bought through ForeverFlip, take the "Auction successful" mail: the journal has the sale once. |
-| ⬜ | Expired auction | Let an auction of bought stock expire (or cancel it in the game's own window), take the mail: Post next bought offers the item again at once. |
-| ⬜ | Full bags | Fill the bags and take auction mail with items: ForeverFlip stops with "bags full"; free some space and take it again: the journal has each mail once. |
-| ⬜ | Gear check and the Buy tab | Search something in the game's Buy tab right before checking a gear deal: the check never says "nobody sells" for gear that is listed. |
-| ⬜ | Tooltips | See the Tooltips row above (rewritten in beta.2). |
-| ⬜ | Bought elsewhere, sold by hand | See the Bought elsewhere and Vendor sale by hand rows above (new in beta.2). |
-
-### New since 1.2.0-beta.2
-
-Check these with 1.2.0-beta.3 (or later).
+**1.2.0-beta.4**, changes since beta.3. Record a fresh result for each row; none is marked passed
+merely because the automated suite passed. These scenarios replace the old beta.1/beta.2-specific
+lists, whose timing and posting instructions no longer match the current build.
 
 | | Area | Check |
 |---|---|---|
-| ⬜ | Vendor or auction house | Selling → My items has a Best column: cheap vendor trash says Vendor, valuable goods say AH, with the same values as the tooltip. Post AH-worthy (N) counts fewer items than Post all (N) and never posts an item marked Vendor. |
-| ⬜ | Scan and closing | Press Full scan, close the auction house at once and open it again: the status says it waits again and the scan is read. While waiting, the status shows `server list: N`. `/ff diag` lists how the last requests ended. |
-| ⬜ | Buying lot after lot | Check a gear or item deal with several lots, press Buy: each next press buys the next lot at once (no "checking" in between). With the sniper on, Buy works while it searches. |
-| ⬜ | Long lists | Check all on My items with WoW Forever scrolls (hundreds of lots): they get a price, not "without an answer". |
-| ⬜ | Scrolling | With more than 11 items for sale, the mouse wheel over Selling → My items scrolls the list and the Name header shows `(5-15 / 15)`. |
-| ⬜ | Check all without an answer | Check all on My items with an item only you sell: the search is tried twice, the status says `(1 without an answer)` and the chat names the item. |
-| ⬜ | Post queue clicks | Press Post AH-worthy once: the prices are read for the whole queue; each next press posts one lot. |
-| ⬜ | Check all | The button at the top says Check all. On Shopping list, Bids and Crafting it is enabled too and counts `Checking <page>: done/total`; afterwards Crafting shows the recipes priced with the checked prices, and Selling → My items the Best column with them. |
-| ⬜ | Vendor deals | After a full scan, To vendor lists many deals again (the vendor margin is 0% by default; Safety shows it). |
-| ⬜ | Deal columns | The deals table shows Name, Qty, Cost, Sells at, Profit, Est./day, Status. Profit is Sells at minus Cost. Sells at is green for a resale and orange for a vendor deal, with `*` when not backed by sales seen or by a merchant. The headers of Sells at and Est./day explain them on hover. |
-| ⬜ | Check stays ready | A checked deal stays **ready** for 2 minutes before it says check again. |
-| ⬜ | Items without an answer | Check all on My items with WoW Forever scrolls: they get a price. An item whose search still gets no answer is searched by name the next time. |
-| ⬜ | Post feedback | Post AH-worthy with the sniper on: the status says Posting... and then Auction created once the game confirms; a dropped post says press again. With Selling open for a moment, the first press already posts. |
-| ⬜ | Compact Selling | The bottom of Selling → My items has the price row and the post buttons only; the refresh button beside the price checks it again; Rule... opens the min / max / keep panel; 12 rows fit in the list; nothing overlaps. |
-| ⬜ | Posting with the sniper on | With the sniper on, open Selling → My items and post: no "busy" message, the auction is created on the first press (the sniper rests while Selling is open). |
-| ⬜ | New look | Money shows coins everywhere; the pages of Deals (All ... Bids) open under it in the menu; the table text is the normal size; nothing overlaps on any page. |
-| ⬜ | Whole full scan | After a full scan, the summary shows about as many auctions as the house has (on a large house around 300 000, not 1024 or 24576); `/ff diag` lists the reads with their size. |
-| ⬜ | Gear I can't use | At a merchant, Gear I can't use (N) lists only equipment your class can never use (bound or not) and sells it in one click; cloaks, rings, trinkets and off-hand items stay. |
-| ⬜ | Selling during a scan | While Full scan waits for its answer, Selling → My items still lists the bag items. |
-| ⬜ | Recipes and scrolls | Check prices on My auctions with a recipe others sell too: it gets cheapest or undercut, not no answer (a search by name follows at once when the plain one is not answered). |
-| ⬜ | Quick purchase | Buy a gear or item deal: the status goes from Buying to Purchase recorded within a second or two, not after 30 seconds. |
-| ⬜ | Merchant tab | At a merchant a ForeverFlip tab sits beside Merchant and Buyback. Sell to vendor (N) on the Merchant tab sells every item whose Best is Vendor, except Hidden ones, in one click. The ForeverFlip tab lists them with Sell all, and below the items to buy here. |
-| ⬜ | Buying at a merchant | Buy 9 throwing axes at a merchant: no "Internal Bag Error"; with fewer free bag slots, only as many as fit are bought. |
-| ⬜ | House name | The open house is named in the middle of the bottom bar, right of the money display; the summary on the left no longer repeats it. |
-| ⬜ | A click goes first | Start Check all on My items, then select another item and press Check price: its price is read next, not after the whole batch. With the sniper on, Check price starts at once. |
-| ⬜ | Price offer | Press Buy on a commodity deal and then select another deal: the price offer is dropped (Confirm cannot buy the first item). The status line shows each step: asking for the price, Confirm with the price, buying. An offer nobody confirms ends after a minute. |
-| ⬜ | Price field | Select an item, wait for its price, press Check price again: a filled-in price follows the new check. Type your own price: it stays, Post turns on at once, and nothing is filled in while you type. |
-| ⬜ | Selected item | Select an item on My items, scroll it out of view and move it to another bag slot: Post still posts that item. |
-| ⬜ | Post and cancel twice | Press Post twice quickly: the second waits for the first. Cancel undercut on the same auction twice quickly cancels it once. |
-| ⬜ | Mail the game refuses | When the game will not hand over an auction mail, Take auction mail stops with a message instead of trying forever. |
-| ⬜ | Shared scan and Analytics | When another ForeverFlip user's scan arrives, or Analytics opens after a scan on a large house, the game does not stall; Analytics shows the previous lists (or "Working out the market lists...") for a moment. |
+| ⬜ | Installed version | After replacing the addon and `/reload`, `/ff` and the addon list show `1.2.0-beta.4`. Saved stock, journal and settings remain. |
+| ⬜ | Click before batch | Start Check all, then Check price for another item. It runs at the next safe boundary, before the rest of the batch; the status shows the manual request. |
+| ⬜ | Matching batch item | Click an item already queued by Check all. Its existing request is promoted; it is not sent twice, and batch progress completes once. |
+| ⬜ | Gear pause/resume | Start a gear batch with several versions, then check another item. The unsent next version pauses; the single check runs, then the same batch resumes without losing its rows or reporting a false failure. |
+| ⬜ | Sent request ownership | With the sniper on, press Check price while a reply is pending. The addon waits for that sent reply or timeout before serving the click; it does not claim to cancel a request still running on the server. |
+| ⬜ | Purchase and confirmation | Buy a commodity: the same button changes from Buy to Confirm with the quoted total. Select another item before confirming: the old quote is dropped. The status shows asking, confirming and waiting. |
+| ⬜ | No false lost race | Buy a gear/item lot. A general AH error must not alone report that another player won. A subsequent purchase event, matching won-chat line or money update records the purchase once; verify its mail and journal. |
+| ⬜ | Slow purchase | With no result, an item purchase times out after 30 seconds without being booked as bought. Later confirmation by money records it once. Do not buy the same lot again before checking the outcome. |
+| ⬜ | Ready lifetime | A checked deal stays ready for five minutes. Selecting a recently checked deal holds background searches for up to two minutes; an actual busy Buy click also gives it time to clear. |
+| ⬜ | Purchase context | Search another item after checking a gear/item lot, then Buy. When required by the server context the lot is read again; the next hardware click buys. No delayed automatic purchase occurs. |
+| ⬜ | Quiet Selling page | Open My items with several goods in the bags. Rendering the page alone does not launch a bag-wide price check. Check price and Check all still read the requested prices. |
+| ⬜ | Ready post first | Have a ready-priced item followed by one without a price. Post next bought posts the ready one before starting searches for other goods. A recent complete scan can supply its price in the same click. |
+| ⬜ | Missing post prices | With no ready item, Post next/Post all prepares missing prices as a bulk queue. A new single Check price goes first. Each later hardware click posts one ready lot; guessed prices still need manual review. |
+| ⬜ | Trade exclusion | During an unresolved purchase or post, another bid/post/cancel or search must wait; the original trade must not be confirmed by the other action's money change. |
+| ⬜ | Post feedback | After Post, show waiting for AH confirmation; report created only on the creation event. A queued price check or paused batch must not hide posting status. Repeated Post waits instead of overwriting the first operation. |
+| ⬜ | Price editing and bags | A refreshed automatic price follows a new result; manual typing remains. Move a selected item to another bag slot or scroll it away: Post still uses that item. |
+| ⬜ | Scan recovery | On a house with unloaded item rows, later loaded rows continue to be read; an unloaded prefix must not hold them behind repeated work at the front. No large stall on recovery expiry or scan completion. |
+| ⬜ | Full/partial scans | Leave a scan waiting while the server sends parts. No sniper page is sent meanwhile; a partial answer is not counted as confirmed sales or a smaller complete-house baseline. Closing/reopening resumes the pending scan. |
+| ⬜ | Full-scan retry | A scan with no answer ends after five minutes; its next automatic attempt waits the server window counted from that request, not repeated one-minute retries. |
+| ⬜ | Browse and analytics | With a large browse reply and a large history, buttons remain usable while local rows are processed in chunks. Analytics keeps the previous lists until the new top lists are ready; equal ranking values have stable ordering. |
+| ⬜ | Undercuts | Compare wait, repost, buyout and vendor alternatives. Buyout uses the player's resale price, adds the right shopping quantity and counts it down as units are bought. |
+| ⬜ | Sales and invoices | Cancel/repost a lot without selling it: no phantom sale appears. Missing whole lots remain suspects until a later scan. Buyer mail with several items books the real count and does not double-book an existing addon purchase. |
+| ⬜ | UI and merchant | Check native side-menu pages, settings, scrolling, money coins and the merchant tab. After vendor sales settle, the bag-based lists refresh without another sale click. |
+| ⬜ | Sharing compatibility | FF3 history is received and merged without importing obsolete FF2 sale counts. Invalid/duplicate/wrong-house data is rejected, and raw scans remain available to the Sync helper. |
+| ⬜ | Regression essentials | Repeat the general checks above for mail, stock, bids, crafting, house switching, English/Ukrainian, key bindings and persistence. Record any differences from beta.3 with the exact row. |
+
+### Automated checker maintenance
+
+Run the full suite with `python -m unittest discover -s tests -p "test_*.py"`; the build and CI use
+that same command. Directly running a test file also includes every class defined in it: its
+`unittest.main()` entrypoint belongs at the end. Do not delete a still-relevant regression because
+its original bug was fixed in an earlier beta. Remove or rewrite a scenario when the intended
+behavior has changed, retaining a check of the replacement behavior.
+
+The beta.4 scheduler tests assert safe response ownership instead of instant local cancellation.
+The simulated server does not fabricate answers for gear versions that were not sent, and waits
+for existing work before starting a full scan. `test_foreground.py`, `test_optimization.py` and
+`test_purchase_confirmation.py` cover the new contracts; release tooling has its own tests too.
 
 ### Beta testing
 
 Beta releases (`vX.Y.Z-beta.N`, marked **Pre-release** on the
 [releases page](https://github.com/Danissemo/ForeverFlip/releases)) are for players who want to help
 test before a release. Install one like a normal release (replace the `ForeverFlip` folder; your saved
-data is kept), restart the game, and go through the table of the version above. If you tested
-an earlier beta, check what changed since: [Fixed since 1.2.0-beta.1](#fixed-since-120-beta1) and
-[New since 1.2.0-beta.2](#new-since-120-beta2).
+data is kept), restart the game, and go through the [current beta checklist](#current-beta-checklist).
+For beta.4, check every row against the installed `1.2.0-beta.4` build. The broader in-game list
+above remains the regression checklist; old observations are not new acceptance results.
 
 Report a bug in an [issue](https://github.com/Danissemo/ForeverFlip/issues/new/choose) (the bug
 report form asks for the version and the log); questions and general impressions are welcome in

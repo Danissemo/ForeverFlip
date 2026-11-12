@@ -127,8 +127,6 @@ class StatisticsDisplayTests(unittest.TestCase):
         assert(r.cols[2]:GetText()=='-' and r.cols[4]:GetText()=='-' and r.cols[5]:GetText()=='-')''')
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 
 class ReceivingInFramesTests(unittest.TestCase):
@@ -144,3 +142,7 @@ class ReceivingInFramesTests(unittest.TestCase):
         while #Sh.received==0 do run(0.05);frames=frames+1;assert(frames<500) end
         assert(frames>2,'spread over several frames: '..frames)
         assert(Sh.received[1].items==3000,Sh.received[1].items)''')
+
+
+if __name__ == '__main__':
+    unittest.main()

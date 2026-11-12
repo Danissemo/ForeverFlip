@@ -6,6 +6,54 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0-beta.4] - 2026-11-12
+
+Changes since beta.3. This is a pre-release; use the current beta checklist before reporting results.
+
+### Fixed
+
+- Single-item checks promote matching batch requests and run before the remaining batch. Gear
+  batches pause between versions and resume without discarding their partial results. Requests
+  already sent to the server keep their response ownership instead of being cancelled locally
+  and sent again.
+- Browse pages, full scans, bids, purchases and posts no longer compete with an unresolved
+  outgoing trade or search. Automatic scans wait while the player is preparing a purchase.
+- Button feedback is painted on the next frame, before background calculations. Purchase and
+  post status take precedence over paused batch progress. Local scan/sharing/analytics slices
+  shrink while an interactive action is pending.
+- Opening Selling no longer searches all bag items. Posting queues prepare missing prices on
+  request, after trying ready items first; fresh scan prices are used in the same click.
+- Scan recovery keeps its cursor between frames, so unloaded rows at the front cannot starve
+  loaded rows at the end. Large browse replies and the unread-row pass are processed in slices.
+- Analytics keeps bounded top-50 rankings during its incremental build; medium histories also
+  build between frames. Incompatible lot buckets are rejected without repeated pairwise scans,
+  and own-unit counts are indexed once per own-auction snapshot.
+- A general auction house error no longer discards an awaiting item purchase or claims another
+  player bought it. Money, purchase events and matching auction-won messages can still confirm it;
+  without confirmation the normal timeout applies. Purchase failure messages no longer guess who
+  bought the lot.
+
+### Changed
+
+- Buying and confirming a commodity use the same button. A checked deal remains ready for five
+  minutes, and selecting it holds background searches while the player prepares to buy.
+- The native auction-house styling, side menu, settings, coin display, merchant tab and scrolling
+  lists have been updated. Selling includes actions for gear the character cannot use.
+- Full scans keep partial server replies separate from complete scans and preserve pending scans
+  across closing/reopening the house. Retry timing respects the account's full-scan window.
+- Reposted or merely missing lots no longer count immediately as sales. Sale estimates use
+  confirmed observations, older contaminated estimates are cleared once, and FF3 shared histories
+  avoid importing the old FF2 sale counts. Buyer invoices use the actual item count.
+- Undercuts compares waiting, reposting, buying out and vendoring from measured demand; buyout
+  entries use the player's resale price and count down as the requested units are bought.
+
+### Testing and release tooling
+
+- The beta.4 checklist replaces obsolete beta-specific instructions. Previous regression tests
+  remain; standalone test entrypoints now include classes added later in their files.
+- Release notes select the exact beta changelog section. Packaging and release-note selection
+  have automated tests, and generated checklist links point to the release tag.
+
 ## [1.2.0] - 2026-11-11
 
 Fixes and features from a study of the WoW Forever auction addons (ForeverForge Auction, auxForever,
@@ -440,7 +488,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v1.2.0...HEAD
+[Unreleased]: ../../compare/v1.2.0-beta.4...HEAD
+[1.2.0-beta.4]: ../../compare/v1.2.0-beta.3...v1.2.0-beta.4
 [1.2.0]: ../../compare/v1.1.0...v1.2.0
 [1.1.0]: ../../releases/tag/v1.1.0
 [1.0.0]: ../../releases/tag/v1.0.0

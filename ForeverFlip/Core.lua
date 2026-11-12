@@ -98,6 +98,26 @@ function E.changed()
     E.dirty = true
 end
 
+-- A hardware callback still sends protected actions itself. This only schedules immediate
+-- feedback and briefly holds off new background queries while the player is interacting.
+function E.input()
+    E.inputUntil = (GetTime and GetTime() or E.clock()) + 0.5
+    E.urgent = true
+    E.changed()
+end
+
+function E.interacting()
+    return (GetTime and GetTime() or E.clock()) < (E.inputUntil or 0)
+end
+
+-- Independent local jobs still advance while the server answers a click, with shorter slices.
+function E.workSlice(ms)
+    if E.interacting() or F.Trade.busy() or F.Deals.foreground() then
+        return math.min(ms, 2)
+    end
+    return ms
+end
+
 local frame = CreateFrame("Frame")
 F.frame = frame
 
@@ -382,6 +402,10 @@ function E.update(elapsed)
         return
     end
     local now = GetTime and GetTime() or E.clock()
+    if E.urgent and F.UI and F.UI.refresh then
+        E.urgent, E.dirty, paint = false, false, 0
+        part("UI.refresh", F.UI.refresh)
+    end
     part("AH.pump", F.AH.pump, now)
     if F.AH.isOpen() then
         F.AH.ready(true) -- watched every frame, so a stuck "not ready" is noticed
@@ -430,6 +454,7 @@ end)
 -- Buy the next deal: the best deal ready to buy is selected (checked first when it needs it), and
 -- each press moves it one step: check, buy, confirm.
 function E.keyBuyNext()
+    E.input()
     local T, UI = F.Trade, F.UI
     if T.op and T.op.state == "quoted" then
         if UI then
@@ -461,6 +486,7 @@ function E.keyBuyNext()
 end
 
 function E.keyBuy()
+    E.input()
     local T, UI = F.Trade, F.UI
     if T.op and T.op.state == "quoted" then
         T.confirm()
@@ -476,6 +502,7 @@ function E.keyBuy()
 end
 
 function E.keyPost()
+    E.input()
     local ok, why = F.Trade.postNext()
     if not ok and why == "nothing_to_post" then
         ok, why = F.Trade.postAll()
@@ -484,6 +511,7 @@ function E.keyPost()
 end
 
 function E.keyCancel()
+    E.input()
     local _, why = F.Trade.cancelNextUndercut()
     E.notify(why)
 end

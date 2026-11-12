@@ -54,7 +54,7 @@ local MESSAGES = {
     nothing_to_fight = "No undercut auction is worth answering now.",
     bought = "Purchase recorded.",
     bought_more = "Bought one lot. The resale price counts on the other cheap lots too: press Buy again.",
-    buy_failed = "The purchase failed (someone was faster). The deal is checked again.",
+    buy_failed = "The auction house reported a purchase failure. The deal is checked again.",
     buy_unknown = "No answer from the auction house. Settle the purchase in the Journal.",
     buy_busy = "The auction house is still answering a search: press Buy again in a moment.",
     buy_recheck = "Another item was searched since this lot was read, and the auction house would not sell it: reading it again. Press Buy once more.",
@@ -93,7 +93,10 @@ local function button(parent, label, width, onClick)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     b:SetSize(width or 110, 22)
     b:SetText(L(label))
-    b:SetScript("OnClick", onClick)
+    b:SetScript("OnClick", function(...)
+        F.Engine.input()
+        return onClick(...)
+    end)
     return b
 end
 
@@ -748,6 +751,7 @@ local function table_(parent, columns, rows, onClick, onSort)
             r:SetScript("OnMouseWheel", t.wheel)
         end
         r:SetScript("OnClick", function(self, mouse)
+            F.Engine.input()
             if IsModifiedClick and IsModifiedClick("CHATLINK") and ChatEdit_InsertLink then
                 local item = self.key and U.parseKey(self.key)
                 local itemLink = self.link or (item and select(2, U.itemInfo(item.id)))
@@ -1207,6 +1211,7 @@ function UI.createDeals(p)
 end
 
 function UI.selectDeal(key)
+    F.Engine.input()
     local op = F.Trade.op
     if op and op.key ~= key and (op.state == "quote" or op.state == "quoted") then
         F.Trade.cancel() -- Confirm must never buy an item other than the selected one
@@ -2172,12 +2177,6 @@ function UI.refreshSell()
     UI.sellHiddenTab:SetEnabled(not hiddenView)
     UI.sellHide:SetText(L(hiddenView and "Return to sale" or "Hide"))
     UI.sellHide:SetEnabled(UI.sellSelected ~= nil)
-    local clockNow = F.Engine.clock()
-    if not hiddenView and F.AH.isOpen() and clockNow - (UI.readAheadAt or 0) >= 30 then
-        UI.readAheadAt = clockNow
-        F.Trade.readAhead(F.Trade.toPostAll(true))
-        F.Trade.readAhead(F.Trade.toPost())
-    end
     UI.ruleToggle:SetEnabled(UI.sellSelected ~= nil and not hiddenView)
     local rule = UI.sellSelected and F.Trade.rule(UI.sellSelected.key)
     UI.ruleToggle:SetText(L("Rule...") .. (rule and " |cff40ff40*|r" or ""))
@@ -4159,6 +4158,30 @@ function UI.refreshStatus()
             and not F.Trade.busy()
             and not F.Scan.blocking()
     )
+    local op = F.Trade.op
+    if op and (op.state == "quote" or op.state == "quoted" or op.state == "awaiting") then
+        UI.scanButton:Disable()
+        UI.progress:SetValue(0)
+        UI.status:SetText(
+            op.state == "quoted" and string.format(L("Price offer ready: press Confirm (%s)."), U.money(op.cost))
+                or op.state == "quote" and L("Asking the auction house for the price of the purchase...")
+                or L("Buying: waiting for the auction house...")
+        )
+        return
+    end
+    if F.Trade.postingNow() then
+        UI.scanButton:Disable()
+        UI.progress:SetValue(0)
+        UI.status:SetText(L(MESSAGES.post_sent))
+        return
+    end
+    local foreground, active = F.Deals.foreground()
+    if foreground and not F.Scan.blocking() then
+        UI.scanButton:Disable()
+        UI.progress:SetValue(0)
+        UI.status:SetText(L(active and "checking..." or "queued"))
+        return
+    end
     local key, done, total = F.Scan.progress()
     if key then
         local line = string.format(L(PROGRESS[key]), done, total)
@@ -4188,15 +4211,6 @@ function UI.refreshStatus()
         return
     elseif batch and batchTotal > 0 and UI.completedBatch ~= batch then
         UI.completedBatch, UI.batchSummaryAt = batch, F.Engine.clock()
-    end
-    local op = F.Trade.op
-    if op and (op.state == "quote" or op.state == "quoted" or op.state == "awaiting") then
-        UI.status:SetText(
-            op.state == "quoted" and string.format(L("Price offer ready: press Confirm (%s)."), U.money(op.cost))
-                or op.state == "quote" and L("Asking the auction house for the price of the purchase...")
-                or L("Buying: waiting for the auction house...")
-        )
-        return
     end
     local msg = F.Engine.message
     if msg and F.Engine.clock() - (F.Engine.messageAt or 0) < 20 then
@@ -4365,10 +4379,10 @@ function UI.sniperSummary()
 end
 
 function UI.refresh()
-    pcall(UI.highlightBrowse)
     if not UI.frame or not UI.frame:IsShown() then
         return
     end
+    F.Engine.urgent, F.Engine.dirty = false, false
     if not UI.nativeLook then
         pcall(UI.copyNativeLook)
     end

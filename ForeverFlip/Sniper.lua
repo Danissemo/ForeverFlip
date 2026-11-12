@@ -175,6 +175,7 @@ local function idle()
         and not D.search
         and #D.requests == 0
         and not D.backgroundRetry
+        and #S.backlog == 0
         and #S.candidates == 0
         and not D.holding()
         and F.AH.ready()
@@ -261,7 +262,18 @@ function S.step()
     end
     if q then
         -- No next page while a full scan waits for its answer: any query then can keep it away.
-        if q.more and F.AH.ready() and #S.candidates == 0 and not F.Deals.holding() and not F.Scan.blocking() then
+        if
+            q.more
+            and not F.Deals.search
+            and not F.Deals.pending()
+            and #S.backlog == 0
+            and not F.Trade.busy()
+            and not F.Trade.postingNow()
+            and F.AH.ready()
+            and #S.candidates == 0
+            and not F.Deals.holding()
+            and not F.Scan.blocking()
+        then
             q.more, q.at, q.answered = false, t, false
             pcall(F.AH.browseMore)
         end
@@ -311,7 +323,10 @@ function S.onResults(first)
         fresh[#fresh + 1] = rows[i]
     end
     q.read = #rows
-    S.read(fresh)
+    -- Judge our own large pages under the same per-frame bound as other addons' pages.
+    for _, row in ipairs(fresh) do
+        S.backlog[#S.backlog + 1] = row
+    end
     if q.kind == "browse" and not F.AH.browseFull() then
         q.more, q.at = true, now()
         return

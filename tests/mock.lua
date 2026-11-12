@@ -259,7 +259,24 @@ C_AuctionHouse = {
             return nil
         end
         local cached = items[a.item].cached
-        return a.name, 1, a.count, 2, true, 20, "", a.minBid or 0, a.increment or 0, a.buyout, a.bid or 0, nil, nil, a.owner, a.owner, 0, a.item, cached
+        return a.name,
+            1,
+            a.count,
+            2,
+            true,
+            20,
+            "",
+            a.minBid or 0,
+            a.increment or 0,
+            a.buyout,
+            a.bid or 0,
+            nil,
+            nil,
+            a.owner,
+            a.owner,
+            0,
+            a.item,
+            cached
     end,
     GetReplicateItemLink = function(i)
         local a = replicated[i]
@@ -427,6 +444,23 @@ end
 -- Full scan through the fake auction house until it is processed.
 function fullScan()
     local ok, why = ForeverFlip.Scan.start()
+    -- The player waits for on-the-wire work before a full scan. A clock jump in a simulated
+    -- session does not deliver its pending responses or run the addon's timeout by itself.
+    local hold, tries = ForeverFlip.Deals.holdUntil, 0
+    while not ok and why == "busy" do
+        ForeverFlip.Deals.holdUntil = now + 1
+        if ForeverFlip.Deals.search then
+            answer()
+        end
+        if browsePendingNow and browsePendingNow() then
+            browseAnswer()
+        end
+        run(0.05)
+        tries = tries + 1
+        assert(tries < 1000, "connection never freed for full scan")
+        ok, why = ForeverFlip.Scan.start()
+    end
+    ForeverFlip.Deals.holdUntil = hold
     assert(ok, why)
     fire("REPLICATE_ITEM_LIST_UPDATE")
     local n = 0
@@ -451,6 +485,9 @@ function answer()
             assert(guard < 50, "gear browse never ends")
         end
         while ForeverFlip.Deals.search == s and s.phase == "keys" do
+            if s.waitKey then
+                return
+            end -- no response exists for a version not sent yet
             fire("ITEM_SEARCH_RESULTS_UPDATED", s.keys[s.keyIndex])
             guard = guard + 1
             assert(guard < 50, "gear versions never end")
@@ -459,7 +496,6 @@ function answer()
         fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = s.item.id })
     end
 end
-
 
 -- Mailbox -------------------------------------------------------------------------------------------
 MailFrame = CreateFrame("Frame")
@@ -527,7 +563,6 @@ end
 function GameTooltip:GetItem()
     return self.itemName, self.itemLink
 end
-
 
 -- Merchant -----------------------------------------------------------------------------------------
 merchantItems = {} -- { id, price, quantity, available, extended }

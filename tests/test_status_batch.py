@@ -174,8 +174,6 @@ class StatusBatchTests(unittest.TestCase):
         ''')
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 
 class BatchRetryTests(unittest.TestCase):
@@ -195,3 +193,7 @@ class BatchRetryTests(unittest.TestCase):
         local done,total,active,failed=D.batchProgress()
         assert(done==1 and not active and failed==0 and not D.search,'nobody else sells it: no search')
         assert(#T.prices[keys[1]].rows==0)''')
+
+
+if __name__ == '__main__':
+    unittest.main()

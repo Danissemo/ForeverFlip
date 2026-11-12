@@ -153,6 +153,9 @@ function B.place(key)
     if o.bid > F.Engine.wallet() then
         return false, "no_money"
     end
+    if not F.Trade.wayFree() then
+        return false, "buy_busy"
+    end
     if not pcall(F.AH.bid, o.auctionID, o.bid) then
         return false, "error"
     end

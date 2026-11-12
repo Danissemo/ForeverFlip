@@ -15,7 +15,8 @@ class SchedulerTests(unittest.TestCase):
     def test_manual_sell_check_goes_before_the_sniper(self):
         run(BACKGROUND + '''local D,T=ForeverFlip.Deals,ForeverFlip.Trade
         assert(T.checkPrice('c:10'),'busy manual check must be accepted')
-        assert(D.pending('c:10') and D.search.key=='c:10','the sniper search steps aside')
+        assert(D.pending('c:10') and D.search.key=='c:40','the sent sniper query retains its answer')
+        answer();run(1.1)
         assert(D.search.key=='c:10' and D.search.source=='manual')
         answer();assert(T.prices['c:10'] and not D.pending('c:10'))''')
 
@@ -57,8 +58,8 @@ class SchedulerTests(unittest.TestCase):
     def test_switch_off_keeps_inflight_work_and_suppresses_sniper_retry(self):
         run(BACKGROUND + '''local D,T=ForeverFlip.Deals,ForeverFlip.Trade
         T.checkPrice('c:10');D.setSniper(false)
-        assert(not ForeverFlip.db.settings.sniper and D.search.key=='c:10','the sniper stepped aside for the check')
-        run(1.1)
+        assert(not ForeverFlip.db.settings.sniper and D.search.key=='c:40','an already sent query is drained')
+        answer();run(1.1)
         assert(D.search.key=='c:10');answer();run(3)
         assert(not D.search and T.prices['c:10'],'manual work survives switching sniper off')''')
 

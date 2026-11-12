@@ -72,7 +72,7 @@ history, because the listings are separate, and counts the 15% cut.
 | **Sniper: ON / OFF** | Turns the [sniper](#sniper) on or off. |
 | **Check all** | Searches every entry of the open page on the auction house again, one search after another, and the page shows what was found: deals are kept, updated or dropped (All, Resale, To vendor, Deals from the list); the items on the **Shopping list** are checked as shopping deals; **Bids** reads the best bid of every candidate; **My items** and **My auctions** read the current price of every item (the Best column and the suggested prices use it); **Crafting** reads every material and product, and the recipes are priced with those prices for 5 minutes. While it runs the button shows `Checking <page>: done/total`. Afterwards it shows `Checked ...`. Searches without an answer are sent once more by themselves; what still has none is shown as `(N without an answer)` and named in the chat. Either nobody else sells them (WoW Forever does not answer a search for an item only you have), or the server did not answer their search: the next check searches them by name, like gear. An item a full scan of the last 20 minutes did not see is not searched at all. |
 | Auction house (bottom bar, beside the money display) | Which auction house is open: **Alliance AH** (blue), **Horde AH** (red) or **Neutral AH, 15% cut** (gold, at Booty Bay, Gadgetzan or Everlook). Each house keeps its own scans, prices and deals; the window title says it too. |
-| Status line | The current task (`Reading auctions 12000 / 231000`, `Evaluating items ...`), the last message, or the number of deals and how many are checked. The sniper's own figures are in the summary on the left. |
+| Status line | Active purchases/posts and single-item checks take precedence over bulk progress. Otherwise it shows the scan (`Reading auctions 12000 / 231000`), batch, last message or deal counts. The sniper's figures are in the summary on the left. |
 
 ### Full scan
 
@@ -307,11 +307,13 @@ At the bottom:
 
 How the two posting queues work:
 
-- **First click:** every item of the queue without a fresh price is searched, one per second, in
-  the background (*Reading the current prices of the items to post*).
-- **Each next click:** posts the first item whose price is known at the suggested price; items whose
-  search is still on the way are passed over until their answer comes. The game allows one post per
-  click, so a queue of 5 items takes 5 clicks after the first.
+- **Each click:** posts the first ready item at the suggested price, using a fresh local scan
+  price immediately when available. Checks of unrelated items do not occupy the connection first.
+- **When no item is ready:** the click prepares missing prices as a bulk queue (*Reading the current
+  prices of the items to post*). A single-item Check price takes priority over remaining bulk work.
+  Click again when a price is ready; the game allows one post per hardware click.
+- Opening Selling alone does not start a bag-wide price search. Use Check price, Check all or one
+  of the posting queues when you want that work.
 - **Below the floor:** the item is posted at the floor, or skipped with **Keep items in the bags
   when the market is below their floor** (Settings).
 
@@ -783,3 +785,17 @@ The result of `/ff diag` helps too.
 6. At a mailbox, **Take auction mail**. At a merchant, **Sell to vendor**.
 7. Look at **Analytics** (Overview, and By item for the Sell %) and **Crafting** to see what actually
    makes money, and drop or ignore what does not.
+
+## Background work and click priority
+
+Since **1.2.0-beta.4**, a single-item check goes before the rest of a batch. Clicking a key already
+queued promotes the same request; it does not duplicate it. A gear batch can pause between its
+unsent versions and resume with the results already read. Purchases and posts have priority in
+the status line; click feedback is painted on the next frame.
+
+A request already sent to the auction house must still receive its answer or time out before the
+connection can be reused. The same applies to a full scan waiting for its reply. Independent local
+processing continues in small slices while the server answers; there are no extra Lua threads.
+Purchases, bids, posts and cancels are never replayed automatically after a delay: when the way is
+busy, wait for it to clear and press again. The server's throttle and required price/context checks
+remain in effect.

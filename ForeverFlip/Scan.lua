@@ -28,6 +28,7 @@ end
 
 -- Time budget for one frame: milliseconds with the profiler, else a fixed amount of work.
 local function budget(ms, fallback)
+    ms = F.Engine.workSlice(ms)
     local start = debugprofilestop and debugprofilestop()
     local n = 0
     return function()
@@ -91,6 +92,9 @@ function S.start()
     end
     if S.cooldown() > 0 then
         return false, "cooldown"
+    end
+    if F.Trade.busy() or F.Trade.postingNow() or F.Deals.searching() or F.Sniper.inFlight() then
+        return false, "busy"
     end
     -- Not a peek: a throttle stuck on "not ready" is released after a few seconds (AH.ready).
     if not F.AH.ready() then
@@ -226,6 +230,9 @@ function S.auto()
         and F.AH.isOpen()
         and S.cooldown() <= 0
         and not F.Trade.busy()
+        and not F.Trade.postingNow()
+        and not F.Deals.holding()
+        and not F.Deals.pending()
         and not F.Deals.searching()
         and not (F.Sniper and F.Sniper.query)
         and F.AH.ready()
@@ -598,6 +605,12 @@ function S.notListed(key)
         and not last.listed[key]
 end
 
+local function beginFinish(j, now)
+    j.state, j.cursor, j.finishAt = "finishing", 1, now
+    j.deals, j.waitVendor, j.hot, j.listed = {}, {}, {}, {}
+    j.stats = { items = 0, vendorKnown = 0, belowVendor = 0, collecting = 0 }
+end
+
 -- Called every frame while a scan runs.
 function S.step()
     local j = S.job
@@ -645,34 +658,46 @@ function S.step()
         return
     end
     if j.state == "recovering" then
-        -- Rows of items the game had not loaded: read again once their data arrived.
-        local left, done = {}, budget(4, 200)
-        for n, i in ipairs(j.deferred) do
-            if done() then
-                for m = n, #j.deferred do
-                    left[#left + 1] = j.deferred[m]
-                end
-                break
-            end
+        -- Keep the cursor across frames. Recopying the tail and starting again at row one both
+        -- cost O(n) per frame and starved loaded rows behind a long uncached prefix.
+        j.recoverLeft = j.recoverLeft or {}
+        j.recoverIndex = j.recoverIndex or 1
+        local done = budget(4, 200)
+        while j.recoverIndex <= #j.deferred do
+            local i = j.deferred[j.recoverIndex]
+            j.recoverIndex = j.recoverIndex + 1
             if not ingest(j, i) then
-                left[#left + 1] = i
+                j.recoverLeft[#j.recoverLeft + 1] = i
+            end
+            if done() then
+                return
             end
         end
-        j.deferred = left
-        if #left == 0 or now >= j.recoverUntil then
-            j.skipped = j.skipped + #left
-            -- Items whose rows never loaded are still on the house: they must not count as gone.
-            j.unread = j.unread or {}
-            for _, i in ipairs(left) do
-                local ok, r = pcall(F.AH.replicateRow, i)
-                if ok and r and r.id then
-                    j.unread[r.id] = true
-                end
-            end
-            j.state, j.cursor, j.finishAt = "finishing", 1, now
-            j.deals, j.waitVendor, j.hot, j.listed = {}, {}, {}, {}
-            j.stats = { items = 0, vendorKnown = 0, belowVendor = 0, collecting = 0 }
+        j.deferred, j.recoverLeft, j.recoverIndex = j.recoverLeft, nil, nil
+        if #j.deferred == 0 then
+            beginFinish(j, now)
+        elseif now >= j.recoverUntil then
+            j.skipped = j.skipped + #j.deferred
+            j.state, j.unreadIndex, j.unread = "unread", 1, {}
         end
+        return
+    end
+    if j.state == "unread" then
+        -- Missing rows must not count as sales. Even this final pass is bounded for a large
+        -- scan whose item information never loaded.
+        local done = budget(4, 200)
+        while j.unreadIndex <= #j.deferred do
+            local i = j.deferred[j.unreadIndex]
+            j.unreadIndex = j.unreadIndex + 1
+            local ok, r = pcall(F.AH.replicateRow, i)
+            if ok and r and r.id then
+                j.unread[r.id] = true
+            end
+            if done() then
+                return
+            end
+        end
+        beginFinish(j, now)
         return
     end
     if j.state == "finishing" then
@@ -696,8 +721,6 @@ function S.step()
             listed = j.listed,
             -- Every item's cheapest lots, for 5 minutes: they stand for a price search of an item
             -- to post (T.scanPrice).
-            groups = not j.partial and j.groups or nil,
-            -- Every item's cheapest lots, for 5 minutes: they stand for a price search (T.prices).
             groups = not j.partial and j.groups or nil,
             -- The scan named the player's own lots (and left them out of `listed`).
             ownersKnown = j.own > 0,
@@ -891,7 +914,7 @@ function S.progress()
         return "scan_waiting", math.floor(clock() - j.at), S.ANSWER_WAIT
     elseif j.state == "reading" then
         return "scan_reading", j.index, j.total
-    elseif j.state == "recovering" then
+    elseif j.state == "recovering" or j.state == "unread" then
         return "scan_recovering", j.total - #j.deferred, j.total
     end
     return "scan_finishing", j.cursor - 1, #j.order

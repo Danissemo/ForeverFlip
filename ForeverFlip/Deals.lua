@@ -232,6 +232,9 @@ end
 -- a post sent while the sniper's messages are in flight is often thrown away by the server, and
 -- the throttle stays busy.
 function D.holding()
+    if F.Engine.interacting() then
+        return true
+    end
     if clock() < (D.holdUntil or 0) then
         return true -- a purchase or post found the way busy: it is cleared for the next click
     end
@@ -293,12 +296,54 @@ local function addCallback(r, callback, identity)
     r.callbacks[#r.callbacks + 1] = { run = callback, identity = identity }
 end
 
+-- Pacing and priority are independent: a click can promote an already queued fast batch.
+local function priority(r)
+    return r.priority or (r.source ~= "manual" and 2 or r.fast and 1 or 0)
+end
+
+function D.foreground()
+    if D.search and priority(D.search) == 0 then
+        return D.search, true
+    end
+    local first = D.requests[1]
+    if first and priority(first) == 0 then
+        return first, false
+    end
+end
+
+local function queueRequest(r, ahead)
+    local pos = #D.requests + 1
+    local last = D.requests[#D.requests]
+    if last and (priority(last) > priority(r) or ahead and priority(last) == priority(r)) then
+        for i, queued in ipairs(D.requests) do
+            if priority(queued) > priority(r) or ahead and priority(queued) == priority(r) then
+                pos = i
+                break
+            end
+        end
+    end
+    table.insert(D.requests, pos, r)
+    D.queued[r.key] = r
+end
+
+-- Only unsent gear steps may be parked. Removing an on-the-wire request is not cancellation.
+local function parkSearch()
+    local s = D.search
+    if s and s.waitKey then
+        D.search = nil
+        queueRequest(s)
+        return true
+    end
+    return false
+end
+
 local function newRequest(key, callback, source, identity, fast)
     local item = U.parseKey(key)
     if not item then
         return nil
     end
     local r = { key = key, item = item, source = source or "manual", callbacks = {}, readyAt = precise(), fast = fast }
+    r.priority = priority(r)
     addCallback(r, callback, identity)
     return r
 end
@@ -327,15 +372,26 @@ local function startRequest(r)
     if
         D.clearing
         or D.search
-        or ((r.fast or r.source ~= "manual") and D.buyHolding())
+        or (priority(r) > 0 and D.buyHolding())
         or not F.AH.isOpen()
         or F.Trade.busy()
+        or F.Trade.postingNow()
+        or F.Sniper.inFlight()
         or F.Scan.blocking()
         or not F.AH.ready()
         or now - (D.lastRequest or -10) < (r.fast and 0.4 or 1)
         or #D.sent >= 100
     then
         return false
+    end
+    if r.waitKey then
+        D.search, r.waitKey, r.at = r, nil, clock()
+        if not pcall(F.AH.searchKey, r.keys[r.keyIndex]) then
+            D.search = nil
+            completeRequest(r, nil, false)
+        end
+        F.Engine.changed()
+        return true
     end
     -- Cached answers and dropped-message events may fire inside the API call.
     r.at, r.pages = clock(), 0
@@ -346,12 +402,6 @@ local function startRequest(r)
     -- Gear, and items whose plain search got no answer, are searched by name: a browse lists their
     -- exact item keys, then each key is searched.
     local byName = (r.item.kind == "gear" or D.byName[r.item.id]) and F.AH.canSearchGear()
-    if byName and F.Sniper.inFlight() then
-        -- The sniper's browse is still out: its answer would be read as this one's.
-        D.search = nil
-        D.sent[#D.sent] = nil
-        return false
-    end
     if byName then
         -- Gear: a browse by name first (its item-key versions), then each version (see AH.lua).
         r.phase, r.keys, r.keyIndex, r.found, r.foundIDs, r.allComplete = "browse", nil, 0, {}, {}, true
@@ -392,7 +442,7 @@ function D.enqueue(key, callback, identity, fast)
     if D.clearing or not F.AH.isOpen() then
         return false
     end
-    local r, promoted
+    local r
     if D.search and D.search.key == key then
         r = D.search
     else
@@ -406,17 +456,26 @@ function D.enqueue(key, callback, identity, fast)
                 addCallback(r, cb.run, cb.identity)
             end
         else
-            r, promoted = background, true
+            r = background
         end
     end
     if r then
+        r.priority = math.min(priority(r), fast and 1 or 0)
         r.source = "manual"
         r.fast = r.fast or fast
         addCallback(r, callback, identity)
-        if not promoted then
+        if D.search == r then
             retryChanged()
             F.Engine.changed()
             return true
+        end
+        if D.queued[key] then
+            for i, queued in ipairs(D.requests) do
+                if queued == r then
+                    table.remove(D.requests, i)
+                    break
+                end
+            end
         end
     else
         r = newRequest(key, callback, "manual", identity, fast)
@@ -424,23 +483,10 @@ function D.enqueue(key, callback, identity, fast)
             return false
         end
     end
-    -- A single check (a click) goes before the searches of a Check all batch (fast ones).
-    local pos = #D.requests + 1
-    if not r.fast then
-        for i, q in ipairs(D.requests) do
-            if q.fast then
-                pos = i
-                break
-            end
-        end
-        -- A background search waiting for its answer (the sniper, an automatic check) steps
-        -- aside; it is sent again later.
-        if D.search and D.search.source ~= "manual" then
-            D.onDropped()
-        end
+    if D.search and priority(D.search) > priority(r) then
+        parkSearch()
     end
-    table.insert(D.requests, pos, r)
-    D.queued[key] = r
+    queueRequest(r)
     if D.requests[1] == r and precise() >= r.readyAt then
         table.remove(D.requests, 1)
         D.queued[key] = nil
@@ -463,7 +509,7 @@ end
 
 -- The next item-key version of a gear search, or the end of it with every version's rows.
 local function nextGearKey(s)
-    s.keyIndex, s.keyPages = s.keyIndex + 1, 0
+    s.keyIndex, s.keyPages, s.keyRows = s.keyIndex + 1, 0, nil
     local key = s.keys[s.keyIndex]
     if not key then
         table.sort(s.found, function(a, b)
@@ -472,13 +518,13 @@ local function nextGearKey(s)
         finishSearch(s.found, s.allComplete)
         return
     end
-    s.phase, s.at = "keys", clock()
-    if not F.AH.ready() then
-        s.waitKey = true -- sent from D.step once the server is ready
-        return
-    end
-    if not pcall(F.AH.searchKey, key) then
-        finishSearch(nil, false)
+    -- Yield between versions: the next frame can serve a new click or purchase first.
+    s.phase, s.at, s.waitKey = "keys", clock(), true
+    if priority(s) == 0 and not F.Trade.busy() and not F.Scan.blocking() and F.AH.ready() then
+        s.waitKey = nil
+        if not pcall(F.AH.searchKey, key) then
+            finishSearch(nil, false)
+        end
     end
 end
 
@@ -657,8 +703,7 @@ function D.onDropped()
         if (s.attempts or 0) >= 3 then
             completeRequest(s, nil, false)
         elseif s.source == "manual" then
-            table.insert(D.requests, 1, s)
-            D.queued[s.key] = s
+            queueRequest(s, true)
         elseif s.source ~= "sniper" or settings().sniper then
             D.backgroundRetry = s
         else
@@ -846,12 +891,9 @@ function D.verify(key, callback, source)
     return D.enqueue(key, done, callback or D.verifyCallback)
 end
 
--- The player buys: a search waiting for its answer is put back in the queue (a check of the
--- player's goes first again, a background one is retried), so the purchase does not wait for it.
+-- The player buys: only an unsent continuation can be parked; a sent query keeps its response.
 function D.yieldToPurchase()
-    if D.search then
-        D.onDropped()
-    end
+    return parkSearch()
 end
 
 -- A purchase went through: the deal is evaluated again from the rows of its check, less what was
@@ -921,12 +963,19 @@ function D.step()
     D.batchRetry()
     local now = clock()
     local s = D.search
+    local first = D.requests[1]
+    if s and s.waitKey and first and priority(first) < priority(s) then
+        parkSearch()
+        s = nil
+    end
     if
         s
         and s.waitKey
         and F.AH.ready()
         and not F.Scan.blocking()
-        and (s.source == "manual" and not s.fast or not D.buyHolding())
+        and not F.Trade.busy()
+        and not F.Trade.postingNow()
+        and (priority(s) == 0 or not D.buyHolding())
     then
         s.waitKey, s.at = nil, now
         if not pcall(F.AH.searchKey, s.keys[s.keyIndex]) then
@@ -934,7 +983,7 @@ function D.step()
         end
     end
     s = D.search
-    if s and now - s.at > 10 then
+    if s and not s.waitKey and now - s.at > 10 then
         if s.item.kind == "item" and not s.phase and F.AH.canSearchGear() and not s.byNameTried then
             -- No answer to the plain search: tried again at once by name (a browse lists the
             -- item's exact keys, then each is searched), as gear is. Remembered for next time.
@@ -942,8 +991,7 @@ function D.step()
             s.byNameTried = true
             D.search = nil
             s.readyAt = precise()
-            table.insert(D.requests, 1, s)
-            D.queued[s.key] = s
+            queueRequest(s, true)
             retryChanged()
         else
             finishSearch(nil, false)
