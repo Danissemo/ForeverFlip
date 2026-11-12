@@ -8,6 +8,29 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- **Faster checks.**
+  - Gear is checked straight from its remembered item-key versions. The addon learns them from
+    every browse, including the game's Buy tab and other addons, and keeps them between sessions.
+    A check of an item listed in 16 endings took a browse plus 16 searches; now it usually takes
+    one search.
+  - Searches go as soon as the server's throttle is ready, as in Auctionator, instead of a fixed
+    0.4 to 1 second gap. Only background work keeps one search per second.
+  - An item the client has no auction house data for is loaded before it is searched. The server
+    often ignored such a search, which cost a 10-second wait and a second search by name.
+- **Check all gives way.** It pauses while you are on **Selling**, **My auctions** or
+  **Undercuts**, so **Post** no longer finds the auction house busy. It also pauses while the
+  game's own Buy or Sell page is shown, so ForeverFlip no longer replaces what that page shows. The
+  status line says when it is paused, and it goes on when you come back.
+- **Clicks during a full scan.** Check price, Buy and Post work while a full scan waits for its
+  answer. Background work still waits.
+- **Scrollbars.** Every table has a scrollbar. The Deals list scrolls instead of using pages.
+- **New players start with no automation.** Automatic full scans, the sniper and automatic deal
+  checks are off until you switch them on in Settings. Keeping full scans for the ForeverFlip Sync
+  helper is on. Existing settings are not changed.
+- **Bids.** Candidates now include auctions that end within 2 hours, not only within 30 minutes.
+  They are kept across `/reload` and dropped once their auction has ended. An empty Bids page says
+  why it is empty.
+
 - **One price for selling, everywhere.** The item tooltip, the Sell page price box and its
   **Best** column now use one calculation and show the same numbers:
   - **Post at:** one step below the cheapest other seller from a check or a full scan up to

@@ -209,11 +209,11 @@ class TradeTests(unittest.TestCase):
         for i=#auctions,1,-1 do if auctions[i].item==10 and auctions[i].buyout<500 then table.remove(auctions,i) end end
         D.verify('c:10');answer();assert(not D.get('c:10'))''')
 
-    def test_automatic_verification_keeps_the_04_second_pace(self):
+    def test_automatic_verification_keeps_the_short_pace(self):
         run(SETUP + '''ForeverFlip.Engine.autoVerify=true;fullScan()
         run(0.5);local D=ForeverFlip.Deals;assert(D.search);local t1=D.lastRequest;answer()
         while not D.search do run(0.05) end;local gap=D.lastRequest-t1
-        assert(gap>=0.4-1e-9 and gap<0.9,gap)''')
+        assert(gap>=ForeverFlip.Deals.GAP-1e-9 and gap<0.9,gap)''')
 
     def test_post_and_sale_are_booked_with_profit(self):
         run(SETUP + '''local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
@@ -315,7 +315,7 @@ class UITests(unittest.TestCase):
 
 class ToolsTests(unittest.TestCase):
     def test_full_scan_starts_by_itself_every_15_minutes(self):
-        run('''ForeverFlip.db.lastScan=now-919;run(0.5);assert(not ForeverFlip.Scan.busy())
+        run('''ForeverFlip.db.settings.autoScan=true;ForeverFlip.db.lastScan=now-919;run(0.5);assert(not ForeverFlip.Scan.busy())
         now=now+2;run(0.1);assert(ForeverFlip.Scan.busy() and lastCall('ReplicateItems'))
         ForeverFlip.Scan.stop();ForeverFlip.db.settings.autoScan=false;ForeverFlip.db.lastScan=now-921
         run(0.5);assert(not ForeverFlip.Scan.busy())''')

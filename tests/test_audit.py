@@ -41,7 +41,8 @@ class QueueTests(unittest.TestCase):
     def test_a_single_check_goes_before_a_check_all_batch(self):
         run(BASE + '''for i = 1, 20 do T.checkPrice('c:' .. (900 + i), function() end, true) end
         T.checkPrice('c:10')
-        assert(D.requests[1].key == 'c:10', 'the click is next, not after the batch')''')
+        local next = D.search and D.search.key == 'c:10' or D.requests[1].key == 'c:10'
+        assert(next, 'the click is next, not after the batch')''')
 
     def test_a_sniper_candidate_that_could_not_start_is_kept(self):
         run(BASE + '''F.Sniper.candidates = { { key = 'c:10', score = 1 } }

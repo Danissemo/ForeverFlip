@@ -3,7 +3,7 @@ local U = F.Util
 local E = {}
 F.Engine = E
 
-E.autoVerify = true
+E.autoVerify = false -- F.db.settings.autoVerify once the saved data is read
 E.message = nil
 
 function E.clock()
@@ -177,6 +177,7 @@ function E.handle(event, ...)
             E.noSavedData = type(ForeverFlipData) ~= "table"
             ForeverFlipData = F.Data.open(ForeverFlipData)
             F.db = ForeverFlipData
+            E.autoVerify = F.db.settings.autoVerify and true or false
             if E.noSavedData and F.UI and F.UI.noSavedData then
                 F.UI.noSavedData()
             end
@@ -247,7 +248,11 @@ function E.handle(event, ...)
     elseif event == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then
         F.AH.throttleReset()
     elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or event == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then
-        -- A gear search browses for the item's versions; every other browse feeds the sniper.
+        -- Every browse answer teaches item-key versions (AH.learnKeys). A gear search browses for
+        -- the item's versions; every other browse feeds the sniper.
+        if F.AH.learnKeys then
+            F.AH.learnKeys()
+        end
         if not F.Deals.onBrowse() then
             F.Sniper.onResults(event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
         end

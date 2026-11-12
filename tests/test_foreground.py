@@ -96,7 +96,7 @@ class ForegroundTests(unittest.TestCase):
 
     def test_purchase_or_post_waits_for_full_scan_and_browse_ownership(self):
         run(BASE + '''F.Scan.job = { state = 'waiting' }
-        assert(not T.wayFree(), 'a full scan already sent cannot be interrupted safely')
+        assert(T.wayFree(), 'a click of the player goes while a full scan waits for its answer')
         F.Scan.job = nil; enableBrowse()
         S.query = { kind = 'browse', at = GetTime(), read = 0 }
         assert(not T.wayFree(), 'a browse already sent still owns the connection')''')

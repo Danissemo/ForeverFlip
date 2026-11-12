@@ -328,7 +328,7 @@ local function ingest(j, i)
         return false
     end
     local mine = F.AH.isPlayer(r.owner)
-    if (r.minBid or 0) > 0 and r.band == 0 and not mine then
+    if (r.minBid or 0) > 0 and r.band and r.band <= 1 and not mine then
         local key, kind = F.AH.keyFor(r.id, r.link)
         if key then
             F.Bids.consider(j, key, kind, r)

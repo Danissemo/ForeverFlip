@@ -43,14 +43,7 @@ end
 -- The way to the server is free: no search waits for its answer and the throttle is ready. When it
 -- is not, background work rests for a few seconds so the next click goes through.
 function T.wayFree()
-    if
-        not T.busy()
-        and not T.postingNow()
-        and not F.Deals.searching()
-        and not F.Sniper.inFlight()
-        and not F.Scan.blocking()
-        and F.AH.ready()
-    then
+    if not T.busy() and not T.postingNow() and not F.Deals.searching() and not F.Sniper.inFlight() and F.AH.ready() then
         return true
     end
     F.Deals.holdUntil = clock() + 5

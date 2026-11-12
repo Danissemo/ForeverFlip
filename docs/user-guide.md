@@ -242,7 +242,7 @@ click **Remove** to delete an entry or to stop ignoring an item.
 ## Bids
 
 Items (not stackable goods) can carry a bid. **Deals → Bids** lists auctions found by the last full
-scan that end within 30 minutes and whose next bid is well below what the item is worth. An item's
+scan that end within 2 hours and whose next bid is well below what the item is worth. An item's
 worth is its vendor price, or its usual auction price after the cut if it sells.
 
 1. Click a row. The auction is read with an exact search (**Check price**), and the status turns

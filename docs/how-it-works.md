@@ -67,7 +67,7 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    - when the client reports each auction's time left (`GetReplicateItemTimeLeft`), the **lot
      sequence** in scan order (up to 300 lots, `M.LOTS`) for [lot-by-lot sales](#sales-tracked-lot-by-lot).
 
-   Auctions with a bid that end within 30 minutes become [bid candidates](#bids).
+   Auctions with a bid that end within 2 hours become [bid candidates](#bids).
 4. **Evaluation.** Each item is evaluated in portions per frame: usual price, sales between scans,
    daily records, time-of-week pattern. Then come the deals ([Deal evaluation](#deal-evaluation)):
    vendor, resale, shopping list and disenchant. Items with an unknown vendor price are kept aside

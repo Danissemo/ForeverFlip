@@ -17,9 +17,11 @@ D.DEFAULTS = {
     minROI = 0.2, -- resale return on the money spent
     spendShare = 0.8, -- share of the money on hand one deal may use
     duration = 3, -- 1 = 2 h, 2 = 8 h, 3 = 24 h, 0 = automatic from the item's sales
-    autoScan = true, -- full scan every 15 minutes while the auction house is open
+    -- Nothing runs on its own for a new player: automatic scans, the sniper and automatic deal
+    -- checks are switched on in Settings.
+    autoScan = false, -- full scan every 15 minutes while the auction house is open
     itemShare = 0.3, -- share of the money one item may hold (stock and new resale)
-    sniper = true, -- browse for cheap listings between scans; fall back to hot item searches
+    sniper = false, -- browse for cheap listings between scans; fall back to hot item searches
     alerts = true, -- sound and screen notice when a deal can be bought
     alertMinProfit = 50, -- copper: smaller deals are listed without a notice
     tooltipPrices = true, -- price history lines in item tooltips
@@ -32,7 +34,7 @@ D.DEFAULTS = {
     disenchant = true, -- disenchant deals (only for a character who knows Disenchant)
     shareReceive = true, -- merge full scans shared by guild and group members
     shareAuto = false, -- send each own full scan to the guild
-    rawScans = false, -- keep full scans for the ForeverFlip Sync helper (community data)
+    rawScans = true, -- keep full scans for the ForeverFlip Sync helper (community data)
     shareChannel = true, -- share full scans with every ForeverFlip user of the realm (hidden channel)
     -- Percent off the client's vendor price until a merchant's real price is seen. 0: in game every
     -- merchant price checked so far matched the client's, and 20% removed nearly all vendor deals
@@ -41,6 +43,7 @@ D.DEFAULTS = {
     vendorMargin = 0,
     spendLimit = 0, -- gold one auction house visit may spend on deals (0 = no limit)
     leaveLots = 0, -- cheap lots (or commodity units) of a deal left for other buyers
+    autoVerify = false, -- check found deals in the background (the best ones first)
 }
 
 function D.open(saved)

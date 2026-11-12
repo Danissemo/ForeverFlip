@@ -74,7 +74,7 @@ class StatusBatchTests(unittest.TestCase):
         ''')
 
     def test_rolling_search_cap_holds_at_one_hundred_and_resumes(self):
-        run(BATCH + '''assert(D.startBatch('sell',keys,false)==120)
+        run(BATCH + '''D.PER_MINUTE=100;assert(D.startBatch('sell',keys,false)==120)
         local started=now
         for i=1,100 do
             if not D.search then run(0.5) end

@@ -16,6 +16,10 @@ D.FRESH = 300
 -- its check, whichever is later: long enough to press Buy, short enough that Check all never looks
 -- stuck behind a deal the player only looked at (120 seconds did, in game).
 D.SELECTED_HOLD = 15
+-- New searches in a rolling minute at most; the server's throttle is the real pace.
+D.PER_MINUTE = 200
+-- Shortest gap between two searches of the player or of Check all (was 0.4 s and 1 s).
+D.GAP = 0.2
 D.HOLD = 45 -- seconds background searches wait while a freshly checked deal is selected
 D.KEEP = 900 -- seconds an unverified scan deal stays listed
 
@@ -243,6 +247,29 @@ function D.buyHolding(key)
     return selectedHold(ui)
 end
 
+-- Check all of another page rests while the player posts or cancels (the Selling pages) or works in
+-- the game's own Buy or Sell page: every search of it held the way to the server, and the Post
+-- button then found the auction house busy (seen in game with 28 of 159 deals checked). It goes
+-- on by itself when the player comes back.
+function D.batchPaused()
+    local batch = D.batch
+    if not batch or not batch.active then
+        return false
+    end
+    if F.AH.nativeShown and F.AH.nativeShown() then
+        return true
+    end
+    local ui = F.UI
+    if not ui or not ui.frame or not ui.frame:IsShown() then
+        return false
+    end
+    local section = ui.section
+    if section == "sell" or section == "auctions" or section == "undercuts" then
+        return batch.scope ~= section
+    end
+    return false
+end
+
 -- Background work (the sniper, automatic checks) waits while the player is about to buy or post:
 -- a freshly checked deal is selected (D.HOLD seconds), or the Selling page is open. A purchase or
 -- a post sent while the sniper's messages are in flight is often thrown away by the server, and
@@ -379,6 +406,13 @@ local function completeRequest(r, rows, complete)
     end
 end
 
+local function batchHeld(r)
+    local batch = D.batch
+    return priority(r) > 0 and batch and batch.keySet and batch.keySet[r.key] and D.batchPaused()
+end
+
+local nextGearKey -- below: the next version of a gear search
+
 local function startRequest(r)
     local now = precise()
     while D.sent[1] and now - D.sent[1] >= 60 do
@@ -392,12 +426,28 @@ local function startRequest(r)
         or F.Trade.busy()
         or F.Trade.postingNow()
         or F.Sniper.inFlight()
-        or F.Scan.blocking()
+        -- A full scan waits for its answer: only the player's own clicks go meanwhile.
+        or (F.Scan.blocking() and priority(r) > 0)
+        or batchHeld(r)
+        -- The game's own Buy or Sell page is shown: what it shows is not replaced.
+        or (priority(r) > 0 and F.AH.nativeShown and F.AH.nativeShown())
         or not F.AH.ready()
-        or now - (D.lastRequest or -10) < (r.fast and 0.4 or 1)
-        or #D.sent >= 100
+        -- The server's throttle paces the searches (as in Auctionator). D.GAP only keeps answers
+        -- that come inside the call from sending every queued search in one frame; background
+        -- work (the sniper, automatic checks) keeps one search per second.
+        or now - (D.lastRequest or -10) < ((priority(r) >= 2 and not r.fast) and 1 or D.GAP)
+        or #D.sent >= D.PER_MINUTE
     then
         return false
+    end
+    -- An item the client has no auction house data for yet: asked for, and the search waits up to
+    -- two seconds for it (the server often ignores the search of such an item).
+    local plain = not (r.item.kind == "gear" or D.byName[r.item.id])
+    if plain and F.AH.keyInfoReady and not F.AH.keyInfoReady(r.item) then
+        r.infoSince = r.infoSince or now
+        if now - r.infoSince < 2 then
+            return false
+        end
     end
     if r.waitKey then
         D.search, r.waitKey, r.at = r, nil, clock()
@@ -417,6 +467,15 @@ local function startRequest(r)
     -- Gear, and items whose plain search got no answer, are searched by name: a browse lists their
     -- exact item keys, then each key is searched.
     local byName = (r.item.kind == "gear" or D.byName[r.item.id]) and F.AH.canSearchGear()
+    local cached = byName and F.AH.cachedKeys and F.AH.cachedKeys(r.item)
+    if cached then
+        -- Its versions are known from an earlier browse: they are searched straight away.
+        r.phase, r.keys, r.keyIndex, r.found, r.foundIDs, r.allComplete, r.cached =
+            "keys", cached, 0, {}, {}, true, true
+        nextGearKey(r)
+        F.Engine.changed()
+        return true
+    end
     if byName then
         -- Gear: a browse by name first (its item-key versions), then each version (see AH.lua).
         r.phase, r.keys, r.keyIndex, r.found, r.foundIDs, r.allComplete = "browse", nil, 0, {}, {}, true
@@ -523,10 +582,17 @@ local function finishSearch(rows, complete)
 end
 
 -- The next item-key version of a gear search, or the end of it with every version's rows.
-local function nextGearKey(s)
+function nextGearKey(s)
     s.keyIndex, s.keyPages, s.keyRows = s.keyIndex + 1, 0, nil
     local key = s.keys[s.keyIndex]
     if not key then
+        if s.cached and #s.found == 0 then
+            -- None of the remembered versions is listed now: the ending may have moved to a new
+            -- version. Unknown for now; the next check browses again.
+            F.AH.forgetKeys(s.item.id)
+            finishSearch(nil, false)
+            return
+        end
         table.sort(s.found, function(a, b)
             return a.unit < b.unit
         end)
@@ -535,7 +601,7 @@ local function nextGearKey(s)
     end
     -- Yield between versions: the next frame can serve a new click or purchase first.
     s.phase, s.at, s.waitKey = "keys", clock(), true
-    if priority(s) == 0 and not F.Trade.busy() and not F.Scan.blocking() and F.AH.ready() then
+    if priority(s) == 0 and not F.Trade.busy() and F.AH.ready() then
         s.waitKey = nil
         if not pcall(F.AH.searchKey, key) then
             finishSearch(nil, false)
@@ -782,6 +848,7 @@ function D.startBatch(scope, keys, mode)
         failed = 0,
         failedKeys = {},
         active = #snapshot > 0,
+        keySet = seen,
     }
     D.batch = batch
     local function send(key)
@@ -1002,7 +1069,8 @@ function D.step()
         s
         and s.waitKey
         and F.AH.ready()
-        and not F.Scan.blocking()
+        and (priority(s) == 0 or not F.Scan.blocking() and not (F.AH.nativeShown and F.AH.nativeShown()))
+        and not batchHeld(s)
         and not F.Trade.busy()
         and not F.Trade.postingNow()
         and (priority(s) == 0 or not D.buyHolding(s.key))
@@ -1027,10 +1095,13 @@ function D.step()
             finishSearch(nil, false)
         end
     end
-    if D.search or F.Trade.busy() or F.Scan.blocking() or not F.AH.isOpen() then
+    if D.search or F.Trade.busy() or not F.AH.isOpen() then
         return
     end
     local r = D.requests[1]
+    if F.Scan.blocking() and not (r and priority(r) == 0) then
+        return
+    end
     if r then
         if precise() >= r.readyAt then
             table.remove(D.requests, 1)
@@ -1047,8 +1118,9 @@ function D.step()
     if F.Trade.checkQueue and #F.Trade.checkQueue > 0 then
         return
     end
-    -- The player is about to buy or post: background searches wait (D.holding).
-    if D.holding() then
+    -- The player is about to buy or post, or works in the game's own Buy or Sell page: background
+    -- searches wait (D.holding).
+    if D.holding() or (F.AH.nativeShown and F.AH.nativeShown()) then
         return
     end
     r = D.backgroundRetry

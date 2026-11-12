@@ -556,6 +556,8 @@ local function showTooltip(owner, key, link)
     GameTooltip:Show()
 end
 
+local SCROLL_WIDTH = 14
+
 -- A results table: header buttons and rows. `columns` = { {label, width, align}, ... }; the first
 -- column is the item (icon and name) and takes the remaining width.
 UI.tables = {}
@@ -576,7 +578,8 @@ local function table_(parent, columns, rows, onClick, onSort)
     end
     local header = CreateFrame("Frame", nil, parent)
     header:SetPoint("TOPLEFT", parent, "TOPLEFT", 4, -4)
-    header:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4, -4)
+    -- Room on the right for the scrollbar.
+    header:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4 - SCROLL_WIDTH, -4)
     header:SetHeight(20)
     local function headerCell(label, width, align, index)
         local h = CreateFrame("Button", nil, header, "AuctionHouseTableHeaderStringTemplate")
@@ -617,13 +620,10 @@ local function table_(parent, columns, rows, onClick, onSort)
     local first = headerCell(columns[1][1], nil, "LEFT", 1)
     first:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
     first:SetPoint("TOPRIGHT", header, "TOPRIGHT", -x, 0)
-    -- Scrolling: a list longer than the rows is scrolled with the mouse wheel; the first header
-    -- says which entries are shown. A table with its own pages (the deals) sets t.paged.
+    -- Scrolling: a list longer than the rows is scrolled with the mouse wheel or the scrollbar on
+    -- the right; the first header says which entries are shown.
     t.offset, t.size = 0, rows
     function t.scroll(steps)
-        if t.paged then
-            return
-        end
         t.offset = math.max(0, (t.offset or 0) + steps * 3)
         UI.refresh()
     end
@@ -635,6 +635,46 @@ local function table_(parent, columns, rows, onClick, onSort)
         header:SetScript("OnMouseWheel", wheel)
     end
     t.wheel = wheel
+    local bar = CreateFrame("Slider", nil, parent)
+    bar:SetWidth(SCROLL_WIDTH - 2)
+    bar:SetPoint("TOPLEFT", header, "BOTTOMRIGHT", 3, 0)
+    bar:SetHeight(rows * ROW)
+    if bar.SetOrientation then
+        bar:SetOrientation("VERTICAL")
+    end
+    bar:SetMinMaxValues(0, 0)
+    bar:SetValueStep(1)
+    if bar.SetObeyStepOnDrag then
+        bar:SetObeyStepOnDrag(true)
+    end
+    local track = bar:CreateTexture(nil, "BACKGROUND")
+    track:SetAllPoints()
+    if track.SetColorTexture then
+        track:SetColorTexture(0, 0, 0, 0.4)
+    end
+    if bar.SetThumbTexture then
+        bar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+        local thumb = bar.GetThumbTexture and bar:GetThumbTexture()
+        if thumb then
+            thumb:SetSize(SCROLL_WIDTH + 4, 24)
+        end
+    end
+    bar:SetScript("OnValueChanged", function(_, value)
+        if t.syncing then
+            return
+        end
+        value = math.floor((tonumber(value) or 0) + 0.5)
+        if value ~= t.offset then
+            t.offset = value
+            UI.refresh()
+        end
+    end)
+    if bar.EnableMouseWheel then
+        bar:EnableMouseWheel(true)
+        bar:SetScript("OnMouseWheel", wheel)
+    end
+    bar:Hide()
+    t.bar = bar
     -- A sorted copy of `list` by the chosen column. `value(entry, column)` returns a number, a
     -- string or nil; nil sorts last in both directions, equal values keep the list's order.
     function t.sort(list, value)
@@ -674,12 +714,18 @@ local function table_(parent, columns, rows, onClick, onSort)
     function t.window(list)
         local total = #list
         local label = L(columns[1][1])
-        if t.paged or total <= t.size then
+        if total <= t.size then
             t.offset = 0
             first:SetText(label)
+            bar:Hide()
             return list
         end
         t.offset = math.min(t.offset or 0, total - t.size)
+        t.syncing = true
+        bar:SetMinMaxValues(0, total - t.size)
+        bar:SetValue(t.offset)
+        t.syncing = false
+        bar:Show()
         first:SetText(string.format("%s |cff999999(%d-%d / %d)|r", label, t.offset + 1, t.offset + t.size, total))
         local out = {}
         for i = 1, t.size do
@@ -1114,7 +1160,6 @@ function UI.createDeals(p)
             UI.refresh()
         end
     )
-    UI.dealTable.paged = true -- the deals have pages (Previous / Next)
     -- Header tooltips: what Sells at and Est./day are made of.
     local function headerTip(header, title, body)
         header:SetScript("OnEnter", function(self)
@@ -1145,18 +1190,9 @@ function UI.createDeals(p)
         "Est./day",
         "Estimated units that disappeared per day near the Sells at price, not a sale probability. Expired/cancelled lots can count.\n\nTwo usable full scans are required. Zero means none disappeared; '-' means unknown. Vendor deals need no auction-house resale.\n\nGrey estimates use data older than 3 hours. Checking a current price does not refresh sale history. Short observations are smoothed: one unit gone in 15 minutes counts as about 5-6 a day, not 96."
     )
-    UI.prev = button(p, "<", 26, function()
-        UI.dealPage = math.max(1, UI.dealPage - 1)
-        UI.refresh()
-    end)
-    UI.prev:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 6, -26)
-    UI.next = button(p, ">", 26, function()
-        UI.dealPage = UI.dealPage + 1
-        UI.refresh()
-    end)
-    UI.next:SetPoint("LEFT", UI.prev, "RIGHT", 4, 0)
+    -- The deals scroll like every table (the scrollbar on the right); the line below counts them.
     UI.pageText = text(p, "GameFontHighlightSmall")
-    UI.pageText:SetPoint("LEFT", UI.next, "RIGHT", 8, 0)
+    UI.pageText:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 8, -20)
 
     local bar = footer(p, 92, "GameFontHighlightSmall")
     UI.dealText = bar.text
@@ -1433,10 +1469,12 @@ function UI.refreshDeals()
         return av < bv
     end)
     UI.dealTable.setSort(UI.dealSort, UI.dealDescending)
-    local pages = math.max(1, math.ceil(#list / DEAL_ROWS))
-    UI.dealPage = math.min(UI.dealPage or 1, pages)
+    if UI.dealPage == 1 then
+        UI.dealTable.offset, UI.dealPage = 0, nil -- a new filter or sort starts at the top
+    end
+    local shown = UI.dealTable.window(list)
     for i, r in ipairs(UI.dealTable.rows) do
-        local d = list[(UI.dealPage - 1) * DEAL_ROWS + i]
+        local d = shown[i]
         if d then
             r.key, r.link = d.key, d.link
             r.icon:SetTexture(icon(d.id))
@@ -1458,14 +1496,12 @@ function UI.refreshDeals()
             r:Hide()
         end
     end
-    UI.prev:SetEnabled(UI.dealPage > 1)
-    UI.next:SetEnabled(UI.dealPage < pages)
     local cost, profit = 0, 0
     for _, d in ipairs(list) do
         cost, profit = cost + d.cost, profit + d.profit
     end
     UI.pageText:SetText(
-        string.format(L("Page %d / %d · deals: %d"), UI.dealPage, pages, #list)
+        string.format(L("Deals: %d"), #list)
             .. (
                 #list > 0
                     and (L("  ·  ") .. string.format(L("all: cost %s, profit %s"), U.money(cost), U.money(profit)))
@@ -1722,7 +1758,7 @@ function UI.createBids(p)
 end
 
 function UI.refreshBids()
-    local list = UI.bidTable.sort(F.Bids.candidates, function(c, column)
+    local list = UI.bidTable.sort(F.Bids.current(), function(c, column)
         local o = F.Bids.offer(c.key)
         return ({
             nameOf(c.key),
@@ -1760,11 +1796,25 @@ function UI.refreshBids()
     end
     local empty = UI.bidTable.empty
     if #list == 0 then
-        empty:SetText(
-            L(
-                "Auctions with a bid that end within 30 minutes and whose next bid is well below the item's worth appear here after a full scan."
+        -- Why the page is empty: no scan yet, or the bid auctions of the last one have ended.
+        local last = F.Scan.last
+        local age = last and last.at and math.floor((F.Engine.clock() - last.at) / 60)
+        if not age then
+            empty:SetText(
+                L(
+                    "Auctions with a bid that end within 2 hours and whose next bid is well below the item's worth appear here after a full scan."
+                )
             )
-        )
+        else
+            empty:SetText(
+                string.format(
+                    L(
+                        "No bid is worth it now. The last full scan was %d min ago: its auctions ending soon are over or were not worth a bid. A new full scan finds new ones."
+                    ),
+                    age
+                )
+            )
+        end
         empty:Show()
     else
         empty:Hide()
@@ -4043,6 +4093,7 @@ function UI.createGeneralSettings(p)
         F.Engine.autoVerify,
         function(self)
             F.Engine.autoVerify = self:GetChecked() and true or false
+            F.db.settings.autoVerify = F.Engine.autoVerify
         end
     )
     toggle("autoScan", "Full scan every 15 minutes", "Full scan every 15 minutes while the auction house is open")
@@ -4236,9 +4287,12 @@ function UI.refreshStatus()
     )
     local batch = F.Deals.batch
     if batchActive then
-        UI.status:SetText(
+        local line =
             string.format(L("Checking %s: %d/%d"), L(BATCH_SCOPES[batch.scope] or batch.scope), batchDone, batchTotal)
-        )
+        if F.Deals.batchPaused() then
+            line = line .. " · " .. L("paused while you sell or use the game's own page")
+        end
+        UI.status:SetText(line)
         UI.progress:SetValue(batchTotal > 0 and batchDone / batchTotal or 0)
         return
     elseif batch and batchTotal > 0 and UI.completedBatch ~= batch then

@@ -44,8 +44,8 @@ class SchedulerTests(unittest.TestCase):
         D.verify('i:30',function() second=second+1;order[#order+1]='second' end)
         assert(D.pending('c:10') and D.pending('i:30') and not D.search)
         throttleReady=true;run(0.1);assert(D.search.key=='c:10');answer()
-        run(0.5);assert(not D.search,'keep one-second pacing')
-        run(0.6);assert(D.search.key=='i:30');answer()
+        assert(not D.search,'no burst: the next search waits a moment')
+        run(0.25);assert(D.search.key=='i:30');answer()
         assert(first==1 and second==1 and table.concat(order,',')=='first,second')''')
 
     def test_multiple_callbacks_share_one_active_manual_query(self):
@@ -105,14 +105,16 @@ class SchedulerTests(unittest.TestCase):
         assert(D.verify('c:10',function(d) assert(d and d.verified);replies=replies+1 end))
         assert(replies==1 and not D.search and D.get('c:10').verified)''')
 
-    def test_manual_requests_wait_for_full_scan_and_purchase_operation(self):
+    def test_manual_requests_go_during_a_full_scan_but_wait_for_a_purchase(self):
         run(SETUP + '''local D,T=ForeverFlip.Deals,ForeverFlip.Trade
-        assert(ForeverFlip.Scan.start());T.checkPrice('i:30')
-        assert(not D.search and D.pending('i:30'))
-        fire('REPLICATE_ITEM_LIST_UPDATE');T.op={state='quote',at=now}
-        run(1);assert(not D.search and D.pending('i:30'))
-        T.op=nil;run(0.1);assert(D.search.key=='i:30');answer()
-        assert(T.prices['i:30'])''')
+        assert(ForeverFlip.Scan.start());T.checkPrice('c:10',function() end,true)
+        assert(not D.search and D.pending('c:10'),'Check all waits for the scan')
+        T.checkPrice('i:30');assert(D.search and D.search.key=='i:30','a click goes during the scan');answer()
+        assert(T.prices['i:30'])
+        T.op={state='quote',at=now};T.checkPrice('i:30')
+        run(1);assert(not (D.search and D.search.key=='i:30') and D.pending('i:30'),'waits for the purchase')
+        T.op=nil;for _=1,30 do if D.search and D.search.key=='i:30' then break end;if D.search then answer() end;run(0.1) end
+        assert(D.search and D.search.key=='i:30')''')
 
     def test_fresh_selected_deal_keeps_buy_available_for_a_moment(self):
         run(SETUP + '''fullScan();local D,T=ForeverFlip.Deals,ForeverFlip.Trade

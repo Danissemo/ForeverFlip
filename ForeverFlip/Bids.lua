@@ -1,4 +1,4 @@
--- Bids. Items (not commodities) can carry a bid. An auction that ends within 30 minutes and whose
+-- Bids. Items (not commodities) can carry a bid. An auction that ends within 2 hours and whose
 -- next bid is well below what the item is worth (the vendor price, or the usual auction price
 -- after the cut for an item that sells) is a bid candidate. The full scan finds candidates; an
 -- exact search reads the auction itself before a bid is placed with a click. A won auction is
@@ -36,13 +36,46 @@ function B.value(key, id, history)
     return value > 0 and value or nil
 end
 
--- Full scan row with a bid ending soon (time band 0 = under 30 minutes).
+-- Full scan row with a bid ending soon: time band 0 = under 30 minutes, 1 = up to 2 hours (only
+-- 30 minutes left every candidate of a scan gone half an hour later, and the page stayed empty).
+-- `ends` is the latest time the auction can end.
+B.BAND_END = { [0] = 1800, [1] = 7200 }
 function B.consider(j, key, kind, r)
-    if kind == "commodity" or r.band ~= 0 or (r.minBid or 0) <= 0 then
+    local left = B.BAND_END[r.band]
+    if kind == "commodity" or not left or (r.minBid or 0) <= 0 then
         return
     end
     j.bids = j.bids or {}
-    j.bids[#j.bids + 1] = { key = key, id = r.id, kind = kind, bid = r.minBid, count = math.max(1, r.count or 1) }
+    j.bids[#j.bids + 1] = {
+        key = key,
+        id = r.id,
+        kind = kind,
+        bid = r.minBid,
+        count = math.max(1, r.count or 1),
+        band = r.band,
+        ends = F.Engine.clock() + left,
+    }
+end
+
+-- The candidates of the last scan of this auction house whose auctions can still be running, kept
+-- in the saved data so a /reload keeps them.
+function B.current()
+    local scope = F.Engine.scope()
+    if #B.candidates == 0 and B.scope ~= scope then
+        local saved = F.db.bidCandidates and F.db.bidCandidates[scope]
+        B.candidates = type(saved) == "table" and type(saved.list) == "table" and saved.list or {}
+        B.at, B.scope = type(saved) == "table" and saved.at or nil, scope
+    end
+    local now, live = F.Engine.clock(), {}
+    for _, c in ipairs(B.candidates) do
+        if not c.ends or c.ends > now then
+            live[#live + 1] = c
+        end
+    end
+    if #live < #B.candidates then
+        B.candidates = live
+    end
+    return B.candidates
 end
 
 -- End of a scan: candidates with enough profit, best first.
@@ -68,7 +101,9 @@ function B.finish(j, history)
     for i = #out, B.MAX + 1, -1 do
         out[i] = nil
     end
-    B.candidates, B.at = out, F.Engine.clock()
+    B.candidates, B.at, B.scope = out, F.Engine.clock(), j.scope
+    F.db.bidCandidates = type(F.db.bidCandidates) == "table" and F.db.bidCandidates or {}
+    F.db.bidCandidates[j.scope] = { at = B.at, list = out }
     F.Engine.changed()
 end
 

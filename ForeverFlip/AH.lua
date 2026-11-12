@@ -441,6 +441,107 @@ function A.foreignRecent()
     return A.foreignAt ~= nil and F.Engine.clock() - A.foreignAt < A.FOREIGN_WAIT
 end
 
+-- Item-key versions, learned from every browse answer (ours, the game's Buy tab, other addons) and
+-- kept between sessions: F.db.itemKeys[id] = { at = time, list = { { l = level, s = suffix,
+-- n = lower-case name or nil }, ... } }. A check of gear then searches its versions straight away
+-- (one search per version of the ending) instead of a browse by name first and every version of
+-- every ending after it: a gear check took 17 searches for an item listed in 16 endings, and the
+-- browse filled the game's own Buy tab with that item (seen in game). As Auctionator does, the
+-- item-key info is in the client's cache before a version is searched.
+A.KEYS_FRESH = 6 * 3600
+A.KEYS_MAX = 60
+function A.learnKeys()
+    if not F.db then
+        return
+    end
+    local ok, results = pcall(AH.GetBrowseResults)
+    if not ok or type(results) ~= "table" then
+        return
+    end
+    F.db.itemKeys = type(F.db.itemKeys) == "table" and F.db.itemKeys or {}
+    local now = F.Engine.clock()
+    for _, r in ipairs(results) do
+        local k = type(r) == "table" and r.itemKey
+        local id = type(k) == "table" and k.itemID
+        if id and A.kindOf(id) == "gear" then
+            local e = F.db.itemKeys[id]
+            if type(e) ~= "table" or type(e.list) ~= "table" then
+                e = { list = {} }
+                F.db.itemKeys[id] = e
+            end
+            e.at = now
+            local info = select(2, pcall(AH.GetItemKeyInfo, k))
+            local name = type(info) == "table" and type(info.itemName) == "string" and string.lower(info.itemName)
+                or nil
+            local level, suffix, found = k.itemLevel or 0, k.itemSuffix or 0, false
+            for _, v in ipairs(e.list) do
+                if v.l == level and v.s == suffix then
+                    v.n, found = name or v.n, true
+                    break
+                end
+            end
+            if not found and #e.list < A.KEYS_MAX then
+                e.list[#e.list + 1] = { l = level, s = suffix, n = name }
+            end
+        end
+    end
+end
+
+-- The versions to search for `item` (gear: those named like its ending when the names are known,
+-- else every version of the item), or nil when none were learned lately: a browse then.
+function A.cachedKeys(item)
+    local all = F.db and type(F.db.itemKeys) == "table" and F.db.itemKeys[item.id]
+    if type(all) ~= "table" or type(all.list) ~= "table" or #all.list == 0 then
+        return nil
+    end
+    if F.Engine.clock() - (all.at or 0) > A.KEYS_FRESH then
+        return nil
+    end
+    local exact, every = {}, {}
+    for _, v in ipairs(all.list) do
+        local key = { itemID = item.id, itemLevel = v.l or 0, itemSuffix = v.s or 0, battlePetSpeciesID = 0 }
+        every[#every + 1] = key
+        if item.name and v.n == item.name then
+            exact[#exact + 1] = key
+        end
+    end
+    return #exact > 0 and exact or every
+end
+
+function A.forgetKeys(id)
+    if F.db and type(F.db.itemKeys) == "table" then
+        F.db.itemKeys[id] = nil
+    end
+end
+
+-- The client knows the item's auction house data: a search of it is answered. Without it the
+-- server often ignores the search (Auctionator waits for it too); the data is asked for.
+function A.keyInfoReady(item)
+    local ok, info = pcall(AH.GetItemKeyInfo, plainKey(item.id))
+    if ok and type(info) == "table" then
+        return true
+    end
+    A.requestItem(item.id)
+    return false
+end
+
+-- The game's own Buy, Sell or Auctions page is shown: the player works there, and a search sent
+-- now would replace what that page shows. Background searches wait meanwhile.
+local NATIVE = { "BrowseResultsFrame", "ItemBuyFrame", "CommoditiesBuyFrame", "ItemSellFrame", "CommoditiesSellFrame" }
+function A.nativeShown()
+    local f = AuctionHouseFrame
+    if not f or not f.IsShown or not f:IsShown() then
+        return false
+    end
+    for _, name in ipairs(NATIVE) do
+        local page = rawget(f, name)
+        if type(page) == "table" and page.IsShown and page:IsShown() then
+            return true
+        end
+    end
+    return false
+end
+
 -- The item-key versions of `id` in the browse results so far.
 function A.gearKeys(id)
     local out = {}

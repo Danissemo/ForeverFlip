@@ -77,7 +77,9 @@ class AddonCaptureTests(unittest.TestCase):
 
     def test_nothing_is_kept_with_the_setting_off(self):
         lua = runtime()
-        lua.execute(SETUP + '''fullScan()''')
+        lua.execute(SETUP + '''assert(ForeverFlip.db.settings.rawScans, 'kept for the helper by default')
+        ForeverFlip.db.settings.rawScans = false
+        fullScan()''')
         self.assertIsNone(lua.eval('ForeverFlipRaw'))
 
 

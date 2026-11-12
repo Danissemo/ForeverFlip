@@ -58,7 +58,7 @@ class TableTests(unittest.TestCase):
         a.cost=5;UI.refresh();assert(keys()=='c:20,c:30,c:10')
         ''')
 
-    def test_sort_happens_before_pagination_and_ties_stay_deterministic(self):
+    def test_sort_happens_before_scrolling_and_ties_stay_deterministic(self):
         runtime().execute(DEALS + '''
         D.list={}
         for id=39,10,-1 do
@@ -68,12 +68,12 @@ class TableTests(unittest.TestCase):
         UI.refreshDeals();local seen={}
         for page=1,3 do
             for _,r in ipairs(UI.dealTable.rows) do
-                if r:IsShown() then assert(not seen[r.key]);seen[r.key]=true end
+                if r:IsShown() then seen[r.key]=true end -- the last screen may overlap the one before
             end
-            if page<3 then assert(UI.next:IsEnabled());UI.next:Click() end
+            if page<3 then assert(UI.dealTable.bar:IsShown());UI.dealTable.offset=UI.dealTable.offset+13;UI.refresh() end
         end
         local count=0;for _ in pairs(seen) do count=count+1 end;assert(count==30)
-        click('Buy at');assert(UI.dealPage==1 and UI.dealTable.rows[1].key=='c:10')
+        click('Buy at');assert(UI.dealTable.offset==0 and UI.dealTable.rows[1].key=='c:10','a new sort starts at the top')
         click('Buy at');assert(UI.dealTable.rows[1].key=='c:39')
         click('Profit');assert(UI.dealTable.rows[1].key=='c:10')
         click('Profit');assert(UI.dealTable.rows[1].key=='c:10')
@@ -103,6 +103,8 @@ class SniperControlTests(unittest.TestCase):
         runtime().execute('''
         local F,UI=ForeverFlip,ForeverFlip.UI
         assert(type(UI.sniperButton)=='table','missing top sniper toggle')
+        assert(not F.db.settings.sniper,'a new player has no sniper running')
+        F.Deals.setSniper(true);UI.refresh()
         assert(UI.sniperButton:GetText()=='Sniper: ON' and UI.sniperBox:GetChecked())
         UI.sniperButton:Click()
         assert(not F.db.settings.sniper and not UI.sniperBox:GetChecked())
