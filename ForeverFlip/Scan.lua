@@ -468,6 +468,10 @@ local function finish(j, done)
         if h and M.saleability(h, value, now).known then
             stats.salesReady = (stats.salesReady or 0) + 1
         end
+        -- Sales measured from one pair of scans only: resale buys at most 2 of them until a second.
+        if h and type(h.sales) == "table" and (h.sales.pairs or 0) == 1 then
+            stats.onePair = (stats.onePair or 0) + 1
+        end
         if deal then
             deals[#deals + 1] = deal
         elseif reason == "collecting" then

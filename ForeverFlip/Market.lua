@@ -939,18 +939,22 @@ function M.evaluate(rows, ctx)
             local roi = profit / cost
             -- One pair of scans (15 minutes) is a thin sample: at most 2 units until a second.
             local cap = math.max(1, math.floor(d.perDay))
-            if d.pairs < 2 then
-                cap = math.min(cap, 2)
+            local thin = false
+            if d.pairs < 2 and cap > 2 then
+                cap, thin = 2, true
             end
             -- No more units than were ever seen bought at the price: a day rate made of one or two
             -- purchases is no promise of more (seen in game: a few sales read as 20 a day).
             local seen = U.finite(d.sold) and math.floor(d.sold + 0.5) or nil
             if seen and seen < cap then
-                cap = math.max(1, seen)
+                cap, thin = math.max(1, seen), true
             end
             if d.perDay < 0.5 or qty + held > cap then
                 if reason ~= "small" then
-                    reason = held > 0 and d.perDay >= 0.5 and "enough_stock" or "not_selling"
+                    -- "thin": it sells, but too few purchases were seen yet to buy this many.
+                    reason = held > 0 and d.perDay >= 0.5 and "enough_stock"
+                        or (thin and d.perDay >= 0.5) and "thin"
+                        or "not_selling"
                 end
             elseif profit >= (s.minProfit or 100) and roi >= (s.minROI or 0.2) then
                 if not flip or profit > flip.profit then

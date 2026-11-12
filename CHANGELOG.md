@@ -36,6 +36,13 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- **An empty Resale page says why.** It lists what the last scan rejected its items for, the most
+  common first, with numbers: sales not measured yet, not bought at the resale price, too few
+  purchases seen yet to buy enough ("thin", a new reason apart from "not selling"), profit below
+  your minimum, over budget, a day of stock already held, ignored. While the sales data is being
+  collected (one pair of scans per item), it says so and when the next full scan comes. Budget,
+  item limit and minimum profit are always shown.
+
 - **My auctions** shows "Total on sale: ... (... pending)" centered above the buttons, as
   Auctionator's Cancelling tab does, in place of the "Check prices" hint. Pending is what sold and is
   on its way by mail.

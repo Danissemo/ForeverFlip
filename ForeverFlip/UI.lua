@@ -1287,6 +1287,76 @@ local function footer(page, height, font)
     return bar
 end
 
+-- Why the Resale page is empty: what the last scan rejected its items for, the most common first,
+-- each with what would change it.
+local NO_RESALE = {
+    thin = "%d sell, but too few purchases were seen yet to buy enough of them",
+    collecting = "%d have no sales measured yet (two full scans at least 5 minutes apart)",
+    not_selling = "%d are not bought at the price they would resell at",
+    small = "%d would earn less than your minimum (%s and %d%% return, Settings)",
+    budget = "%d cost more than your budget allows (%s; one item at most %s)",
+    enough_stock = "%d: you already hold a day of their sales",
+    blocked = "%d are on your ignore list",
+}
+function UI.noResaleText(stats)
+    stats = stats or {}
+    local s = F.db.settings
+    local lines = { L("No resale right now. Why, for the items of the last scan:") }
+    local order = {}
+    for reason, n in pairs(stats.reasons or {}) do
+        if NO_RESALE[reason] and n > 0 then
+            order[#order + 1] = { reason = reason, n = n }
+        end
+    end
+    table.sort(order, function(a, b)
+        return a.n > b.n
+    end)
+    for i = 1, math.min(5, #order) do
+        local r = order[i]
+        local line
+        if r.reason == "small" then
+            line = string.format(
+                L(NO_RESALE.small),
+                r.n,
+                U.money(s.minProfit or 100),
+                math.floor((s.minROI or 0.2) * 100 + 0.5)
+            )
+        elseif r.reason == "budget" then
+            line = string.format(
+                L(NO_RESALE.budget),
+                r.n,
+                U.money(F.Deals.budget()),
+                U.money(math.floor(F.Engine.wallet() * (s.itemShare or 0.3)))
+            )
+        else
+            line = string.format(L(NO_RESALE[r.reason]), r.n)
+        end
+        lines[#lines + 1] = "- " .. line
+    end
+    if not order[1] then
+        lines[#lines + 1] = "- " .. L("no item has a price gap to resell into")
+    end
+    lines[#lines + 1] = string.format(
+        L("Budget: %s; one item at most %s; minimum profit %s."),
+        U.money(F.Deals.budget()),
+        U.money(math.floor(F.Engine.wallet() * (s.itemShare or 0.3))),
+        U.money(s.minProfit or 100)
+    )
+    local onePair = stats.onePair or 0
+    if onePair > 0 and onePair * 2 >= (stats.salesReady or 0) then
+        local cooldown = F.Scan.cooldown and F.Scan.cooldown() or 0
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = string.format(
+            L(
+                "Sales data is being collected: %d items were measured over one pair of scans, and resale buys at most 2 of each until a second pair. The next full scan (%s) adds it."
+            ),
+            onePair,
+            cooldown > 0 and string.format(L("in %d:%02d"), math.floor(cooldown / 60), cooldown % 60) or L("now")
+        )
+    end
+    return table.concat(lines, "\n")
+end
+
 -- Deals page -------------------------------------------------------------------------------------
 local DEAL_ROWS = 13
 function UI.createDeals(p)
@@ -1715,16 +1785,7 @@ function UI.refreshDeals()
                 )
             )
         elseif UI.filter == "flip" then
-            empty:SetText(
-                string.format(
-                    L(
-                        "No resale meets the current prices, sales data and spending limits.\nBudget: %s; item limit: %s. Sales data: %d items.\nWhole lots that disappeared need a later scan to rule out reposting."
-                    ),
-                    U.money(F.Deals.budget()),
-                    U.money(math.floor(F.Engine.wallet() * (F.db.settings.itemShare or 0.3))),
-                    F.Scan.last.stats.salesReady or 0
-                )
-            )
+            empty:SetText(UI.noResaleText(F.Scan.last.stats))
         else
             empty:SetText(
                 L(

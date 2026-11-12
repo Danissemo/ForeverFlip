@@ -152,3 +152,25 @@ class AuctionTotalTests(unittest.TestCase):
         local line = UI.auctionTotal:GetText():gsub('|c%x%x%x%x%x%x%x%x', ''):gsub('|r', '')
         assert(line:find('Total on sale: 1g 84s') and line:find('6s 0c pending'), line)
         assert(not UI.auctionText:GetText():find('Check prices'), UI.auctionText:GetText())''')
+
+
+class NoResaleReasonTests(unittest.TestCase):
+    def test_the_empty_resale_page_names_the_reasons(self):
+        run(SETUP + '''local F, UI = ForeverFlip, ForeverFlip.UI
+        local text = UI.noResaleText({ salesReady = 100, onePair = 90,
+            reasons = { thin = 40, small = 12, not_selling = 300, no_gap = 5000 } })
+        assert(text:find('300 are not bought'), text)
+        assert(text:find('40 sell, but too few purchases'), text)
+        assert(text:find('12 would earn less than your minimum'), text)
+        assert(text:find('90 items were measured over one pair'), text)
+        local first = text:find('300 are not bought'); local second = text:find('40 sell')
+        assert(first < second, 'most common first')''')
+
+    def test_one_scan_pair_reports_thin_not_unsold(self):
+        run(SETUP + '''local M = ForeverFlip.Market
+        local h = {}
+        M.recordSales(h, { [7700] = 40 }, 900, now)
+        local ctx = { kind = 'commodity', vendor = 10, budget = 10000000, history = h, market = 7800, now = now,
+            settings = { minProfit = 1, minROI = 0.01 } }
+        local d, why = M.evaluate({ { unit = 900, qty = 5 }, { unit = 7800, qty = 16 } }, ctx)
+        assert(not d and why == 'thin', tostring(why))''')
