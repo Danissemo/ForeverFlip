@@ -1074,7 +1074,7 @@ function UI.createDeals(p)
             { "Sells at", 80 },
             { "Profit", 80 },
             { "Est./day", 74 },
-            { "Status", 80, "LEFT" },
+            { "Status", 100, "LEFT" },
         },
         DEAL_ROWS,
         function(row)
@@ -1412,7 +1412,7 @@ function UI.refreshDeals()
         string.format(L("Page %d / %d · deals: %d"), UI.dealPage, pages, #list)
             .. (
                 #list > 0
-                    and ("  ·  " .. string.format(L("all: cost %s, profit %s"), U.money(cost), U.money(profit)))
+                    and (L("  ·  ") .. string.format(L("all: cost %s, profit %s"), U.money(cost), U.money(profit)))
                 or ""
             )
     )
@@ -4882,7 +4882,9 @@ function UI.merchant(open)
                     .. L("Vendor")
                     .. "|r "
                     .. U.money(o.unit)
-                    .. "  |cff808080·|r  |cffb0b0b0"
+                    .. "  |cff808080"
+                    .. L("·")
+                    .. "|r  |cffb0b0b0"
                     .. L("AH")
                     .. "|r "
                     .. U.money(o.exit)
@@ -4892,7 +4894,9 @@ function UI.merchant(open)
                     .. U.money(math.floor(o.each))
                     .. "|r |cffb0b0b0"
                     .. L("each")
-                    .. "|r  |cff808080·|r  "
+                    .. "|r  |cff808080"
+                    .. L("·")
+                    .. "|r  "
                     .. string.format("~%.1f/%s", o.perDay, L("day"))
             )
             row.cost:SetText(L("Cost") .. ": " .. U.money(math.ceil(o.unit * o.qty)))
