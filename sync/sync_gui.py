@@ -11,6 +11,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import filedialog, messagebox, ttk
 
+import addon_update
 import github_login
 from game_location import AmbiguousGame, GameNotFound, normalize_game
 
@@ -27,19 +28,25 @@ class SyncWindow:
         self.account = None  # (login, source) once signed in to GitHub
         self.login_running = self.login_cancel = False
         self.account_text = tk.StringVar(value='Checking the GitHub sign-in...')
+        self.updating = False
+        self.next_update = 0.0
+        self.addon_release = None  # a newer release found and not installed
+        self.addon_text = tk.StringVar(value='Addon: checking for updates...')
+        self.update_auto = tk.BooleanVar(value=config.get('update_addon', True))
+        self.beta = tk.BooleanVar(value=config.get('beta', False))
         self.auto = tk.BooleanVar(value=not args.paused and config.get('automatic', True))
         self.share = tk.BooleanVar(value=not args.download_only and (args.upload or bool(config.get('upload', False))))
         self.status = tk.StringVar(value='Finding your Forever installation...')
         self.last_sync = tk.StringVar(value='Not synced yet')
         self.path = tk.StringVar()
         root.title('ForeverFlip Sync')
-        root.geometry('720x500')
-        root.minsize(620, 420)
+        root.geometry('760x560')
+        root.minsize(660, 480)
         root.protocol('WM_DELETE_WINDOW', self.close)
         main = ttk.Frame(root, padding=20)
         main.pack(fill='both', expand=True)
         main.columnconfigure(0, weight=1)
-        main.rowconfigure(8, weight=1)
+        main.rowconfigure(9, weight=1)
         ttk.Label(main, text='ForeverFlip Sync', font=('Segoe UI', 19, 'bold')).grid(row=0, column=0, columnspan=2, sticky='w')
         ttk.Label(main, text='Auction scans and community prices, without moving files by hand.').grid(
             row=1, column=0, columnspan=2, sticky='w', pady=(2, 18))
@@ -59,8 +66,18 @@ class SyncWindow:
         self.login_button.pack(side='right')
         ttk.Label(modes, textvariable=self.account_text).pack(side='right', padx=(0, 10))
         self.refresh_share_state()
+        addon = ttk.Frame(main)
+        addon.grid(row=5, column=0, columnspan=2, sticky='ew', pady=(10, 0))
+        ttk.Label(addon, textvariable=self.addon_text).pack(side='left')
+        self.update_button = ttk.Button(addon, text='Update now', command=lambda: self.start_update(install=True))
+        self.update_button.pack(side='right')
+        self.update_button.state(['disabled'])
+        ttk.Checkbutton(addon, text='Beta tester', variable=self.beta, command=self.addon_options_changed).pack(
+            side='right', padx=(0, 12))
+        ttk.Checkbutton(addon, text='Update automatically', variable=self.update_auto,
+                        command=self.addon_options_changed).pack(side='right', padx=(0, 12))
         controls = ttk.Frame(main)
-        controls.grid(row=5, column=0, columnspan=2, sticky='ew', pady=(16, 8))
+        controls.grid(row=6, column=0, columnspan=2, sticky='ew', pady=(16, 8))
         controls.columnconfigure(0, weight=1)
         ttk.Label(controls, textvariable=self.status, font=('Segoe UI', 10, 'bold'), wraplength=490).grid(row=0, column=0, sticky='w')
         ttk.Label(controls, textvariable=self.last_sync).grid(row=1, column=0, sticky='w', pady=(4, 0))
@@ -68,12 +85,12 @@ class SyncWindow:
         self.sync_button.grid(row=0, column=1, rowspan=2, sticky='e', padx=(12, 0))
         self.sync_button.state(['disabled'])
         self.progress = ttk.Progressbar(main, mode='indeterminate')
-        self.progress.grid(row=6, column=0, columnspan=2, sticky='ew', pady=(0, 10))
+        self.progress.grid(row=7, column=0, columnspan=2, sticky='ew', pady=(0, 10))
         ttk.Label(main, text='In game: /reload saves new scans and applies updated prices.\n'
                   'Enable full-scan saving in Settings > Sharing to contribute. Restart the game after the first community-addon install.',
-                  wraplength=660).grid(row=7, column=0, columnspan=2, sticky='w', pady=(0, 12))
+                  wraplength=700).grid(row=8, column=0, columnspan=2, sticky='w', pady=(0, 12))
         log_frame = ttk.Frame(main)
-        log_frame.grid(row=8, column=0, columnspan=2, sticky='nsew')
+        log_frame.grid(row=9, column=0, columnspan=2, sticky='nsew')
         self.output = tk.Text(log_frame, height=9, wrap='word', state='disabled', font=('Consolas', 9), relief='flat')
         scroll = ttk.Scrollbar(log_frame, command=self.output.yview)
         self.output.configure(yscrollcommand=scroll.set)
@@ -96,6 +113,50 @@ class SyncWindow:
         else:
             self.progress.stop()
             self.progress['value'] = 0
+
+    # --- Addon updates ----------------------------------------------------------------------------
+
+    def addon_options_changed(self):
+        self.config['update_addon'], self.config['beta'] = self.update_auto.get(), self.beta.get()
+        try:
+            self.core.save_json(self.folder/'config.json', self.config)
+        except OSError as error:
+            self.status.set(f'Could not save options: {error}')
+        self.next_update = 0.0  # look again at once: the beta choice changes what is offered
+
+    def start_update(self, install=None):
+        """Looks for a newer release; installs it when asked or when updates are automatic."""
+        if self.updating or not self.game or self.closing:
+            return
+        self.updating = True
+        self.next_update = time.monotonic() + self.core.UPDATE_EVERY
+        self.update_button.state(['disabled'])
+        game, config = self.game, dict(self.config)
+        if install and self.addon_release:
+            self.addon_text.set(f'Addon: installing {self.addon_release["version"]}...')
+
+        def work():
+            try:
+                self.events.put(('addon', self.core.addon_pass(game, config, install=install)))
+            except Exception as error:
+                self.events.put(('addon_error', self.core.describe(error)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def show_addon(self, status):
+        installed = status.get('installed') or 'not installed'
+        release = status.get('release')
+        self.addon_release = None if status.get('development') else release
+        beta = ' (beta)' if addon_update.is_beta(installed) else ''
+        if status.get('result'):
+            restart = status['result']['restart']
+            self.addon_text.set(f'Addon {installed}{beta}: updated — ' + ('restart the game' if restart else '/reload in game'))
+        elif release and status.get('development'):
+            self.addon_text.set(f'Addon {installed}: development copy ({release["version"]} is out)')
+        elif release:
+            self.addon_text.set(f'Addon {installed}{beta}: {release["version"]}{" (beta)" if release["beta"] else ""} available')
+        else:
+            self.addon_text.set(f'Addon {installed}{beta}: up to date')
+        self.update_button.state(['!disabled'] if self.addon_release else ['disabled'])
 
     # --- GitHub sign-in ---------------------------------------------------------------------------
 
@@ -258,6 +319,14 @@ class SyncWindow:
                 self.status.set(str(value))
                 if isinstance(value, AmbiguousGame):
                     self.locations.configure(values=[str(p) for p in value.candidates])
+            elif kind == 'addon':
+                self.updating = False
+                self.show_addon(value)
+            elif kind == 'addon_error':
+                self.updating = False
+                self.addon_text.set('Addon: could not check for updates')
+                self.core.log(f'Addon update: {value}.')
+                self.update_button.state(['!disabled'] if self.addon_release else ['disabled'])
             elif kind == 'account':
                 self.account = value
                 self.refresh_share_state()
@@ -299,6 +368,8 @@ class SyncWindow:
                 if self.closing:
                     self.root.destroy()
                     return
+        if not self.updating and not self.closing and self.game and time.monotonic() >= self.next_update:
+            self.start_update()
         if not self.busy and not self.closing and self.auto.get() and self.game and time.monotonic() >= self.next_check:
             self.next_check = time.monotonic() + 5
             try:

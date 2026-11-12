@@ -12,6 +12,8 @@ The game gives addons no network access, so this small program runs next to the 
    Sharing needs a GitHub sign-in: the window's "Sign in with GitHub" button (or --login).
 2. Download. The community summaries of your realms are downloaded and written into the
    ForeverFlip_Shared addon, which ForeverFlip reads at the next /reload or login. No account needed.
+3. Addon updates. New ForeverFlip releases are installed (or only announced) from GitHub; beta
+   testers also get the pre-releases. See addon_update.py.
 
 Usage:
     python foreverflip_sync.py                 # desktop window on Windows
@@ -47,9 +49,12 @@ import ffscan  # noqa: E402
 from ffscan import scope_file  # noqa: E402
 from game_location import locate_game, GameNotFound, AmbiguousGame  # noqa: E402
 import github_login  # noqa: E402
+import addon_update  # noqa: E402
 
 VERSION = "1.2.0"
 DEFAULT_REPO = "Danissemo/ForeverFlip-Data"
+ADDON_REPO = "Danissemo/ForeverFlip"
+UPDATE_EVERY = 6 * 3600  # how often new addon releases are looked for
 API = "https://api.github.com"
 RAW_URL = "https://raw.githubusercontent.com/{repo}/main/shared/{file}"
 LOG_SINK = None
@@ -300,6 +305,52 @@ def download_shared(game: pathlib.Path, repo: str, uploaded: list[str] | None = 
     return len(texts)
 
 
+# --- Addon updates ---------------------------------------------------------------------------------
+
+def addon_settings(config: dict) -> tuple[bool, bool]:
+    """(install updates automatically, beta tester)."""
+    return bool(config.get("update_addon", True)), bool(config.get("beta", False))
+
+
+def check_addon(game: pathlib.Path, config: dict) -> dict:
+    """{installed, release (the newer release or None), development (a checkout, never replaced)}."""
+    _, beta = addon_settings(config)
+    releases = addon_update.fetch_releases(config.get("addon_repo") or ADDON_REPO, f"ForeverFlipSync/{VERSION}")
+    installed = addon_update.installed_version(game)
+    return {"installed": installed, "release": addon_update.newer(installed, releases, beta),
+            "development": addon_update.is_development_copy(game), "beta": beta}
+
+
+def update_addon(game: pathlib.Path, release: dict) -> dict:
+    """Installs `release`; returns what addon_update.install returns."""
+    if addon_update.is_development_copy(game):
+        raise addon_update.UpdateError("the installed addon is a development copy; it is not replaced")
+    result = addon_update.install(game, release, config_dir() / "addon-backups", f"ForeverFlipSync/{VERSION}")
+    when = "restart the game (files were added or removed)" if result["restart"] else "use /reload in game"
+    log(f"ForeverFlip updated from {result['previous'] or 'nothing'} to {result['version']}"
+        f"{' (beta)' if release.get('beta') else ''}: {when}. The previous version is kept in "
+        f"{config_dir() / 'addon-backups'}.")
+    return result
+
+
+def addon_pass(game: pathlib.Path, config: dict, install: bool | None = None) -> dict | None:
+    """Looks for a newer release and installs it when updates are automatic (or `install`)."""
+    automatic, _ = addon_settings(config)
+    status = check_addon(game, config)
+    release = status["release"]
+    if release is None:
+        return status
+    if status["development"]:
+        log(f"ForeverFlip {release['version']} is out; this installation is a development copy and is left alone.")
+        return status
+    if automatic if install is None else install:
+        status["result"] = update_addon(game, release)
+        status["installed"], status["release"] = release["version"], None
+    else:
+        log(f"ForeverFlip {release['version']}{' (beta)' if release['beta'] else ''} is available: {release['page']}")
+    return status
+
+
 # --- Main loop -------------------------------------------------------------------------------------
 
 class SyncError(RuntimeError):
@@ -414,6 +465,9 @@ def arguments(argv=None):
     mode.add_argument("--gui", action="store_true", help="open the desktop window")
     mode.add_argument("--console", action="store_true", help="use console mode")
     parser.add_argument("--paused", action="store_true", help="open the window with automatic sync paused")
+    parser.add_argument("--update-addon", action="store_true", help="install a newer ForeverFlip release, then exit")
+    parser.add_argument("--beta", action="store_true", help="be a beta tester: include pre-releases (remembered)")
+    parser.add_argument("--no-beta", action="store_true", help="stop getting pre-releases (remembered)")
     account = parser.add_mutually_exclusive_group()
     account.add_argument("--login", action="store_true", help="sign in to GitHub (device code), then exit")
     account.add_argument("--logout", action="store_true", help="forget the GitHub sign-in, then exit")
@@ -457,8 +511,22 @@ def main(argv=None) -> int:
     config = load_json(folder / "config.json", {})
     if not isinstance(config, dict):
         config = {}
+    if args.beta or args.no_beta:
+        config["beta"] = bool(args.beta)
+        save_json(folder / "config.json", config)
     if args.login:
         return console_login(config)
+    if args.update_addon:
+        try:
+            game = find_game(args.game or os.environ.get("FF_GAME") or config.get("game"))
+            status = addon_pass(game, config, install=True)
+        except (GameNotFound, AmbiguousGame, addon_update.UpdateError, urllib.error.URLError, OSError, ValueError) as exc:
+            log(f"Addon update: {describe(exc)}.")
+            return 1
+        if not status.get("result") and status.get("release") is None:
+            log(f"ForeverFlip {status['installed'] or '(not installed)'} is the newest"
+                f"{' (beta releases included)' if status['beta'] else ''}.")
+        return 0
     if args.logout:
         github_login.forget(folder)
         log("Signed out: the helper's GitHub sign-in was removed. To revoke it on GitHub too, see "
@@ -484,8 +552,15 @@ def main(argv=None) -> int:
     token = find_token(config) if upload else None
     session = SyncSession(game, repo, state, state_path, token, upload, config)
     log(f"ForeverFlip Sync {VERSION}: {game}; {'sharing and downloads' if token else 'downloads only'}.")
+    next_update = 0.0
     while True:
         failed = False
+        if not args.once and time.monotonic() >= next_update:
+            next_update = time.monotonic() + UPDATE_EVERY
+            try:
+                addon_pass(game, config)
+            except (addon_update.UpdateError, urllib.error.URLError, OSError, ValueError) as exc:
+                log(f"Addon update: {describe(exc)}.")
         try:
             if args.once or session.due():
                 session.sync(force=args.once)
@@ -499,10 +574,10 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     # The packaged GUI has no console. Explicit command-line runs may attach to their terminal.
-    if os.name == 'nt' and sys.stdout is None and any(a in sys.argv for a in ('--console', '--once', '--help', '--login', '--logout')):
+    if os.name == 'nt' and sys.stdout is None and any(a in sys.argv for a in ('--console', '--once', '--help', '--login', '--logout', '--update-addon')):
         import ctypes
         attached = ctypes.windll.kernel32.AttachConsole(-1)
-        if not attached and ('--console' in sys.argv or '--login' in sys.argv):
+        if not attached and any(a in sys.argv for a in ('--console', '--login', '--update-addon')):
             attached = ctypes.windll.kernel32.AllocConsole()
         if attached:
             sys.stdout = open('CONOUT$', 'w', encoding='utf-8', buffering=1)

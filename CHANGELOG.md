@@ -24,6 +24,12 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- **Addon updates and beta testing in the Sync helper.** The helper looks for new ForeverFlip
+  releases at start and every 6 hours and installs them (or only announces them, if automatic
+  updates are off). **Beta tester** adds the pre-releases; leaving the beta never downgrades. Each
+  download is checked against GitHub's SHA-256 and the TOC version, the previous version is kept as
+  a zip backup, and a failed swap puts it back. `--update-addon`, `--beta` and `--no-beta` do the
+  same from a console.
 - **Sign in with GitHub inside the Sync helper.** The window's button (or `--login`) shows a code
   to enter at github.com/login/device; the GitHub CLI is no longer needed. The sign-in is kept
   encrypted for the Windows user, and **Sign out** (`--logout`) removes it. Sharing scans is

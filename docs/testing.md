@@ -214,8 +214,10 @@ for existing work before starting a full scan. `test_foreground.py`, `test_optim
 
 Beta releases (`vX.Y.Z-beta.N`, marked **Pre-release** on the
 [releases page](https://github.com/Danissemo/ForeverFlip/releases)) are for players who want to help
-test before a release. Install one like a normal release (replace the `ForeverFlip` folder; your saved
-data is kept), restart the game, and go through the [current beta checklist](#current-beta-checklist).
+test before a release. The simplest way is **Beta tester** in the
+[ForeverFlip Sync helper](community.md#addon-updates-and-beta-testing): it installs each new beta by
+itself. By hand, install one like a normal release (replace the `ForeverFlip` folder; your saved
+data is kept). Then restart the game and go through the [current beta checklist](#current-beta-checklist).
 For beta.4, check every row against the installed `1.2.0-beta.4` build. The broader in-game list
 above remains the regression checklist; old observations are not new acceptance results.
 

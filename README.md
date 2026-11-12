@@ -101,7 +101,9 @@
 > [Beta testing](docs/testing.md#beta-testing).
 
 > [!TIP]
-> To update, replace the `ForeverFlip` folder. Your data lives in
+> To update, replace the `ForeverFlip` folder, or let the
+> [ForeverFlip Sync helper](docs/community.md#addon-updates-and-beta-testing) do it: it installs new
+> releases by itself, and new betas too if you tick **Beta tester**. Your data lives in
 > `WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua` and is kept.
 
 | Requirement | |

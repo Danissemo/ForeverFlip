@@ -46,6 +46,27 @@ pending uploads about once a minute. A failed attempt keeps unsent scans and ret
 seconds. File changes made during a transfer are processed on the next pass. The window stays
 responsive while parsing and network work run in the background.
 
+### Addon updates and beta testing
+
+The helper also keeps the ForeverFlip addon up to date from the
+[releases](https://github.com/Danissemo/ForeverFlip/releases). The **Addon** line of the window shows
+the installed version and whether a newer one is out.
+
+- **Update automatically** (on by default): a newer release is installed as soon as it is found, at
+  start and every 6 hours. Off, the helper only announces it, and **Update now** installs it.
+- **Beta tester** (off by default): pre-releases (`1.2.0-beta.4`) are offered too. Betas bring new
+  features first and may have rough edges; see [Beta testing](testing.md#beta-testing) for what to
+  check and how to report. Ticking it looks for a beta at once. Unticking it never downgrades: you
+  keep the beta until a release newer than it comes out.
+
+Before installing, the helper checks the download against the SHA-256 GitHub publishes for it,
+that the archive holds only the `ForeverFlip` folder, and that its TOC has the release's version.
+The installed folder is replaced in one step and kept as a zip in
+`%APPDATA%\ForeverFlipSync\addon-backups` (the last two versions); if the swap fails, the old
+folder is put back. Your saved data (`WTF/.../SavedVariables`) is never touched. After an update,
+type `/reload` in game, or restart the game when the helper says that files were added or removed.
+A folder that is a developer's checkout (a link or a `.git` folder inside) is never replaced.
+
 ### Contributing your scans
 
 1. In game: **Settings → Sharing → Keep my full scans for the ForeverFlip Sync helper**. Up to
@@ -84,6 +105,8 @@ remembered and applies to command-line runs too, unless an explicit command-line
 | `--download-only` | Never upload, regardless of the saved sharing setting |
 | `--upload` | Enable sharing explicitly for this run |
 | `--paused` | Open the window with automatic sync paused |
+| `--update-addon` | Install a newer ForeverFlip release (if any), then exit |
+| `--beta` / `--no-beta` | Become a beta tester or stop (remembered; with `--update-addon` it applies at once) |
 | `--login` | Sign in to GitHub with a device code, then exit |
 | `--logout` | Remove the helper's GitHub sign-in, then exit |
 | `--game <path>` | Forever client folder, parent installation folder, executable or addon subfolder |
@@ -171,5 +194,6 @@ layers make a changed scan useless instead.
 | `sync/sync_gui.py` | Desktop window and background worker |
 | `tools/build_sync_helper.py` | Windows executable packaging and frozen-runtime verification |
 | `sync/aggregate.py` | The aggregator, run by the data repository's workflow on every upload issue and every 30 minutes |
+| `sync/addon_update.py` | Addon updates from the GitHub releases: version order, beta channel, checks, install with backup |
 | `sync/github_login.py` | Signing in to GitHub from the helper (device flow) and keeping the token encrypted |
 | `tests/test_sync.py` | Tests of all of the above, including the addon reading what Python writes |
