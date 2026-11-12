@@ -561,6 +561,13 @@ SLASH_FOREVERFLIP2 = "/foreverflip"
 SlashCmdList.FOREVERFLIP = function(msg)
     msg = string.lower(msg or "")
     local L = F.Locale.text
+    if msg == "look" then
+        -- The auction house's own category button, layer by layer, against ForeverFlip's.
+        for _, line in ipairs(F.UI.lookReport()) do
+            print("ForeverFlip look: " .. line)
+        end
+        return
+    end
     if msg == "diag" then
         local last = F.Scan.last
         if not last then

@@ -461,3 +461,10 @@ class NativeLookTests(unittest.TestCase):
         local w, h = c:GetSize()
         assert(w == 140 and h == 22, 'the size of the buttons of the game')
         assert(UI.leftPanel.art:GetAtlas() == 'native-background' and UI.right.art:GetAtlas() == 'native-results')''')
+
+
+class LookReportTests(unittest.TestCase):
+    def test_the_look_report_runs_without_the_buy_tab(self):
+        run(BASE + '''local lines = UI.lookReport()
+        assert(#lines >= 1 and lines[1]:find('category list'), lines[1])
+        SlashCmdList.FOREVERFLIP('look')''')

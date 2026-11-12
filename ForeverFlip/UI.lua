@@ -205,8 +205,12 @@ local function copyPanel(dst, src)
 end
 
 local function nativeCategoryButton()
-    local list = AuctionHouseFrame and AuctionHouseFrame.CategoriesList
-    local target = list and list.ScrollBox and list.ScrollBox.ScrollTarget
+    local list = AuctionHouseFrame and rawget(AuctionHouseFrame, "CategoriesList")
+    if type(list) ~= "table" then
+        return nil, nil
+    end
+    local box = rawget(list, "ScrollBox")
+    local target = type(box) == "table" and rawget(box, "ScrollTarget") or nil
     if not target or not target.GetChildren then
         return nil, list
     end
@@ -246,9 +250,10 @@ function UI.copyNativeRows()
     if UI.nativeRows then
         return true
     end
-    local browse = AuctionHouseFrame and AuctionHouseFrame.BrowseResultsFrame
-    local list = browse and browse.ItemList
-    local target = list and list.ScrollBox and list.ScrollBox.ScrollTarget
+    local browse = AuctionHouseFrame and rawget(AuctionHouseFrame, "BrowseResultsFrame")
+    local list = type(browse) == "table" and rawget(browse, "ItemList") or nil
+    local box = type(list) == "table" and rawget(list, "ScrollBox") or nil
+    local target = type(box) == "table" and rawget(box, "ScrollTarget") or nil
     if not target or not target.GetChildren then
         return false
     end
@@ -290,6 +295,103 @@ function UI.copyNativeRows()
     return true
 end
 
+-- /ff look: what the Buy tab's first category button is made of (each texture layer, the font)
+-- and what the copy did, to match it exactly.
+local function describeTexture(t)
+    if not t or not t.GetTexture then
+        return "none"
+    end
+    local parts = {}
+    local atlas = t.GetAtlas and t:GetAtlas()
+    parts[#parts + 1] = atlas and ("atlas " .. tostring(atlas)) or ("file " .. tostring(t:GetTexture()))
+    if t.GetTexCoord then
+        local c = { t:GetTexCoord() }
+        for i, v in ipairs(c) do
+            c[i] = string.format("%.3f", tonumber(v) or 0)
+        end
+        parts[#parts + 1] = "coords " .. table.concat(c, ",")
+    end
+    if t.GetDrawLayer then
+        local layer, sub = t:GetDrawLayer()
+        parts[#parts + 1] = "layer " .. tostring(layer) .. ":" .. tostring(sub)
+    end
+    if t.GetVertexColor then
+        local r, g, b, a = t:GetVertexColor()
+        parts[#parts + 1] = string.format(
+            "color %.2f,%.2f,%.2f,%.2f",
+            tonumber(r) or 1,
+            tonumber(g) or 1,
+            tonumber(b) or 1,
+            tonumber(a) or 1
+        )
+    end
+    if t.GetSize then
+        local w, h = t:GetSize()
+        parts[#parts + 1] = string.format("size %.0fx%.0f", tonumber(w) or 0, tonumber(h) or 0)
+    end
+    if t.IsShown then
+        parts[#parts + 1] = t:IsShown() and "shown" or "hidden"
+    end
+    return table.concat(parts, "; ")
+end
+
+function UI.lookReport()
+    local out = {}
+    local native, list = nativeCategoryButton()
+    out[#out + 1] = "category list: " .. tostring(list ~= nil) .. ", button: " .. tostring(native ~= nil)
+    if native then
+        ---@cast native Button
+        local w, h = native:GetSize()
+        out[#out + 1] = string.format(
+            "button size %.0fx%.0f, type %s",
+            w or 0,
+            h or 0,
+            tostring(native.GetObjectType and native:GetObjectType())
+        )
+        out[#out + 1] = "normal: " .. describeTexture(native:GetNormalTexture())
+        out[#out + 1] = "highlight: " .. describeTexture(native.GetHighlightTexture and native:GetHighlightTexture())
+        for i, region in ipairs({ native:GetRegions() }) do
+            local kind = region.GetObjectType and region:GetObjectType()
+            if kind == "Texture" then
+                ---@cast region Texture
+                out[#out + 1] = "region "
+                    .. i
+                    .. " "
+                    .. tostring(region.GetDebugName and region:GetDebugName() or "")
+                    .. ": "
+                    .. describeTexture(region)
+            elseif kind == "FontString" then
+                ---@cast region FontString
+                local path, size, flags = region:GetFont()
+                local r, g, b = region:GetTextColor()
+                out[#out + 1] = string.format(
+                    "region %d text '%s': font %s %s %s, color %.2f,%.2f,%.2f",
+                    i,
+                    tostring(region:GetText()),
+                    tostring(path),
+                    tostring(size),
+                    tostring(flags),
+                    tonumber(r) or 1,
+                    tonumber(g) or 1,
+                    tonumber(b) or 1
+                )
+            end
+        end
+    end
+    local ours = UI.categories and UI.categories[1]
+    if ours then
+        local w, h = ours:GetSize()
+        out[#out + 1] = string.format(
+            "ours: size %.0fx%.0f, copied: %s",
+            tonumber(w) or 0,
+            tonumber(h) or 0,
+            tostring(UI.nativeLook)
+        )
+        out[#out + 1] = "ours normal: " .. describeTexture(ours.normal)
+    end
+    return out
+end
+
 function UI.copyNativeLook()
     if UI.nativeLook then
         return true
@@ -318,8 +420,11 @@ function UI.copyNativeLook()
         end
     end
     copyPanel(UI.leftPanel, list)
-    local results = AuctionHouseFrame.BrowseResultsFrame and AuctionHouseFrame.BrowseResultsFrame.ItemList
-    copyPanel(UI.right, results)
+    local browse = rawget(AuctionHouseFrame, "BrowseResultsFrame")
+    local results = type(browse) == "table" and rawget(browse, "ItemList") or nil
+    if type(results) == "table" then
+        copyPanel(UI.right, results)
+    end
     UI.nativeLook = true
     return true
 end
