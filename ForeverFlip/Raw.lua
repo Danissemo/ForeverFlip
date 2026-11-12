@@ -14,7 +14,9 @@ local R = {}
 F.Raw = R
 
 R.FORMAT = "FFR1"
-R.KEEP = 2 -- full scans kept for the helper (each one is several megabytes)
+-- Full scans kept for the helper until it uploaded them (each one is several megabytes, and the game
+-- writes them only at /reload or logout): two hours of scans every 15 minutes.
+R.KEEP = 8
 
 -- Checksum of a scan ("seal"): the helper and the data repository recompute it and refuse a scan
 -- whose lines were changed after the game read them. sync/ffscan.py computes the same numbers.
@@ -73,8 +75,18 @@ function R.capture(j, i)
 end
 
 -- The scan is processed: its lines become one saved entry.
+-- Scans the helper has uploaded (it lists them in the ForeverFlip_Shared addon): "scope@time".
+function R.uploaded()
+    local data = ForeverFlipShared
+    return type(data) == "table" and type(data.uploaded) == "table" and data.uploaded or {}
+end
+
 function R.finish(j)
     if not j.raw then
+        return
+    end
+    if j.partial then
+        j.raw, j.rawSeal = nil, nil -- a part of the answer is not a scan worth archiving
         return
     end
     local realm, faction = j.scope:match("^(.*)%-([^%-]+)$")
@@ -91,6 +103,13 @@ function R.finish(j)
         seal = R.chain(j.rawSeal or 0, j.scope .. "|" .. j.finishAt .. "|" .. #j.raw),
         rows = table.concat(j.raw, "\n"),
     })
+    local sent = R.uploaded()
+    for i = #ForeverFlipRaw.scans, 2, -1 do
+        local s = ForeverFlipRaw.scans[i]
+        if type(s) == "table" and sent[tostring(s.scope) .. "@" .. tostring(s.at)] then
+            table.remove(ForeverFlipRaw.scans, i)
+        end
+    end
     while #ForeverFlipRaw.scans > R.KEEP do
         table.remove(ForeverFlipRaw.scans)
     end

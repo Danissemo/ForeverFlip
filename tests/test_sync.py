@@ -64,8 +64,16 @@ class AddonCaptureTests(unittest.TestCase):
 
     def test_only_the_last_scans_are_kept(self):
         lua = runtime()
-        lua.execute(RAW + '''for i=1,3 do now=now+901;F.db.lastScan=0;fullScan() end''')
-        self.assertEqual(lua.eval('#ForeverFlipRaw.scans'), 2)
+        lua.execute(RAW + '''for i=1,12 do now=now+901;F.db.lastScan=0;fullScan() end''')
+        self.assertEqual(lua.eval('#ForeverFlipRaw.scans'), 8)
+
+    def test_scans_the_helper_uploaded_are_dropped(self):
+        lua = runtime()
+        lua.execute(RAW + '''now=now+901;F.db.lastScan=0;fullScan()
+        local old=ForeverFlipRaw.scans[2]
+        ForeverFlipShared={uploaded={[old.scope..'@'..old.at]=true},scans={}}
+        now=now+901;F.db.lastScan=0;fullScan()
+        for _,s in ipairs(ForeverFlipRaw.scans) do assert(s.at~=old.at,'an uploaded scan is not kept') end''')
 
     def test_nothing_is_kept_with_the_setting_off(self):
         lua = runtime()

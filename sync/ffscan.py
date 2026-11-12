@@ -397,10 +397,19 @@ def encode_summary(scope: str, at: int, items: dict) -> str:
     return f"FF{SUMMARY_VERSION}|{_esc(scope)}|{enc36(at)}|" + ";".join(parts)
 
 
-def lua_data_file(summaries: list[str], generated: int) -> str:
-    """Data.lua of the ForeverFlip_Shared addon."""
+def lua_string(text: str) -> str:
+    """A quoted Lua string."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+
+
+def lua_data_file(summaries: list[str], generated: int, uploaded: list[str] | None = None) -> str:
+    """Data.lua of the ForeverFlip_Shared addon. `uploaded`: the scans ("scope@time") this helper
+    uploaded, so the addon stops keeping them (Raw.lua)."""
     lines = ["-- Written by the ForeverFlip Sync helper. Do not edit: it is replaced on every update.",
-             "ForeverFlipShared = {", f"    generated = {int(generated)},", "    scans = {"]
+             "ForeverFlipShared = {", f"    generated = {int(generated)},", "    uploaded = {"]
+    for ident in uploaded or []:
+        lines.append(f"        [{lua_string(ident)}] = true,")
+    lines += ["    },", "    scans = {"]
     for text in summaries:
         level = 1
         while "]" + "=" * level + "]" in text:

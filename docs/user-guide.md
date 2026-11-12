@@ -540,10 +540,10 @@ On the **Settings → Sharing** tab:
 |---|---|
 | Accept full scans shared by guild and group members | On by default. Scans from other ForeverFlip users of your realm are added to your history. |
 | Send my full scans to the guild after each scan | Off by default. Each of your full scans is sent to the guild in the background. |
-| Send my last scan to: Guild / Group | Sends your last full scan once. |
+| Send my price history: Guild / Group | Sends your price history once: per item the daily records of the last 7 days (cheapest and usual price, units listed, units seen sold), which hold every full scan of those days, and the prices of your last scan. Sending each scan would not fit: an addon message holds 255 characters and one scan already takes minutes. |
 | Player + Send | Sends it to one player (whisper channel; they need ForeverFlip and must accept shared scans). |
-| Export as text / Import text | The scan as a text you can send anywhere, for example in Discord, and import on another account or by a friend. |
-| Keep my full scans for the ForeverFlip Sync helper | Off by default. Keeps every full scan auction by auction for the [community sharing](community.md) through GitHub. |
+| Export as text / Import text | The price history as a text you can send anywhere, for example in Discord, and import on another account or by a friend. |
+| Keep my full scans for the ForeverFlip Sync helper | Off by default. Keeps every full scan auction by auction for the [community sharing](community.md) through GitHub: up to 8 scans (two hours) until the helper has uploaded them; scans it uploaded are dropped. The game writes them only at `/reload` or logout, so reload now and then in a long session. A partial answer is not kept. |
 | Share full scans with every ForeverFlip user of the realm | On by default. A hidden chat channel (`ForeverFlipPrices`, never shown in chat): after logging in ForeverFlip asks who has a newer scan, one player answers and sends it, and everyone who is behind keeps it. Your new scans are offered the same way. |
 
 The tab also shows the community data the Sync helper wrote, and how many full scans are kept for it.

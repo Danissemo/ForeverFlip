@@ -229,7 +229,7 @@ def my_scopes(game: pathlib.Path) -> set[str]:
     return scopes
 
 
-def download_shared(game: pathlib.Path, repo: str) -> int:
+def download_shared(game: pathlib.Path, repo: str, uploaded: list[str] | None = None) -> int:
     texts = []
     for scope in sorted(my_scopes(game)):
         url = RAW_URL.format(repo=repo, file=urllib.parse.quote(scope_file(scope)))
@@ -246,7 +246,7 @@ def download_shared(game: pathlib.Path, repo: str) -> int:
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "ForeverFlip_Shared.toc").write_text(ffscan.SHARED_TOC, encoding="utf-8")
     tmp = folder / "Data.lua.tmp"
-    tmp.write_text(ffscan.lua_data_file(texts, time.time()), encoding="utf-8")
+    tmp.write_text(ffscan.lua_data_file(texts, time.time(), uploaded), encoding="utf-8")
     shutil.move(str(tmp), str(folder / "Data.lua"))
     return len(texts)
 
@@ -262,7 +262,7 @@ def run_once(game: pathlib.Path, repo: str, state: dict, token: str | None, uplo
         elif not state.get("warned"):
             log("No GitHub token: scans are not uploaded (see --help). Downloading still works.")
             state["warned"] = True
-    count = download_shared(game, repo)
+    count = download_shared(game, repo, state.get("uploaded", []))
     log(f"Community data: {count} scans written to ForeverFlip_Shared (used after /reload).")
 
 

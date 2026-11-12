@@ -1,5 +1,9 @@
--- Sharing full scans with other ForeverFlip users. A shared scan is a summary of a full scan: per
--- item seen, its usual price, cheapest price and units listed. It travels in hidden addon messages
+-- Sharing full scans with other ForeverFlip users. What is sent is the player's price history: per
+-- item, the last scan's usual price, cheapest price and units listed, and the daily records of the
+-- last S.HISTORY_DAYS days (cheapest price, usual price, units listed, units seen sold), which hold
+-- every full scan of those days. Sending each scan would not fit: an addon message carries 255
+-- characters and one scan already takes minutes to send. FF1 texts (one scan, as the community data
+-- has) are still read. It travels in hidden addon messages
 -- to the guild, the group or one player, to every ForeverFlip user of the realm over a hidden chat
 -- channel (setting shareChannel), or as a text to copy anywhere (export / import).
 --
@@ -23,7 +27,8 @@ local S = {}
 F.Share = S
 
 S.PREFIX = "ForeverFlip"
-S.VERSION = 1
+S.VERSION = 2 -- FF2: with daily records; FF1 (a single scan) is still read
+S.HISTORY_DAYS = 7
 S.CHUNK = 240 -- payload characters per addon message (a message holds 255)
 S.PACE = 0.3 -- seconds between two messages sent
 S.MAX_AGE = 7 * 86400 -- older scans are not merged
@@ -68,34 +73,88 @@ local function unesc(s)
     end))
 end
 
--- Summary of the player's last full scan: { scope, at, items = { { key, m, min, n } } }.
+-- The player's price history: { scope, at, history = true, items = { { key, m, min, n, days } } }.
+-- m, min and n are the last full scan's (0 for an item it did not see: its usual price is not
+-- claimed as current); days = { { o = days before the scan's day, min, m, n, s } }.
 function S.snapshot()
     local last = F.Scan.last
-    if not last or not last.at or not F.db then
+    if not last or not last.at or not F.db or last.partial then
         return nil
     end
     local history = F.Data.market(F.db, last.scope).history
     local items, day = {}, math.floor(last.at / 86400)
     for key, h in pairs(history) do
-        if type(h) == "table" and type(h.scan) == "table" and h.scan.at == last.at and U.finite(h.scan.market) then
-            local today = h.days and h.days[#h.days]
-            local low = today and today.d == day and today.min or h.scan.market
-            items[#items + 1] = { key = key, m = h.scan.market, min = low, n = h.units or 0 }
+        if type(h) == "table" then
+            local seen = type(h.scan) == "table" and h.scan.at == last.at and U.finite(h.scan.market)
+            local days = {}
+            for _, d in ipairs(type(h.days) == "table" and h.days or {}) do
+                local o = day - (d.d or 0)
+                if o >= 0 and o < S.HISTORY_DAYS and (U.finite(d.m) or U.finite(d.min)) then
+                    days[#days + 1] = { o = o, min = d.min, m = d.m, n = d.n, s = d.s }
+                end
+            end
+            if seen or #days > 0 then
+                local today = h.days and h.days[#h.days]
+                local low = seen and (today and today.d == day and today.min or h.scan.market) or 0
+                items[#items + 1] = {
+                    key = key,
+                    m = seen and h.scan.market or 0,
+                    min = low,
+                    n = seen and (h.units or 0) or 0,
+                    days = days,
+                }
+            end
         end
     end
     table.sort(items, function(a, b)
         return a.key < b.key
     end)
-    return { scope = last.scope, at = last.at, items = items }
+    return { scope = last.scope, at = last.at, items = items, history = true }
 end
 
--- Text form: "FF1|<scope>|<time>|key,usual,cheapest,units;..." with numbers in base 36.
+-- Text form: "FF1|<scope>|<time>|key,usual,cheapest,units;..." with numbers in base 36. FF2 adds
+-- ",<days>" to each item: records "o.cheapest.usual.units.sold" joined by "/".
 function S.encode(snap)
     local parts = {}
     for i, it in ipairs(snap.items) do
-        parts[i] = esc(it.key) .. "," .. S.enc(it.m) .. "," .. S.enc(it.min) .. "," .. S.enc(it.n)
+        local record = esc(it.key) .. "," .. S.enc(it.m) .. "," .. S.enc(it.min) .. "," .. S.enc(it.n)
+        if snap.history then
+            local days = {}
+            for k, d in ipairs(it.days or {}) do
+                days[k] = S.enc(d.o)
+                    .. "."
+                    .. S.enc(d.min)
+                    .. "."
+                    .. S.enc(d.m)
+                    .. "."
+                    .. S.enc(d.n)
+                    .. "."
+                    .. S.enc(d.s)
+            end
+            record = record .. "," .. table.concat(days, "/")
+        end
+        parts[i] = record
     end
-    return "FF" .. S.VERSION .. "|" .. esc(snap.scope) .. "|" .. S.enc(snap.at) .. "|" .. table.concat(parts, ";")
+    return "FF"
+        .. (snap.history and 2 or 1)
+        .. "|"
+        .. esc(snap.scope)
+        .. "|"
+        .. S.enc(snap.at)
+        .. "|"
+        .. table.concat(parts, ";")
+end
+
+local function dayRecords(text)
+    local days = {}
+    for o, min, m, n, s in (text or ""):gmatch("(%w+)%.(%w+)%.(%w+)%.(%w+)%.(%w+)") do
+        local function v(x)
+            local value = S.dec(x)
+            return value and value > 0 and value or nil
+        end
+        days[#days + 1] = { o = S.dec(o) or 0, min = v(min), m = v(m), n = S.dec(n) or 0, s = S.dec(s) or 0 }
+    end
+    return days
 end
 
 -- A frame budget: true once `ms` milliseconds (or `count` steps without a timer) are used.
@@ -120,10 +179,11 @@ function S.decodeBegin(text)
     -- Line breaks a chat or editor may add are dropped; item names keep their spaces.
     text = text:gsub("[\r\n]", ""):gsub("^%s+", ""):gsub("%s+$", "")
     local version, scope, at, body = text:match("^FF(%d+)|([^|]+)|(%w+)|(.*)$")
-    if tonumber(version) ~= S.VERSION then
+    version = tonumber(version)
+    if version ~= 1 and version ~= 2 then
         return nil
     end
-    local snap = { scope = unesc(scope), at = S.dec(at), items = {} }
+    local snap = { scope = unesc(scope), at = S.dec(at), items = {}, history = version == 2 or nil }
     if not snap.at then
         return nil
     end
@@ -136,10 +196,16 @@ function S.decodeSome(ctx, done)
         local stop = body:find(";", ctx.pos, true) or (#body + 1)
         local record = body:sub(ctx.pos, stop - 1)
         ctx.pos = stop + 1
-        local key, m, min, n = record:match("^([^,]+),(%w+),(%w+),(%w+)$")
+        local key, m, min, n, days
+        if ctx.snap.history then
+            key, m, min, n, days = record:match("^([^,]+),(%w+),(%w+),(%w+),([%w%./]*)$")
+        else
+            key, m, min, n = record:match("^([^,]+),(%w+),(%w+),(%w+)$")
+        end
         key = key and unesc(key)
         if key and U.parseKey(key) then
-            ctx.snap.items[#ctx.snap.items + 1] = { key = key, m = S.dec(m), min = S.dec(min), n = S.dec(n) }
+            ctx.snap.items[#ctx.snap.items + 1] =
+                { key = key, m = S.dec(m), min = S.dec(min), n = S.dec(n), days = days and dayRecords(days) or nil }
         end
         if done and done() then
             return false
@@ -207,19 +273,36 @@ function S.mergeSome(ctx, done)
         local it = snap.items[ctx.i]
         ctx.i = ctx.i + 1
         local known = history[it.key] and F.Market.usual(history[it.key])
-        local trusted = not U.finite(known) or known <= 0 or (it.m <= known * S.TRUST and it.m * S.TRUST >= known)
-        if U.finite(it.m) and it.m > 0 and trusted then
+        local function trusted(price)
+            return U.finite(price)
+                and price > 0
+                and (not U.finite(known) or known <= 0 or (price <= known * S.TRUST and price * S.TRUST >= known))
+        end
+        local current = trusted(it.m)
+        local days = {}
+        for _, d in ipairs(it.days or {}) do
+            if trusted(d.m or d.min) then
+                days[#days + 1] = d
+            end
+        end
+        if current or #days > 0 then
             local h = history[it.key]
             if type(h) ~= "table" then
                 h = {}
                 history[it.key] = h
             end
-            if type(h.shared) ~= "table" or snap.at > (h.shared.at or 0) then
-                h.shared = { at = snap.at, m = it.m, min = it.min, n = it.n, from = from }
+            if current then
+                if type(h.shared) ~= "table" or snap.at > (h.shared.at or 0) then
+                    h.shared = { at = snap.at, m = it.m, min = it.min, n = it.n, from = from }
+                end
+                S.mergeDay(h, day, it)
+                if (it.n or 0) >= 10 or h.t then
+                    F.Market.recordTiming(h, it.m, snap.at)
+                end
             end
-            S.mergeDay(h, day, it)
-            if (it.n or 0) >= 10 or h.t then
-                F.Market.recordTiming(h, it.m, snap.at)
+            -- Earlier days of the sender's history: every full scan of theirs is in them.
+            for _, d in ipairs(days) do
+                S.mergeDay(h, day - d.o, d)
             end
             ctx.merged = ctx.merged + 1
         end
@@ -267,6 +350,10 @@ function S.mergeDay(h, day, it)
             end
             d.m = d.m or it.m
             d.n = d.n or it.n
+            -- Units seen sold that day: the larger count (both saw the same market).
+            if U.finite(it.s) and it.s > (d.s or 0) then
+                d.s = it.s
+            end
             return
         end
     end
@@ -277,7 +364,11 @@ function S.mergeDay(h, day, it)
             break
         end
     end
-    table.insert(h.days, pos, { d = day, min = it.min, m = it.m, n = it.n })
+    table.insert(
+        h.days,
+        pos,
+        { d = day, min = it.min, m = it.m, n = it.n, s = U.finite(it.s) and it.s > 0 and it.s or nil }
+    )
     while #h.days > F.Scan.DAYS do
         table.remove(h.days, 1)
     end

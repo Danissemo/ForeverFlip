@@ -199,6 +199,15 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 
 ### Added
 
+- **Every scan is shared, not only the last one.** In game, Sharing sends the price history: per item
+  the daily records of the last 7 days (cheapest and usual price, units listed, units seen sold),
+  which hold every full scan of those days, with the last scan's prices (format FF2; FF1 texts and
+  the community data are still read). Received days fill the history and the sales data. For the
+  Sync helper, up to 8 full scans are kept until it has uploaded them (it tells the game which, in
+  the ForeverFlip_Shared addon), instead of the last 2.
+- **Settings pages in the side menu** (General, Key bindings, Sharing, Safety), each laid out in
+  sections with headings.
+
 - **Selling → My items: vendor or auction house.** A **Best** column tells, for each item, whether a
   merchant pays at least what the auction house leaves after the cut and deposits, or the auction
   house pays more; **Post AH-worthy** posts only the latter, next to **Post all**.

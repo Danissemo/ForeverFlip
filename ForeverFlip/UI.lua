@@ -2888,30 +2888,41 @@ function UI.refreshCrafting()
 end
 
 -- Journal page -------------------------------------------------------------------------------------
+-- Top: the week's summary with Export CSV beside it; under it an unconfirmed purchase (up to two
+-- lines) with its two buttons on a row of their own; then the journal, moved up when there is none.
+local JOURNAL_TOP, JOURNAL_BELOW_ASK = -56, -126
 function UI.createJournal(p)
+    UI.journalPage = p
+    UI.exportButton = button(p, "Export CSV", 120, function()
+        UI.showExport()
+    end)
+    UI.exportButton:SetPoint("TOPRIGHT", p, "TOPRIGHT", -10, -8)
     UI.journalSummary = text(p, "GameFontHighlight")
     UI.journalSummary:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -10)
-    UI.journalSummary:SetPoint("TOPRIGHT", p, "TOPRIGHT", -10, -10)
+    UI.journalSummary:SetPoint("TOPRIGHT", p, "TOPRIGHT", -140, -10)
     UI.journalSummary:SetSpacing(4)
     UI.unknownText = text(p, "GameFontNormal")
-    UI.unknownText:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -64)
-    UI.unknownText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -10, -64)
+    UI.unknownText:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -58)
+    UI.unknownText:SetPoint("TOPRIGHT", p, "TOPRIGHT", -10, -58)
+    UI.unknownText:SetSpacing(2)
     UI.unknownYes = button(p, "It was bought", 130, function()
         F.Trade.settle(1, true)
     end)
-    UI.unknownYes:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -84)
+    UI.unknownYes:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -94)
     UI.unknownNo = button(p, "Not bought", 130, function()
         F.Trade.settle(1, false)
     end)
     UI.unknownNo:SetPoint("LEFT", UI.unknownYes, "RIGHT", 6, 0)
-    UI.exportButton = button(p, "Export CSV", 120, function()
-        UI.showExport()
-    end)
-    UI.exportButton:SetPoint("TOPRIGHT", p, "TOPRIGHT", -10, -84)
     UI.journalLines = text(p, "GameFontHighlightSmall")
-    UI.journalLines:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -116)
-    UI.journalLines:SetPoint("TOPRIGHT", p, "TOPRIGHT", -10, -116)
     UI.journalLines:SetSpacing(4)
+    UI.placeJournalLines(false)
+end
+
+function UI.placeJournalLines(ask)
+    local y = ask and JOURNAL_BELOW_ASK or JOURNAL_TOP
+    UI.journalLines:ClearAllPoints()
+    UI.journalLines:SetPoint("TOPLEFT", UI.journalPage, "TOPLEFT", 10, y)
+    UI.journalLines:SetPoint("TOPRIGHT", UI.journalPage, "TOPRIGHT", -10, y)
 end
 
 function UI.refreshJournal()
@@ -2943,6 +2954,7 @@ function UI.refreshJournal()
         UI.unknownYes:Hide()
         UI.unknownNo:Hide()
     end
+    UI.placeJournalLines(u ~= nil)
     local lines = {}
     local kinds = {
         buy = "bought",
@@ -3582,10 +3594,10 @@ function UI.createShareSettings(p)
         end
     end)
 
-    heading(p, "Send my last scan", 12, -140)
+    heading(p, "Send my price history", 12, -140)
     local to = text(p, "GameFontHighlight")
     to:SetPoint("TOPLEFT", p, "TOPLEFT", 14, -168)
-    to:SetText(L("Send my last scan to:"))
+    to:SetText(L("Send to:"))
     UI.shareGuild = button(p, "Guild", 90, function()
         local _, why = F.Share.send("GUILD")
         F.Engine.notify(why)
@@ -3637,7 +3649,7 @@ end
 function UI.refreshShare()
     local lines = {
         L(
-            "A shared scan adds other players' prices of your realm to the history: more days, the weekly pattern, and a fresh usual price when your own scan is older. It never creates deals by itself, and the other player needs ForeverFlip too."
+            "What is shared is your price history of the last 7 days (every full scan of those days, by day: cheapest and usual price, units listed and seen sold) and the prices of your last scan. Received history fills the other player's days and sales data and gives a fresh usual price when theirs is older. It never creates deals by itself, and the other player needs ForeverFlip too."
         ),
     }
     local s = F.Share.sending
