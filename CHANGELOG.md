@@ -219,6 +219,11 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
   count appeared was posted again, not sold (in game: one seller's 65-80 silver bracers read as
   sales while the item sold at 3-4 silver, and Sells at came out ten times too high). The resale
   cap also stays within three times the median sale.
+- **A vanished lot is a sale only once the next scan confirms it.** Until then it is a suspect: if
+  the same price and count comes back as a new lot, it was cancelled and posted again. An item gone
+  from the house altogether confirms its suspects; a lot that got smaller is a sale at once (an
+  auction is cancelled only whole). Every sales figure uses confirmed sales only: sold per day,
+  sale prices, the daily history, shared scans, and the flow model when the lots cover the item.
 - **Anti-undercut (Selling → Undercuts).** For every auction of yours another seller undercut, each
   way out is priced in expected money from the item's measured sales (Poisson chances of selling in
   the time left or the new duration): wait, undercut (cancel and post one step below), buy out the

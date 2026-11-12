@@ -52,9 +52,37 @@ class ScanTrackingTests(unittest.TestCase):
         table.remove(auctions,1);addAuction(10,150,10)
         scan()
         local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
-        assert(h.sales and h.sales.pairs==1,'lot sales recorded')
+        -- a whole lot that vanished is only a suspect until the next scan
+        assert(h.pending and M.demandAt(h,60,now).sold==0,'suspect, not sold yet')
+        scan()
+        assert(h.sales and h.sales.pairs==2,'lot sales recorded')
         local d=M.demandAt(h,60,now);assert(d.perDay>0 and d.sold==5,d.sold)
-        assert(h.days[#h.days].s==5 and h.days[#h.days].n>0)''')
+        assert(h.days[#h.days].s==5 and h.days[#h.days].n>0)
+        assert(not h.pending)''')
+
+    def test_lot_posted_again_a_scan_later_is_not_a_sale(self):
+        run(SCANS + '''-- the seller cancels the 60c lot, and posts it again only after the next scan
+        local lot=table.remove(auctions,1)
+        scan()
+        local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
+        assert(h.pending)
+        table.insert(auctions,lot)
+        scan()
+        assert(M.demandAt(h,60,now).sold==0 and not h.pending)
+        assert((h.days[#h.days].s or 0)==0)''')
+
+    def test_partly_bought_lot_is_sold_at_once(self):
+        run(SCANS + '''auctions[1].count=auctions[1].count-2;auctions[1].buyout=60*auctions[1].count
+        scan()
+        local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']
+        assert(M.demandAt(h,60,now).sold==2 and not h.pending)''')
+
+    def test_suspect_waits_at_most_three_hours(self):
+        run(LOTS + '''local h={};local s={100,1,3,150,1,3}
+        ForeverFlip.Scan.trackLots(h,s,now);now=now+900
+        ForeverFlip.Scan.trackLots(h,{150,1,3},now);assert(h.pending)
+        now=now+4*3600;ForeverFlip.Scan.trackLots(h,{150,1,3},now)
+        assert(not h.pending and M.salePrice(h)==nil)''')
 
     def test_expired_lot_is_not_a_sale(self):
         run(SETUP + '''enableTimeLeft();local F=ForeverFlip
@@ -68,8 +96,9 @@ class ScanTrackingTests(unittest.TestCase):
         addAuction(30,31000,1);fullScan()
         for i=#auctions,1,-1 do if auctions[i].item==30 then table.remove(auctions,i) end end
         now=now+901;F.db.lastScan=0;fullScan()
+        now=now+901;F.db.lastScan=0;fullScan() -- still gone: the suspects are sales
         local h=F.Data.market(F.db,F.Engine.scope()).history['i:30']
-        assert(h and h.sales and F.Market.demandAt(h,30000,now).sold==2 and not h.lots)''')
+        assert(h and h.sales and F.Market.demandAt(h,30000,now).sold==2 and not h.lots and not h.pending)''')
 
     def test_history_keeps_fourteen_days(self):
         run(SCANS + '''for i=1,20 do now=now+86400;F.db.lastScan=0;fullScan() end

@@ -160,6 +160,18 @@ hours, longer. Two scans 5 minutes to 3 hours apart are compared lot by lot:
    - no cheaper lot of the item survived, because buyers take the cheapest units first. A vanished
      lot above a surviving cheaper one was cancelled or reposted.
 
+   A new lot of the same price and count in the same scan is a repost, not a sale.
+4. **Confirmation.** A vanished lot is only a suspect (`h.pending`): a seller may cancel and post
+   the same lot again later. The next scan of the item (up to 3 hours later) confirms it as sold
+   when no new lot of that price and count appeared, or when the item is gone from the house
+   altogether (`Market.confirmGone`). A suspect not checked within 3 hours is dropped. Partial
+   purchases need no confirmation.
+
+Only confirmed sales reach every figure built on them: sold per day, sale prices and the resale
+cap, the daily history (`s`) and what is shared. When the lots cover the whole item (fewer than 300),
+the flow model counts the confirmed sales above each level too, instead of the units that went
+missing (which also counts cancelled, expired and repriced auctions).
+
 The sold units go into a price histogram per item (`h.sales`), decayed with a **3-day half-life**,
 together with the observed hours. Units per day at or above 85% of a price use the same smoothing
 prior of 4 hours. This removes the main error of the level method: expired and cancelled auctions no

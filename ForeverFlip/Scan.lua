@@ -402,11 +402,13 @@ local function finish(j, done)
         local day, low = math.floor(now / 86400), g.rows[1] and g.rows[1].unit
         local soldToday = 0
         if h then
-            M.recordFlow(h, g.buckets, value, now)
-            h.units = g.units
+            -- Lots first: when they cover the whole item, the flow counts only confirmed sales.
+            local confirmed
             if j.lots then
-                soldToday = S.trackLots(h, g.seq or {}, now)
+                soldToday, confirmed = S.trackLots(h, g.seq or {}, now)
             end
+            M.recordFlow(h, g.buckets, value, now, confirmed)
+            h.units = g.units
             -- Weekly pattern only for items traded often enough to have one.
             if g.units >= 10 or h.t then
                 M.recordTiming(h, value, now)
@@ -498,7 +500,13 @@ local function finish(j, done)
         local key = keys[j.tidyAt]
         j.tidyAt = j.tidyAt + 1
         local h = history[key]
-        if type(h) == "table" and j.sweep and h.lots and not j.groups[key] and (h.lotsAt or now) < now then
+        if
+            type(h) == "table"
+            and j.sweep
+            and (h.lots or h.pending)
+            and not j.groups[key]
+            and (h.lotsAt or h.pendingAt or now) < now
+        then
             -- Not when rows could not be read at all, or the scan is far smaller than the house's
             -- last one (a partial answer): then a missing item proves nothing.
             local item = U.parseKey(key)
@@ -509,6 +517,9 @@ local function finish(j, done)
                     today.s = (today.s or 0) + sold
                 end
                 h.lots, h.lotsAt = nil, nil
+                if h.pending then
+                    h.lotsAt = h.pendingAt -- kept for the suspects only, until the next scan
+                end
             end
         end
         if h ~= nil and S.stale(h, now) then
@@ -522,18 +533,48 @@ local function finish(j, done)
 end
 
 -- Compares an item's lots with those of the previous scan and records the sales; keeps this scan's
--- lots for the next comparison. Returns the units sold.
+-- lots for the next comparison. Two steps protect every figure built on sales (sold per day, sale
+-- prices, the flow, the daily history and what is shared) from reposts: a lot that got smaller is
+-- sold at once; a lot that vanished whole is a suspect (h.pending) and sold only when the next scan
+-- shows no new lot of its price and count (M.confirmGone). Returns the units sold, and the confirmed
+-- sales by price when the lots cover the whole item (nil otherwise).
 function S.trackLots(h, seq, now)
-    local sold = 0
+    local sold, byPrice, fresh, gone, complete = 0, {}, nil, nil, false
     local dt = now - (h.lotsAt or 0)
-    if h.lots and dt >= 300 and dt <= 3 * 3600 then
-        local _, byPrice = M.trackSales(M.unpackLots(h.lots), seq, dt)
-        sold = M.recordSales(h, byPrice, dt, now)
+    local compared = h.lots and dt >= 300 and dt <= 3 * 3600
+    if compared then
+        local prev = M.unpackLots(h.lots)
+        local all, reposted
+        _, all, gone, reposted = M.trackSales(prev, seq, dt)
+        for i = 1, #gone - 1, 2 do
+            all[gone[i]] = all[gone[i]] - gone[i + 1]
+        end
+        for price, units in pairs(all) do
+            if units > 0 then
+                byPrice[price] = units
+            end
+        end
+        fresh = reposted
+        complete = #prev < 3 * M.LOTS and #seq < 3 * M.LOTS
+    else
+        fresh = M.lotKeys(seq)
+    end
+    if h.pending then
+        if now - (h.pendingAt or 0) <= M.CONFIRM_WITHIN and now > (h.pendingAt or now) then
+            M.confirmGone(M.unpackPending(h.pending), fresh, byPrice)
+        end
+        h.pending, h.pendingAt = nil, nil
+    end
+    if gone and gone[1] then
+        h.pending, h.pendingAt = M.packPending(gone), now
+    end
+    if compared or next(byPrice) then
+        sold = M.recordSales(h, byPrice, compared and dt or 0, now)
     end
     if #seq > 0 then
         h.lots, h.lotsAt = M.packLots(seq), now
     end
-    return sold
+    return sold, complete and byPrice or nil
 end
 
 -- Units of an item in a recent full scan (up to 20 minutes old) of this auction house; nil when

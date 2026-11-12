@@ -64,7 +64,10 @@ end
 -- Cheap lots bought by other resellers do not raise the higher levels; expired or cancelled
 -- auctions count too (an upper bound) and new listings hide sales (a lower bound). Decays with a
 -- 2-day half-life. `h` is the item's saved history table and is updated in place.
-function M.recordFlow(h, buckets, market, now)
+-- `sold` ({ [price] = units }, optional): the sales the lot comparison confirmed for this pair of
+-- scans. When given, units sold above each level come from it instead of the units that went
+-- missing, which also counts auctions cancelled, expired or moved to another price.
+function M.recordFlow(h, buckets, market, now, sold)
     local prev = h.scan
     if
         type(prev) == "table"
@@ -82,7 +85,17 @@ function M.recordFlow(h, buckets, market, now)
         local decay = 0.5 ^ (math.max(0, now - (f.at or now)) / (48 * 3600))
         f.hours = f.hours * decay + hours
         for i, level in ipairs(M.LEVELS) do
-            local gone = math.max(0, (prev.above[i] or 0) - qtyAbove(buckets, level * prev.market))
+            local gone
+            if sold then
+                gone = 0
+                for price, units in pairs(sold) do
+                    if price >= level * prev.market then
+                        gone = gone + units
+                    end
+                end
+            else
+                gone = math.max(0, (prev.above[i] or 0) - qtyAbove(buckets, level * prev.market))
+            end
             f.sold[i] = (f.sold[i] or 0) * decay + gone
         end
         f.pairs, f.at, f.market = math.min(99, (f.pairs or 0) + 1), now, market
@@ -289,7 +302,10 @@ local function compatible(prev, i, cur, k)
     return prev[a] == cur[b] and cur[b + 1] <= prev[a + 1] and cur[b + 2] <= prev[a + 2]
 end
 
--- Units sold between two scans `dt` seconds apart: total and { [price] = units }.
+-- Units sold between two scans `dt` seconds apart: total and { [price] = units }, then the whole
+-- lots that vanished among them ({ price, count, price, count, ... }: sales only once a later scan
+-- shows they were not posted again, see M.confirmGone) and the new lots of `cur` that are not the
+-- repost of a lot that vanished ({ ["price:count"] = lots }).
 function M.trackSales(prev, cur, dt)
     local np, nc = math.floor(#prev / 3), math.floor(#cur / 3)
     local match, used = {}, {}
@@ -337,10 +353,7 @@ function M.trackSales(prev, cur, dt)
     -- (cancelled and reposted, or expired and reposted), not sold: the new one runs longer, so it
     -- does not match as the same lot. In game one seller's 65-80 silver bracers were read as sales
     -- this way while the item sold at 3-4 silver, and resale prices came out ten times too high.
-    local reposted = {}
-    for list in pairs(free) do
-        reposted[list] = nil
-    end
+    local reposted, gone = {}, {}
     for _, list in pairs(free) do
         for _, n in ipairs(list) do
             local key = cur[3 * n - 2] .. ":" .. cur[3 * n - 1]
@@ -355,10 +368,64 @@ function M.trackSales(prev, cur, dt)
                 reposted[key] = reposted[key] - 1
             elseif (M.BAND_MIN[band] or 0) >= dt and price <= cheapest then
                 add(price, count)
+                gone[#gone + 1] = price
+                gone[#gone + 1] = count
             end
         end
     end
-    return sold, byPrice
+    return sold, byPrice, gone, reposted
+end
+
+-- New lots of a scan as { ["price:count"] = lots }: every lot, when there is nothing to compare with.
+function M.lotKeys(seq)
+    local keys = {}
+    for i = 1, #seq - 2, 3 do
+        local key = seq[i] .. ":" .. seq[i + 1]
+        keys[key] = (keys[key] or 0) + 1
+    end
+    return keys
+end
+
+-- Whole lots that vanished are only suspected sales: the seller may have cancelled the auction and
+-- post it again later (the price and count come back as a new lot), and the time-left bands cannot
+-- tell that apart. A suspect is confirmed by the next scan of the item (up to M.CONFIRM_WITHIN
+-- later) when no new lot of the same price and count appeared there, or when the item is gone from
+-- the house altogether. A lot that only got smaller is a sure sale at once: an auction can be
+-- cancelled only as a whole. `fresh` is the new lots of that next scan (taken as they are used);
+-- adds the confirmed units to byPrice and returns how many lots turned out to be reposts.
+M.CONFIRM_WITHIN = 3 * 3600
+function M.confirmGone(pending, fresh, byPrice)
+    local reposts = 0
+    for i = 1, #pending - 1, 2 do
+        local price, count = pending[i], pending[i + 1]
+        local key = price .. ":" .. count
+        if (fresh[key] or 0) > 0 then
+            fresh[key] = fresh[key] - 1
+            reposts = reposts + 1
+        else
+            byPrice[price] = (byPrice[price] or 0) + count
+        end
+    end
+    return reposts
+end
+
+function M.packPending(gone)
+    local parts = {}
+    for i = 1, math.min(#gone, 2 * M.LOTS) - 1, 2 do
+        parts[#parts + 1] = string.format("%.0f:%d", gone[i], gone[i + 1])
+    end
+    return parts[1] and table.concat(parts, ",") or nil
+end
+
+function M.unpackPending(text)
+    local list = {}
+    if type(text) == "string" then
+        for p, c in text:gmatch("([%d%.]+):(%d+)") do
+            list[#list + 1] = tonumber(p)
+            list[#list + 1] = tonumber(c)
+        end
+    end
+    return list
 end
 
 function M.packLots(seq)
@@ -406,7 +473,10 @@ function M.recordSales(h, byPrice, dt, now)
             sold = sold + units
         end
     end
-    s.pairs, s.at = math.min(99, (s.pairs or 0) + 1), now
+    if dt > 0 then
+        s.pairs = math.min(99, (s.pairs or 0) + 1)
+    end
+    s.at = now
     h.sales = s
     return sold
 end
