@@ -424,6 +424,19 @@ SHARED_TOC = """## Interface: 16001
 ## Title: ForeverFlip Shared Data
 ## Notes: Auction prices shared by the ForeverFlip community. Written by the ForeverFlip Sync helper.
 ## Author: ForeverFlip contributors
+## Group: ForeverFlip
+## Category-enUS: Auctions
+## Category-deDE: Auktionen
+## Category-esES: Subastas
+## Category-esMX: Subastas
+## Category-frFR: Ventes
+## Category-itIT: Aste
+## Category-koKR: 경매
+## Category-ptBR: Leilões
+## Category-ruRU: Лоты
+## Category-zhCN: 拍卖
+## Category-zhTW: 拍賣
+## IconTexture: Interface\\AddOns\\ForeverFlip\\Media\\Logo
 
 Data.lua
 """

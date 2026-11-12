@@ -81,9 +81,12 @@ def package(version: str, files: list[str], output: pathlib.Path) -> pathlib.Pat
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f"ForeverFlip-{version}.zip"
     entries = [TOC] + [ADDON / name for name in files] + sorted(ADDON.glob("*.xml")) + EXTRA_FILES
+    # The icon of the AddOns list (## IconTexture), kept in its own folder.
+    entries += sorted((ADDON / "Media").glob("*.tga"))
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in entries:
-            info = zipfile.ZipInfo(f"ForeverFlip/{path.name}", date_time=(2026, 1, 1, 0, 0, 0))
+            inner = path.relative_to(ADDON).as_posix() if ADDON in path.parents else path.name
+            info = zipfile.ZipInfo(f"ForeverFlip/{inner}", date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             zf.writestr(info, path.read_bytes())

@@ -8,6 +8,10 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- **AddOns list.** ForeverFlip and ForeverFlip Shared Data are listed under **Auctions** (beside
+  Auctionator and TradeSkillMaster) with their own icon: a gold coin with flip arrows. The ForeverFlip
+  Sync helper writes the new Shared Data TOC on its next update.
+
 - **Faster checks.**
   - Gear is checked straight from its remembered item-key versions. The addon learns them from
     every browse, including the game's Buy tab and other addons, and keeps them between sessions.

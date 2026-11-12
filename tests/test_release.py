@@ -59,6 +59,24 @@ class PackageTests(unittest.TestCase):
                     self.assertEqual(package.read('ForeverFlip/' + name), (ROOT / 'ForeverFlip' / name).read_bytes())
                 self.assertFalse(any(name.startswith(('tests/', 'tools/')) for name in names))
                 self.assertIn(('## Version: ' + version).encode(), package.read('ForeverFlip/ForeverFlip.toc'))
+                self.assertIn('ForeverFlip/Media/Logo.tga', names, 'the AddOns list icon is packaged')
+
+    def test_addons_list_shows_it_under_auctions_with_its_icon(self):
+        toc = (ROOT / 'ForeverFlip' / 'ForeverFlip.toc').read_text(encoding='utf-8')
+        self.assertIn('## Category-enUS: Auctions', toc)
+        self.assertIn('## Category-ruRU: Лоты', toc)
+        icon = [line for line in toc.splitlines() if line.startswith('## IconTexture:')]
+        self.assertEqual(len(icon), 1)
+        path = icon[0].split(':', 1)[1].strip().replace('Interface\\AddOns\\', '').replace('\\', '/')
+        logo = ROOT / (path + '.tga')
+        self.assertTrue(logo.is_file(), logo)
+        header = logo.read_bytes()[:18]
+        self.assertEqual((header[2], header[12], header[14], header[16]), (2, 64, 64, 32), 'a 64x64 32-bit TGA')
+        import sys
+        sys.path.insert(0, str(ROOT / 'sync'))
+        import ffscan
+        self.assertIn('## Category-enUS: Auctions', ffscan.SHARED_TOC)
+        self.assertIn('## Group: ForeverFlip', ffscan.SHARED_TOC)
 
 
 if __name__ == '__main__':
