@@ -6,6 +6,8 @@
 [Завантажити окремий файл тестувальника](tester-checklist.uk.xlsx): вибирайте ✅ або ❌ та
 записуйте фактичну поведінку в колонці «Примітка». Спочатку всі результати — «Не перевірено».
 
+https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?usp=sharing&ouid=114220040845472870519&rtpof=true&sd=true
+
 <a id="in-game-checklist"></a>
 ## Перевірки у грі
 
