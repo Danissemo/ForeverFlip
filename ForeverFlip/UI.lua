@@ -10,7 +10,7 @@ local UI = {}
 F.UI = UI
 
 local ROW = 20
-local LEFT_WIDTH = 172
+local LEFT_WIDTH = 148 -- the Buy tab's category buttons (136) and a margin of 6 each side
 
 local MESSAGES = {
     nothing_to_post = "Nothing bought for resale is waiting in the bags.",
@@ -219,6 +219,77 @@ local function nativeCategoryButton()
     return nil, list
 end
 
+-- The first FontString with text inside a frame (a row of the results list keeps its texts in cells).
+local function firstText(frame, depth)
+    if not frame or depth > 3 then
+        return nil
+    end
+    for _, region in ipairs({ frame.GetRegions and frame:GetRegions() }) do
+        if region.GetObjectType and region:GetObjectType() == "FontString" and region.GetFont and region:GetFont() then
+            local shown = region.GetText and region:GetText()
+            if shown and shown ~= "" then
+                return region
+            end
+        end
+    end
+    for _, child in ipairs({ frame.GetChildren and frame:GetChildren() }) do
+        local found = firstText(child, depth + 1)
+        if found then
+            return found
+        end
+    end
+end
+
+-- Rows of the Buy tab's results list exist once a search was made there: their look is copied
+-- onto every row of every ForeverFlip table (background, highlight, the font of the text).
+function UI.copyNativeRows()
+    if UI.nativeRows then
+        return true
+    end
+    local browse = AuctionHouseFrame and AuctionHouseFrame.BrowseResultsFrame
+    local list = browse and browse.ItemList
+    local target = list and list.ScrollBox and list.ScrollBox.ScrollTarget
+    if not target or not target.GetChildren then
+        return false
+    end
+    local native
+    for _, child in ipairs({ target:GetChildren() }) do
+        ---@cast child Button
+        if child.GetNormalTexture and child:GetNormalTexture() and firstText(child, 0) then
+            native = child
+            break
+        end
+    end
+    if not native then
+        return false
+    end
+    ---@cast native Button
+    local font = firstText(native, 0)
+    local path, size, flags
+    if font then
+        path, size, flags = font:GetFont()
+    end
+    for _, t in ipairs(UI.tables) do
+        for _, r in ipairs(t.rows) do
+            if copyTexture(r.back, native:GetNormalTexture()) then
+                r.back:Show()
+                if r.stripe then
+                    r.stripe:Hide()
+                end
+            end
+            copyTexture(r.hl, native.GetHighlightTexture and native:GetHighlightTexture())
+            if path then
+                r.name:SetFont(path, size, flags)
+                for _, c in ipairs(r.cols) do
+                    c:SetFont(path, size, flags)
+                end
+            end
+        end
+    end
+    UI.nativeRows = true
+    return true
+end
+
 function UI.copyNativeLook()
     if UI.nativeLook then
         return true
@@ -229,7 +300,6 @@ function UI.copyNativeLook()
     end
     ---@cast native Button
     local width, height = native:GetSize()
-    local font = native.GetFontString and native:GetFontString() or rawget(native, "Text")
     for _, c in ipairs(UI.categories or {}) do
         copyTexture(c.normal, native:GetNormalTexture())
         copyTexture(c.highlight, native.GetHighlightTexture and native:GetHighlightTexture())
@@ -237,11 +307,14 @@ function UI.copyNativeLook()
         if nativeSelected then
             copyTexture(c.selected, nativeSelected)
         end
-        if U.finite(width) and width > 50 and U.finite(height) and height > 10 then
+        if
+            U.finite(width)
+            and width >= NAV_WIDTH - 20
+            and width <= LEFT_WIDTH - 8
+            and U.finite(height)
+            and height >= 18
+        then
             c:SetSize(width, height)
-        end
-        if font and font.GetFontObject and font:GetFontObject() then
-            c.label:SetFontObject(font:GetFontObject())
         end
     end
     copyPanel(UI.leftPanel, list)
@@ -288,8 +361,10 @@ end
 
 -- A results table: header buttons and rows. `columns` = { {label, width, align}, ... }; the first
 -- column is the item (icon and name) and takes the remaining width.
+UI.tables = {}
 local function table_(parent, columns, rows, onClick, onSort)
     local t = { rows = {}, headers = {} }
+    UI.tables[#UI.tables + 1] = t
     if not onSort then
         -- Built-in sorting: a header click sorts by that column, a second click reverses it. Names
         -- start A to Z, numbers start with the largest.
@@ -430,15 +505,19 @@ local function table_(parent, columns, rows, onClick, onSort)
         r:SetHeight(ROW)
         r:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -(i - 1) * ROW)
         r:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -(i - 1) * ROW)
+        r.back = r:CreateTexture(nil, "BACKGROUND", nil, -1)
+        r.back:SetAllPoints()
+        r.back:Hide()
         if i % 2 == 0 then
-            local stripe = r:CreateTexture(nil, "BACKGROUND")
-            stripe:SetAtlas("auctionhouse-rowstripe-1")
-            stripe:SetAllPoints()
+            r.stripe = r:CreateTexture(nil, "BACKGROUND")
+            r.stripe:SetAtlas("auctionhouse-rowstripe-1")
+            r.stripe:SetAllPoints()
         end
         local hl = r:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAtlas("auctionhouse-ui-row-highlight")
         hl:SetAllPoints()
         hl:SetBlendMode("ADD")
+        r.hl = hl
         r.selected = r:CreateTexture(nil, "ARTWORK")
         r.selected:SetAtlas("auctionhouse-ui-row-select")
         r.selected:SetAllPoints()
@@ -569,13 +648,13 @@ function UI.create()
         local c = category(left, group.label, function()
             UI.show(group.current or group.pages[1][1])
         end)
-        c:SetPoint("TOPLEFT", left, "TOPLEFT", math.floor((LEFT_WIDTH - NAV_WIDTH) / 2), -8 - (i - 1) * NAV_STEP)
+        c:SetPoint("TOPLEFT", left, "TOPLEFT", 6, -6 - (i - 1) * NAV_STEP)
         c.group = group
         UI.categories[i] = c
     end
     UI.summary = text(left, "GameFontHighlightSmall")
-    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -8 - #UI.GROUPS * NAV_STEP - 12)
-    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -8 - #UI.GROUPS * NAV_STEP - 12)
+    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 9, -6 - #UI.GROUPS * NAV_STEP - 12)
+    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -6, -6 - #UI.GROUPS * NAV_STEP - 12)
     UI.summary:SetSpacing(4)
 
     -- Right: one page per category.
@@ -3530,6 +3609,9 @@ function UI.refresh()
     end
     if not UI.nativeLook then
         pcall(UI.copyNativeLook)
+    end
+    if not UI.nativeRows then
+        pcall(UI.copyNativeRows)
     end
     if not UI.tabsSized and UI.tabsShown then
         UI.layoutTabs(UI.tabsShown.group, UI.tabsShown.id)
