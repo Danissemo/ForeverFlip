@@ -333,10 +333,29 @@ function M.trackSales(prev, cur, dt)
             add(price, bought)
         end
     end
+    -- A lot that vanished while a new lot of the same price and count appeared was posted again
+    -- (cancelled and reposted, or expired and reposted), not sold: the new one runs longer, so it
+    -- does not match as the same lot. In game one seller's 65-80 silver bracers were read as sales
+    -- this way while the item sold at 3-4 silver, and resale prices came out ten times too high.
+    local reposted = {}
+    for list in pairs(free) do
+        reposted[list] = nil
+    end
+    for _, list in pairs(free) do
+        for _, n in ipairs(list) do
+            local key = cur[3 * n - 2] .. ":" .. cur[3 * n - 1]
+            reposted[key] = (reposted[key] or 0) + 1
+        end
+    end
     for i = 1, np do
         local price, count, band = prev[3 * i - 2], prev[3 * i - 1], prev[3 * i]
-        if not match[i] and (M.BAND_MIN[band] or 0) >= dt and price <= cheapest then
-            add(price, count)
+        if not match[i] then
+            local key = price .. ":" .. count
+            if (reposted[key] or 0) > 0 then
+                reposted[key] = reposted[key] - 1
+            elseif (M.BAND_MIN[band] or 0) >= dt and price <= cheapest then
+                add(price, count)
+            end
         end
     end
     return sold, byPrice
@@ -423,9 +442,17 @@ function M.salePrice(h)
     return soldQuantile(h, 0.5, 3)
 end
 
--- Highest price a resale may count on: the price that a quarter of the sales reached.
+-- Highest price a resale may count on: the price that a quarter of the sales reached, but at most
+-- M.CAP_SPREAD times the typical (median) sale: a few sales far above the rest are rare luck, or
+-- reposts read as sales, not a price to count on.
+M.CAP_SPREAD = 3
 function M.saleCap(h)
-    return soldQuantile(h, 0.75, 3)
+    local cap = soldQuantile(h, 0.75, 3)
+    local median = soldQuantile(h, 0.5, 3)
+    if cap and median then
+        cap = math.min(cap, math.floor(median * M.CAP_SPREAD))
+    end
+    return cap
 end
 
 -- Units per day sold at or above 85% of `price` from the lot-tracked sales; nil without data.

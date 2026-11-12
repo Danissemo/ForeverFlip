@@ -599,3 +599,21 @@ class EmptyLinkNameTests(unittest.TestCase):
         UI.show('auctions'); UI.refresh()
         local shown = UI.auctionTable.rows[1].name:GetText()
         assert(shown and shown:find('Sharp Throwing Axe', 1, true), tostring(shown))''')
+
+
+class RepostTests(unittest.TestCase):
+    def test_a_lot_posted_again_is_not_a_sale(self):
+        run(BASE + '''local M = F.Market
+        -- 65 s and 70 s lots vanish, the same price and count come back running longer: reposts.
+        local prev = M.unpackLots('400:1:1,6500:1:1,7000:1:1')
+        local cur = M.unpackLots('6500:1:3,7000:1:3')
+        local sold, byPrice = M.trackSales(prev, cur, 900)
+        assert(not byPrice[6500] and not byPrice[7000], 'reposts are not sales')
+        assert(byPrice[400] == 1, 'the 4 silver lot that vanished sold')''')
+
+    def test_the_resale_cap_stays_near_the_typical_sale(self):
+        run(BASE + '''local M = F.Market
+        local h = { sales = { b = {} } }
+        M.bucketAdd(h.sales.b, 290, 3); M.bucketAdd(h.sales.b, 400, 2); M.bucketAdd(h.sales.b, 6500, 2); M.bucketAdd(h.sales.b, 8000, 1)
+        local cap = M.saleCap(h)
+        assert(cap <= 3 * 400, 'at most three times the median sale: ' .. tostring(cap))''')
