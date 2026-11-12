@@ -70,7 +70,7 @@ class TableTests(unittest.TestCase):
             for _,r in ipairs(UI.dealTable.rows) do
                 if r:IsShown() then seen[r.key]=true end -- the last screen may overlap the one before
             end
-            if page<3 then assert(UI.dealTable.bar:IsShown());UI.dealTable.offset=UI.dealTable.offset+13;UI.refresh() end
+            if page<3 then assert(UI.dealTable.bar.thumb:IsShown());UI.dealTable.offset=UI.dealTable.offset+13;UI.refresh() end
         end
         local count=0;for _ in pairs(seen) do count=count+1 end;assert(count==30)
         click('Buy at');assert(UI.dealTable.offset==0 and UI.dealTable.rows[1].key=='c:10','a new sort starts at the top')
@@ -153,3 +153,23 @@ class SniperControlTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class NativeScrollBarTests(unittest.TestCase):
+    def test_scrollbar_works_like_the_auction_house_one(self):
+        runtime().execute(DEALS + '''
+        local bar = UI.dealTable.bar
+        D.list = {}
+        UI.refreshDeals()
+        assert(not bar.thumb:IsShown() and not bar.back:IsEnabled() and not bar.forward:IsEnabled(), 'nothing to scroll')
+        for id = 39, 10, -1 do
+            addItem(id, 'Item ' .. id, 100, 'commodity')
+            D.list[#D.list + 1] = { key = 'c:' .. id, id = id, kind = 'commodity', mode = 'vendor', qty = 1, cost = id, profit = 10, maxUnit = id, exit = id + 10 }
+        end
+        UI.refreshDeals()
+        assert(bar.thumb:IsShown() and not bar.back:IsEnabled() and bar.forward:IsEnabled())
+        bar.forward:Click(); assert(UI.dealTable.offset == 1, 'the down arrow scrolls one row')
+        bar.back:Click(); assert(UI.dealTable.offset == 0)
+        for _ = 1, 40 do bar.forward:Click() end
+        assert(UI.dealTable.offset == 17 and not bar.forward:IsEnabled(), 'stops at the last row')
+        ''')

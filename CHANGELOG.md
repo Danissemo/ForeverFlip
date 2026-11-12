@@ -27,7 +27,9 @@ All notable changes are listed here. The format follows
   status line says when it is paused, and it goes on when you come back.
 - **Clicks during a full scan.** Check price, Buy and Post work while a full scan waits for its
   answer. Background work still waits.
-- **Scrollbars.** Every table has a scrollbar. The Deals list scrolls instead of using pages.
+- **Scrollbars.** Every table has the auction house's own scrollbar: the same thin track, thumb
+  and arrows (Blizzard's MinimalScrollBar textures) in the same place. Drag the thumb, click the
+  track or an arrow, or use the mouse wheel. The Deals list scrolls instead of using pages.
 - **New players start with no automation.** Automatic full scans, the sniper and automatic deal
   checks are off until you switch them on in Settings. Keeping full scans for the ForeverFlip Sync
   helper is on. Existing settings are not changed.

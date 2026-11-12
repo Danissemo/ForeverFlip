@@ -556,7 +556,159 @@ local function showTooltip(owner, key, link)
     GameTooltip:Show()
 end
 
-local SCROLL_WIDTH = 14
+-- Room on the right of a table for its scrollbar, as in the game's own lists (26 px).
+local SCROLL_WIDTH = 22
+
+-- A scrollbar like the auction house's own (MinimalScrollBar): an 8 px track with rounded ends,
+-- a three-part thumb sized to the share of the list shown, and an arrow above and below, built
+-- from the same atlases, 9 px to the right of the rows. The track and arrows always show; the
+-- thumb only when the list is longer than the rows. Dragging the thumb, clicking the track (a
+-- page) or an arrow (one row) and the mouse wheel scroll. `onScroll(offset)` gets the new first
+-- row; `bar.update(offset, total, visible)` places the thumb.
+local ARROW_W, ARROW_H, TRACK_GAP, CAP = 17, 11, 19, 8
+local function atlas(texture, name)
+    if texture.SetAtlas then
+        texture:SetAtlas(name)
+    end
+end
+local function threePart(frame, prefix, layer)
+    local top = frame:CreateTexture(nil, layer)
+    top:SetSize(CAP, CAP)
+    top:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    atlas(top, prefix .. "top")
+    local bottom = frame:CreateTexture(nil, layer)
+    bottom:SetSize(CAP, CAP)
+    bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+    atlas(bottom, prefix .. "bottom")
+    local middle = frame:CreateTexture(nil, layer)
+    middle:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, 0)
+    middle:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT", 0, 0)
+    atlas(middle, prefix .. "middle")
+    return { top, middle, bottom }
+end
+function UI.scrollBar(parent, anchor, height, onScroll, wheel)
+    local bar = CreateFrame("Frame", nil, parent)
+    bar:SetSize(CAP, height)
+    bar:SetPoint("TOPLEFT", anchor, "BOTTOMRIGHT", 9, 0)
+    local trackHeight = height - 2 * TRACK_GAP
+    local track = CreateFrame("Button", nil, bar)
+    track:SetPoint("TOP", bar, "TOP", 0, -TRACK_GAP)
+    track:SetSize(CAP, trackHeight)
+    local trackParts = threePart(track, "minimal-scrollbar-track-", "ARTWORK")
+    atlas(trackParts[2], "!minimal-scrollbar-track-middle")
+    local thumb = CreateFrame("Button", nil, track)
+    thumb:SetWidth(CAP)
+    thumb:SetPoint("TOP", track, "TOP", 0, 0)
+    local thumbParts = threePart(thumb, "minimal-scrollbar-small-thumb-", "ARTWORK")
+    local state = { offset = 0, total = 0, visible = 1, max = 0, thumb = 0 }
+    local function light(on)
+        for _, part in ipairs(thumbParts) do
+            if part.SetVertexColor then
+                part:SetVertexColor(on and 1.25 or 1, on and 1.25 or 1, on and 1.25 or 1)
+            end
+        end
+    end
+    local function scrollTo(offset)
+        offset = math.max(0, math.min(state.max, math.floor(offset + 0.5)))
+        if offset ~= state.offset then
+            onScroll(offset)
+        end
+    end
+    local function arrow(direction)
+        local b = CreateFrame("Button", nil, bar)
+        b:SetSize(ARROW_W, ARROW_H)
+        b:SetPoint(direction, bar, direction, 0, 0)
+        local tex = b:CreateTexture(nil, "BACKGROUND")
+        tex:SetAllPoints()
+        local name = direction == "TOP" and "minimal-scrollbar-arrow-top" or "minimal-scrollbar-arrow-bottom"
+        atlas(tex, name)
+        b:SetScript("OnEnter", function()
+            atlas(tex, name .. "-over")
+        end)
+        b:SetScript("OnLeave", function()
+            atlas(tex, name)
+        end)
+        b:SetScript("OnMouseDown", function()
+            atlas(tex, name .. "-down")
+        end)
+        b:SetScript("OnMouseUp", function()
+            atlas(tex, name .. "-over")
+        end)
+        b:SetScript("OnClick", function()
+            scrollTo(state.offset + (direction == "TOP" and -1 or 1))
+        end)
+        return b
+    end
+    bar.back, bar.forward = arrow("TOP"), arrow("BOTTOM")
+    -- Dragging: the cursor's travel over the free track maps onto the offsets.
+    local function cursorY()
+        local _, y = GetCursorPosition()
+        local scale = bar.GetEffectiveScale and bar:GetEffectiveScale() or 1
+        return (y or 0) / ((scale and scale > 0) and scale or 1)
+    end
+    thumb:SetScript("OnMouseDown", function()
+        state.drag = { y = cursorY(), offset = state.offset }
+        light(true)
+        thumb:SetScript("OnUpdate", function()
+            local free = trackHeight - state.thumb
+            if not state.drag or free <= 0 then
+                return
+            end
+            local moved = state.drag.y - cursorY()
+            scrollTo(state.drag.offset + moved / free * state.max)
+        end)
+    end)
+    thumb:SetScript("OnMouseUp", function()
+        state.drag = nil
+        thumb:SetScript("OnUpdate", nil)
+        light(false)
+    end)
+    thumb:SetScript("OnEnter", function()
+        light(true)
+    end)
+    thumb:SetScript("OnLeave", function()
+        if not state.drag then
+            light(false)
+        end
+    end)
+    -- A click on the track pages toward the click.
+    track:SetScript("OnMouseDown", function()
+        local top = track.GetTop and track:GetTop()
+        if not top then
+            return
+        end
+        local y = cursorY()
+        local thumbTop = top - (trackHeight - state.thumb) * (state.max > 0 and state.offset / state.max or 0)
+        if y > thumbTop then
+            scrollTo(state.offset - state.visible)
+        elseif y < thumbTop - state.thumb then
+            scrollTo(state.offset + state.visible)
+        end
+    end)
+    for _, f in ipairs({ bar, track, thumb, bar.back, bar.forward }) do
+        if f.EnableMouseWheel then
+            f:EnableMouseWheel(true)
+            f:SetScript("OnMouseWheel", wheel)
+        end
+    end
+    function bar.update(offset, total, visible)
+        state.offset, state.total, state.visible = offset, total, visible
+        state.max = math.max(0, total - visible)
+        bar.back:SetEnabled(offset > 0)
+        bar.forward:SetEnabled(offset < state.max)
+        if state.max <= 0 then
+            thumb:Hide()
+            return
+        end
+        state.thumb = math.max(23, math.floor(trackHeight * visible / total))
+        thumb:SetHeight(state.thumb)
+        thumb:ClearAllPoints()
+        thumb:SetPoint("TOP", track, "TOP", 0, -math.floor((trackHeight - state.thumb) * offset / state.max + 0.5))
+        thumb:Show()
+    end
+    bar.thumb, bar.track = thumb, track
+    return bar
+end
 
 -- A results table: header buttons and rows. `columns` = { {label, width, align}, ... }; the first
 -- column is the item (icon and name) and takes the remaining width.
@@ -635,45 +787,12 @@ local function table_(parent, columns, rows, onClick, onSort)
         header:SetScript("OnMouseWheel", wheel)
     end
     t.wheel = wheel
-    local bar = CreateFrame("Slider", nil, parent)
-    bar:SetWidth(SCROLL_WIDTH - 2)
-    bar:SetPoint("TOPLEFT", header, "BOTTOMRIGHT", 3, 0)
-    bar:SetHeight(rows * ROW)
-    if bar.SetOrientation then
-        bar:SetOrientation("VERTICAL")
-    end
-    bar:SetMinMaxValues(0, 0)
-    bar:SetValueStep(1)
-    if bar.SetObeyStepOnDrag then
-        bar:SetObeyStepOnDrag(true)
-    end
-    local track = bar:CreateTexture(nil, "BACKGROUND")
-    track:SetAllPoints()
-    if track.SetColorTexture then
-        track:SetColorTexture(0, 0, 0, 0.4)
-    end
-    if bar.SetThumbTexture then
-        bar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-        local thumb = bar.GetThumbTexture and bar:GetThumbTexture()
-        if thumb then
-            thumb:SetSize(SCROLL_WIDTH + 4, 24)
-        end
-    end
-    bar:SetScript("OnValueChanged", function(_, value)
-        if t.syncing then
-            return
-        end
-        value = math.floor((tonumber(value) or 0) + 0.5)
-        if value ~= t.offset then
-            t.offset = value
+    local bar = UI.scrollBar(parent, header, rows * ROW, function(offset)
+        if offset ~= t.offset then
+            t.offset = offset
             UI.refresh()
         end
-    end)
-    if bar.EnableMouseWheel then
-        bar:EnableMouseWheel(true)
-        bar:SetScript("OnMouseWheel", wheel)
-    end
-    bar:Hide()
+    end, wheel)
     t.bar = bar
     -- A sorted copy of `list` by the chosen column. `value(entry, column)` returns a number, a
     -- string or nil; nil sorts last in both directions, equal values keep the list's order.
@@ -717,15 +836,11 @@ local function table_(parent, columns, rows, onClick, onSort)
         if total <= t.size then
             t.offset = 0
             first:SetText(label)
-            bar:Hide()
+            bar.update(0, total, t.size)
             return list
         end
-        t.offset = math.min(t.offset or 0, total - t.size)
-        t.syncing = true
-        bar:SetMinMaxValues(0, total - t.size)
-        bar:SetValue(t.offset)
-        t.syncing = false
-        bar:Show()
+        t.offset = math.max(0, math.min(t.offset or 0, total - t.size))
+        bar.update(t.offset, total, t.size)
         first:SetText(string.format("%s |cff999999(%d-%d / %d)|r", label, t.offset + 1, t.offset + t.size, total))
         local out = {}
         for i = 1, t.size do
