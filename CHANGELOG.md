@@ -30,6 +30,14 @@ All notable changes are listed here. The format follows
   working data, refresh time-dependent analytics and align crafting shopping limits with costs.
 - Return today's minimum from the public price API only when the daily record is from today.
 
+- **Full scans read a part of the house as the whole.** The server sends its list in parts of
+  1024 auctions; a part that paused for five seconds was taken as the answer, and each such scan
+  lowered the size the next one was measured against (185 344 auctions, then 122 880, 88 064 …
+  36 864). The lots missing from a part were read as bought: an oil "sold" 518 units in 1.6 hours,
+  and Resale offered only a few deals. A list that is a whole number of parts, or under 75% of the
+  largest complete scan of the day, is now waited for (and read as partial when it never grows),
+  and a smaller scan no longer lowers that size. Sales measured since are dropped once and measured
+  again from the next two complete scans.
 - **My auctions: pending was ten times too high.** The game reports a sold auction with the price of
   the whole sale, not of one unit; it was multiplied by the quantity again (22g pending where
   Auctionator showed 1g 98s). The sale was booked with the same error. A sold auction now keeps

@@ -77,17 +77,21 @@ end
 -- asking prices nobody paid. They are dropped once, to be measured again with the confirmation
 -- by the next scan; prices and listed units stay. Model 3 (1.2.0-beta.8) drops them once more: a
 -- lot taken down and posted again at a new price still counted as sold, and so did the player's
--- own purchases.
-D.SALES_MODEL = 3
+-- own purchases. Model 4 (1.2.0-beta.8): parts of the server's answer were read as complete
+-- scans, and the lots missing from a part were read as bought (in game, 518 units of an oil
+-- "sold" in 1.6 hours); the lots kept for the comparison and the house's size go too.
+D.SALES_MODEL = 4
 function D.cleanSales(db)
     if (tonumber(db.salesModel) or 1) >= D.SALES_MODEL then
         return
     end
     for _, m in pairs(db.markets) do
         if type(m) == "table" and type(m.history) == "table" then
+            m.peak = nil
             for _, h in pairs(m.history) do
                 if type(h) == "table" then
                     h.sales, h.flow, h.pending, h.pendingAt = nil, nil, nil, nil
+                    h.lots, h.lotsAt, h.lotOwners = nil, nil, nil
                     if type(h.days) == "table" then
                         for _, d in ipairs(h.days) do
                             if type(d) == "table" then

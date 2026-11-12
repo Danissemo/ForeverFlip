@@ -180,10 +180,21 @@ function S.reference(scope)
     return best
 end
 
--- A list far smaller than a complete one of this house: a part of the answer.
+-- A part of the answer: a list far smaller than a complete one of this house, or one whose size is
+-- a whole number of the server's 1024-auction parts. In game every part read so far was such a
+-- multiple (36 864, 54 272, 64 512, 88 064, 122 880, 185 344) while complete lists were not
+-- (188 401); a complete list lands on a multiple once in 1024 scans and then is only read as partial.
+S.PART = 1024
+S.SHORT_SHARE = 0.75
 function S.isShort(scope, n)
+    if not U.finite(n) or n <= 0 then
+        return false
+    end
+    if n % S.PART == 0 then
+        return true
+    end
     local ref = S.reference(scope)
-    return ref > 0 and U.finite(n) and n < ref * 0.6
+    return ref > 0 and n < ref * S.SHORT_SHARE
 end
 
 local function polled(j, now)
@@ -856,7 +867,14 @@ function S.step()
             return
         end
         if not j.partial then
-            F.Data.market(F.db, j.scope).peak = { total = j.total, at = j.finishAt }
+            -- The largest complete list of the last day: a smaller one never lowers it (each part
+            -- read as complete lowered the bar for the next, 185 344 down to 36 864 in game).
+            local market = F.Data.market(F.db, j.scope)
+            local peak = market.peak
+            local fresh = type(peak) == "table" and U.finite(peak.total) and clock() - (peak.at or 0) <= S.PEAK_AGE
+            if not fresh or j.total >= peak.total then
+                market.peak = { total = j.total, at = j.finishAt }
+            end
         end
         S.last = {
             at = j.finishAt,

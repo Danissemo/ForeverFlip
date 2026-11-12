@@ -368,6 +368,30 @@ class ScanPartsTests(unittest.TestCase):
         assert(S.job and S.job.state == 'waiting', 'still a part')
         C_AuctionHouse.GetNumReplicateItems = real''')
 
+    def test_a_whole_number_of_server_parts_is_a_part(self):
+        run(BASE + '''local S = F.Scan
+        assert(S.isShort(F.Engine.scope(), 54272), '53 parts of 1024: still coming')
+        assert(not S.isShort(F.Engine.scope(), 188401), 'a complete list is no multiple')''')
+
+    def test_a_smaller_complete_scan_does_not_lower_the_measure(self):
+        run(BASE + '''local S = F.Scan
+        local m = F.Data.market(F.db, F.Engine.scope())
+        m.peak = { total = 188401, at = now }
+        for i = 1, 60 do addAuction(10, 100 + i, 1) end
+        S.isShort = function() return false end -- read this small list as complete
+        fullScan()
+        assert(m.peak.total == 188401, 'kept: ' .. m.peak.total)
+        m.peak.at = now - S.PEAK_AGE - 1
+        now = now + 901; F.db.lastScan = 0; fullScan()
+        assert(m.peak.total == S.last.total, 'an old measure gives way')''')
+
+    def test_sales_measured_from_parts_are_dropped_once(self):
+        run(BASE + '''local D = F.Data
+        local db = D.open({ salesModel = 3, markets = { R = { peak = { total = 54272, at = now },
+            history = { ['c:1'] = { sales = { pairs = 4 }, lots = '1:1:3', lotsAt = now, days = {} } } } } })
+        local h = db.markets.R.history['c:1']
+        assert(not h.sales and not h.lots and not db.markets.R.peak and db.salesModel == D.SALES_MODEL)''')
+
 
 class GearSellTests(unittest.TestCase):
     GEAR = BASE + '''UnitClass = function() return 'Druid', 'DRUID' end
