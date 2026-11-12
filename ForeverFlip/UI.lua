@@ -3566,15 +3566,16 @@ function UI.createGeneralSettings(p)
     UI.settingBoxes = {}
     for i, f in ipairs(fields) do
         local label = text(p, "GameFontNormal")
-        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -6 - (i - 1) * 23)
-        label:SetWidth(300)
+        label:SetPoint("TOPLEFT", p, "TOPLEFT", 12, -6 - (i - 1) * 22)
+        label:SetWidth(380)
+        label:SetWordWrap(false)
         label:SetText(L(f[2]))
         local e = editbox(p, 110)
         e:SetPoint("LEFT", label, "RIGHT", 10, 0)
         e.field = f
         UI.settingBoxes[i] = e
     end
-    local y = -6 - #fields * 23
+    local y = -6 - #fields * 22
     UI.saveButton = button(p, "Save", 110, function()
         for _, e in ipairs(UI.settingBoxes) do
             local key, kind = e.field[1], e.field[3]
@@ -3605,7 +3606,7 @@ function UI.createGeneralSettings(p)
         UI["preset_" .. name] = b
     end
     local auto = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-    auto:SetPoint("TOPLEFT", p, "TOPLEFT", 8, y - 30)
+    auto:SetPoint("TOPLEFT", p, "TOPLEFT", 8, y - 28)
     auto:SetScript("OnClick", function(self)
         F.Engine.autoVerify = self:GetChecked() and true or false
     end)
@@ -3615,7 +3616,7 @@ function UI.createGeneralSettings(p)
     autoText:SetWidth(250)
     autoText:SetText(L("Check found deals on the auction house automatically (one search per second)"))
     local scan = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
-    scan:SetPoint("TOPLEFT", p, "TOPLEFT", 300, y - 30)
+    scan:SetPoint("TOPLEFT", p, "TOPLEFT", 300, y - 28)
     scan:SetScript("OnClick", function(self)
         F.db.settings.autoScan = self:GetChecked() and true or false
     end)
@@ -3624,13 +3625,13 @@ function UI.createGeneralSettings(p)
     scanText:SetPoint("LEFT", scan, "RIGHT", 2, 0)
     scanText:SetWidth(250)
     scanText:SetText(L("Full scan every 15 minutes while the auction house is open"))
-    -- Two columns of checkboxes, 28 pixels apart.
+    -- Two columns of checkboxes, 26 pixels apart (the page is 438 high, as the Buy tab's list).
     local slots = 2
     local function toggle(setting, label)
         local box = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
         local column, row = slots % 2, math.floor(slots / 2)
         slots = slots + 1
-        box:SetPoint("TOPLEFT", p, "TOPLEFT", column == 0 and 8 or 300, y - 30 - row * 28)
+        box:SetPoint("TOPLEFT", p, "TOPLEFT", column == 0 and 8 or 300, y - 28 - row * 26)
         box:SetScript("OnClick", function(self)
             if setting == "sniper" then
                 F.Deals.setSniper(self:GetChecked() and true or false)
@@ -3660,7 +3661,7 @@ function UI.createGeneralSettings(p)
     toggle("highlight", "Mark deals in the game's Buy tab")
     toggle("disenchant", "Disenchant deals (for a character who knows Disenchant)")
     local lang = text(p, "GameFontNormal")
-    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 30 - math.ceil(slots / 2) * 28 - 8)
+    lang:SetPoint("TOPLEFT", p, "TOPLEFT", 12, y - 28 - math.ceil(slots / 2) * 26 - 4)
     lang:SetText(L("Language (applies after /reload)"))
     local en = button(p, "English", 90, function()
         F.db.settings.language = "en"
