@@ -201,7 +201,7 @@ class ItemAnswerTests(unittest.TestCase):
         run(BASE + '''enableBrowse(); fullScan()
         F.AH.search = function() end -- the server never answers the plain search
         T.checkPrice('i:30', function() end, true)
-        run(11)
+        run(D.FAST_WAIT + 1) -- a check of Check all gives up after D.FAST_WAIT seconds
         assert(D.byName[30], 'remembered')
         run(1)
         assert(D.search and D.search.key == 'i:30' and D.search.phase == 'browse', 'tried again at once by name, like gear')''')

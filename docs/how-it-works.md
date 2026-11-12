@@ -234,6 +234,29 @@ higher profit is shown.
 When there is no deal, the reason is one of: no price gap, budget, profit too small, still
 collecting sales data, not selling, enough stock already held, or an ignored item.
 
+### Sure: how sure a resale is to pay back
+
+`Market.confidence`, shown as **Sure** on the Deals page (`Deals.sure`, live: it ages with the
+data). A number from 0 to 100%: the chance that real buyers take the deal's units at its Sells at
+price within 2 days (`M.SURE_HOURS`) while the lot is the cheapest, discounted for speculation and
+old data.
+
+| Part | What it is |
+| --- | --- |
+| n | Units seen bought at 95% of the price or more, in h hours of lot-tracked scans (decayed). |
+| real | Real-buyer share: `(sure + lots / 2) / (sure + lots)`. A lot bought in part is a sure purchase; a lot that vanished whole may be another reseller (or a repost) and counts half. |
+| trust | Own results of the item: stock that did not sell lowers it (`Deals.trust`). |
+| m | Units per purchase at the price (sale log: units / buys, at least 1). Four units bought at once are one buyer. |
+| t | Selling time: a rival who undercuts at c per hour (`M.undercutRate`) keeps the lot first only `(1 - e^(-c·48)) / c` of the 48 hours. |
+| P | `P(B >= ceil(qty / m))`, B the purchases in t hours: negative binomial of a `Gamma(n·real·trust/m + 0.1, (h + 24) / 24 days)` rate. A quiet day is assumed until the scans show sales. |
+| sweep | `1 - min(1, sweeps / pairs) / 2`: shelves cleared in one go are speculation. |
+| fresh | `0.5 ^ (max(0, age - 6 h) / 48 h)`: sales data loses half its weight every 2 days after 6 hours. |
+
+`Sure = P × sweep × fresh`. A vendor deal is 100% (a merchant pays at once). Examples (one unit
+unless said): no sale seen at the price, 7%; one whole lot vanished in 1.5 hours, about 47%; one lot
+bought in part, about 69%; ten sales in a day, 5 units, about 91%. Green from 70%, yellow from 40%,
+red below.
+
 ### Shopping deal
 
 `Shopping.lua`. If the item has no vendor deal or resale and is on the shopping list: take every unit
@@ -291,9 +314,9 @@ with them, using the same rules.
   is reported and the deal is checked again; the wallet is still watched 3 minutes (`T.late`), and
   a purchase the server takes that late is booked then.
 - **The full scan answer comes in parts** (1024, 2048, 24576 ... auctions, with pauses of seconds
-  between them). It is read once the list has not changed for 5 seconds (`S.SETTLE`); a list far
-  smaller than the house's last full scan (under 60%) waits for 30 quiet seconds (`S.SHORT`) or the
-  end of the wait. Reading after one quiet second read a part in game (1024 of 300 000 auctions).
+  between them). It is read once the list has not changed for 5 seconds (`S.SETTLE`); a list that
+  is a whole number of 1024-auction parts, or under 75% of the largest complete scan of the day,
+  waits for 60 quiet seconds (`S.SHORT`) or the end of the wait, and is then read as partial. Reading after one quiet second read a part in game (1024 of 300 000 auctions).
 - An item search with no answer in 10 seconds is tried again at once by name (a browse lists its
   exact item keys, then each is searched, as for gear), and that item is searched by name from then
   on (`Deals.byName`).
@@ -302,14 +325,17 @@ with them, using the same rules.
   purchase the server throws away (`AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED` right after it) is
   reported at once.
 - A check is valid for **5 minutes** (`D.FRESH`). After that, Buy requires a new check. A lot
-  bought by someone meanwhile only makes the purchase fail, for nothing. Background searches wait
-  15 seconds (`D.SELECTED_HOLD`) while a freshly checked deal is selected, to leave time for Buy.
+  bought by someone meanwhile only makes the purchase fail, for nothing. Background searches and
+  Check all wait 3 seconds (`D.SELECTED_HOLD`) while a freshly checked deal is selected, and as long
+  as the pointer stays on Buy. 15 seconds stopped Check all at every click on a row.
 - Unchecked scan deals remain leads until refreshed or removed; buying still requires a fresh exact check.
 - Searches run **one at a time**. Requests from your clicks form a first-in, first-out queue and are
   accepted even while the server is throttling. Background work (automatic checks, sniper) only uses
   an idle slot and never replaces a request of yours.
-- A search with no answer in 10 seconds is abandoned. A dropped request
-  (`AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED`) is retried.
+- A search with no answer in 10 seconds is abandoned (`D.ANSWER_WAIT`); a search of Check all after
+  5 seconds (`D.FAST_WAIT`), and it is sent once more at the end of the batch. Answers come within
+  a second or two, and WoW Forever never answers a search of an item nobody else sells. A dropped
+  request (`AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED`) is retried.
 - Gear is searched in two steps, because the sell search is never answered on WoW Forever: a browse
   by the item's name lists its item-key versions, then each version is searched and the rows are
   merged and filtered by the full item name. A complete browse without the item means nobody sells
@@ -317,6 +343,17 @@ with them, using the same rules.
   sent (the game's Buy tab, another addon) during the search, or less than 10 seconds before it, may
   answer in its place: then the result is "unknown", not "nobody sells it", and the versions found
   are not taken as all of them.
+- **Each version learns its ending.** Gear with a random ending ("of the Owl") has one item-key
+  version per ending and level, and a check searched every version of the item: 15 searches and
+  more for one deal. The lots of each version searched name its ending (`AH.versionRows`, kept as
+  `e` in `F.db.itemKeys`); the next check searches only the versions of its own ending and those
+  not known yet. A version whose lots carry several endings teaches nothing.
+- **One sweep answers every ending.** A search that went through every version of an item, each
+  read to its end, answers the queued checks of the item's other endings from the same lots at once
+  (`Deals.shareSweep`). An ending with no lot there keeps its own search: the versions remembered
+  may be out of date.
+- Check all asks the client for every item's auction house data when it starts. A search of an
+  item without it waits up to 2 seconds for it; one item after the other, that added up.
 - The throttle check (`IsThrottledMessageSystemReady`) can stay "not ready" for good after a message
   the server never answered. It is watched every frame; after 5 seconds of "not ready" one message
   goes through.

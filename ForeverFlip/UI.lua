@@ -1383,8 +1383,9 @@ function UI.createDeals(p)
             { "Buy at", 80 },
             { "Sells at", 80 },
             { "Profit", 80 },
-            { "Est./day", 74 },
-            { "Status", 100, "LEFT" },
+            { "Est./day", 66 },
+            { "Sure", 50 },
+            { "Status", 92, "LEFT" },
         },
         DEAL_ROWS,
         function(row)
@@ -1394,7 +1395,7 @@ function UI.createDeals(p)
             if UI.dealSort == index then
                 UI.dealDescending = not UI.dealDescending
             else
-                UI.dealSort, UI.dealDescending = index, index == 5 or index == 6
+                UI.dealSort, UI.dealDescending = index, index == 5 or index == 6 or index == 7
             end
             UI.dealPage = 1
             UI.refresh()
@@ -1429,6 +1430,11 @@ function UI.createDeals(p)
         UI.dealTable.headers[6],
         "Est./day",
         "Units bought per day at 85% of the Sells at price or more, not a sale probability. Counted from lots seen bought between full scans: a lot that got smaller is a sure sale; a lot that vanished whole counts only when the next scan shows its seller did not post the item again. Expired/cancelled lots, reposts at any price, your own purchases and one-off sweeps (above three times the usual scan pair) are left out.\n\nTwo usable full scans are required. Zero means none was bought; '-' means unknown. Orange: only whole lots were seen, no lot bought in part. Vendor deals need no auction-house resale.\n\nGrey estimates use data older than 3 hours. Checking a current price does not refresh sale history. Short observations are smoothed: one unit bought in 15 minutes counts as about 5-6 a day, not 96."
+    )
+    headerTip(
+        UI.dealTable.headers[7],
+        "Sure",
+        "How sure the deal is to pay back at its Sells at price: the chance that real buyers take its units at that price within 2 days, while your lot is the cheapest.\n\nFrom the sales seen at 95% of the price or more. Few sales give a low number even when they came fast (four sales in one hour are no promise). A whole lot that vanished counts half (often another reseller, not a buyer); shelves cleared in one go, a rival who undercuts often, stock of the item that did not sell and old sales data lower it.\n\nGreen 70% and more, yellow 40%, red below. Vendor deals: 100% (a merchant pays at once)."
     )
     -- The deals scroll like every table (the scrollbar on the right); the line below counts them.
     UI.pageText = text(p, "GameFontHighlightSmall")
@@ -1606,6 +1612,51 @@ local function sellsAtText(d, history)
     return (unsure and "|cff999999*|r " or "") .. U.money(unitExit(d))
 end
 
+-- Sure (Deals.sure) as a percentage: green from 70%, yellow from 40%, red below.
+function UI.sureText(sure)
+    if not U.finite(sure) then
+        return "-"
+    end
+    local pct = math.floor(sure * 100 + 0.5)
+    local color = sure >= 0.7 and "|cff40ff40" or sure >= 0.4 and "|cffffd100" or "|cffff6060"
+    return color .. pct .. "%|r"
+end
+
+-- What the Sure number of a resale is made of, in one line.
+function UI.sureSentence(d, now)
+    local sure, parts = F.Deals.sure(d, now)
+    if not sure or type(parts) ~= "table" then
+        return nil
+    end
+    local line = string.format(
+        L(
+            "Sure %s: %d%% chance real buyers take %d at this price in %d h (%d bought at 95%% of it or more in %d h watched; %d%% real buyers)."
+        ),
+        UI.sureText(sure),
+        math.floor(parts.p * 100 + 0.5),
+        d.qty,
+        math.floor(parts.selling + 0.5),
+        math.floor(parts.units + 0.5),
+        math.floor(parts.hours + 0.5),
+        math.floor(parts.real * 100 + 0.5)
+    )
+    local extra = {}
+    if parts.rival > 0 and parts.selling < F.Market.SURE_HOURS - 0.5 then
+        extra[#extra + 1] =
+            string.format(L("a rival undercuts about every %d h"), math.max(1, math.floor(1 / parts.rival + 0.5)))
+    end
+    if parts.sweep < 1 then
+        extra[#extra + 1] = L("shelves cleared in one go lower it")
+    end
+    if parts.fresh < 0.95 then
+        extra[#extra + 1] = string.format(L("sales data %d h old"), math.floor(parts.age / 3600))
+    end
+    if extra[1] then
+        line = line .. " " .. table.concat(extra, "; ") .. "."
+    end
+    return line
+end
+
 local MODE_LABELS = { vendor = "vendor", shop = "shopping list", disenchant = "disenchant", bid = "bid" }
 -- Est./day: grey when the data is old, orange when no lot was seen bought in part at the price
 -- (only whole lots that vanished, confirmed by the next scan: the weaker evidence).
@@ -1710,9 +1761,10 @@ function UI.refreshDeals()
     local list = F.Deals.visible(UI.filter)
     local now = F.Engine.clock()
     local history = F.Data.market(F.db, F.Engine.scope()).history
-    local estimates = {}
+    local estimates, sures = {}, {}
     for _, d in ipairs(list) do
         estimates[d.key] = saleEstimate(d, history, now)
+        sures[d.key] = F.Deals.sure(d, now)
     end
     local function sortValue(d)
         local field = UI.dealSort
@@ -1729,6 +1781,8 @@ function UI.refreshDeals()
             return d.profit
         elseif field == 6 then
             return estimates[d.key].perDay
+        elseif field == 7 then
+            return sures[d.key]
         end
         if F.Deals.search and F.Deals.search.key == d.key then
             return 0
@@ -1747,7 +1801,7 @@ function UI.refreshDeals()
     end
     table.sort(list, function(a, b)
         local av, bv = values[a.key], values[b.key]
-        if UI.dealSort == 6 and (av == nil) ~= (bv == nil) then
+        if (UI.dealSort == 6 or UI.dealSort == 7) and (av == nil) ~= (bv == nil) then
             return av ~= nil
         end
         if av == bv then
@@ -1774,7 +1828,8 @@ function UI.refreshDeals()
             r.cols[3]:SetText(sellsAtText(d, history))
             r.cols[4]:SetText(U.money(d.profit))
             r.cols[5]:SetText(estimateText(d, estimates[d.key], history[d.key]))
-            r.cols[6]:SetText(dealStatus(d))
+            r.cols[6]:SetText(UI.sureText(sures[d.key]))
+            r.cols[7]:SetText(dealStatus(d))
             if d.key == UI.selected then
                 r.selected:Show()
             else
@@ -1828,6 +1883,10 @@ function UI.refreshDeals()
         if d.mode == "flip" then
             lines[#lines + 1] =
                 estimateSentence(estimates[d.key] or saleEstimate(d, history, now), history[d.key], d.exit)
+            local sureLine = UI.sureSentence(d, now)
+            if sureLine then
+                lines[#lines + 1] = sureLine
+            end
         end
         if d.kind ~= "commodity" then
             lines[#lines + 1] =

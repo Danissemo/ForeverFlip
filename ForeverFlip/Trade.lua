@@ -1652,9 +1652,11 @@ end
 -- the negative binomial of a Gamma(n + 1/2, (h + M.PRIOR_HOURS) / 24) rate. Returns tail(k) =
 -- P(N >= k); a normal approximation beyond T.CHANCE_TERMS units.
 T.CHANCE_TERMS = 2000
-function T.saleChances(sold, hours, t)
-    local shape = math.max(0, U.finite(sold) and sold or 0) + 0.5
-    local exposure = (math.max(0, U.finite(hours) and hours or 0) + M.PRIOR_HOURS) / 24
+function T.saleChances(sold, hours, t, prior, priorHours)
+    local shape = math.max(0, U.finite(sold) and sold or 0) + (U.finite(prior) and prior > 0 and prior or 0.5)
+    local exposure = (
+        math.max(0, U.finite(hours) and hours or 0) + (U.finite(priorHours) and priorHours or M.PRIOR_HOURS)
+    ) / 24
     local days = math.max(0, U.finite(t) and t or 0) / 24
     if days <= 0 then
         return function(k)

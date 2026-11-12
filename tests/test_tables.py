@@ -126,7 +126,7 @@ class SniperControlTests(unittest.TestCase):
         assert(not UI.checkButton:IsEnabled(),'queued request must disable duplicates')
         local found=false
         for _,r in ipairs(UI.dealTable.rows) do
-            if r.key=='c:10' then found=true;local t=r.cols[6]:GetText();assert(t:find('queued') or t:find('checking'),t) end
+            if r.key=='c:10' then found=true;local t=r.cols[7]:GetText();assert(t:find('queued') or t:find('checking'),t) end
         end
         assert(found)
         ''')

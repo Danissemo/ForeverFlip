@@ -8,6 +8,21 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- **Sure**, a new column on the Deals page: how sure a resale is to pay back at its Sells at
+  price, from 0 to 100%. It is the chance that real buyers take the units at that price within
+  2 days while your lot is the cheapest. Few sales give a low number however fast they came, and
+  one buyer of four units counts as one purchase. A lot that vanished whole counts half (often
+  another reseller). Shelves cleared in one go, a rival who undercuts often, unsold stock of the
+  item and old sales data lower it. Selecting a deal explains the number; the formula is in
+  docs/how-it-works.md.
+- **Check all is much faster for gear.** Each item-key version learns its ending from its lots, so
+  a check of "Magician Staff of the Owl" searches only its own versions, not the fifteen of every
+  ending. One sweep of an item's versions answers the checks of its other endings at once. The
+  client loads every item's data when Check all starts (each item waited up to 2 seconds for it).
+  A search of Check all with no answer gives up after 5 seconds (was 10; it is sent once more at
+  the end). Selecting a checked deal holds Check all for 3 seconds (was 15), plus as long as the
+  pointer is on Buy.
+
 - **Shopping list → My bids**: every bid of yours, including those placed in the game's own window.
   It shows whether you lead, were outbid, won or lost, the next bid the house takes and what the
   item is worth to you. For an outbid bid it advises bidding again while that still leaves your

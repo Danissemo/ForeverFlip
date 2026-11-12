@@ -522,15 +522,65 @@ function A.cachedKeys(item)
     if F.Engine.clock() - (all.at or 0) > A.KEYS_FRESH then
         return nil
     end
-    local exact, every = {}, {}
+    -- A version whose ending is not known yet may be this one: it is searched too. Only versions
+    -- known to carry another ending are left out. Returns the keys, and true when they are every
+    -- version of the item (their rows then answer every ending of it at once).
+    local exact, every, named = {}, {}, false
     for _, v in ipairs(all.list) do
         local key = { itemID = item.id, itemLevel = v.l or 0, itemSuffix = v.s or 0, battlePetSpeciesID = 0 }
         every[#every + 1] = key
-        if item.name and v.n == item.name then
+        local own = item.name and (v.n == item.name or v.e == item.name)
+        if own then
+            named = true
+        end
+        -- v.e: the ending read from a lot's link (the game's own name of a version is often the
+        -- item's name without its ending, which tells nothing).
+        if own or (item.name and v.e == nil) then
             exact[#exact + 1] = key
         end
     end
-    return #exact > 0 and exact or every
+    if named then
+        return exact, #exact == #every
+    end
+    return every, true
+end
+
+-- Every other player's lot of one item-key version, whatever its ending, and the ending's name
+-- (lower case; one version is one ending). The name is remembered for the version, so the next
+-- check of the item searches only the versions of its own ending.
+function A.versionRows(searchKey)
+    local rows, name, link, mixed = {}, nil, nil, false
+    for i = 1, (AH.GetNumItemSearchResults(searchKey) or 0) do
+        local r = AH.GetItemSearchResultInfo(searchKey, i)
+        if r and r.itemLink then
+            local this = string.lower(U.linkName(r.itemLink) or "")
+            if not link then
+                link, name = r.itemLink, this
+            elseif this ~= name then
+                mixed = true -- more than one ending under one version: nothing is learned
+            end
+        end
+        if
+            r
+            and (r.buyoutAmount or 0) > 0
+            and (r.quantity or 0) > 0
+            and not r.containsOwnerItem
+            and not r.containsAccountItem
+        then
+            rows[#rows + 1] = { unit = r.buyoutAmount, qty = r.quantity, auctionID = r.auctionID, link = r.itemLink }
+        end
+    end
+    if link and name ~= "" and not mixed then
+        A.rememberKey(searchKey, link)
+        local e = F.db and type(F.db.itemKeys) == "table" and F.db.itemKeys[searchKey.itemID]
+        for _, v in ipairs(type(e) == "table" and type(e.list) == "table" and e.list or {}) do
+            if v.l == (searchKey.itemLevel or 0) and v.s == (searchKey.itemSuffix or 0) then
+                v.e = name
+            end
+        end
+        return name, rows
+    end
+    return nil, rows, mixed
 end
 
 function A.forgetKeys(id)
@@ -567,16 +617,28 @@ function A.nativeShown()
     return false
 end
 
--- The item-key versions of `id` in the browse results so far.
-function A.gearKeys(id)
-    local out = {}
+-- The item-key versions of `id` in the browse results so far. With `name` (an ending), versions
+-- known to carry another ending are left out; the second result is true when none was.
+function A.gearKeys(id, name)
+    local out, skipped = {}, false
+    local known = {}
+    local e = name and F.db and type(F.db.itemKeys) == "table" and F.db.itemKeys[id]
+    for _, v in ipairs(type(e) == "table" and type(e.list) == "table" and e.list or {}) do
+        known[(v.l or 0) .. ":" .. (v.s or 0)] = v.e
+    end
     local ok, results = pcall(AH.GetBrowseResults)
     for _, r in ipairs(ok and results or {}) do
-        if type(r.itemKey) == "table" and r.itemKey.itemID == id then
-            out[#out + 1] = r.itemKey
+        local k = r.itemKey
+        if type(k) == "table" and k.itemID == id then
+            local n = known[(k.itemLevel or 0) .. ":" .. (k.itemSuffix or 0)]
+            if n == nil or n == name then
+                out[#out + 1] = k
+            else
+                skipped = true
+            end
         end
     end
-    return out
+    return out, not skipped
 end
 -- Step 2: one exact version, and its next page.
 function A.searchKey(key)

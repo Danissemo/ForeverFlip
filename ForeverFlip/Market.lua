@@ -735,6 +735,74 @@ M.lotDemand = lotDemand
 -- Undercuts of an item per hour: new lots posted below the cheapest lot, over the hours its lots
 -- were watched (with the same prior hours as the sales, so one scan pair does not decide it).
 -- { perHour, cuts, hours }; nil before the first scan pair.
+-- How sure a resale is to pay back at its Sells at price: a number from 0 to 1, the chance that
+-- real buyers take the units at that price within M.SURE_HOURS while the lot is first in line,
+-- discounted for evidence that is speculation or old.
+--   n     units seen bought at or above 95% of the price (decayed, lot-tracked full scans), in
+--         h hours watched
+--   real  share of real buyers: units bought out of a lot in part are sure purchases; a whole lot
+--         that vanished may be a reseller clearing it (or a repost), and counts half:
+--         real = (sure + lots / 2) / (sure + lots)
+--   trust own results of the item (stock that did not sell lowers it, Deals.trust)
+--   m     units per purchase at the price (the sale log: units / buys, at least 1): four units
+--         bought at once are one buyer, not four. Purchases are what is uncertain, so the chance
+--         is that of ceil(qty / m) purchases from n / m seen
+--   t     selling time: a rival who answers undercuts at c per hour (M.undercutRate) keeps the lot
+--         first only (1 - e^(-c H)) / c of the H hours
+--   P     P(N >= qty) for N, the units sold in t hours, a negative binomial with a
+--         Gamma(n x real x trust + 0.1, (h + 24) / 24 days) rate: a quiet day is assumed until
+--         the scans show sales, so few sales give a modest number however fast they came, and
+--         many sales a high one (F.Trade.saleChances). With no sale seen at the price it stays
+--         below 10%; one whole lot vanished in an hour and a half gives about half
+--   sweep one buyer clearing a shelf is counted at a ceiling (M.SWEEP); items where that happens
+--         often are speculation: x (1 - min(1, sweeps / pairs) / 2)
+--   fresh sales data older than 6 hours loses half its weight every 2 days:
+--         0.5 ^ (max(0, age - 6 h) / 48 h)
+--   sure  = P x sweep x fresh
+-- Returns sure, and its parts for the explanation.
+M.SURE_HOURS = 48
+M.SURE_PRIOR = 0.1
+M.SURE_PRIOR_HOURS = 24
+function M.confidence(h, price, qty, now, trust)
+    local s = type(h) == "table" and h.sales
+    if type(s) ~= "table" or (s.pairs or 0) < 1 or not U.finite(price) or price <= 0 then
+        return nil
+    end
+    local floor, units = 0.95 * price, 0
+    for b, n in pairs(type(s.b) == "table" and s.b or {}) do
+        if b % 2 == 0 and U.finite(s.b[b + 1]) and s.b[b + 1] >= floor then
+            units = units + n
+        end
+    end
+    local sure, lots = math.max(0, s.sure or 0), math.max(0, s.lots or 0)
+    local real = (sure + lots) > 0 and (sure + lots / 2) / (sure + lots) or 1
+    trust = U.finite(trust) and math.max(0, trust) or 1
+    local hours = M.SURE_HOURS
+    local cut = M.undercutRate(h)
+    local c = cut and cut.perHour or 0
+    local t = c > 1e-9 and (1 - math.exp(-c * hours)) / c or hours
+    local e = M.saleEvidence(h, floor)
+    local m = e and e.buys > 0 and math.max(1, e.units / e.buys) or 1
+    local tail = F.Trade.saleChances(units * real * trust / m, s.hours or 0, t, M.SURE_PRIOR, M.SURE_PRIOR_HOURS)
+    local p = tail(math.max(1, math.ceil((qty or 1) / m)))
+    local sweep = 1 - math.min(1, (s.sweeps or 0) / math.max(1, s.pairs or 1)) / 2
+    local age = U.finite(now) and U.finite(s.at) and math.max(0, now - s.at) or 0
+    local fresh = 0.5 ^ (math.max(0, age - 6 * 3600) / (48 * 3600))
+    return p * sweep * fresh,
+        {
+            p = p,
+            units = units,
+            perBuy = m,
+            real = real,
+            hours = s.hours or 0,
+            selling = t,
+            rival = c,
+            sweep = sweep,
+            fresh = fresh,
+            age = age,
+        }
+end
+
 function M.undercutRate(h)
     local s = type(h) == "table" and h.sales
     if type(s) ~= "table" or (s.pairs or 0) < 1 or not U.finite(s.hours) then

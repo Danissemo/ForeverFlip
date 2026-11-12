@@ -14,8 +14,9 @@ D.byName = {} -- item IDs whose plain search got no answer: searched by name ins
 D.FRESH = 300
 -- Seconds a selected, checked deal holds background searches back, counted from its selection or
 -- its check, whichever is later: long enough to press Buy, short enough that Check all never looks
--- stuck behind a deal the player only looked at (120 seconds did, in game).
-D.SELECTED_HOLD = 15
+-- stuck behind a deal the player only looked at (120 seconds did, in game; 15 seconds still
+-- stopped Check all at every click on a row). Pointing at Buy holds it as long as it stays there.
+D.SELECTED_HOLD = 3
 -- New searches in a rolling minute at most; the server's throttle is the real pace.
 D.PER_MINUTE = 200
 -- Shortest gap between two searches of the player or of Check all (was 0.4 s and 1 s).
@@ -23,6 +24,11 @@ D.GAP = 0.2
 -- Total time spent waiting for sent replies across browse/versions/pages. Per-message
 -- timeouts alone allow dozens of slow versions to monopolize the whole manual queue.
 D.MAX_SEARCH_TIME = 30
+-- Seconds without an answer before a search counts as unanswered: answers come within a second or
+-- two, and WoW Forever never answers a search of an item nobody else sells. Check all's searches
+-- give up sooner (they are sent once more at the end of the batch).
+D.ANSWER_WAIT = 10
+D.FAST_WAIT = 5
 
 local function clock()
     return F.Engine.clock()
@@ -127,6 +133,25 @@ function D.evaluate(g, vendor, history, now)
         deal.found = now or clock()
     end
     return deal, reason
+end
+
+-- How sure a deal is to pay back at its Sells at price (0 to 1, Market.confidence), and the parts
+-- of it: a vendor deal is sure (a merchant pays at once); a resale is reckoned from its sales.
+function D.sure(d, now)
+    if not d then
+        return nil
+    end
+    if d.mode == "vendor" then
+        return 1
+    end
+    if d.mode ~= "flip" or not U.finite(d.exit) then
+        return nil
+    end
+    now = now or clock()
+    local h = F.Data.market(F.db, F.Engine.scope()).history[d.key]
+    local p = F.Data.char(F.db, F.Engine.owner()).positions[d.key]
+    local held = p and p.qty or 0
+    return F.Market.confidence(h, d.exit, (d.qty or 1) + held, now, D.trust(d.key, now))
 end
 
 local function order(a, b)
@@ -455,7 +480,10 @@ local function startRequest(r)
     -- two seconds for it (the server often ignores the search of such an item).
     -- Ordinary items (including recipes) can carry nonzero key levels too. Reuse the
     -- server's owned/browse key instead of first waiting for an ignored zero-level query.
-    local cached = r.item.kind ~= "commodity" and F.AH.cachedKeys and F.AH.cachedKeys(r.item)
+    local cached, every
+    if r.item.kind ~= "commodity" and F.AH.cachedKeys then
+        cached, every = F.AH.cachedKeys(r.item)
+    end
     local plain = not (cached or r.item.kind == "gear" or D.byName[r.item.id])
     if (cached or plain) and F.AH.keyInfoReady and not F.AH.keyInfoReady(r.item, cached and cached[1]) then
         r.infoSince = r.infoSince or now
@@ -485,6 +513,7 @@ local function startRequest(r)
         -- Its versions are known from an earlier browse: they are searched straight away.
         r.phase, r.keys, r.keyIndex, r.found, r.foundIDs, r.allComplete, r.cached =
             "keys", cached, 0, {}, {}, true, true
+        r.every, r.shared = every and r.item.kind == "gear", {}
         nextGearKey(r)
         F.Engine.changed()
         return true
@@ -619,7 +648,11 @@ function nextGearKey(s)
         table.sort(s.found, function(a, b)
             return a.unit < b.unit
         end)
+        local shared = s.every and s.allComplete and s.shared
         finishSearch(s.found, s.allComplete)
+        if shared then
+            D.shareSweep(s.item.id, s.key, shared)
+        end
         return
     end
     -- Yield between versions: the next frame can serve a new click or purchase first.
@@ -632,13 +665,47 @@ function nextGearKey(s)
     end
 end
 
+-- One search went through every version of a gear item, each read to its end: the queued checks
+-- of the item's other endings are answered from those lots at once, without a search of their
+-- own (Check all searched the same versions again for every ending of one item). An ending with
+-- no lot there waits for its own search: the versions remembered may be out of date.
+function D.shareSweep(id, done, shared)
+    local answered = {}
+    for i = #D.requests, 1, -1 do
+        local r = D.requests[i]
+        if r.item.kind == "gear" and r.item.id == id and r.key ~= done and not r.waitKey then
+            local rows = shared[r.item.name]
+            if rows and #rows > 0 then
+                table.remove(D.requests, i)
+                D.queued[r.key] = nil
+                local copy = {}
+                for k, row in ipairs(rows) do
+                    copy[k] = row
+                end
+                table.sort(copy, function(a, b)
+                    return a.unit < b.unit
+                end)
+                answered[#answered + 1] = { r = r, rows = copy }
+            end
+        end
+    end
+    for _, a in ipairs(answered) do
+        completeRequest(a.r, a.rows, true)
+    end
+    if answered[1] then
+        retryChanged()
+        F.Engine.changed()
+    end
+    return #answered
+end
+
 -- Browse results while a gear search waits for its versions. Returns true when they were its.
 function D.onBrowse()
     local s = D.search
     if not s or s.phase ~= "browse" then
         return false
     end
-    local keys = F.AH.gearKeys(s.item.id)
+    local keys, every = F.AH.gearKeys(s.item.id, s.item.name)
     if #keys == 0 and not F.AH.browseFull() and s.pages < 3 and not F.Scan.blocking() then
         s.pages, s.at = s.pages + 1, clock()
         pcall(F.AH.browseMore)
@@ -655,6 +722,7 @@ function D.onBrowse()
         return true
     end
     s.keys, s.keyIndex = keys, 0
+    s.every, s.shared = every and F.AH.browseFull() and not s.foreign, {}
     if s.foreign then
         -- The versions may come from somebody else's browse: some may be missing, so the rows
         -- found cannot prove there is nothing cheaper.
@@ -713,7 +781,24 @@ function D.onResults(itemID, searchKey)
                 return
             end
         end
+        local wholeVersion = ok and complete
         complete = complete or enough
+        -- Every ending's lots of this version: the version learns its ending's name (the next check
+        -- searches only its own ending's versions), and other deals of the item can be answered
+        -- from this sweep (D.shareSweep). A version not read to its end answers no other deal.
+        local okNamed, named, all, mixed = pcall(F.AH.versionRows, searchKey)
+        if s.shared then
+            if not okNamed or not wholeVersion or mixed then
+                s.every = false
+            elseif named then
+                local list = s.shared[named] or {}
+                for _, r in ipairs(all) do
+                    r.searchKey = searchKey
+                    list[#list + 1] = r
+                end
+                s.shared[named] = list
+            end
+        end
         if ok then
             for _, r in ipairs(rows) do
                 if not r.auctionID or not s.foundIDs[r.auctionID] then
@@ -963,6 +1048,15 @@ function D.startBatch(scope, keys, mode)
         end
     end
     batch.send = send
+    -- The client loads every item's auction house data now, all at once: a search of an item
+    -- without it waited up to two seconds for it, one item after the other.
+    for _, key in ipairs(snapshot) do
+        local item = U.parseKey(key)
+        if item and F.AH.keyInfoReady then
+            local cached = item.kind ~= "commodity" and F.AH.cachedKeys and F.AH.cachedKeys(item)
+            pcall(F.AH.keyInfoReady, item, cached and cached[1])
+        end
+    end
     for _, key in ipairs(snapshot) do
         if D.batch ~= batch then
             break -- a synchronous close can cancel the whole batch while sending its first key
@@ -1144,7 +1238,7 @@ function D.step()
         end
     end
     s = D.search
-    if s and not s.waitKey and now - s.at > 10 then
+    if s and not s.waitKey and now - s.at > (s.fast and D.FAST_WAIT or D.ANSWER_WAIT) then
         if s.item.kind == "item" and not s.phase and F.AH.canSearchGear() and not s.byNameTried then
             -- No answer to the plain search: tried again at once by name (a browse lists the
             -- item's exact keys, then each is searched), as gear is. Remembered for next time.
