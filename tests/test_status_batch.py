@@ -153,7 +153,7 @@ class StatusBatchTests(unittest.TestCase):
         assert(D.startBatch('sell',{},false)==0)
         ''')
 
-    def test_legacy_owned_footer_sees_active_auction_batch(self):
+    def test_owned_footer_reports_active_batch_without_duplicate_queue(self):
         run(BATCH + '''owned={{auctionID=1,itemKey={itemID=101},quantity=1,buyoutAmount=60,status=0}}
         fire('OWNED_AUCTIONS_UPDATED')
         D.startBatch('auctions',{keys[1],keys[2]},false)

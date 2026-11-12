@@ -14,7 +14,7 @@ class TrackSalesTests(unittest.TestCase):
         run(LOTS + '''local n,by=M.trackSales(seq{{100,20,3},{120,5,3}},seq{{100,12,3},{120,5,3}},900)
         assert(n==8 and by[100]==8)''')
 
-    def test_vanished_lot_that_could_not_expire_is_sold(self):
+    def test_nonexpired_vanished_lot_is_a_sale_candidate(self):
         run(LOTS + '''local n=M.trackSales(seq{{100,1,3},{150,1,3}},seq{{150,1,3}},900);assert(n==1)''')
 
     def test_vanished_lot_that_could_have_expired_is_not_sold(self):
@@ -47,7 +47,7 @@ fullScan()
 
 
 class ScanTrackingTests(unittest.TestCase):
-    def test_two_scans_record_sales_and_daily_units(self):
+    def test_whole_lot_sales_require_a_followup_scan_before_daily_units(self):
         run(SCANS + '''-- the cheapest cloth lot (5 at 60c) is bought; another seller lists more at 150c
         table.remove(auctions,1);addAuction(10,150,10)
         scan()
