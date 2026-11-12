@@ -114,46 +114,22 @@ local function inset(parent, atlas)
 end
 
 -- Entry of the left list, styled like the auction house category list.
-local function border(parent, r, g, b, a, layer)
-    local lines = {}
-    for i, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
-        local t = parent:CreateTexture(nil, layer or "BORDER")
-        t:SetColorTexture(r, g, b, a)
-        if side == "TOP" or side == "BOTTOM" then
-            t:SetHeight(1)
-            t:SetPoint(side .. "LEFT", parent, side .. "LEFT", 0, 0)
-            t:SetPoint(side .. "RIGHT", parent, side .. "RIGHT", 0, 0)
-        else
-            t:SetWidth(1)
-            t:SetPoint("TOP" .. side, parent, "TOP" .. side, 0, 0)
-            t:SetPoint("BOTTOM" .. side, parent, "BOTTOM" .. side, 0, 0)
-        end
-        lines[i] = t
-    end
-    return lines
-end
-
 local function category(parent, label, onClick)
     local row = CreateFrame("Button", nil, parent)
-    row:SetHeight(24)
-    local back = row:CreateTexture(nil, "BACKGROUND")
-    back:SetColorTexture(0.11, 0.1, 0.09, 0.92)
-    back:SetAllPoints()
-    border(row, 0.35, 0.3, 0.2, 0.9)
-    -- The selected entry: gold border and a warm tint (shown by UI.show).
-    local selected = CreateFrame("Frame", nil, row)
+    row:SetHeight(20)
+    local normal = row:CreateTexture(nil, "BACKGROUND")
+    normal:SetAtlas("auctionhouse-nav-button")
+    normal:SetAllPoints()
+    local highlight = row:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAtlas("auctionhouse-nav-button-highlight")
+    highlight:SetAllPoints()
+    local selected = row:CreateTexture(nil, "ARTWORK")
+    selected:SetAtlas("auctionhouse-nav-button-select")
     selected:SetAllPoints()
-    local tint = selected:CreateTexture(nil, "ARTWORK")
-    tint:SetColorTexture(1, 0.82, 0, 0.12)
-    tint:SetAllPoints()
-    border(selected, 1, 0.82, 0, 0.95, "OVERLAY")
     selected:Hide()
     row.selected = selected
-    local hover = row:CreateTexture(nil, "HIGHLIGHT")
-    hover:SetColorTexture(1, 1, 1, 0.06)
-    hover:SetAllPoints()
-    local t = text(row, "GameFontNormal")
-    t:SetPoint("LEFT", row, "LEFT", 10, 0)
+    local t = text(row, "GameFontNormalSmall")
+    t:SetPoint("LEFT", row, "LEFT", 8, 0)
     t:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     t:SetText(L(label))
     row.label = t
@@ -478,14 +454,14 @@ function UI.create()
         local c = category(left, group.label, function()
             UI.show(group.current or group.pages[1][1])
         end)
-        c:SetPoint("TOPLEFT", left, "TOPLEFT", 8, -8 - (i - 1) * 27)
-        c:SetPoint("TOPRIGHT", left, "TOPRIGHT", -8, -8 - (i - 1) * 27)
+        c:SetPoint("TOPLEFT", left, "TOPLEFT", 6, -6 - (i - 1) * 22)
+        c:SetPoint("TOPRIGHT", left, "TOPRIGHT", -6, -6 - (i - 1) * 22)
         c.group = group
         UI.categories[i] = c
     end
     UI.summary = text(left, "GameFontHighlightSmall")
-    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -8 - #UI.GROUPS * 27 - 12)
-    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -8 - #UI.GROUPS * 27 - 12)
+    UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -6 - #UI.GROUPS * 22 - 12)
+    UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -6 - #UI.GROUPS * 22 - 12)
     UI.summary:SetSpacing(4)
 
     -- Right: one page per category.
@@ -860,14 +836,9 @@ end
 -- sales seen (a resale) or by a merchant (a vendor deal).
 local function sellsAtText(d, history)
     local total = (d.cost or 0) + (d.profit or 0)
-    if d.mode == "vendor" then
-        local mark = d.vendorHow and d.vendorHow ~= "seen" and " |cffffd100*|r" or ""
-        return "|cffffb84d" .. U.money(total) .. "|r" .. mark
-    elseif d.mode == "flip" then
-        local seen = F.Market.saleCap(history[d.key]) ~= nil
-        return "|cff40ff40" .. U.money(total) .. "|r" .. (seen and "" or " |cffffd100*|r")
-    end
-    return U.money(total)
+    local unsure = d.mode == "vendor" and d.vendorHow and d.vendorHow ~= "seen"
+        or d.mode == "flip" and F.Market.saleCap(history[d.key]) == nil
+    return U.money(total) .. (unsure and " |cff999999*|r" or "")
 end
 
 local MODE_LABELS = { vendor = "vendor", shop = "shopping list", disenchant = "disenchant", bid = "bid" }
@@ -3729,7 +3700,7 @@ function UI.bestText(w)
         return "|cff999999" .. L("AH: no price yet") .. "|r"
     end
     local color = w.name == "vendor" and "|cffffb84d" or w.name == "auction" and "|cff40ff40" or "|cffb070ff"
-    return color .. L(BEST[w.name]) .. " " .. U.money(w.value) .. "|r"
+    return color .. L(BEST[w.name]) .. "|r " .. U.money(w.value)
 end
 
 function UI.refreshPostNext()
