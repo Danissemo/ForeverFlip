@@ -1,6 +1,6 @@
 # Тестування
 
-Ці інструкції призначені для **ForeverFlip і ForeverFlip Sync 1.2.0-beta.7**.
+Ці інструкції призначені для **ForeverFlip і ForeverFlip Sync 2.0.0-beta.1**.
 Виберіть перевірку, виконайте кроки й запишіть, що сталося. Читати код не потрібно.
 
 [Завантажити бланк тестувальника (Excel)](tester-checklist.uk.xlsx): там та сама інструкція,
@@ -22,7 +22,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 **Show activity**, **Beta tester** тощо. **Пачка** — купка одного предмета в комірці сумки,
 **лот** — предмет або пачка на аукціоні.
 
-1. Завантажте з [випуску beta.7](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.7) архів аддона й `ForeverFlipSync.exe`.
+1. Завантажте з [випуску 2.0.0-beta.1](https://github.com/Danissemo/ForeverFlip/releases/tag/v2.0.0-beta.1) архів аддона й `ForeverFlipSync.exe`.
 2. Установіть аддон (START-1), увімкніть показ помилок і українську мову (START-2).
 3. Для купівлі й продажу беріть дешеві речі: купівля витрачає золото, виставлення — заставу.
 4. Спершу пройдіть картки **Обов’язково** (36 шт.), потім — **За можливості**, якщо є умови.
@@ -32,7 +32,36 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 <a id="current-beta-checklist"></a>
 ### Чек-лист поточної бети
 
-57 перевірок для аддона й помічника beta.7. Кожна картка містить умови, кроки та
+#### Нове у 2.0.0-beta.1 — коротко
+
+Спершу ці 12 пунктів: тут найбільше змін.
+
+1. **Повний скан.** Після скану в лівій колонці «Auctions» показує ~270–290 тис., а не 36–120 тис.
+   Якщо сервер зупинився на частині, у рядку стану видно повідомлення, а старий скан лишається.
+2. **Resale після двох сканів.** Після двох повних сканів поспіль на Deals → Resale з’являються
+   угоди, а Est./day виглядає правдоподібно (без тисяч на день).
+3. **Колонка Sure.** У Deals є числа з кольором (зелений / жовтий / червоний); у торговця 100%.
+   Наведення на заголовок пояснює, вибір угоди показує рядок «Sure» під таблицею.
+4. **Check all.** Перевірка спорядження з закінченнями («of the Owl») іде помітно швидше; клік по
+   рядку не зупиняє перевірку надовго.
+5. **Buy all to vendor.** Deals → To vendor: кнопка «Buy all to vendor (N)» → «Buy next» купує по
+   лоту за клік, у стаків — «Confirm»; «Stop» зупиняє; після виходу зі сторінки скупка сама
+   закінчується.
+6. **Тултип предмета.** Розділи Market / Demand / Yours / Selling one, рядок «Deal now» з Sure.
+7. **Текст угоди під таблицею.** Рядки Buy / Demand / Seen / Sure, час «40 min / 3.5 h / 2 days».
+8. **Undercuts.** «Answer next» спрацьовує з першого кліку; текст над кнопками прокручується
+   коліщатком; «Unsold» показує ціну однієї штуки; цифри «buy out» збігаються зі Shopping list.
+9. **Кнопки зайнятого аукціону.** Post, Post all, Cancel auction, Answer next неактивні, поки
+   аукціон зайнятий, і самі вмикаються за секунду-дві.
+10. **My auctions.** «Total on sale … (… pending)» білим і збігається з Auctionator; Refresh і
+    Check prices ліворуч; прогрес Check prices угорі.
+11. **Shopping list → My bids.** Ставка з’являється, після перебиття — «outbid» і порада; «Bid
+    again» ставить наступну ставку; виграна — «won».
+12. **Analytics.** Великий рядок «Earned / Lost», рядок «What to do», вкладки Bargains, Popular,
+    Getting cheaper, Getting dearer, Buy now, Sell now з поясненням під таблицею.
+
+
+57 перевірок для аддона й помічника 2.0.0-beta.1. Кожна картка містить умови, кроки та
 очікуваний результат. Складні ситуації (неповна відповідь сервера, збій купівлі, збій зв’язку
 помічника) перевіряють [автотести](#автоперевірки-складних-ситуацій), а не тестувальник.
 
@@ -40,7 +69,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 
 ##### START-1 — Аддон установлюється й запускається
 
-*Обов’язково.* **Потрібно:** Архів `ForeverFlip-1.2.0-beta.7.zip` зі сторінки випуску.
+*Обов’язково.* **Потрібно:** Архів `ForeverFlip-2.0.0-beta.1.zip` зі сторінки випуску.
 
 1. Закрийте гру.
 2. Якщо в `Interface\AddOns` уже є стара тека ForeverFlip — видаліть її.
@@ -64,7 +93,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 
 **Має статися:**
 
-- У чаті видно версію 1.2.0-beta.7.
+- У чаті видно версію 2.0.0-beta.1.
 - Після `/reload` підписи аддона українською.
 
 ##### START-3 — Вкладка ForeverFlip на аукціоні
@@ -782,7 +811,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 
 **Має статися:**
 
-- У рядку Addon видно 1.2.0-beta.7.
+- У рядку Addon видно 2.0.0-beta.1.
 - З «Beta tester» помічник може пропонувати бета-версії; без нього — лише стабільні.
 - Вимкнення «Beta tester» нічого не встановлює саме.
 
@@ -843,7 +872,7 @@ https://docs.google.com/spreadsheets/d/1aqfR2o2tmNIVfL7TiQGGr3xIIL78uCr6/edit?us
 
 ```text
 ID перевірки: POST-2
-Версії аддона / помічника: 1.2.0-beta.7 / 1.2.0-beta.7
+Версії аддона / помічника: 2.0.0-beta.1 / 2.0.0-beta.1
 Результат: ✅ Пройдено / ❌ Не пройдено / ⏭ Пропущено
 Що було перед початком:
 Що натиснув/натиснула:
@@ -854,7 +883,7 @@ ID перевірки: POST-2
 <a id="beta-testing"></a>
 ## Як тестувати бету
 
-Використовуйте [випуск beta.7](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.7)
+Використовуйте [випуск 2.0.0-beta.1](https://github.com/Danissemo/ForeverFlip/releases/tag/v2.0.0-beta.1)
 або ввімкніть **Beta tester** у [помічнику Sync](community.md#addon-updates-and-beta-testing)
 для оновлень аддона. Відповідний EXE помічника завантажуйте окремо. Автотести не підтверджують
 час відповіді живого аукціону чи справжнє прийняття скану GitHub.

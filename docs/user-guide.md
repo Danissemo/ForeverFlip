@@ -470,34 +470,37 @@ so fewer resale deals are suggested for it:
 
 ## Analytics
 
-The page has two parts.
+The page answers three questions, for the last 7 or 30 days.
 
-**Your results** for the last 7 or 30 days:
+**Did I earn?** The big line on top: **Earned** (green) or **Lost** (red), and how much a day.
 
-- profit and profit per day, split into auction resale and vendor deals;
-- number of sales, the share that made a profit, and the return on cost;
-- units and money bought;
-- money held in stock, and stock that has not sold for 3 days or more;
-- average days to sell and how much of the stock turns over per day;
-- gold of all characters of the realm, its change over the period, and their stock at cost;
-- your best and worst items, and a bar chart of profit per day.
+**How?** In plain words below it:
 
-**The market** of the current auction house, built from the saved scan history:
+- what you spent on purchases, and how many times you sold (and how many of those with a profit);
+- what each 1g you spent brought back;
+- what is still to sell (at what it cost) and how long items take to sell;
+- the gold of all your characters of the realm, when you have more than one;
+- the items that earned and lost the most.
 
-| View | Shows |
+**What to do now?** One line, in gold: stock that has not sold for 3 days, a loss, no purchases
+yet, or "all good". The bar chart shows each day's profit (green earned, red lost; today on the
+right).
+
+**The market** of the current auction house, from the saved scans. Each tab says under the table
+what to do with it:
+
+| Tab | Shows |
 |---|---|
-| Below usual | Items whose cheapest price today is well below their usual price, weighted by how much of the item sells. |
-| Sells most | Items with the most units sold per day near the usual price. |
-| Falling | Items whose usual price fell the most against the previous five days. These may be good to buy. |
-| Rising | Items whose usual price rose the most. These may be good to sell from stock. |
-| Cheap now | Items that sell regularly and are usually cheaper at the current time of the week. |
-| Sell now | Items you hold in stock that are usually dearer at the current time of the week. |
+| Bargains | Items selling today far below their usual price. Click one to check it and buy. |
+| Popular | Items bought the most every day: the easiest to resell. |
+| Getting cheaper | Items whose price is dropping: wait before buying, sell yours soon. |
+| Getting dearer | Items whose price is rising: a good time to sell what you hold. |
+| Buy now | Items usually cheapest at this time of the week: buy now, sell at the time shown. |
+| Sell now | Items you hold that are usually dearest at this time of the week. |
 
-Columns: usual price, cheapest today, change, units per day, and for the time-of-week views, the
-cheapest and dearest times. Click a row to check the item on the auction house now.
-
-The lists fill in after a few full scans. Price changes need scans on two different days, and the
-time-of-week pattern needs scans on at least four weekdays.
+Columns: usual price, cheapest today, change, and how many sell a day. The lists fill in after a
+few full scans; price changes need scans on two different days, and the time-of-week tabs scans on
+at least four weekdays.
 
 ## Crafting
 

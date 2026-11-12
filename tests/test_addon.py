@@ -542,7 +542,7 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_analytics_page_renders(self):
         run(SETUP + '''fullScan();local UI=ForeverFlip.UI;UI.show('analytics')
-        assert(UI.resultsText:GetText():find('Profit') and #UI.bars==7)
+        assert(UI.resultsHead:GetText():find('days') and UI.resultsText:GetText():find('What to do') and #UI.bars==7)
         UI.periodButtons[30]:Click();assert(#UI.bars==30 and UI.analyticsDays==30)
         UI.viewButtons.liquid:Click();assert(UI.marketView=='liquid')''')
 

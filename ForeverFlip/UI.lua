@@ -3733,13 +3733,14 @@ function UI.refreshStats()
 end
 
 -- Analytics page -----------------------------------------------------------------------------------
+-- The market lists, each with a name anyone understands and one line on what to do with it.
 local MARKET_VIEWS = {
-    { "gaps", "Below usual" },
-    { "liquid", "Sells most" },
-    { "falling", "Falling" },
-    { "rising", "Rising" },
-    { "cheapNow", "Cheap now" },
-    { "sellNow", "Sell now" },
+    { "gaps", "Bargains", "Selling today far below their usual price: click one to check it and buy." },
+    { "liquid", "Popular", "Bought the most every day: the easiest to resell." },
+    { "falling", "Getting cheaper", "Their price is dropping: wait before buying, sell yours soon." },
+    { "rising", "Getting dearer", "Their price is rising: a good time to sell what you hold." },
+    { "cheapNow", "Buy now", "Usually cheapest at this time of the week: buy now, sell at the time shown." },
+    { "sellNow", "Sell now", "Usually dearest at this time of the week: sell now, buy at the time shown." },
 }
 
 local DAYS = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
@@ -3755,9 +3756,14 @@ function UI.createAnalytics(p)
     top:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
     top:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, 0)
     top:SetHeight(176)
+    -- One big line first (did I earn?), then plain-word lines, then what to do now.
+    UI.resultsHead = text(top, "GameFontNormalLarge")
+    UI.resultsHead:SetPoint("TOPLEFT", top, "TOPLEFT", 10, -8)
+    UI.resultsHead:SetWidth(330)
+    UI.resultsHead:SetJustifyH("LEFT")
     UI.resultsText = text(top, "GameFontHighlightSmall")
-    UI.resultsText:SetPoint("TOPLEFT", top, "TOPLEFT", 10, -8)
-    UI.resultsText:SetWidth(300)
+    UI.resultsText:SetPoint("TOPLEFT", UI.resultsHead, "BOTTOMLEFT", 0, -6)
+    UI.resultsText:SetWidth(330)
     UI.resultsText:SetSpacing(3)
     UI.periodButtons = {}
     for i, n in ipairs({ 7, 30 }) do
@@ -3787,11 +3793,11 @@ function UI.createAnalytics(p)
     views:SetHeight(26)
     UI.viewButtons = {}
     for i, v in ipairs(MARKET_VIEWS) do
-        local b = button(views, v[2], 92, function()
+        local b = button(views, v[2], 116, function()
             UI.marketView = v[1]
             UI.refresh()
         end)
-        b:SetPoint("LEFT", views, "LEFT", 6 + (i - 1) * 95, 0)
+        b:SetPoint("LEFT", views, "LEFT", 6 + (i - 1) * 120, 0)
         UI.viewButtons[v[1]] = b
     end
     local list = CreateFrame("Frame", nil, p)
@@ -3804,7 +3810,7 @@ function UI.createAnalytics(p)
             { "Usual price", 84 },
             { "Cheapest today", 92 },
             { "Change", 60 },
-            { "Est./day", 64 },
+            { "Sells a day", 74 },
         },
         9,
         function(row)
@@ -3834,54 +3840,75 @@ function UI.refreshAnalytics()
         b:SetEnabled(n ~= days)
     end
     local r = F.Analytics.results(days)
+    -- The headline: what the period earned, in green or red.
+    UI.resultsHead:SetText(
+        string.format(
+            L("%s in %d days (%s a day)"),
+            r.profit >= 0 and ("|cff40ff40" .. L("Earned") .. " " .. U.money(r.profit) .. "|r")
+                or ("|cffff6060" .. L("Lost") .. " " .. U.money(-r.profit) .. "|r"),
+            days,
+            U.money(math.floor(math.abs(r.perDay)))
+        )
+    )
     local lines = {
-        string.format(L("Profit: %s (%s a day)"), U.money(r.profit), U.money(math.floor(r.perDay))),
-        string.format(L("Auction resale: %s · vendor: %s"), U.money(r.auction), U.money(r.vendor)),
+        string.format(L("Spent on purchases: %s (%d buys)"), U.money(r.spent), r.buys),
         string.format(
-            L("Sales: %d · profitable: %s · return on cost: %s"),
+            L("Sold: %d times, %s of them with a profit"),
             r.sales,
-            r.hitRate and string.format("%d%%", math.floor(r.hitRate * 100 + 0.5)) or "-",
-            r.roi and string.format("%d%%", math.floor(r.roi * 100 + 0.5)) or "-"
-        ),
-        string.format(L("Bought: %d for %s"), r.buys, U.money(r.spent)),
-        string.format(
-            L("In stock: %s · stale 3+ days: %s"),
-            U.money(r.held),
-            r.stale > 0 and ("|cffff6060" .. U.money(r.stale) .. "|r") or U.money(0)
-        ),
-        string.format(
-            L("Days to sell: %s · stock turns over %s a day"),
-            r.avgDays and string.format("%.1f", r.avgDays) or "-",
-            r.turnover and string.format("%d%%", math.floor(r.turnover * 100 + 0.5)) or "-"
+            r.hitRate and string.format("%d%%", math.floor(r.hitRate * 100 + 0.5)) or "-"
         ),
     }
+    if r.roi then
+        lines[#lines + 1] =
+            string.format(L("Each 1g you spent brought back %s profit"), U.money(math.floor(r.roi * 10000 + 0.5)))
+    end
+    lines[#lines + 1] = string.format(
+        L("Still to sell: %s at what it cost%s"),
+        U.money(r.held),
+        r.avgDays and string.format(L(", items sell in about %s"), UI.duration(r.avgDays * 86400)) or ""
+    )
     local realm = F.Analytics.realm(UI.analyticsDays or 7)
-    if realm.chars > 0 then
+    if realm.chars > 1 then
         lines[#lines + 1] = string.format(
-            L("All characters of the realm (%d): gold %s (%s over the period) · stock at cost %s"),
+            L("All %d characters: %s gold (%s in the period)"),
             realm.chars,
             U.money(realm.gold),
-            (realm.gold >= realm.before and "+" or "") .. U.money(realm.gold - realm.before),
-            U.money(realm.stock)
+            (realm.gold >= realm.before and "+" or "-") .. U.money(math.abs(realm.gold - realm.before))
         )
     end
-    if #r.best > 0 then
-        local names = {}
-        for _, item in ipairs(r.best) do
-            names[#names + 1] = (item.name or item.key) .. " " .. U.money(item.profit)
+    local function names(list)
+        local out = {}
+        for _, item in ipairs(list) do
+            out[#out + 1] = (item.name or item.key) .. " " .. U.money(math.abs(item.profit))
         end
-        lines[#lines + 1] = "|cff40ff40" .. L("Best:") .. "|r " .. table.concat(names, ", ")
+        return table.concat(out, ", ")
+    end
+    if #r.best > 0 then
+        lines[#lines + 1] = "|cff40ff40" .. L("Earned most:") .. "|r " .. names(r.best)
     end
     if #r.worst > 0 then
-        local names = {}
-        for _, item in ipairs(r.worst) do
-            names[#names + 1] = (item.name or item.key) .. " " .. U.money(item.profit)
-        end
-        lines[#lines + 1] = "|cffff6060" .. L("Worst:") .. "|r " .. table.concat(names, ", ")
+        lines[#lines + 1] = "|cffff6060" .. L("Lost most:") .. "|r " .. names(r.worst)
     end
+    -- What to do now: the one thing that matters most.
+    local tip
+    if r.stale > 0 then
+        tip = string.format(
+            L("%s of stock has not sold for 3+ days: answer it on Selling, Undercuts, or sell it to a merchant."),
+            U.money(r.stale)
+        )
+    elseif r.sales == 0 and r.buys == 0 then
+        tip = L("Nothing bought yet: open Deals, pick a deal with a green Sure, Check price, then Buy.")
+    elseif r.profit < 0 then
+        tip = L("You are losing money: buy only deals with a green Sure, and skip the red ones.")
+    else
+        tip = L("All good: keep buying deals with a green Sure and post them from Selling, My items.")
+    end
+    lines[#lines + 1] = "|cffffd100" .. L("What to do:") .. "|r " .. tip
     UI.resultsText:SetText(table.concat(lines, "\n"))
     -- Chart.
-    UI.chartTitle:SetText(string.format(L("Profit per day, last %d days"), days))
+    UI.chartTitle:SetText(
+        string.format(L("Profit per day, last %d days (green: earned, red: lost; today on the right)"), days)
+    )
     local maxAbs = 1
     for _, d in ipairs(r.days) do
         maxAbs = math.max(maxAbs, math.abs(d.profit))
@@ -3965,8 +3992,14 @@ function UI.refreshAnalytics()
     else
         empty:Hide()
     end
+    local about
+    for _, v in ipairs(MARKET_VIEWS) do
+        if v[1] == UI.marketView then
+            about = L(v[3])
+        end
+    end
     UI.marketText:SetText(
-        string.format(L("%d items with history · click a row to check it on the auction house now"), m.items or 0)
+        (about or "") .. "  |cff999999" .. string.format(L("(%d items watched)"), m.items or 0) .. "|r"
     )
 end
 

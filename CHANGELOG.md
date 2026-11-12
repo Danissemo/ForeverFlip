@@ -6,7 +6,14 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [2.0.0-beta.1] - 2026-11-12
+
 ### Added
+
+- **Analytics, made plain.** One big line says what you earned or lost; plain lines say what you
+  spent, sold, still hold and what each 1g brought back; a "What to do" line names the one thing
+  that matters now. The market tabs got clear names (Bargains, Popular, Getting cheaper, Getting
+  dearer, Buy now, Sell now) with a line under the table on what to do with each.
 
 - **Undercuts: the text above the buttons scrolls** like the tables (the same scrollbar, the
   mouse wheel; hovering shows it whole) and reads line by line: your auction and what is ahead of
