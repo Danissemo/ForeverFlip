@@ -14,6 +14,12 @@ Auction Master, Arbitrage, WOW4E AH Trader) and of the Forever branches of TSM a
 
 ### Fixed
 
+- **Full scans no longer read a part of the answer.** The server sends the list in parts; a part
+  was taken as the whole once one partial scan had been read, because the next one was measured
+  against it (seen: 28 672, 30 720, 73 728 of about 250 000 auctions in a row). Lists are now
+  measured against the largest complete scan of the last day, the answer event is ignored for a
+  part, and a part waits 60 quiet seconds. A list that stays partial until the end of the wait is
+  read for its prices but marked partial: it counts no sales and does not lower the measure.
 - **Vendor prices.** WoW Forever's server pays less than the client's item data says for some items
   (a recipe listed at 2s sells for 1s 50c; a wand went from 15s to 1c). What a merchant really paid
   is now read from the buyback list and used first. Until then, deals count the client's price 20%
