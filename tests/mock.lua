@@ -107,6 +107,18 @@ end
 function methods:CreateTexture()
     return widget("Texture", self)
 end
+function methods:SetSize(width, height)
+    self.width, self.height = width, height
+end
+function methods:GetSize()
+    return self.width or 0, self.height or 0
+end
+function methods:SetAtlas(atlas)
+    self.atlas = atlas
+end
+function methods:GetAtlas()
+    return self.atlas
+end
 function methods:RegisterEvent(e)
     self.events = self.events or {}
     self.events[e] = true

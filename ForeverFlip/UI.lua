@@ -111,6 +111,7 @@ local function inset(parent, atlas)
     art:SetAtlas(atlas)
     art:SetPoint("TOPLEFT", f, "TOPLEFT", 3, -3)
     art:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
+    f.art = art
     return f
 end
 
@@ -128,6 +129,7 @@ local function category(parent, label, onClick)
     local highlight = row:CreateTexture(nil, "HIGHLIGHT")
     highlight:SetAtlas("auctionhouse-nav-button-highlight")
     highlight:SetAllPoints()
+    row.normal, row.highlight = normal, highlight
     row:SetSize(NAV_WIDTH, NAV_HEIGHT)
     local selected = row:CreateTexture(nil, "ARTWORK")
     selected:SetAtlas("auctionhouse-nav-button-select")
@@ -142,6 +144,111 @@ local function category(parent, label, onClick)
     row.label = t
     row:SetScript("OnClick", onClick)
     return row
+end
+
+-- The auction house's own look, copied at run time from its Buy tab (AuctionHouseFrame): the
+-- category buttons' textures, size and font, and the frames (NineSlice) and backgrounds of the
+-- category list and of the results list. WoW Forever's client may differ from the usual one, so
+-- nothing is guessed: what the game shows is what is copied. Tried on each refresh until the Buy
+-- tab's buttons exist.
+local NINE = {
+    "TopLeftCorner",
+    "TopRightCorner",
+    "BottomLeftCorner",
+    "BottomRightCorner",
+    "TopEdge",
+    "BottomEdge",
+    "LeftEdge",
+    "RightEdge",
+    "Center",
+}
+
+local function copyTexture(dst, src)
+    if not dst or not src or not src.GetTexture then
+        return false
+    end
+    local atlas = src.GetAtlas and src:GetAtlas()
+    if atlas then
+        dst:SetAtlas(atlas)
+    else
+        local file = src:GetTexture()
+        if not file then
+            return false
+        end
+        dst:SetTexture(file)
+        if src.GetTexCoord and dst.SetTexCoord then
+            dst:SetTexCoord(src:GetTexCoord())
+        end
+    end
+    if src.GetVertexColor and dst.SetVertexColor then
+        dst:SetVertexColor(src:GetVertexColor())
+    end
+    if src.GetBlendMode and dst.SetBlendMode then
+        dst:SetBlendMode(src:GetBlendMode())
+    end
+    return true
+end
+
+local function copyPanel(dst, src)
+    if not dst or not src then
+        return
+    end
+    local dstNine, srcNine = rawget(dst, "NineSlice"), rawget(src, "NineSlice")
+    if type(dstNine) == "table" and type(srcNine) == "table" then
+        for _, piece in ipairs(NINE) do
+            copyTexture(rawget(dstNine, piece), rawget(srcNine, piece))
+        end
+    end
+    if type(dst.art) == "table" and type(src.Background) == "table" then
+        copyTexture(dst.art, src.Background)
+    end
+end
+
+local function nativeCategoryButton()
+    local list = AuctionHouseFrame and AuctionHouseFrame.CategoriesList
+    local target = list and list.ScrollBox and list.ScrollBox.ScrollTarget
+    if not target or not target.GetChildren then
+        return nil, list
+    end
+    for _, child in ipairs({ target:GetChildren() }) do
+        ---@cast child Button
+        if child.GetNormalTexture and child:GetNormalTexture() then
+            return child, list
+        end
+    end
+    return nil, list
+end
+
+function UI.copyNativeLook()
+    if UI.nativeLook then
+        return true
+    end
+    local native, list = nativeCategoryButton()
+    if not native then
+        return false
+    end
+    ---@cast native Button
+    local width, height = native:GetSize()
+    local font = native.GetFontString and native:GetFontString() or rawget(native, "Text")
+    for _, c in ipairs(UI.categories or {}) do
+        copyTexture(c.normal, native:GetNormalTexture())
+        copyTexture(c.highlight, native.GetHighlightTexture and native:GetHighlightTexture())
+        local nativeSelected = rawget(native, "SelectedTexture")
+        if nativeSelected then
+            copyTexture(c.selected, nativeSelected)
+        end
+        if U.finite(width) and width > 50 and U.finite(height) and height > 10 then
+            c:SetSize(width, height)
+        end
+        if font and font.GetFontObject and font:GetFontObject() then
+            c.label:SetFontObject(font:GetFontObject())
+        end
+    end
+    copyPanel(UI.leftPanel, list)
+    local results = AuctionHouseFrame.BrowseResultsFrame and AuctionHouseFrame.BrowseResultsFrame.ItemList
+    copyPanel(UI.right, results)
+    UI.nativeLook = true
+    return true
 end
 
 local function icon(id)
@@ -456,6 +563,7 @@ function UI.create()
     left:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
     left:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
     left:SetWidth(LEFT_WIDTH)
+    UI.leftPanel = left
     UI.categories = {}
     for i, group in ipairs(UI.GROUPS) do
         local c = category(left, group.label, function()
@@ -3419,6 +3527,9 @@ function UI.refresh()
     pcall(UI.highlightBrowse)
     if not UI.frame or not UI.frame:IsShown() then
         return
+    end
+    if not UI.nativeLook then
+        pcall(UI.copyNativeLook)
     end
     if not UI.tabsSized and UI.tabsShown then
         UI.layoutTabs(UI.tabsShown.group, UI.tabsShown.id)

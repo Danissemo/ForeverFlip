@@ -433,3 +433,31 @@ class NameLinkTests(unittest.TestCase):
         row:Click()
         assert(inserted == row.link, 'the link goes to the chat line')
         assert(UI.selected == selectedBefore, 'a Shift-click does not select the deal')''')
+
+
+class NativeLookTests(unittest.TestCase):
+    def test_the_buy_tabs_look_is_copied_onto_the_menu_and_panels(self):
+        run(BASE + '''local function tex(atlas)
+            return { GetAtlas = function() return atlas end, GetTexture = function() return 1 end,
+                GetVertexColor = function() return 1, 1, 1, 1 end, GetBlendMode = function() return 'BLEND' end }
+        end
+        local font = {}
+        local native = {
+            GetNormalTexture = function() return tex('native-button') end,
+            GetHighlightTexture = function() return tex('native-highlight') end,
+            GetSize = function() return 140, 22 end,
+            GetFontString = function() return { GetFontObject = function() return font end } end,
+        }
+        local nine = { TopEdge = tex('native-top'), Center = tex('native-center') }
+        AuctionHouseFrame.CategoriesList = {
+            ScrollBox = { ScrollTarget = { GetChildren = function() return native end } },
+            NineSlice = nine, Background = tex('native-background'),
+        }
+        AuctionHouseFrame.BrowseResultsFrame = { ItemList = { NineSlice = nine, Background = tex('native-results') } }
+        UI.nativeLook = nil
+        assert(UI.copyNativeLook(), 'copied')
+        local c = UI.categories[1]
+        assert(c.normal:GetAtlas() == 'native-button' and c.highlight:GetAtlas() == 'native-highlight')
+        local w, h = c:GetSize()
+        assert(w == 140 and h == 22, 'the size of the buttons of the game')
+        assert(UI.leftPanel.art:GetAtlas() == 'native-background' and UI.right.art:GetAtlas() == 'native-results')''')
