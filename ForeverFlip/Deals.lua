@@ -100,7 +100,7 @@ function D.evaluate(g, vendor, history, now)
     end
     local room, held = itemRoom(g.key)
     local cap, unsold = D.resaleCap(g.market, history)
-    local duration = F.Market.duration()
+    local duration = F.Market.duration(g.key, nil, cap)
     local deal, reason = F.Market.evaluate(g.rows, {
         kind = g.kind,
         vendor = vendor,

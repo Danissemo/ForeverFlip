@@ -111,7 +111,7 @@ function S.threshold(key, id, history)
         exit, sells = exitOf(h, item and item.kind)
     end
     if sells then
-        local deposit = F.Market.unitDeposit(id, item and item.kind)
+        local deposit = F.Market.unitDeposit(id, item and item.kind, nil, key, exit)
         local buy = (F.Market.net(exit, 1) - deposit) / (1 + (s.minROI or 0.2))
         limit = math.max(limit or 0, math.floor(buy))
     end

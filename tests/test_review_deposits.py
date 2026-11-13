@@ -44,6 +44,27 @@ class DepositModelTests(unittest.TestCase):
         assert(limit and limit > 40, 'a 40c unit is worth sniping: ' .. tostring(limit))''')
 
 
+class AutoDurationTests(unittest.TestCase):
+    """Auto: estimates use the duration the item's own post would go for (Trade.durationFor)."""
+
+    BASE = BASE + '''addItem(40, 'Linen Bag', 2000, 'item')
+    F.db.settings.duration = 0 -- Auto
+    local c = F.Data.char(F.db, F.Engine.owner())
+    '''
+
+    def test_unknown_sales_go_for_the_longest(self):
+        run(self.BASE + '''assert(T.durationFor('i:40', 1, 5000) == 3)
+        assert(M.unitDeposit(40, 'item', nil, 'i:40', 5000) == 1200)''')
+
+    def test_the_items_own_choice_is_the_estimate(self):
+        # The game's deposits grow far faster than the hours: two hours lose the least per sale.
+        run(self.BASE + '''F.db.deposits = { [40] = { [1] = 100, [2] = 5000, [3] = 50000 } }
+        c.stats['i:40'] = { sold = 12, days = 5 } -- about 10 hours a sale
+        assert(T.durationFor('i:40', 1, 5000) == 1, T.durationFor('i:40', 1, 5000))
+        assert(M.unitDeposit(40, 'item', nil, 'i:40', 5000) == 100)
+        assert(M.duration('i:40', 1, 5000) == 1)''')
+
+
 class FightPlanDepositTests(unittest.TestCase):
     """V15-c: the plan gives up on a cancel what the cancel books."""
 

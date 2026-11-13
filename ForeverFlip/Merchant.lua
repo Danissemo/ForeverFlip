@@ -62,7 +62,7 @@ function V.offers(now)
                 local reference = U.finite(low) and math.min(market, low) or market
                 local exit = U.below(reference, item.kind)
                 local unit = price / quantity
-                local each = M.net(exit, 1) - unit - M.unitDeposit(id, item.kind)
+                local each = M.net(exit, 1) - unit - M.unitDeposit(id, item.kind, nil, key, exit)
                 local d = M.saleability(h, exit, now)
                 -- As a resale on the auction house: the sales times the item's trust factor, and
                 -- at most one day of them held, the stock already held included. Offered without

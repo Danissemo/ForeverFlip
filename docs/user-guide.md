@@ -685,7 +685,7 @@ a block too:
 | **On sale by you** | Your auctions of the item now, and the lowest price among them. |
 | **Deal now** | The profit of the item's current deal. |
 | **Vendor pays** | What a merchant pays, marked when not yet confirmed at a merchant. |
-| **Auction house, after the cut and N deposits** | One unit's money from the auction house: the usual (or sale) price after the cut, less the deposits of the posts expected to expire first: (1 − s) / s, s = the chance one post sells (your own share of posts that sold, else from the units sold a day over the post's duration; at most 20). Commodities pay the deposit of a stack of 20, per unit. The deposit is for the duration posts go for (Duration setting). |
+| **Auction house, after the cut and N deposits** | One unit's money from the auction house: the usual (or sale) price after the cut, less the deposits of the posts expected to expire first: (1 − s) / s, s = the chance one post sells (your own share of posts that sold, else from the units sold a day over the post's duration; at most 20). Commodities pay the deposit of a stack of 20, per unit. The deposit is for the duration the item's post would go for (the Duration setting, or Auto's choice for the item). |
 | **Disenchant** | The materials' value after the cut, for a character who can disenchant. |
 | **Best: …** | Which of these pays the most. |
 

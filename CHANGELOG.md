@@ -62,7 +62,8 @@ All notable changes are listed here. The format follows
     deposit when known, else 15% of the vendor price for the duration posts go for, at least
     1 silver per auction, with one deposit per commodity stack. Cheap commodity resales are sniped
     and offered at merchants again, and the anti-undercut plan's cancel and repost cost what the
-    cancel and the post really book.
+    cancel and the post really book. Under Auto every estimate uses the item's own duration, the
+    one its post would go for, not always 24 hours.
   - Merchant purchases are booked as their units reach the bags: units a merchant refused (no
     room, sold out) no longer enter stock or the journal. Sales and purchases at a merchant share
     one watch (`Merchant.track`): booked when the bags show them, given up after their wait, and
