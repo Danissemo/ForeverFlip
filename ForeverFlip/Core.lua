@@ -477,7 +477,7 @@ function E.keyBuyNext()
         T.confirm()
         return
     end
-    local current = UI and UI.selected and F.Deals.get(UI.selected)
+    local current = UI and UI.selected and F.Deals.fitWallet(F.Deals.get(UI.selected))
     local stuck = current and (current.cost > F.Engine.wallet() or T.overLimit(current.cost))
     if not current or T.busy() or stuck then
         local best = F.Deals.best()

@@ -8,6 +8,10 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- **Vendor deals use all the money in the bags.** A merchant pays at once, so a vendor deal is no
+  longer held to the share kept for resales (spendShare). When the money no longer covers a deal
+  (other purchases since the scan), it shrinks to the units the money buys, cheapest first,
+  instead of standing at "not enough money".
 - **Journal: Sold and Profit columns are wider** ("4878/5148", "4878 in stock" fit), the name
   column gives up the room.
 - **Cancels made with ForeverFlip are logged in the journal** (kind "cancel", the deposit and fee

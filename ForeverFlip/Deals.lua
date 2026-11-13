@@ -108,6 +108,7 @@ function D.evaluate(g, vendor, history, now)
         itemBudget = room,
         trust = D.trust(g.key, now),
         budget = D.budget(),
+        vendorBudget = F.Engine.wallet(),
         deposit = F.AH.depositFn(g.id, g.kind, F.Trade.durationFor and F.Trade.durationFor() or 3),
         history = history,
         market = cap,
@@ -343,10 +344,45 @@ function D.holding()
     return ui.section == "deals" and selectedHold(ui)
 end
 
+-- A vendor deal the money no longer covers (other purchases since the scan) shrinks to the units
+-- the money in the bags buys, cheapest lots first: the merchant pays for each unit at once, so
+-- there is nothing to wait for. Other deals are left as they are. Returns the deal.
+function D.fitWallet(d)
+    local wallet = F.Engine.wallet()
+    if not d or d.mode ~= "vendor" or (d.cost or 0) <= wallet or type(d.lots) ~= "table" then
+        return d
+    end
+    local qty, cost, used = 0, 0, {}
+    for _, l in ipairs(d.lots) do
+        local unit, take = l.unit or 0, l.qty or 1
+        if unit <= 0 then
+            break
+        end
+        if d.kind == "commodity" then
+            take = math.min(take, math.floor((wallet - cost) / unit))
+        elseif cost + unit * take > wallet then
+            take = 0
+        end
+        if take < 1 then
+            break
+        end
+        qty, cost = qty + take, cost + take * unit
+        used[#used + 1] = { unit = unit, qty = take, auctionID = l.auctionID }
+    end
+    if qty < 1 or not U.finite(d.exit) then
+        return d
+    end
+    d.qty, d.cost, d.lots, d.maxUnit = qty, cost, used, used[#used].unit
+    d.profit = qty * d.exit - cost
+    d.roi = cost > 0 and d.profit / cost or 0
+    return d
+end
+
 -- The best deal the player can buy now (Buy next key): checked deals first, then by profit.
 function D.best()
     local wallet = F.Engine.wallet()
     for _, d in ipairs(D.list) do
+        D.fitWallet(d)
         if d.cost <= wallet and not F.Trade.overLimit(d.cost) then
             return d
         end

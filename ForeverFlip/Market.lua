@@ -1028,6 +1028,9 @@ function M.evaluate(rows, ctx)
     local best, reason = nil, "no_gap"
 
     if U.finite(ctx.vendor) and ctx.vendor > 0 then
+        -- A vendor deal is sure money (a merchant pays at once): it may use all the money in the
+        -- bags (ctx.vendorBudget), not only the share kept for resales.
+        local budget = ctx.vendorBudget or budget
         local qty, cost, used = 0, 0, {}
         -- Setting leaveLots: the priciest units below the vendor price stay listed for others.
         local cheap, leave = 0, math.max(0, math.floor(s.leaveLots or 0))

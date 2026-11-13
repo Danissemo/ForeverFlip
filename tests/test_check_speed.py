@@ -187,5 +187,25 @@ class SureTests(unittest.TestCase):
         assert(line and line:find('chance real buyers take 2'), tostring(line))''')
 
 
+
+class VendorWalletTests(unittest.TestCase):
+    def test_a_vendor_deal_shrinks_to_the_money_in_the_bags(self):
+        run(SETUP + '''local F, D = ForeverFlip, ForeverFlip.Deals
+        fullScan()
+        local d = D.get('c:10')
+        assert(d and d.mode == 'vendor' and d.qty > 1, 'a vendor deal of several units')
+        local unit = d.lots[1].unit
+        money = unit * 2 + 1
+        D.fitWallet(d)
+        assert(d.qty == 2 and d.cost == unit * 2 and d.cost <= money, d.qty .. ' for ' .. d.cost)
+        assert(d.profit == 2 * d.exit - d.cost)''')
+
+    def test_a_vendor_deal_may_use_all_the_money(self):
+        run(SETUP + '''local F = ForeverFlip
+        local deal = F.Market.evaluate({ { unit = 50, qty = 100 } }, {
+            kind = 'commodity', vendor = 100, budget = 800, vendorBudget = 1000, settings = {} })
+        assert(deal and deal.qty == 20, deal and deal.qty)''')
+
+
 if __name__ == '__main__':
     unittest.main()

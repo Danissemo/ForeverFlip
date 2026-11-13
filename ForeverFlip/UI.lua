@@ -1667,6 +1667,7 @@ end
 
 local function dealStatus(d)
     local now = F.Engine.clock()
+    F.Deals.fitWallet(d)
     if d.cost > F.Engine.wallet() then
         return "|cffff6060" .. L("not enough money") .. "|r"
     end

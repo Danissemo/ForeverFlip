@@ -570,7 +570,7 @@ class DealTabTests(unittest.TestCase):
         local d=D.get('c:10');d.found=now-1300;UI.refresh()
         local function status(key) for _,r in ipairs(UI.dealTable.rows) do if r.key==key then return r.cols[7]:GetText() end end end
         assert(status('c:10'):find('old scan'))
-        money=100;UI.refresh();assert(status('c:10'):find('not enough money'))
+        money=1;UI.refresh();assert(status('c:10'):find('not enough money'),'not one unit affordable')
         money=1000000;UI.selectDeal('c:10');answer();UI.refresh()
         assert(UI.dealText:GetText():find('Profit') and UI.pageText:GetText():find('profit'))''')
 

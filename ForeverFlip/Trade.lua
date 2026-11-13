@@ -103,6 +103,7 @@ function T.buy(key)
     if not T.canBuy(deal) then
         return false, "verify_first"
     end
+    F.Deals.fitWallet(deal)
     if deal.cost > F.Engine.wallet() then
         return false, "no_money"
     end
@@ -278,6 +279,7 @@ function T.runStep()
     if d and d.mode ~= "vendor" then
         d = nil
     end
+    F.Deals.fitWallet(d)
     if d and (d.cost > F.Engine.wallet() or T.overLimit(d.cost)) then
         run.skipped[d.key], d = true, nil
     end
