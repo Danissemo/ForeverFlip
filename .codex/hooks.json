@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/FF/.tools/python/Scripts/python.exe C:/FF/development/foreverflip/tools/devflow.py stop",
+            "timeout": 120,
+            "statusMessage": "Checking that the work is committed and pushed"
+          }
+        ]
+      }
+    ]
+  }
+}
