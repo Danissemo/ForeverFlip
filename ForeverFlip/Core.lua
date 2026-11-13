@@ -390,7 +390,7 @@ function E.handle(event, ...)
             F.Merchant.watchBuyback(true)
             F.Merchant.learnBuyback()
         else
-            F.Merchant.settle()
+            F.Merchant.settle(true)
         end
         if F.UI and F.UI.merchant then
             F.UI.merchant(event == "MERCHANT_SHOW")

@@ -68,7 +68,7 @@ class MerchantPurchaseTests(unittest.TestCase):
         assert(F.Merchant.buy(offer), 'the calls were sent')
         assert(not c.positions['i:70'], 'nothing came: nothing booked')
         now = now + F.Merchant.BUY_WAIT + 1; fire('BAG_UPDATE_DELAYED')
-        assert(#F.Merchant.waiting == 0 and not c.positions['i:70'], 'given up after the wait')''')
+        assert(#F.Merchant.pending == 0 and not c.positions['i:70'], 'given up after the wait')''')
 
     def test_units_that_come_late_are_booked_when_the_bags_settle(self):
         run(MERCHANT + '''merchantRefuses = true
@@ -80,6 +80,32 @@ class MerchantPurchaseTests(unittest.TestCase):
         assert(e.kind == 'buy' and e.qty == 2 and e.amount == 540 and e.merchant)
         fire('BAG_UPDATE_DELAYED')
         assert(c.positions['i:70'].qty == 2, 'booked once')''')
+
+
+class MerchantTransactionTests(unittest.TestCase):
+    """Merchant.track: one watch for sales and purchases sent to a merchant."""
+
+    def test_closing_ends_the_sales_and_purchases_keep_waiting(self):
+        run(MERCHANT + '''local sold, gaveUp, bought = 0, nil, 0
+        local inBag = true
+        F.Merchant.track({ kind = 'sell', qty = 1, wait = 5, seen = function() return inBag and 0 or 1 end,
+            onDone = function() sold = sold + 1 end, onGiveUp = function(_, closing) gaveUp = closing end })
+        local arrived = 0
+        F.Merchant.track({ kind = 'buy', qty = 2, wait = 5, seen = function() return arrived end,
+            onDone = function(n) bought = bought + n end })
+        F.Merchant.settle(true)
+        assert(gaveUp == true and sold == 0, 'the sale ended with the window')
+        assert(#F.Merchant.pending == 1, 'the purchase still waits')
+        arrived = 2; F.Merchant.settle()
+        assert(bought == 2 and #F.Merchant.pending == 0, 'booked once it came')''')
+
+    def test_a_sale_taken_before_its_wait_is_booked_once(self):
+        run(MERCHANT + '''local sold, inBag = 0, true
+        F.Merchant.track({ kind = 'sell', qty = 1, wait = 5, seen = function() return inBag and 0 or 1 end,
+            onDone = function() sold = sold + 1 end })
+        F.Merchant.settle(); assert(sold == 0 and #F.Merchant.pending == 1)
+        inBag = false; F.Merchant.settle(); F.Merchant.settle()
+        assert(sold == 1 and #F.Merchant.pending == 0)''')
 
 
 if __name__ == "__main__":

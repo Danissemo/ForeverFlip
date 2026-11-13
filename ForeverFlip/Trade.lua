@@ -2979,9 +2979,9 @@ end
 -- Sells a whole list (Sell all: T.vendorSellList; gear the class cannot use: T.unusableGearList)
 -- to the open merchant, in paced batches. Selling every stack in one frame lost part of them: the
 -- server took 17 of 24 (seen in game), the rest stayed in the bags and was booked as sold anyway.
--- Now T.VENDOR_BATCH stacks go every T.VENDOR_GAP seconds (T.stepVendor), a stack counts as sold
--- only once it left its bag slot, and a stack still there after T.VENDOR_WAIT seconds is sent
--- again (up to 3 tries). Returns the stacks and money of the whole list; the chat line with what
+-- Now T.VENDOR_BATCH stacks go every T.VENDOR_GAP seconds (T.stepVendor). Each sent stack is a
+-- merchant transaction (Merchant.track): sold once it left its bag slot, and still there after
+-- T.VENDOR_WAIT seconds it is sent again (up to 3 tries). Returns the stacks and money of the whole list; the chat line with what
 -- really sold comes at the end.
 T.VENDOR_BATCH = 6
 T.VENDOR_GAP = 0.3
@@ -3052,8 +3052,38 @@ local function dropQueue(job)
     job.queue = {}
 end
 
--- One step of a vendor sale (every frame, from T.step): sent stacks that left their slot are
--- booked, stuck ones are sent again, and the next batch goes once the gap has passed.
+-- One sent stack as a merchant transaction: booked once it left its slot; not taken in time, it
+-- is sent again (up to 3 tries) or counted as not sold; the merchant closed, it stays unsold.
+local function sendStack(job, v)
+    job.out = job.out + 1
+    C_Container.UseContainerItem(v.bag, v.slot)
+    F.Merchant.track({
+        kind = "sell",
+        qty = 1,
+        wait = T.VENDOR_WAIT,
+        seen = function()
+            return slotHolds(v) and 0 or 1
+        end,
+        onDone = function()
+            job.out = job.out - 1
+            bookVendorSale(job, v)
+        end,
+        onGiveUp = function(_, closing)
+            job.out = job.out - 1
+            if not closing and v.tries < 3 then
+                table.insert(job.queue, 1, v) -- not taken: sent again
+                return
+            end
+            F.Merchant.cancelExpectedSale(v.id, v.count)
+            if not closing then
+                job.failed = job.failed + 1
+            end
+        end,
+    })
+end
+
+-- One step of a vendor sale (every frame, from T.step): sent stacks are settled (Merchant.settle),
+-- and the next batch goes once the gap has passed.
 function T.stepVendor()
     local job = T.vendorJob
     if not job then
@@ -3061,35 +3091,13 @@ function T.stepVendor()
     end
     if not MerchantFrame or not MerchantFrame:IsShown() then
         -- The merchant was closed: what left the bags is booked, the rest stays unsold.
-        for _, v in ipairs(job.sent) do
-            if not slotHolds(v) then
-                bookVendorSale(job, v)
-            elseif v.expected then
-                F.Merchant.cancelExpectedSale(v.id, v.count)
-            end
-        end
+        F.Merchant.settle(true)
         dropQueue(job)
-        job.sent = {}
         finishVendorJob(job)
         return
     end
+    F.Merchant.settle()
     local t = preciseNow()
-    local waiting = {}
-    for _, v in ipairs(job.sent) do
-        if not slotHolds(v) then
-            bookVendorSale(job, v)
-        elseif t - v.at < T.VENDOR_WAIT then
-            waiting[#waiting + 1] = v
-        elseif v.tries < 3 then
-            table.insert(job.queue, 1, v) -- not taken: sent again
-        else
-            if v.expected then
-                F.Merchant.cancelExpectedSale(v.id, v.count)
-            end
-            job.failed = job.failed + 1
-        end
-    end
-    job.sent = waiting
     if #job.queue > 0 and t - (job.last or -10) >= T.VENDOR_GAP then
         job.last = t
         for _ = 1, T.VENDOR_BATCH do
@@ -3098,13 +3106,12 @@ function T.stepVendor()
                 break
             end
             if slotHolds(v) then
-                v.at, v.tries = t, (v.tries or 0) + 1
+                v.tries = (v.tries or 0) + 1
                 if not v.expected then
                     F.Merchant.expectSale(v.id, v.count)
                     v.expected = true
                 end
-                C_Container.UseContainerItem(v.bag, v.slot)
-                job.sent[#job.sent + 1] = v
+                sendStack(job, v)
             elseif v.expected then
                 -- Queued again after a try, whose answer came late: it was sold after all (the
                 -- merchant watch counts it as this sale, Merchant.expectSale).
@@ -3112,7 +3119,7 @@ function T.stepVendor()
             end
         end
     end
-    if #job.queue == 0 and #job.sent == 0 then
+    if #job.queue == 0 and job.out == 0 then
         finishVendorJob(job)
     end
 end
@@ -3130,7 +3137,7 @@ local function startVendorJob(listOf, gear)
     for _, v in ipairs(list) do
         money = money + v.price
     end
-    T.vendorJob = { queue = list, sent = {}, sold = 0, money = 0, failed = 0, gear = gear }
+    T.vendorJob = { queue = list, out = 0, sold = 0, money = 0, failed = 0, gear = gear }
     T.stepVendor() -- the first batch goes with the click
     F.Engine.changed()
     return stacks, money
@@ -3153,7 +3160,7 @@ function T.stopVendor()
         return
     end
     dropQueue(job)
-    if #job.sent == 0 then
+    if job.out == 0 then
         finishVendorJob(job)
     end
 end

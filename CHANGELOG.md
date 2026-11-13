@@ -64,7 +64,9 @@ All notable changes are listed here. The format follows
     and offered at merchants again, and the anti-undercut plan's cancel and repost cost what the
     cancel and the post really book.
   - Merchant purchases are booked as their units reach the bags: units a merchant refused (no
-    room, sold out) no longer enter stock or the journal.
+    room, sold out) no longer enter stock or the journal. Sales and purchases at a merchant share
+    one watch (`Merchant.track`): booked when the bags show them, given up after their wait, and
+    sales end when the merchant closes while purchases keep waiting for their units.
 
 ### Changed
 

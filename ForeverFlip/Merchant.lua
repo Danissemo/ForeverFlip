@@ -112,8 +112,50 @@ local function stackOf(index, id)
     return math.max(1, stack)
 end
 
-V.waiting = {} -- merchant purchases sent and not all their units seen in the bags yet
+-- Merchant transactions ----------------------------------------------------------------------------
+-- Sales and purchases sent to a merchant are booked when the bags show them, never at the click:
+-- the merchant may refuse a call (no room, sold out) or its answer may come late. A transaction
+-- { kind = "sell" | "buy", qty, wait, seen(), onDone(n), onGiveUp(left, closing) } tells through
+-- seen() how many of its units the bags show done; V.settle books the new ones (onDone) and gives up
+-- on the rest after `wait` seconds (onGiveUp). A closing merchant ends the sales at once; purchases
+-- still arrive after the window closed, so they keep their wait. V.settle runs on every bag change
+-- (BAG_UPDATE_DELAYED), when the merchant closes, after a purchase and at every step of a sale.
+V.pending = {}
 V.BUY_WAIT = 10
+
+local function preciseNow()
+    return GetTime and GetTime() or F.Engine.clock()
+end
+
+function V.track(t)
+    t.done, t.at = 0, preciseNow()
+    V.pending[#V.pending + 1] = t
+    return t
+end
+
+function V.settle(closing)
+    if #V.pending == 0 then
+        return -- every bag change in the game asks
+    end
+    local now, list = preciseNow(), V.pending
+    V.pending = {}
+    for _, t in ipairs(list) do
+        local n = math.min(t.qty, math.max(0, t.seen())) - t.done
+        if n > 0 then
+            t.done = t.done + n
+            t.onDone(n)
+        end
+        if t.done < t.qty then
+            if closing and t.kind == "sell" or now - t.at >= t.wait then
+                if t.onGiveUp then
+                    t.onGiveUp(t.qty - t.done, closing)
+                end
+            else
+                V.pending[#V.pending + 1] = t
+            end
+        end
+    end
+end
 
 -- `n` units of a merchant purchase reached the bags: stock for resale, and the journal entry.
 local function bookPurchase(w, n)
@@ -155,19 +197,25 @@ function V.buy(offer)
     if cost > F.Engine.wallet() then
         return false, "no_money"
     end
-    -- Booked as the units reach the bags (V.settle): the merchant may refuse a call (no room after
-    -- all, the stock sold out, no money), and a purchase booked at the click stayed in stock.
-    V.waiting[#V.waiting + 1] = {
-        id = id,
+    -- Booked as the units reach the bags (merchant transactions above).
+    local w = {
         key = offer.key,
         name = U.linkName(offer.link) or offer.name or offer.key,
         unit = offer.unit,
         exit = offer.exit,
-        qty = qty,
-        booked = 0,
-        before = F.Crafting.have(id, true),
-        at = F.Engine.clock(),
     }
+    local before = F.Crafting.have(id, true)
+    V.track({
+        kind = "buy",
+        qty = qty,
+        wait = V.BUY_WAIT,
+        seen = function()
+            return F.Crafting.have(id, true) - before
+        end,
+        onDone = function(n)
+            bookPurchase(w, n)
+        end,
+    })
     local left = qty
     while left > 0 do
         local n = math.min(left, stack)
@@ -176,28 +224,6 @@ function V.buy(offer)
     end
     V.settle()
     return true, qty
-end
-
--- Books the units of merchant purchases that reached the bags since (BAG_UPDATE_DELAYED, merchant
--- closed, the next purchase). A purchase waits V.BUY_WAIT seconds for its units; what never came
--- was refused and is not booked.
-function V.settle()
-    if #V.waiting == 0 then
-        return -- every bag change in the game asks
-    end
-    local now, keep = F.Engine.clock(), {}
-    for _, w in ipairs(V.waiting) do
-        local arrived = math.min(w.qty, math.max(0, F.Crafting.have(w.id, true) - w.before))
-        local n = arrived - w.booked
-        if n > 0 then
-            w.booked = arrived
-            bookPurchase(w, n)
-        end
-        if w.booked < w.qty and now - w.at < V.BUY_WAIT then
-            keep[#keep + 1] = w
-        end
-    end
-    V.waiting = keep
 end
 
 -- What merchants really pay ---------------------------------------------------------------------------
