@@ -220,6 +220,15 @@ class PurchaseLotTests(unittest.TestCase):
         c.bidLog={{outcome='won',key='i:30',qty=1,amount=1900,ended=now}}
         F.Data.lots(c);assert(not c.lots[1].bid and not c.lots[2].bid)''')
 
+    def test_rebuilding_lots_distributes_a_multi_lot_deposit(self):
+        run(LOTS + '''c.lots=nil
+        c.journal={
+            {kind='buy',key='i:30',at=now-7200,qty=1,amount=100},
+            {kind='buy',key='i:30',at=now,qty=3,amount=600},
+            {kind='expired',key='i:30',at=now+1,qty=3,amount=300}}
+        local lots=F.Data.lots(c)
+        assert(lots[1].lost==100 and lots[2].lost==200,'rebuilding must preserve per-unit allocation')''')
+
 
 if __name__ == '__main__':
     unittest.main()

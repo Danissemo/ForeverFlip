@@ -248,6 +248,34 @@ local function joinSaved(char)
     char.lots, char.lotsJoined = out, 1
 end
 
+local function shareLoss(lots, amount, qty)
+    local units, first = 0, nil
+    for _, lot in ipairs(lots) do
+        if (lot.left or 0) > 0 then
+            first = first or lot
+            units = units + lot.left
+        end
+    end
+    if not first then
+        local last = lots[#lots]
+        if last then
+            last.lost = (last.lost or 0) + amount
+        end
+        return
+    end
+    units = math.min(units, math.max(1, qty or first.left))
+    local left, allocated = units, 0
+    for _, lot in ipairs(lots) do
+        local n = math.min(left, lot.left or 0)
+        if n > 0 then
+            left = left - n
+            local share = left == 0 and amount - allocated or math.floor(amount * n / units)
+            lot.lost = (lot.lost or 0) + share
+            allocated = allocated + share
+        end
+    end
+end
+
 function D.lots(char)
     if type(char.lots) ~= "table" then
         char.lots = {}
@@ -293,12 +321,7 @@ function D.lots(char)
                     end
                 end
             elseif FAILED_KINDS[e.kind] and e.key and open[e.key] and (e.amount or 0) > 0 then
-                for _, lot in ipairs(open[e.key]) do
-                    if lot.left > 0 then
-                        lot.lost = lot.lost + e.amount
-                        break
-                    end
-                end
+                shareLoss(open[e.key], e.amount, e.qty)
             end
         end
         while #char.lots > D.LOTS do
@@ -353,21 +376,7 @@ function D.addCost(char, key, amount, at, qty)
     end
     local lots = openLots(char, key)
     if #lots > 0 then
-        local units = 0
-        for _, lot in ipairs(lots) do
-            units = units + lot.left
-        end
-        units = math.min(units, math.max(1, qty or lots[1].left))
-        local left, allocated = units, 0
-        for _, lot in ipairs(lots) do
-            local n = math.min(left, lot.left)
-            if n > 0 then
-                left = left - n
-                local share = left == 0 and amount - allocated or math.floor(amount * n / units)
-                lot.lost = (lot.lost or 0) + share
-                allocated = allocated + share
-            end
-        end
+        shareLoss(lots, amount, qty)
     else
         for i = #D.lots(char), 1, -1 do
             local lot = char.lots[i]
