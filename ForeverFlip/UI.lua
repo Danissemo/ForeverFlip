@@ -1600,12 +1600,13 @@ function UI.createDeals(p)
         end
         UI.refresh()
     end)
-    UI.runButton:SetPoint("LEFT", UI.ignoreButton, "RIGHT", 4, 0)
+    -- On the line above the footer, at the right of "Deals: N": the footer row has no room left.
+    UI.runButton:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", -6, 3)
     UI.runStop = button(bar, "Stop", 70, function()
         F.Trade.runStop()
         UI.refresh()
     end)
-    UI.runStop:SetPoint("LEFT", UI.runButton, "RIGHT", 4, 0)
+    UI.runStop:SetPoint("RIGHT", UI.runButton, "LEFT", -4, 0)
 end
 
 -- The Buy all to vendor button: what the next click does, and how many deals are left.
