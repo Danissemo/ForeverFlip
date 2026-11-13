@@ -792,7 +792,8 @@ function UI.scrollText(parent, rows, top, bottom)
     local function wheel(_, delta)
         scrollTo(box.offset - (delta or 0))
     end
-    box.bar = UI.scrollBar(parent, anchor, rows * LINE, scrollTo, wheel)
+    local scrollHeight = math.max(ARROW_H * 2 + TRACK_GAP * 2, rows * LINE - (bottom or 0))
+    box.bar = UI.scrollBar(parent, anchor, scrollHeight, scrollTo, wheel)
     if parent.EnableMouseWheel then
         parent:EnableMouseWheel(true)
         parent:SetScript("OnMouseWheel", wheel)
@@ -1634,7 +1635,7 @@ function UI.createDeals(p)
     local bar = footer(p, 92, "GameFontHighlightSmall")
     -- Selected deal details can be longer than the footer. Use the shared scrolling
     -- text block so every line remains reachable.
-    UI.dealBox = UI.scrollText(bar, 4, 6)
+    UI.dealBox = UI.scrollText(bar, 4, 6, 26)
     UI.dealText = UI.dealBox.text
     UI.cancelButton = button(bar, "Cancel", 96, function()
         F.Trade.cancel()
@@ -2807,7 +2808,7 @@ function UI.createSell(p)
 
     local bar = footer(p, 108, "GameFontHighlightSmall")
     bar.text:Hide()
-    UI.sellBox = UI.scrollText(bar, 3)
+    UI.sellBox = UI.scrollText(bar, 3, 6, 26)
     UI.sellText = UI.sellBox.text
     local priceLabel = text(bar, "GameFontNormal")
     priceLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 36)
@@ -3423,7 +3424,7 @@ function UI.createUndercuts(p)
     )
     local bar = footer(p, 146, "GameFontHighlightSmall")
     bar.text:Hide()
-    UI.fightBox = UI.scrollText(bar, 7)
+    UI.fightBox = UI.scrollText(bar, 7, 6, 26)
     UI.fightText = UI.fightBox.text
     UI.fightButtons = {}
     local last
@@ -4402,11 +4403,11 @@ function UI.createJournal(p)
             end
         end
     )
-    UI.journalHistoryFrame = CreateFrame("Frame", nil, p)
-    UI.journalHistoryFrame:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 0, 0)
-    UI.journalHistoryFrame:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 0)
-    UI.journalHistoryFrame:SetHeight(54)
-    UI.journalHistory = UI.scrollText(UI.journalHistoryFrame, 3)
+    -- Use the same standard footer block as Deals/Selling: one separator line, the addon font
+    -- and the existing scrollbar, without inventing a second visual style for history.
+    UI.journalHistoryFrame = footer(p, 54, "GameFontHighlightSmall")
+    UI.journalHistoryFrame.text:Hide()
+    UI.journalHistory = UI.scrollText(UI.journalHistoryFrame, 3, 6)
     UI.placeJournalLines(false)
 end
 
