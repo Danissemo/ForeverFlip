@@ -6,6 +6,16 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [2.1.0-beta.2] - 2026-11-13
+
+Full scans keep the whole house again, and the Sync helper is fast and can stay in the tray.
+
+### Added
+
+- **The Sync helper can keep syncing in the tray.** With **Keep syncing in the tray when closed**
+  (off by default) closing the window hides it into the notification area; the helper goes on
+  syncing prices and sharing scans. Click the icon to open it, right-click for Sync now and Quit.
+
 ### Fixed
 
 - **Full scan lost most of a busy house.** When the game had not loaded the data of the items with
@@ -1039,7 +1049,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v2.1.0-beta.1...HEAD
+[Unreleased]: ../../compare/v2.1.0-beta.2...HEAD
+[2.1.0-beta.2]: ../../compare/v2.1.0-beta.1...v2.1.0-beta.2
 [2.1.0-beta.1]: ../../compare/v2.0.0-beta.1...v2.1.0-beta.1
 [1.2.0-beta.6]: ../../compare/v1.2.0-beta.5...v1.2.0-beta.6
 [1.2.0-beta.5]: ../../compare/v1.2.0-beta.4...v1.2.0-beta.5
