@@ -4,6 +4,7 @@ auction mail and merchant offers."""
 import unittest
 
 from test_addon import SETUP, run
+from test_audit import AXE
 
 BASE = SETUP + '''local F, T = ForeverFlip, ForeverFlip.Trade
 local c = F.Data.char(F.db, F.Engine.owner())
@@ -239,8 +240,7 @@ class MailTests(unittest.TestCase):
 
 class MerchantTests(unittest.TestCase):
     def test_a_quiver_is_no_room_for_a_merchant_purchase(self):
-        run(BASE + '''addItem(70, 'Weighted Throwing Axe', 50, 'item'); merchantItems = { { id = 70, price = 270 } }
-        local offer = { index = 1, key = 'i:70', link = link(70), unit = 270, qty = 9, exit = 900 }
+        run(BASE + AXE + '''local offer = axeOffer(9)
         C_Container.GetContainerNumFreeSlots = function(bag) if bag == 1 then return 16, 1 end return 0, 0 end
         local ok, why = F.Merchant.buy(offer)
         assert(not ok and why == 'bags_full' and #merchantBought == 0 and not c.positions['i:70'], tostring(why))

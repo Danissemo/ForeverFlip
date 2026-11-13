@@ -1305,15 +1305,27 @@ end
 -- A post ForeverFlip did not make is taken as an 8-hour one when its cancel books the deposit.
 local CANCEL_DURATION = 2
 
+-- The player's listings (T.post) that hold auction `auctionID`.
+local function listingsOf(c, auctionID)
+    local out = {}
+    for _, l in ipairs(type(c.listings) == "table" and c.listings or {}) do
+        for _, id in ipairs(l.ids or {}) do
+            if id == auctionID then
+                out[#out + 1] = l
+                break
+            end
+        end
+    end
+    return out
+end
+
 -- The deposit a cancel of `qty` units of auction `a` gives up: the share of what its post paid,
 -- from the listing that made it (T.post), and true when it is estimated instead (no listing of the
 -- player's holds the auction). T.cancelAuction books it, T.fightPlan weighs it.
 local function cancelDeposit(c, a, qty)
-    for _, l in ipairs(type(c.listings) == "table" and c.listings or {}) do
-        for _, id in ipairs(l.ids or {}) do
-            if id == a.auctionID and l.deposit and (l.qty or 0) > 0 then
-                return math.floor(l.deposit * qty / l.qty + 0.5), false
-            end
+    for _, l in ipairs(listingsOf(c, a.auctionID)) do
+        if l.deposit and (l.qty or 0) > 0 then
+            return math.floor(l.deposit * qty / l.qty + 0.5), false
         end
     end
     return T.depositFor(a.key, qty, CANCEL_DURATION) or 0, true
@@ -1342,12 +1354,10 @@ end
 -- The cancel did not go through: its units are on sale again, and nothing is booked.
 function undoCancel(c, id)
     local rec = cancelsOf(c)[id]
-    for _, l in ipairs(rec and c.listings or {}) do
-        for _, lid in ipairs(l.ids or {}) do
-            if lid == id and (rec.listed or 0) > 0 then
-                local n = math.min(rec.listed, l.cancelled or 0)
-                l.open, l.cancelled, rec.listed = (l.open or 0) + n, (l.cancelled or 0) - n, rec.listed - n
-            end
+    for _, l in ipairs(rec and listingsOf(c, id) or {}) do
+        if (rec.listed or 0) > 0 then
+            local n = math.min(rec.listed, l.cancelled or 0)
+            l.open, l.cancelled, rec.listed = (l.open or 0) + n, (l.cancelled or 0) - n, rec.listed - n
         end
     end
     c.cancels[id], T.cancelled[id] = nil, nil
@@ -1440,29 +1450,27 @@ function T.onOwned()
     end
     for _, a in ipairs(owned) do
         if a.sold and not c.booked[a.auctionID] then
-            for _, l in ipairs(c.listings) do
-                for _, id in ipairs(l.ids) do
-                    if id == a.auctionID and l.open > 0 then
-                        c.booked[a.auctionID] = clock()
-                        local qty = math.min(a.qty, l.open)
-                        l.open = l.open - qty
-                        -- The invoice of this sale comes later by mail: it must not book it again.
-                        l.awaiting = (l.awaiting or 0) + qty
-                        local unit = a.price or l.price
-                        local gross = a.total and a.total * qty / math.max(a.qty, 1) or unit * qty
-                        local net = M.net(gross, 1)
-                        local cost = F.Data.sale(c, l.key, l.name, qty, net, clock())
-                        F.Data.log(c, {
-                            at = clock(),
-                            kind = "sell",
-                            key = l.key,
-                            name = l.name,
-                            qty = qty,
-                            amount = net,
-                            profit = net - cost,
-                        })
-                        changed = true
-                    end
+            for _, l in ipairs(listingsOf(c, a.auctionID)) do
+                if l.open > 0 then
+                    c.booked[a.auctionID] = clock()
+                    local qty = math.min(a.qty, l.open)
+                    l.open = l.open - qty
+                    -- The invoice of this sale comes later by mail: it must not book it again.
+                    l.awaiting = (l.awaiting or 0) + qty
+                    local unit = a.price or l.price
+                    local gross = a.total and a.total * qty / math.max(a.qty, 1) or unit * qty
+                    local net = M.net(gross, 1)
+                    local cost = F.Data.sale(c, l.key, l.name, qty, net, clock())
+                    F.Data.log(c, {
+                        at = clock(),
+                        kind = "sell",
+                        key = l.key,
+                        name = l.name,
+                        qty = qty,
+                        amount = net,
+                        profit = net - cost,
+                    })
+                    changed = true
                 end
             end
         end
@@ -2215,16 +2223,12 @@ function T.cancelAuction(a)
     local c = char()
     local qty = a.qty or 1
     local rec = { at = clock(), scope = F.Engine.scope(), key = a.key, name = a.name, qty = qty, listed = 0 }
-    for _, l in ipairs(c.listings) do
-        for _, id in ipairs(l.ids) do
-            if id == a.auctionID then
-                local n = math.min(l.open, qty - rec.listed)
-                l.open = l.open - n
-                -- The "Auction cancelled" mail comes later: it must not take units off again.
-                l.cancelled = (l.cancelled or 0) + n
-                rec.listed, rec.name = rec.listed + n, rec.name or l.name
-            end
-        end
+    for _, l in ipairs(listingsOf(c, a.auctionID)) do
+        local n = math.min(l.open, qty - rec.listed)
+        l.open = l.open - n
+        -- The "Auction cancelled" mail comes later: it must not take units off again.
+        l.cancelled = (l.cancelled or 0) + n
+        rec.listed, rec.name = rec.listed + n, rec.name or l.name
     end
     -- Units no listing waits for (a post made elsewhere, or units another mail of the item already
     -- took off): their mail is matched by name, so it books no deposit again.

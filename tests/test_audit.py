@@ -12,6 +12,11 @@ BASE = SETUP + '''local F, D, T, UI = ForeverFlip, ForeverFlip.Deals, ForeverFli
 F.db.settings.autoVerify = false; F.db.settings.sniper = false
 '''
 
+# A merchant's axe (no stack), for merchant purchases; axeOffer(qty) is the offer to buy it.
+AXE = '''addItem(70, 'Weighted Throwing Axe', 50, 'item'); merchantItems = { { id = 70, price = 270 } }
+local function axeOffer(qty) return { index = 1, key = 'i:70', link = link(70), unit = 270, qty = qty, exit = 900 } end
+'''
+
 
 class StuckStateTests(unittest.TestCase):
     def test_a_quote_nobody_confirms_ends_after_a_minute(self):
@@ -239,8 +244,7 @@ class PostFeedbackTests(unittest.TestCase):
 
 class MerchantTests(unittest.TestCase):
     def test_items_that_do_not_stack_are_bought_one_call_each_and_only_what_fits(self):
-        run(BASE + '''addItem(70, 'Weighted Throwing Axe', 50, 'item'); merchantItems = { { id = 70, price = 270 } }
-        local offer = { index = 1, key = 'i:70', link = link(70), unit = 270, qty = 9, exit = 900 }
+        run(BASE + AXE + '''local offer = axeOffer(9)
         freeBagSlots = 5
         local ok, bought = F.Merchant.buy(offer)
         assert(ok and bought == 5, 'only what the bags hold: ' .. tostring(bought))

@@ -3,6 +3,7 @@
 import unittest
 
 from test_addon import SETUP
+from test_audit import AXE
 from test_review_trade_b import GEAR, SLOW, run
 
 
@@ -53,10 +54,9 @@ class StopVendorTests(unittest.TestCase):
         assert(c.positions['c:71'], 'still in stock')''')
 
 
-MERCHANT = SETUP + '''local F = ForeverFlip
+MERCHANT = SETUP + AXE + '''local F = ForeverFlip
 local c = F.Data.char(F.db, F.Engine.owner())
-addItem(70, 'Weighted Throwing Axe', 50, 'item'); merchantItems = { { id = 70, price = 270 } }
-local offer = { index = 1, key = 'i:70', link = link(70), unit = 270, qty = 3, exit = 900 }
+local offer = axeOffer(3)
 '''
 
 
