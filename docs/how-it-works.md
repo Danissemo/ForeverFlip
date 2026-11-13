@@ -184,7 +184,7 @@ prior of 4 hours. This removes the main error of the level method: expired and c
 longer count as sales.
 
 ForeverFlip's [learning from searches](#learning-from-the-players-searches) also lowers today's
-cheapest price of an item between scans.
+cheapest price of a commodity between scans (never from your own lots).
 
 ## Deal evaluation
 
@@ -217,8 +217,10 @@ Try every prefix of the cheapest listings, up to 40 auctions. For a prefix that 
      gear, one per stack for commodities.
    - **Deposit amounts** (`AH.depositFn`):
      - commodities: the game's own value from `CalculateCommodityDeposit`, read for 1 and 20 units
-       once per session;
-     - items: the deposit per unit learned from their last post (`CalculateItemDeposit`);
+       once per auction house and session (a read that failed is tried again once the auction house
+       is open, else after a minute);
+     - items: the deposit per unit learned from their last post (`CalculateItemDeposit`), kept apart
+       for neutral houses;
      - otherwise: the estimate `max(1 silver, 15% of the vendor price × units)`.
 3. **Demand.** The sales estimate at the exit price, multiplied by the item's
    [trust factor](#accounting).
@@ -317,7 +319,8 @@ with them, using the same rules.
   game queues a message behind an unanswered one, and on WoW Forever some are never answered, so a
   purchase sent then would never leave. With no money spent 30 seconds after an item purchase, it
   is reported and the deal is checked again; the wallet is still watched 3 minutes (`T.late`), and
-  a purchase the server takes that late is booked then.
+  a purchase the server takes that late is booked then: only when one change of the money equals the
+  lot's price exactly and no other purchase is under way. A new purchase, bid or post ends the watch.
 - **The full scan answer comes in parts** (1024, 2048, 24576 ... auctions, with pauses of seconds
   between them). It is read once the list has not changed for 5 seconds (`S.SETTLE`) and is
   complete. A list that is a whole number of 1024-auction parts, or under 75% of the last
@@ -411,8 +414,8 @@ Gear keys are told apart only by the exact search, so a cheap gear item ID makes
 of that ID a candidate.
 
 Browse results that come while the sniper has no query of its own, such as the player browsing the
-game's Buy tab or another addon's search, are judged the same way. Only their new rows are read, 300
-per frame, so another addon browsing the whole house does not freeze the game. A gear check needs
+game's Buy tab or another addon's search, are judged the same way. Only their new rows are read, for
+3 ms per frame, so another addon browsing the whole house does not freeze the game. A gear check needs
 the browse too: the round in flight gives way and starts again after the pause.
 
 ### Fallback: the hot list
@@ -483,7 +486,10 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
   second, and compares your price with the cheapest other seller.
 - **Cancel undercut** (`T.undercutList`, `T.cancelNextUndercut`): an undercut auction is offered for
   cancelling only if its repost price (the undercut of the cheapest other seller) still reaches the
-  item's floor. Each click cancels one.
+  item's floor. Each click cancels one. The deposit and fee a cancel loses are booked once the next
+  list of your auctions no longer shows it (or its mail comes); a cancel the server refused or dropped
+  books nothing and the auction can be cancelled again. The list of your auctions is refreshed even
+  while checks wait in the queue.
 - **Anti-undercut** (`T.fightPlan`): every way out of an undercut is valued as expected money.
   Units sold in t hours at or above a price follow a negative binomial: the rate is a
   Gamma(n + 1/2, (h + `M.PRIOR_HOURS`) / 24) belief from n units seen sold in h hours
@@ -511,7 +517,7 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
 - **Sales to a merchant by hand** (`Merchant.watchBuyback`): the buyback list is compared each time
   it changes; a new entry of an item in stock is booked as a vendor sale at the price paid. Sales of
   the Sell to vendor button are booked by it and only matched.
-- **Journal:** buy, sell, vendor, expired and fail entries, the latest 500. Daily totals of it
+- **Journal:** buy, post, sell, vendor, expired, cancel and return entries, the latest 500. Daily totals of it
   (`Data.daily`, 60 days) feed Analytics, so a busy week is not cut short by the 500-entry limit.
 - **Invoices** (`Mail.record`, `Trade.onInvoice`). Every auction mail is read once, when its money or
   items are taken. That happens through the Take auction mail button, or through the game's
@@ -539,8 +545,8 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
 
   Your own results thus correct the scan estimate.
 - **Unknown purchases:** an item purchase with no answer for 30 seconds is recorded as unknown, and
-  you settle it on the Journal page. The chat line *You won an auction for X* confirms a pending
-  purchase automatically when the name and count match.
+  you settle it on the Journal page. The chat line *You won an auction for X* or the purchase's mail
+  settles it automatically when the name and count match, so it is never booked twice.
 
 ## Time-of-week pattern
 
@@ -568,7 +574,7 @@ dearest slot, and the spread between them.
 | Cheap now | time-of-week factor now ≤ 0.93 and at least 0.5 units sold per day |
 | Sell now | time-of-week factor now ≥ 1.07, only for items you hold in stock |
 
-Each list shows at most 50 items.
+Each list shows at most 50 items. Except Sell now, the lists take only items the last full scan listed, and "today's cheapest" only from today's record.
 
 Daily records are kept for **14 days** (`S.DAYS`), only for items that are traded often enough: 10 or
 more units listed, or items that were near a deal. Each record holds:
@@ -591,8 +597,8 @@ currency) is compared with its auction history:
 
 - **exit price:** one step below the lower of the usual price and today's cheapest;
 - **profit per unit:** `net(exit) − merchant price − deposit per unit`;
-- **quantity:** about one day of measured sales, limited by the merchant's stock and your
-  [budget](#money-limits).
+- **quantity:** about one day of measured sales times the item's [trust factor](#accounting), less
+  the units already held, limited by the merchant's stock and your [budget](#money-limits).
 
 Only items with measured sales and a positive profit are listed, highest total profit first.
 
@@ -602,8 +608,8 @@ Every merchant price seen is remembered (`F.db.merchantPrices`) as a material pr
 
 `Crafting.lua`.
 
-1. **Learning.** When a profession window opens (`TRADE_SKILL_SHOW`, `TRADE_SKILL_LIST_UPDATE`, at
-   most every 2 seconds), every recipe is read through `C_TradeSkillUI.GetRecipeSchematic`: the
+1. **Learning.** When a profession window opens (`TRADE_SKILL_SHOW`, `TRADE_SKILL_LIST_UPDATE`: at
+   once at most every 2 seconds, and half a second after the last event of a burst), every recipe is read through `C_TradeSkillUI.GetRecipeSchematic`: the
    product, units made and required materials. The recipes are saved per character.
 2. **Material cost.** Each material costs the cheaper of:
    - its usual auction price (for a material ForeverFlip has not seen, the usual price from
@@ -651,17 +657,22 @@ crafts.
   - Addon messages with the prefix `ForeverFlip` (`C_ChatInfo.SendAddonMessage`) to GUILD, PARTY,
     RAID or WHISPER.
   - The text is cut into pieces of 240 characters, each sent as `id:part:total:payload`, one every
-    0.3 seconds (`S.PACE`).
-  - The receiver joins the parts and drops an incomplete scan after 5 minutes.
+    second (`S.PACE`, the client's allowance per prefix). A part the client refuses for its throttle is
+    sent again; any other refusal ends the transfer. The text of a scan is built once, in slices.
+  - At most 5000 parts (`S.MAX_PARTS`): a larger scan is neither announced nor sent. On the realm
+    channel one copy is sent at a time.
+  - The receiver joins the parts and drops an incomplete scan when no part came for 5 minutes; a
+    sender has one scan being received at a time.
 - **Acceptance** (`S.merge`):
-  - the scope's realm must be the player's realm;
+  - the scope must be `<the player's realm>-Alliance|Horde|Neutral`, and every item key canonical;
   - the scan must be at most 7 days old, and no more than 10 minutes in the future;
   - each scan is merged once (`F.db.sharedSeen`);
   - a scan within 2 minutes of the player's own scan is the same server scan, and is skipped.
 - **Merging,** per item:
   1. `h.shared = { at, m, min, n, from }` when newer than the stored one;
   2. the record of that day: the lowest price wins, the usual price and units fill in what is missing,
-     and the records stay in day order;
+     and the records stay in day order; a cheapest price or a usual price more than 10 times off the
+     usual price known is dropped, and the units sold are capped at 96 times the units listed;
   3. the time-of-week pattern, for items with 10 or more units listed.
 - **Usual price** (`Market.usual`): the newer of the player's own scan and the shared one. It is used
   for posting prices, crafting, disenchant values, bids, merchant offers, the sniper threshold,

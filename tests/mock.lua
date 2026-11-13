@@ -80,6 +80,18 @@ end
 function methods:IsShown()
     return self.shown
 end
+-- As in the game: shown by its own flag and every parent's (IsShown is the frame's own flag only).
+-- A parent that is not a widget of this file counts as shown.
+function methods:IsVisible()
+    local f = self
+    while type(f) == "table" do
+        if rawget(f, "shown") == false then
+            return false
+        end
+        f = rawget(f, "parent")
+    end
+    return true
+end
 function methods:SetShown(on)
     if on then
         self:Show()
@@ -631,6 +643,8 @@ local function browseAll(ids, search)
             end
             r.minPrice = math.min(r.minPrice, unit)
             r.totalQuantity = r.totalQuantity + a.count
+            -- The player's own lots count in the lowest price and quantity too; the row tells the item has one.
+            r.containsOwnerItem = r.containsOwnerItem or a.owner == "Me"
         end
     end
     table.sort(out, function(x, y)

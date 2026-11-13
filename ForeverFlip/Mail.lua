@@ -146,27 +146,32 @@ local function subjectItem(subject, names)
     end
 end
 
--- Books mail `i` once.
-function Mail.record(i)
+-- Mail `i` as read at the last inbox update, or now.
+local function snapAt(i)
     local snap = Mail.snap[i]
     if not snap then
         local ok, s = pcall(read, i)
         if not ok then
-            return
+            return nil
         end
         snap = s
         Mail.snap[i] = snap
     end
+    return snap
+end
+
+-- Books a mail once.
+local function book(snap)
     if snap.recorded or not F.db then
         return
     end
     snap.recorded = true
     local inv = snap.invoice
     -- A post that came back. WoW Forever mails a cancelled auction's items with a buyer invoice
-    -- (from the player): that is no purchase. Up to 2.0.0-beta.1 it was booked as one.
+    -- (from the player): that is no purchase. Up to 2.0.0-beta.1 it was booked as one. The player
+    -- may be named with the realm, as in owner lists (F.AH.isPlayer).
     local name, count = subjectItem(snap.subject, FAILED)
-    local me = UnitName and UnitName("player")
-    if not name and inv and inv.kind == "buyer" and type(inv.item) == "string" and me and inv.player == me then
+    if not name and inv and inv.kind == "buyer" and type(inv.item) == "string" and F.AH.isPlayer(inv.player) then
         name, count = inv.item, inv.count
     end
     if name then
@@ -194,15 +199,17 @@ function Mail.record(i)
     end
 end
 
-local function freeSlots()
-    local free = 0
-    for bag = 0, 4 do
-        free = free + (C_Container and C_Container.GetContainerNumFreeSlots(bag) or 0)
+-- Books mail `i` once.
+function Mail.record(i)
+    local snap = snapAt(i)
+    if snap then
+        book(snap)
     end
-    return free
 end
 
--- The game's own mailbox buttons and other mail addons take mail through these functions.
+-- The game's own mailbox buttons and other mail addons take mail through these functions. The
+-- Take auction mail run books its own takes (Mail.step): ownTake while it calls them.
+local ownTake = false
 function Mail.hook()
     if Mail.hooked or not hooksecurefunc then
         return
@@ -212,7 +219,7 @@ function Mail.hook()
         if _G[name] then
             hooksecurefunc(name, function(i)
                 -- With full bags the item stays in the mail: it is booked when it is really taken.
-                if name ~= "TakeInboxMoney" and freeSlots() == 0 then
+                if ownTake or name ~= "TakeInboxMoney" and F.AH.freeBagSlots() == 0 then
                     return
                 end
                 pcall(Mail.record, i)
@@ -240,9 +247,30 @@ function Mail.start()
     return true
 end
 
+-- The take of the step before: once its mail changed or left the inbox (sig differs), its gold or
+-- item is counted and an item mail is booked. A take the game refused leaves the mail as it was:
+-- nothing is counted or booked, and the mail is booked when it is really taken. Booked before the
+-- take, a refused item mail (the bags full but for a quiver) was booked again after a /reload.
+local function settle(job, sig)
+    local t = job.taking
+    if not t or t.sig == sig then
+        return
+    end
+    job.taking = nil
+    job.gold = job.gold + (t.gold or 0)
+    job.items = job.items + (t.items or 0)
+    if t.snap then
+        book(t.snap)
+    end
+end
+
 function Mail.stop(reason)
     local job = Mail.job
     Mail.job = nil
+    -- Closed right after a take, before its answer was seen: the take counts as done.
+    if job and (reason == nil or reason == "mail_closed") then
+        settle(job, nil)
+    end
     if job and reason then
         F.Engine.notify(reason)
         local L = F.Locale.text
@@ -263,39 +291,43 @@ function Mail.step(now)
         Mail.stop("mail_closed")
         return
     end
-    for i = 1, (GetInboxNumItems() or 0) do
+    local n = GetInboxNumItems() or 0
+    for i = 1, n do
         if Mail.isAuction(i) then
             local _, _, _, subject, money, _, _, hasItem = GetInboxHeaderInfo(i)
             job.next = now + Mail.PACE
-            -- The same mail asked for again and again without a change: the game refuses it.
-            local sig = tostring(i) .. "|" .. tostring(subject) .. "|" .. tostring(money) .. "|" .. tostring(hasItem)
+            -- The same mail asked for again and again without a change: the game refuses it. The
+            -- inbox size tells a look-alike mail that moved up into the place of a taken one apart
+            -- (eight identical sale mails stopped the run after five as refused).
+            local sig = table.concat({ n, i, tostring(subject), tostring(money), tostring(hasItem) }, "|")
+            settle(job, sig)
             job.tries = job.tries or {}
             job.tries[sig] = (job.tries[sig] or 0) + 1
             if job.tries[sig] > 5 then
                 Mail.stop("mail_stuck")
                 return
             end
-            local first = job.tries[sig] == 1
-            if (money or 0) <= 0 and hasItem and freeSlots() == 0 then
+            local take, taking = TakeInboxMoney, { sig = sig, gold = money }
+            if (money or 0) > 0 then
+                Mail.record(i) -- money needs no bag room: booked as it is taken
+            elseif F.AH.freeBagSlots() == 0 then
                 -- Not booked yet: the mail stays, and is booked when its item is taken.
                 Mail.stop("bags_full")
                 return
+            else
+                take, taking = AutoLootMailItem, { sig = sig, items = 1, snap = snapAt(i) }
             end
-            Mail.record(i)
-            if (money or 0) > 0 then
-                TakeInboxMoney(i)
-                job.gold = job.gold + (first and money or 0)
-            elseif hasItem then
-                if freeSlots() == 0 then
-                    Mail.stop("bags_full")
-                    return
-                end
-                AutoLootMailItem(i)
-                job.items = job.items + (first and 1 or 0)
+            ownTake = true
+            local ok, err = pcall(take, i)
+            ownTake = false
+            if not ok then
+                error(err, 0)
             end
+            job.taking = taking
             F.Engine.changed()
             return
         end
     end
+    settle(job, nil)
     Mail.stop("mail_done")
 end

@@ -6,7 +6,7 @@ from test_addon import run
 
 
 WOOL = '''local F=ForeverFlip;local T,UI=F.Trade,F.UI
-F.db.settings.autoScan=false;F.db.settings.sniper=false;F.Engine.autoVerify=false
+F.db.settings.autoScan=false;F.db.settings.sniper=false;F.db.settings.autoVerify=false
 F.db.settings.vendorMargin=0
 addItem(3530,'Wool Bandage',28,'commodity');putBag(0,1,3530,41)
 local key='c:3530';local c=F.Data.char(F.db,F.Engine.owner())

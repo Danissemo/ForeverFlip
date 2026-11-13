@@ -9,7 +9,7 @@ import unittest
 from test_addon import SETUP, run
 
 BASE = SETUP + '''local F, D, T, UI = ForeverFlip, ForeverFlip.Deals, ForeverFlip.Trade, ForeverFlip.UI
-F.Engine.autoVerify = false; F.db.settings.sniper = false
+F.db.settings.autoVerify = false; F.db.settings.sniper = false
 '''
 
 
@@ -612,8 +612,8 @@ class SettingsMenuTests(unittest.TestCase):
         assert(UI.settingFrames.keys:IsShown() and not UI.settingFrames.general:IsShown(), 'key bindings shown')
         UI.show('settings')
         assert(UI.settingFrames.general:IsShown() and UI.settingsTab == 'general', 'general is the first page')
-        UI.settingTabs.safety:Click()
-        assert(UI.section == 'settings' and UI.settingFrames.safety:IsShown(), 'the old shortcut opens the page')''')
+        settings.subs[4]:Click()
+        assert(UI.section == 'settings' and UI.settingFrames.safety:IsShown(), 'its menu entry opens the page')''')
 
 
 class MerchantRefreshTests(unittest.TestCase):
@@ -637,12 +637,6 @@ class AntiUndercutTests(unittest.TestCase):
     h['i:30'] = h['i:30'] or {}
     h['i:30'].flow = { hours = 24, sold = {6, 6, 6, 6, 6, 6, 6, 6, 6, 6}, pairs = 4, at = now, market = 25000 }
     '''
-
-    def test_poisson_chances(self):
-        run(BASE + '''local T = F.Trade
-        assert(math.abs(T.atLeast(1, 1) - (1 - math.exp(-1))) < 1e-9, 'one sale in a mean of one')
-        assert(T.atLeast(0, 0) == 1 and T.atLeast(3, 0) == 0)
-        assert(T.atLeast(200, 400) > 0.99 and T.atLeast(400, 200) < 0.01, 'the normal approximation')''')
 
     def test_every_option_is_priced_and_the_best_advised(self):
         run(self.PLAN + '''local plan = T.fightPlans()[1]
@@ -679,13 +673,19 @@ class UndercutModelTests(unittest.TestCase):
 
     def test_thin_sales_keep_the_chances_wide(self):
         run(BASE + '''local T = F.Trade
+        -- P(N >= k) for N ~ Poisson(m): the chances of a plain, known rate.
+        local function atLeast(k, m)
+            local term, below = math.exp(-m), 0
+            for i = 0, k - 1 do below = below + term; term = term * m / (i + 1) end
+            return 1 - below
+        end
         -- 4 units seen in 1 hour: a plain rate says 2 sales in 5 hours are near sure.
         local thin = T.saleChances(4, 1, 5)(2)
-        local plain = T.atLeast(2, 4 / (1 + 4) * 5)
+        local plain = atLeast(2, 4 / (1 + 4) * 5)
         assert(thin < plain - 0.05, thin .. ' vs ' .. plain)
         -- With many sales the belief narrows to the plain rate.
         local rich = T.saleChances(4000, 1000, 5)(2)
-        assert(math.abs(rich - T.atLeast(2, 4000 / 1004 * 5)) < 0.02, tostring(rich))
+        assert(math.abs(rich - atLeast(2, 4000 / 1004 * 5)) < 0.02, tostring(rich))
         assert(T.saleChances(3, 10, 0)(1) == 0 and T.saleChances(3, 10, 5)(0) == 1)''')
 
     def test_a_stack_sells_in_part(self):

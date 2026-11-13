@@ -5,7 +5,7 @@ from test_addon import runtime
 
 SETUP = '''
 local F, D, UI = ForeverFlip, ForeverFlip.Deals, ForeverFlip.UI
-F.Engine.autoVerify=false;F.db.settings.autoScan=false;F.db.settings.sniper=false
+F.db.settings.autoVerify=false;F.db.settings.autoScan=false;F.db.settings.sniper=false
 local function deal(id, mode)
     addItem(id,'Item '..id,100,'commodity')
     return {key='c:'..id,id=id,kind='commodity',link=link(id),mode=mode or 'vendor',
@@ -169,7 +169,7 @@ class SaleabilityTableTests(unittest.TestCase):
         UI.selected='c:50';UI.refreshDeals()
         local detail=UI.dealText:GetText()
         assert(detail:find('a day at'),detail)
-        assert(detail:find('240 min') and detail:find('old data'),detail)
+        assert(detail:find('data 4.0 h old',1,true) and detail:find('old data'),detail)
         assert(not detail:find('999'),'cached deal rate must not claim current sales')
         UI.selected='c:30';UI.refreshDeals();assert(UI.dealText:GetText():find('unavailable'))
         ''')

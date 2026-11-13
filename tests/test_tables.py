@@ -6,7 +6,7 @@ from test_addon import runtime
 DEALS = '''
 local F = ForeverFlip
 local D, UI = F.Deals, F.UI
-F.Engine.autoVerify=false;F.db.settings.autoScan=false
+F.db.settings.autoVerify=false;F.db.settings.autoScan=false
 addItem(10,'Zulu',500,'commodity');addItem(20,'Alpha',500,'commodity');addItem(30,'beta',500,'commodity')
 local z={key='c:10',id=10,kind='commodity',link=link(10),mode='vendor',qty=1,cost=300,profit=100,maxUnit=300,exit=400,verified=now}
 local a={key='c:20',id=20,kind='commodity',link=link(20):gsub('1eff00','ffff00'),mode='flip',qty=2,cost=200,profit=200,maxUnit=100,exit=250}
@@ -140,7 +140,7 @@ class SniperControlTests(unittest.TestCase):
     def test_sell_price_check_queues_behind_another_background_search(self):
         runtime().execute('''
         local F,UI=ForeverFlip,ForeverFlip.UI
-        F.Engine.autoVerify=false;F.db.settings.autoScan=false
+        F.db.settings.autoVerify=false;F.db.settings.autoScan=false
         addItem(10,'Linen Cloth',100,'commodity');putBag(0,1,10,5)
         UI.show('sell');UI.sellSelected=F.AH.bagItems()[1]
         F.Deals.search={key='c:999',source='sniper',at=now}

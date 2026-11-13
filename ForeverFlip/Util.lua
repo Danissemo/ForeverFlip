@@ -142,27 +142,41 @@ function U.plainMoney(copper)
     return (copper < 0 and "-" or "") .. table.concat(shown, " ")
 end
 
--- Parses "1g 20s 5c", "20s", "1.5g" or a bare number of silver.
+local COPPER = { g = 10000, s = 100, c = 1 }
+local SMALLER = { g = "s", s = "c" }
+
+-- Parses "1g 20s 5c", "20s", "1.5g" or a bare number of silver. A number after the last coin is
+-- the next smaller coin: "5g 50" and "1g50" are 5g 50s and 1g 50s (the 50 was dropped, and a post
+-- typed as 5g 50 went up at 5 gold). No price is negative: "-5g" is nil, not 5 gold.
 function U.parseMoney(text)
     if type(text) ~= "string" then
         return nil
     end
     text = text:lower():gsub(",", ".")
-    local total, found = 0, false
-    for amount, unit in text:gmatch("([%d%.]+)%s*([gsc])") do
+    if text:find("-", 1, true) then
+        return nil
+    end
+    local total, last, rest = 0, nil, 1
+    for amount, unit, after in text:gmatch("([%d%.]+)%s*([gsc])()") do
         local n = tonumber(amount)
         if not n then
             return nil
         end
-        total = total + n * (unit == "g" and 10000 or unit == "s" and 100 or 1)
-        found = true
+        total = total + n * COPPER[unit]
+        last, rest = unit, after
     end
-    if not found then
-        local n = tonumber(text:match("^%s*([%d%.]+)%s*$") or "")
-        if not n then
+    local tail = text:match("^%s*([%d%.]+)%s*$", rest)
+    if tail then
+        local n, unit = tonumber(tail), "s" -- a bare number alone is silver
+        if last then
+            unit = SMALLER[last] -- after copper there is no smaller coin
+        end
+        if not n or not unit then
             return nil
         end
-        total = n * 100
+        total = total + n * COPPER[unit]
+    elseif not last then
+        return nil
     end
     return math.floor(total + 0.5)
 end

@@ -16,6 +16,44 @@ All notable changes are listed here. The format follows
   long warnings readable without overlapping inputs.
 - Journal filters preserve purchase kind through merging and reconstruction; won bids mark the
   correct lot, and vendor, resale and bid purchases of the same item remain separate.
+- **Code review fixes (2.0.0-beta.1 and Unreleased code).**
+  - Accounting: the one-time journal recount no longer rebuilds stock, lifetime statistics, lots
+    and daily totals from the 500-entry journal (it wiped stock bought before the journal window),
+    and only invoice purchases of the player's own posts become returns. Open purchase lots are
+    never dropped by the 300-lot cap. A late purchase is booked only on one money change equal to its
+    price, and no longer wipes a purchase under way. A buyout's own *You won* line no longer closes a
+    running bid; an unknown purchase is settled by its line or mail and cannot be booked twice.
+    Listings and purchase mail are matched for the 31-day life of auction mail, so late mail no
+    longer books a sale, purchase or deposit twice. A cancel's loss is booked once the next list of
+    own auctions confirms it, once per auction. Sell all and Vendor sold book only the units of the
+    position, sell only vendor-deal units, and the anti-undercut "to a vendor" mark expires and is
+    cleared when the item leaves. Post next bought posts only unlisted bought units and keeps the
+    keep rule. Losses without stock reach the daily totals and the 7-day summary uses them too.
+  - Buying: Confirm never buys an item that is no longer selected or ignored, and Buy all to vendor
+    confirms only its own quote. The visit spending limit applies to every purchase path, bids and
+    buyouts included, and a limit below 1 gold is kept. Bids wait for a fresh search, never go
+    against the player's own lead or an alt's auction, and a bid the server never took is not shown
+    as leading.
+  - Searches: checks started by hovering or by the buy run wait for a full scan's answer; the "only
+    yours" shortcut needs the player's own lot; a stuck throttle's allowance is no longer spent by
+    checks that send nothing; dropped sniper and gear messages are released; pages of filtered rows
+    are read on; Stop ends the buy run and own-auction checks. Price checks are kept per auction
+    house, and prices of lots the player just bought are no longer undercut.
+  - Full scans: a house that shrank is scanned again, unanswered requests back off, a resumed answer
+    is read, another addon's scan no longer blocks checks for ten minutes, rows read late keep scan
+    order, closing while a scan finishes books it once, other characters' purchases no longer hide
+    sales, and the player's own uploaded scans are not merged back as community data.
+  - Sharing: transfers expire on inactivity, pace within the client's allowance and retry throttled
+    parts, one copy is sent at a time, 'Scan sent.' means a scan was sent, and peers' cheapest
+    prices, sales, keys, scopes and announcements are checked.
+  - Interface: tables sort item links by name and scroll past the first rows (Undercuts), footers
+    count every row, a waiting key capture ends with its page, settings keep fractions and decimal
+    commas, merchant items come back after closing on the ForeverFlip tab, the hidden window is no
+    longer redrawn after the auction house closes, and several texts (cut, ages, run status) are
+    right and translated.
+  - Speed: break-even is computed in a few steps, the sniper judges rows within a time budget, browse
+    keys are learned once per row, raw scan lines are read once and joined in slices, and bid
+    candidates, Sure values and Undercuts plans are no longer recomputed needlessly.
 
 ### Changed
 
@@ -47,8 +85,9 @@ All notable changes are listed here. The format follows
   with a buyer invoice; it was booked as a purchase at the post's price (in one game: 35 gold of
   Fish Bowls and Enchanted Lutes never bought). A buyer invoice from yourself, or with a cancelled
   or expired subject, is now a post that came back. Once per character the journal is recounted:
-  such returns (buys of one item booked within 10 seconds of each other while mail was taken)
-  become returns, and the stock, costs, profits, purchase lots and daily totals are rebuilt.
+  such returns (buys of one item booked within 10 seconds of each other while mail was taken, of
+  an item the player had posted at that price) become returns, and the stock, costs, profits,
+  purchase lots and daily totals are corrected by them; nothing the journal no longer holds is lost.
 - **Lost is calculated.** Posts that came back without a known deposit (expired before deposits
   were booked, the returns above) get the deposit worked out from the merchant price, the quantity
   and the duration in the settings.

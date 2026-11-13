@@ -274,7 +274,7 @@ minute (and at once after you are outbid).
 | My bid | What you bid. |
 | Next bid | The lowest bid the auction house accepts now. |
 | Worth | What the item brings you: the vendor price, or its usual price after the cut and deposit. |
-| Status | **leading**, **outbid**, **ended** (you led when it was last seen; the mail tells), **won** or **lost**. |
+| Status | **leading**, **outbid**, **ended** (you led when it was last seen, or the bids list never showed the bid; the mail tells, and a bid the list never showed is forgotten an hour after its auction's latest end), **won** or **lost**. |
 | Advice | **bid X**, **buy out X**, **keep**, **let it go** or **not enough money**. |
 
 The advice comes from one rule. A bid that is outbid costs nothing, because the money comes back.
@@ -484,7 +484,7 @@ The page answers three questions, for the last 7 or 30 days.
 
 - what you spent on purchases, and how many times you sold (and how many of those with a profit);
 - what each 1g you spent brought back;
-- what is still to sell (at what it cost) and how long items take to sell;
+- what is still to sell (at what it cost; shopping-list and disenchant purchases are not counted) and how long items take to sell;
 - the gold of all your characters of the realm, when you have more than one;
 - the items that earned and lost the most.
 
@@ -534,8 +534,8 @@ The third-level menu under **Analytics → Journal and profit** offers **All**, 
 when the item can later be sold to a merchant; purchases using different strategies are not
 merged into one purchase lot.
 
-- A summary of the last 7 days: money spent, money received, profit of closed sales, and stock
-  bought and not sold yet.
+- A summary of the last 7 days: money spent, money received, profit of closed sales (from the daily
+  totals, so a busy week is not cut short by the 500-entry journal), and stock bought and not sold yet.
 - **Unknown purchases**, if any, with **It was bought** and **Not bought** to settle them.
 - The latest entries of the journal: purchases, auction sales, vendor sales, posts that came back
   unsold and failed purchases.
@@ -642,8 +642,8 @@ The tab also shows the community data the Sync helper wrote, and how many full s
 
 How a scan is sent and received:
 
-- **Hidden addon messages** carry the scan, not chat lines, one message every 0.3 seconds. A scan of
-  a few thousand items takes a minute or two.
+- **Hidden addon messages** carry the scan, not chat lines, one message a second. A scan of a
+  thousand items with a week of daily records takes about ten minutes.
 - **What is accepted:** scans of your own realm, at most 7 days old, each scan once, and never your
   own scan back. An item whose shared price is more than 10 times off the usual price you know is
   left out.

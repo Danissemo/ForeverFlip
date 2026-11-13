@@ -5,7 +5,7 @@ from test_addon import SETUP, run
 
 GEAR = SETUP + '''enableBrowse()
 local F, D, U, A = ForeverFlip, ForeverFlip.Deals, ForeverFlip.Util, ForeverFlip.AH
-F.Engine.autoVerify = false
+F.db.settings.autoVerify = false
 local nature = U.key('gear', 20, 'Northern Shortsword of Nature Protection')
 local healing = U.key('gear', 20, 'Northern Shortsword of Healing')
 local function searches()
@@ -64,10 +64,11 @@ class GearVersionTests(unittest.TestCase):
 class AloneTests(unittest.TestCase):
     def test_no_answer_for_an_item_nobody_else_sells_is_that_answer(self):
         run(SETUP + '''local F, D = ForeverFlip, ForeverFlip.Deals
-        F.Engine.autoVerify = false
+        F.db.settings.autoVerify = false
         fullScan()
         F.Scan.last.listed['i:31'] = nil
         F.Scan.last.at = now - 3000 -- older than 20 minutes, within 2 hours
+        F.Trade.owned = { { auctionID = 77, id = 31, key = 'i:31', qty = 1, price = 1000 } } -- the player's lot
         F.AH.search = function() end -- the server never answers
         local got
         D.enqueue('i:31', function(_, rows, complete) got = { rows = rows, complete = complete } end, nil, true)
@@ -76,7 +77,7 @@ class AloneTests(unittest.TestCase):
 
     def test_an_item_others_sell_still_fails_without_an_answer(self):
         run(SETUP + '''local F, D = ForeverFlip, ForeverFlip.Deals
-        F.Engine.autoVerify = false
+        F.db.settings.autoVerify = false
         fullScan()
         F.AH.search = function() end
         local got
@@ -88,7 +89,7 @@ class AloneTests(unittest.TestCase):
 class PacingTests(unittest.TestCase):
     def test_a_check_of_check_all_gives_up_sooner(self):
         run(SETUP + '''local F, D = ForeverFlip, ForeverFlip.Deals
-        F.Engine.autoVerify = false
+        F.db.settings.autoVerify = false
         F.AH.search = function() end -- never answered
         local done
         D.enqueue('c:10', function(_, rows) done = rows == nil end, nil, true)
@@ -100,7 +101,7 @@ class PacingTests(unittest.TestCase):
 
     def test_check_all_loads_every_item_first(self):
         run(SETUP + '''local F, D = ForeverFlip, ForeverFlip.Deals
-        fullScan(); F.Engine.autoVerify = false
+        fullScan(); F.db.settings.autoVerify = false
         local asked = {}
         local real = F.AH.keyInfoReady
         F.AH.keyInfoReady = function(item, key) asked[item.id] = true; return real(item, key) end

@@ -93,7 +93,7 @@ class ShareTests(unittest.TestCase):
         assert((#Sh.outbox>0 and Sh.outbox[1].channel=='GUILD') or (sentMessages[1] and sentMessages[1][3]=='GUILD'))''')
 
     def test_sharing_tab(self):
-        run(SHARE + '''local UI=F.UI;UI.show('settings');UI.settingTabs.share:Click()
+        run(SHARE + '''local UI=F.UI;UI.show('settings');UI.show('settings:share')
         assert(UI.settingFrames.share:IsShown() and not UI.settingFrames.general:IsShown())
         UI.shareGuild:Click();assert(#Sh.outbox>0)
         UI.shareExport:Click();assert(UI.exportFrame.box:GetText():sub(1,4)=='FF3|')''')
@@ -131,7 +131,7 @@ class KeyTests(unittest.TestCase):
         function SaveBindings() saved=saved+1 end
         function GetCurrentBindingSet() return 2 end
         function IsShiftKeyDown() return true end
-        UI.show('settings');UI.settingTabs.keys:Click()
+        UI.show('settings');UI.show('settings:keys')
         UI.keyButtons[1]:Click();assert(UI.capturing=='FOREVERFLIP_BUY')
         UI.onCapturedKey('LSHIFT');assert(UI.capturing,'modifiers alone wait')
         UI.onCapturedKey('B');assert(bound['SHIFT-B']=='FOREVERFLIP_BUY' and saved==1)

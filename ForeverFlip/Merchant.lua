@@ -43,6 +43,7 @@ function V.offers(now)
     now = now or F.Engine.clock()
     local out = {}
     local budget = F.Deals.budget()
+    local positions = F.Data.char(F.db, F.Engine.owner()).positions
     for i = 1, (GetMerchantNumItems and GetMerchantNumItems() or 0) do
         local name, price, quantity, available, purchasable, extended = merchantInfo(i)
         local link = GetMerchantItemLink and GetMerchantItemLink(i)
@@ -64,8 +65,13 @@ function V.offers(now)
                 local deposit = M.deposit(F.AH.clientVendorPrice(id), item.kind == "commodity" and quantity or 1)
                 local each = M.net(exit, 1) - unit - deposit / (item.kind == "commodity" and quantity or 1)
                 local d = M.saleability(h, exit, now)
-                if each > 0 and d.known and d.perDay >= 0.5 then
-                    local qty = math.max(1, math.floor(d.perDay))
+                -- As a resale on the auction house: the sales times the item's trust factor, and
+                -- at most one day of them held, the stock already held included. Offered without
+                -- it, every click (or visit) bought one more day of sales.
+                local perDay = d.known and d.perDay * F.Deals.trust(key, now) or 0
+                if each > 0 and perDay >= 0.5 then
+                    local held = positions[key] and positions[key].qty or 0
+                    local qty = math.max(1, math.floor(perDay)) - held
                     if (available or -1) >= 0 then
                         qty = math.min(qty, available * quantity)
                     end
@@ -80,7 +86,7 @@ function V.offers(now)
                             stack = quantity,
                             exit = exit,
                             each = each,
-                            perDay = d.perDay,
+                            perDay = perDay,
                             qty = qty,
                             profit = math.floor(each * qty),
                         }
@@ -99,15 +105,7 @@ function V.offers(now)
 end
 
 -- Buys the suggested quantity of one offer (a click) and books it as stock for resale.
--- Free bag slots, and the units of one stack of the item (1 for items that do not stack).
-local function freeSlots()
-    local free = 0
-    for bag = 0, 4 do
-        free = free + (C_Container and C_Container.GetContainerNumFreeSlots(bag) or 0)
-    end
-    return free
-end
-
+-- The units of one stack of the item (1 for items that do not stack).
 local function stackOf(index, link)
     local max = tonumber(GetMerchantItemMaxStack and GetMerchantItemMaxStack(index))
     local id = link and tonumber(link:match("item:(%d+)"))
@@ -118,13 +116,13 @@ end
 
 -- Buys the offer in calls of at most one stack each: one call for more than a stack ends in
 -- "Internal Bag Error", and items that do not stack need a bag slot each. Never more than the
--- free bag slots hold. Returns true and the units bought, or false and a reason.
+-- free slots of the general bags hold. Returns true and the units bought, or false and a reason.
 function V.buy(offer)
     if not offer or not BuyMerchantItem then
         return false
     end
     local stack = stackOf(offer.index, offer.link)
-    local qty = math.min(offer.qty, freeSlots() * stack)
+    local qty = math.min(offer.qty, F.AH.freeBagSlots() * stack)
     if qty < 1 then
         return false, "bags_full"
     end
@@ -148,6 +146,9 @@ function V.buy(offer)
         name = name,
         qty = qty,
         amount = cost,
+        -- Without it a recount took the mode of the item's lot: a lot started by an own-use
+        -- purchase up to 15 minutes before turned this resale into own use.
+        mode = "flip",
         merchant = true, -- bought from a merchant: no auction house lot was taken (Scan.ownBought)
     })
     F.Engine.changed()

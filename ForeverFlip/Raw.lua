@@ -37,15 +37,32 @@ function R.active()
     return F.db and F.db.settings.rawScans or false
 end
 
+-- Lines are joined a slice at a time while the scan is read: joining all lines of a large scan
+-- (290 000 auctions, 8 MB) at its end made one long frame of its own.
+R.SLICE = 5000
+
+-- Appends one line; a full slice of lines becomes one text (j.rawParts).
+local function add(j, line)
+    local raw = j.raw
+    raw[#raw + 1] = line
+    j.rawSeal = R.chain(j.rawSeal or 0, line)
+    if #raw >= R.SLICE then
+        j.rawParts = j.rawParts or {}
+        j.rawParts[#j.rawParts + 1] = table.concat(raw, "\n")
+        j.rawLines = (j.rawLines or 0) + #raw
+        j.raw = {}
+    end
+end
+
 -- One auction of the scan being read; called for every row, in scan order, before item data loads.
-function R.capture(j, i)
+-- `r`: its fields (F.AH.replicateRaw, read once with the row the scan reads), nil when the row could
+-- not be read.
+function R.capture(j, r)
     if not j.raw then
         return
     end
-    local ok, r = pcall(F.AH.replicateRaw, i)
-    if not ok or not r then
-        j.raw[#j.raw + 1] = ""
-        j.rawSeal = R.chain(j.rawSeal or 0, "")
+    if not r then
+        add(j, "")
         return
     end
     local kind = F.AH.kindOf(r.id)
@@ -70,8 +87,7 @@ function R.capture(j, i)
         .. (kind and kind:sub(1, 1) or "")
         .. ","
         .. name
-    j.raw[#j.raw + 1] = line
-    j.rawSeal = R.chain(j.rawSeal or 0, line)
+    add(j, line)
 end
 
 -- The scan is processed: its lines become one saved entry.
@@ -85,11 +101,12 @@ function R.finish(j)
     if not j.raw then
         return
     end
-    if j.partial then
-        j.raw, j.rawSeal = nil, nil -- a part of the answer is not a scan worth archiving
-        return
-    end
     local realm, faction = j.scope:match("^(.*)%-([^%-]+)$")
+    -- The slices joined while reading, and the lines after the last of them.
+    local parts, count = j.rawParts or {}, (j.rawLines or 0) + #j.raw
+    if #j.raw > 0 then
+        parts[#parts + 1] = table.concat(j.raw, "\n")
+    end
     ForeverFlipRaw = type(ForeverFlipRaw) == "table" and ForeverFlipRaw or {}
     ForeverFlipRaw.format = R.FORMAT
     ForeverFlipRaw.scans = type(ForeverFlipRaw.scans) == "table" and ForeverFlipRaw.scans or {}
@@ -98,10 +115,10 @@ function R.finish(j)
         realm = realm,
         faction = faction,
         at = j.finishAt,
-        count = #j.raw,
+        count = count,
         addon = F.version,
-        seal = R.chain(j.rawSeal or 0, j.scope .. "|" .. j.finishAt .. "|" .. #j.raw),
-        rows = table.concat(j.raw, "\n"),
+        seal = R.chain(j.rawSeal or 0, j.scope .. "|" .. j.finishAt .. "|" .. count),
+        rows = table.concat(parts, "\n"),
     })
     local sent = R.uploaded()
     for i = #ForeverFlipRaw.scans, 2, -1 do
@@ -113,7 +130,7 @@ function R.finish(j)
     while #ForeverFlipRaw.scans > R.KEEP do
         table.remove(ForeverFlipRaw.scans)
     end
-    j.raw, j.rawSeal = nil, nil
+    j.raw, j.rawSeal, j.rawParts, j.rawLines = nil, nil, nil, nil
 end
 
 function R.saved()
@@ -128,10 +145,18 @@ function R.importCommunity()
     if type(data) ~= "table" or type(data.scans) ~= "table" or not F.db or not F.db.settings.shareReceive then
         return 0
     end
+    -- The player's own scans come back among them once uploaded, and are in the history already.
+    -- The merge tells apart only the last scan read here, and this runs at login, before even
+    -- that one is restored.
+    local sent = R.uploaded()
     local merged = 0
     for _, text in ipairs(data.scans) do
         local snap = F.Share.decode(text)
-        if snap and F.Share.merge(snap, "community", "community") then
+        if
+            snap
+            and not sent[tostring(snap.scope) .. "@" .. tostring(snap.at)]
+            and F.Share.merge(snap, "community", "community")
+        then
             merged = merged + 1
         end
     end

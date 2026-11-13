@@ -7,7 +7,7 @@ from test_addon import SETUP, runtime
 FAST = SETUP + '''
 enableBrowse(2)
 fullScan()
-ForeverFlip.Engine.autoVerify=false;ForeverFlip.db.settings.sniper=true
+ForeverFlip.db.settings.autoVerify=false;ForeverFlip.db.settings.sniper=true
 local Sn,D=ForeverFlip.Sniper,ForeverFlip.Deals
 D.list={}
 '''

@@ -7,12 +7,21 @@ F.Analytics = A
 
 local DAY = 86400
 
+-- Positions bought for the player's own use: shopping-list items (crafting materials) and gear
+-- bought to disenchant. Post next bought never offers them and only a sale takes a position out,
+-- so once used they would stay "stock" for good.
+local OWN_USE = { shop = true, disenchant = true }
+
 local function char()
     return F.Data.char(F.db, F.Engine.owner())
 end
 
+-- Journal kinds of a post that came back: `amount` is the deposit (and cancel fee) lost.
+local LOSS = { expired = true, cancel = true, ["return"] = true }
+
 -- Own results over `days` days: totals, per-day profit, return, hit rate and the best and worst
--- items. Profit is booked when a sale is recorded (cost of the units sold is subtracted).
+-- items. Profit is booked when a sale is recorded (cost of the units sold is subtracted), and when
+-- a deposit or fee is lost with none of the item in stock.
 function A.results(days, now)
     days = days or 7
     now = now or F.Engine.clock()
@@ -52,14 +61,21 @@ function A.results(days, now)
         local index = math.floor((e.at or 0) / DAY) - (today - days)
         local d = r.days[index]
         if d then
-            if e.kind == "sell" or e.kind == "vendor" then
-                local profit = e.profit or 0
+            local sale = e.kind == "sell" or e.kind == "vendor"
+            local profit = sale and (e.profit or 0) or nil
+            if LOSS[e.kind] and e.key and U.finite(e.profit) then
+                -- A deposit or fee lost while none of the item was held left its profit at once
+                -- (Data.addCost) and the entry carries that as its profit; one lost on stock joined
+                -- the stock's cost and counts with the sale.
+                profit = e.profit
+            end
+            if profit then
                 local item = byItem[e.key]
                 if not item then
                     item = { key = e.key, name = e.name, profit = 0, sales = 0 }
                     byItem[e.key] = item
                 end
-                item.profit, item.sales = item.profit + profit, item.sales + (e.qty or 1)
+                item.profit, item.sales = item.profit + profit, item.sales + (sale and (e.qty or 1) or 0)
             end
         end
     end
@@ -90,10 +106,12 @@ function A.results(days, now)
     -- Money in stock and how long sold items took to sell (from the item statistics).
     local held, stale, daysSum, sold = 0, 0, 0, 0
     for key, p in pairs(c.positions) do
-        held = held + p.cost
-        local s = c.stats[key]
-        if p.since and now - p.since > 3 * DAY and not (s and s.lastSale and s.lastSale >= p.since) then
-            stale = stale + p.cost
+        if not OWN_USE[p.mode] then
+            held = held + p.cost
+            local s = c.stats[key]
+            if p.since and now - p.since > 3 * DAY and not (s and s.lastSale and s.lastSale >= p.since) then
+                stale = stale + p.cost
+            end
         end
     end
     for _, s in pairs(c.stats) do
@@ -116,13 +134,16 @@ end
 local cache, building
 A.SYNC = 200
 
-local function rowOf(key, h, now)
+-- `lastAt`: the time of the last complete full scan, which every item it listed carries as
+-- h.scan.at (Market.recordFlow); nil when there is none to tell.
+local function rowOf(key, h, now, lastAt)
     local market = type(h) == "table" and type(h.scan) == "table" and h.scan.market
     if U.finite(market) and market > 0 then
         local s = F.Market.saleability(h, market, now)
         local days = type(h.days) == "table" and h.days or {}
         local today = days[#days]
-        local cheap = today and today.min
+        -- The last daily record is an earlier day's while no scan has listed the item today.
+        local cheap = today and today.d == math.floor(now / DAY) and today.min or nil
         local sum, n = 0, 0
         for i = math.max(1, #days - 5), #days - 1 do
             if U.finite(days[i].m) then
@@ -139,6 +160,7 @@ local function rowOf(key, h, now)
             perDay = s.known and s.perDay or nil,
             units = h.units,
             change = avg and avg > 0 and (market - avg) / avg or nil,
+            listed = not lastAt or h.scan.at == lastAt,
         }
         if cheap and cheap < market * 0.95 then
             r.gap = market * 0.95 - cheap
@@ -190,11 +212,16 @@ end
 
 local function collect(b, r)
     b.items = b.items + 1
-    ranked(b.top.liquid, r, r.perDay and r.perDay > 0 and r.perDay)
-    ranked(b.top.gaps, r, r.score and r.score > 0 and r.score)
-    ranked(b.top.falling, r, r.change and r.change < -0.05 and -r.change)
-    ranked(b.top.rising, r, r.change and r.change > 0.05 and r.change)
-    ranked(b.top.cheapNow, r, r.timing and r.timing.now <= 0.93 and (r.perDay or 0) >= 0.5 and -r.timing.now)
+    -- An item the last full scan did not list (bought out, no longer sold) keeps its last figures
+    -- in the history for 14 days (F.Scan.stale): it is nothing to buy now and no current price
+    -- move. Selling own stock needs no other seller.
+    if r.listed then
+        ranked(b.top.liquid, r, r.perDay and r.perDay > 0 and r.perDay)
+        ranked(b.top.gaps, r, r.score and r.score > 0 and r.score)
+        ranked(b.top.falling, r, r.change and r.change < -0.05 and -r.change)
+        ranked(b.top.rising, r, r.change and r.change > 0.05 and r.change)
+        ranked(b.top.cheapNow, r, r.timing and r.timing.now <= 0.93 and (r.perDay or 0) >= 0.5 and -r.timing.now)
+    end
     ranked(b.top.sellNow, r, r.timing and r.timing.now >= 1.07 and b.positions[r.key] ~= nil and r.timing.now)
 end
 
@@ -221,7 +248,7 @@ function A.build(done)
     while b.i <= #b.keys do
         local key = b.keys[b.i]
         b.i = b.i + 1
-        local row = rowOf(key, history[key], b.now)
+        local row = rowOf(key, history[key], b.now, b.lastAt)
         if row then
             collect(b, row)
         end
@@ -269,6 +296,8 @@ function A.market(now)
             top = top,
             now = now,
             positions = char().positions,
+            -- A partial scan left items out that are still listed.
+            lastAt = last and last.scope == scope and not last.partial and last.at or nil,
         }
     end
     if #building.keys <= A.SYNC then
@@ -341,7 +370,9 @@ function A.realm(back, now)
     for owner, c in pairs(F.db.chars or {}) do
         if owner:sub(1, #realm + 1) == realm .. "-" and type(c.positions) == "table" then
             for _, p in pairs(c.positions) do
-                out.stock = out.stock + (p.cost or 0)
+                if not OWN_USE[p.mode] then
+                    out.stock = out.stock + (p.cost or 0)
+                end
             end
         end
     end

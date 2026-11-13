@@ -16,11 +16,13 @@ S.PAUSE = 2.5 -- seconds between two rounds of the whole house
 S.KEYS = 100 -- items per key query
 S.TIMEOUT = 10 -- seconds without an answer before a query is given up
 S.REJUDGE = 120 -- seconds before an unchanged lowest price is judged again
-S.PER_FRAME = 300 -- browse rows of other addons' searches read per frame
+S.BUDGET = 3 -- milliseconds of browse rows read per frame
+S.PER_FRAME = 300 -- browse rows read per frame where the game has no profiler to time them
 
--- Browses other addons (or the player) send are read too, but only their new rows, a few hundred
--- per frame: re-reading every row at each page froze the game while another addon browsed the
--- whole house (ForeverForge Auction 2.1.14 fixed the same freeze).
+-- Browses other addons (or the player) send are read too, but only their new rows, a few per
+-- frame: re-reading every row at each page froze the game while another addon browsed the whole
+-- house (ForeverForge Auction 2.1.14 fixed the same freeze). A frame is bounded by time, not rows:
+-- a row of gear is judged for every known ending of its item ID, and 300 such rows took 35 ms.
 S.backlog, S.backlogAt, S.outsideRead = {}, 1, 0
 
 S.candidates = {} -- keys waiting for an exact check, best first: { key, score }
@@ -58,6 +60,42 @@ local function gearFor(id)
     return gearKeys[id]
 end
 
+-- The part of a threshold that comes from the item's history alone: the exit price (sale price,
+-- else usual price, a legal step) and whether 0.5 units a day sell there. Every browse row asked
+-- for it again (at every known ending, for gear) though it changes only with the history: kept per
+-- history entry until a full scan writes a new h.scan or moves h.sales.at or h.flow.at, a shared
+-- scan writes a new h.shared, or the sales model reset drops them. Weak keys: an entry goes with
+-- its history (another house, an item pruned). The vendor price, deposit, cut, settings, the
+-- disenchant value and the shopping price change without the history (item data that loads, a
+-- merchant seen): they are read at every row.
+local exits = setmetatable({}, { __mode = "k" })
+local function exitOf(h, kind)
+    local scan, shared, sales, flow = h.scan, h.shared, h.sales, h.flow
+    local salesAt = type(sales) == "table" and sales.at or nil
+    local flowAt = type(flow) == "table" and flow.at or nil
+    local c = exits[h]
+    if
+        c
+        and c[1] == scan
+        and c[2] == shared
+        and c[3] == sales
+        and c[4] == flow
+        and c[5] == salesAt
+        and c[6] == flowAt
+    then
+        return c[7], c[8]
+    end
+    local exit, sells = nil, false
+    local market = F.Market.usual(h)
+    if U.finite(market) and market > 0 then
+        exit = U.stepDown(F.Market.salePrice(h) or market, kind)
+        local d = F.Market.saleability(h, exit, F.Engine.clock())
+        sells = d.known and d.perDay >= 0.5
+    end
+    exits[h] = { scan, shared, sales, flow, salesAt, flowAt, exit, sells }
+    return exit, sells
+end
+
 -- The highest lowest-price at which an item can still hold a deal; nil when it cannot.
 function S.threshold(key, id, history)
     local item = U.parseKey(key)
@@ -68,15 +106,14 @@ function S.threshold(key, id, history)
         limit = vendor - math.max(1, s.vendorMinProfit or 10)
     end
     local h = history[key]
-    local market = h and F.Market.usual(h)
-    if U.finite(market) and market > 0 then
-        local exit = U.stepDown(F.Market.salePrice(h) or market, item and item.kind)
-        local d = F.Market.saleability(h, exit, F.Engine.clock())
-        if d.known and d.perDay >= 0.5 then
-            local deposit = F.Market.deposit(F.AH.clientVendorPrice(id), 1)
-            local buy = (F.Market.net(exit, 1) - deposit) / (1 + (s.minROI or 0.2))
-            limit = math.max(limit or 0, math.floor(buy))
-        end
+    local exit, sells
+    if type(h) == "table" then
+        exit, sells = exitOf(h, item and item.kind)
+    end
+    if sells then
+        local deposit = F.Market.deposit(F.AH.clientVendorPrice(id), 1)
+        local buy = (F.Market.net(exit, 1) - deposit) / (1 + (s.minROI or 0.2))
+        limit = math.max(limit or 0, math.floor(buy))
     end
     if item and item.kind == "gear" and F.Disenchant.active() then
         local value = F.Disenchant.value(id)
@@ -137,22 +174,68 @@ function S.judge(key, id, price, history)
     return true
 end
 
+local function listed(keys, key)
+    for _, k in ipairs(keys or {}) do
+        if k == key then
+            return true
+        end
+    end
+    return false
+end
+
+-- Gear keys of the shopping list and of buy-out orders by item ID, those the history does not list
+-- (gearFor): an ending no full scan has seen yet is in no history, and its lots, read by every
+-- key query of the shopping list, were never judged (a plain item on the list is).
+local function shoppingGear()
+    local out = {}
+    if not F.Shopping then
+        return out
+    end
+    local keys = F.Shopping.keys()
+    for key in pairs(F.Shopping.orders or {}) do
+        keys[#keys + 1] = key
+    end
+    for _, key in ipairs(keys) do
+        local item = U.parseKey(key)
+        if item and item.kind == "gear" and not listed(gearFor(item.id), key) and not listed(out[item.id], key) then
+            out[item.id] = out[item.id] or {}
+            table.insert(out[item.id], key)
+        end
+    end
+    return out
+end
+
+-- One lowest price of a browse or key query: { id, minPrice, qty }. `ctx` keeps what the rows read
+-- together share: the history and the shopping list's gear (built at the first gear row).
+local function readRow(r, ctx)
+    local history = ctx.history
+    S.items = S.items + 1
+    if F.Market.learnLow then
+        F.Market.learnLow(history, r, F.Engine.clock())
+    end
+    local kind = F.AH.kindOf(r.id)
+    if kind == "gear" then
+        for _, key in ipairs(gearFor(r.id) or {}) do
+            S.judge(key, r.id, r.minPrice, history)
+        end
+        ctx.shopping = ctx.shopping or shoppingGear()
+        for _, key in ipairs(ctx.shopping[r.id] or {}) do
+            S.judge(key, r.id, r.minPrice, history)
+        end
+    elseif kind then
+        S.judge(U.key(kind, r.id), r.id, r.minPrice, history)
+    end
+end
+
+local function readContext()
+    return { history = F.Data.market(F.db, F.Engine.scope()).history }
+end
+
 -- Lowest prices of browse or key queries: { id, minPrice, qty }.
 function S.read(rows)
-    local history = F.Data.market(F.db, F.Engine.scope()).history
+    local ctx = readContext()
     for _, r in ipairs(rows) do
-        S.items = S.items + 1
-        if F.Market.learnLow then
-            F.Market.learnLow(history, r, F.Engine.clock())
-        end
-        local kind = F.AH.kindOf(r.id)
-        if kind == "gear" then
-            for _, key in ipairs(gearFor(r.id) or {}) do
-                S.judge(key, r.id, r.minPrice, history)
-            end
-        elseif kind then
-            S.judge(U.key(kind, r.id), r.id, r.minPrice, history)
-        end
+        readRow(r, ctx)
     end
 end
 
@@ -178,6 +261,9 @@ local function idle()
         and #S.backlog == 0
         and #S.candidates == 0
         and not D.holding()
+        -- The game's own Buy or Sell page is shown: a browse now would replace what it shows
+        -- (D.holding is false once ForeverFlip's frame is hidden for it).
+        and not (F.AH.nativeShown and F.AH.nativeShown())
         and F.AH.ready()
 end
 
@@ -229,20 +315,27 @@ function S.yield()
     end
 end
 
+-- The rows of the backlog that S.BUDGET milliseconds allow (S.PER_FRAME without the profiler).
 local function readBacklog()
-    local stop = math.min(#S.backlog, S.backlogAt + S.PER_FRAME - 1)
-    if stop < S.backlogAt then
-        return
+    local backlog, ctx = S.backlog, readContext()
+    local ms = F.Engine.workSlice(S.BUDGET)
+    local start = debugprofilestop and debugprofilestop()
+    local n = 0
+    while S.backlogAt <= #backlog do
+        local r = backlog[S.backlogAt]
+        S.backlogAt = S.backlogAt + 1
+        n = n + 1
+        readRow(r, ctx)
+        if S.backlog ~= backlog then
+            return -- reset meanwhile (S.reset): a new backlog starts at its own row 1
+        end
+        if start and debugprofilestop() - start >= ms or not start and n >= S.PER_FRAME then
+            break
+        end
     end
-    local part = {}
-    for i = S.backlogAt, stop do
-        part[#part + 1] = S.backlog[i]
-    end
-    S.backlogAt = stop + 1
-    if S.backlogAt > #S.backlog then
+    if S.backlogAt > #backlog then
         S.backlog, S.backlogAt = {}, 1
     end
-    S.read(part)
 end
 
 -- Called every frame.
@@ -262,6 +355,8 @@ function S.step()
     end
     if q then
         -- No next page while a full scan waits for its answer: any query then can keep it away.
+        -- ready() comes last: with the throttle stuck it lets one message through, and a gate that
+        -- failed after it wasted that one (the Buy button waited 5 seconds more for the next).
         if
             q.more
             and not F.Deals.search
@@ -269,10 +364,11 @@ function S.step()
             and #S.backlog == 0
             and not F.Trade.busy()
             and not F.Trade.postingNow()
-            and F.AH.ready()
             and #S.candidates == 0
             and not F.Deals.holding()
             and not F.Scan.blocking()
+            and not (F.AH.nativeShown and F.AH.nativeShown())
+            and F.AH.ready()
         then
             q.more, q.at, q.answered = false, t, false
             pcall(F.AH.browseMore)
@@ -344,6 +440,31 @@ function S.onFailure()
         S.query = nil
         S.nextRound = now() + S.PAUSE
     end
+end
+
+-- AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED, heard before the other handlers (Core): a query of the
+-- sniper sent just before was thrown away, and nothing answers it. Searches, purchases, posts
+-- and the full scan wait while it is in flight (S.inFlight), and they waited out S.TIMEOUT: 10
+-- seconds of a dead auction house. An exact search, a purchase or a full scan request still
+-- waiting for its answer owns the drop instead (Deals, Trade and Scan handle it).
+S.DROP_WINDOW = 3 -- seconds after sending in which a drop is taken for the sniper's
+function S.onDropped()
+    local q = S.query
+    if
+        not S.inFlight()
+        or now() - q.at > S.DROP_WINDOW
+        or F.Deals.searching()
+        or F.Trade.busy()
+        or F.Scan.blocking()
+    then
+        return
+    end
+    S.query = nil
+    S.nextRound = now() + S.PAUSE
+    -- Should an answer come after all, a gear search must not take it for its own browse
+    -- (AH.foreignRecent): key queries are answered as browse results too.
+    F.AH.foreignAt = F.Engine.clock()
+    F.Engine.changed()
 end
 
 -- The auction house closed or the sniper was switched off.

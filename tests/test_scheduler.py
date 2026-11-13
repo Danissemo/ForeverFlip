@@ -5,7 +5,7 @@ from test_addon import SETUP, SNIPE, run
 
 BACKGROUND = SNIPE + '''
 ForeverFlip.db.settings.sniper=false;fullScan()
-ForeverFlip.db.settings.sniper=true;ForeverFlip.Engine.autoVerify=true
+ForeverFlip.db.settings.sniper=true;ForeverFlip.db.settings.autoVerify=true
 run(1.1)
 assert(ForeverFlip.Deals.search.key=='c:40')
 '''
@@ -66,7 +66,7 @@ class SchedulerTests(unittest.TestCase):
     def test_switch_off_discards_an_already_scheduled_sniper_retry(self):
         run(BACKGROUND + '''local D=ForeverFlip.Deals
         fire('AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED');D.setSniper(false)
-        run(3);assert(not D.search and not D.retry)''')
+        run(3);assert(not D.search and not (D.requests[1] or D.backgroundRetry))''')
 
     def test_manual_check_promotes_matching_background_retry_without_duplicate_query(self):
         run(BACKGROUND + '''local D,T=ForeverFlip.Deals,ForeverFlip.Trade
@@ -74,19 +74,19 @@ class SchedulerTests(unittest.TestCase):
         assert(D.pending('c:40'));ForeverFlip.Scan.hot={};run(2.2)
         assert(D.search.key=='c:40' and D.search.source=='manual');answer()
         run(1.1)
-        assert(T.prices['c:40'] and not D.search and not D.retry)''')
+        assert(T.prices['c:40'] and not D.search and not (D.requests[1] or D.backgroundRetry))''')
 
     def test_sniper_switch_works_without_automatic_deal_verification(self):
         run(SNIPE + '''ForeverFlip.db.settings.sniper=false;fullScan()
         ForeverFlip.Deals.setSniper(true);run(1.1)
-        assert(not ForeverFlip.Engine.autoVerify and ForeverFlip.Deals.search.key=='c:40')''')
+        assert(not ForeverFlip.db.settings.autoVerify and ForeverFlip.Deals.search.key=='c:40')''')
 
     def test_house_close_clears_manual_queue_and_finishes_callbacks_once(self):
         run(SETUP + '''fullScan();local D=ForeverFlip.Deals;local a,b=0,0
         D.verify('c:10',function() a=a+1 end)
         D.verify('i:30',function() b=b+1 end)
         fire('AUCTION_HOUSE_CLOSED')
-        assert(not D.search and not D.retry and not D.pending('i:30'))
+        assert(not D.search and not (D.requests[1] or D.backgroundRetry) and not D.pending('i:30'))
         assert(a==1 and b==1);fire('COMMODITY_SEARCH_RESULTS_UPDATED',10)
         run(2);assert(a==1 and b==1 and not D.search)''')
 
@@ -109,7 +109,8 @@ class SchedulerTests(unittest.TestCase):
         run(SETUP + '''local D,T=ForeverFlip.Deals,ForeverFlip.Trade
         assert(ForeverFlip.Scan.start());T.checkPrice('c:10',function() end,true)
         assert(not D.search and D.pending('c:10'),'Check all waits for the scan')
-        T.checkPrice('i:30');assert(D.search and D.search.key=='i:30','a click goes during the scan');answer()
+        ForeverFlip.Engine.input();T.checkPrice('i:30') -- the click
+        assert(D.search and D.search.key=='i:30','a click goes during the scan');answer()
         assert(T.prices['i:30'])
         T.op={state='quote',at=now};T.checkPrice('i:30')
         run(1);assert(not (D.search and D.search.key=='i:30') and D.pending('i:30'),'waits for the purchase')
@@ -119,7 +120,7 @@ class SchedulerTests(unittest.TestCase):
     def test_fresh_selected_deal_keeps_buy_available_for_a_moment(self):
         run(SETUP + '''fullScan();local D,T=ForeverFlip.Deals,ForeverFlip.Trade
         local UI=ForeverFlip.UI;UI.selected='c:10';D.verify('c:10');answer()
-        ForeverFlip.Engine.autoVerify=true;ForeverFlip.db.settings.sniper=true
+        ForeverFlip.db.settings.autoVerify=true;ForeverFlip.db.settings.sniper=true
         run(2);assert(not D.search and T.canBuy(D.get('c:10')),'background must leave time to click Buy')
         run(D.SELECTED_HOLD);assert(D.search,'background resumes: a deal only looked at does not stop it')''')
 

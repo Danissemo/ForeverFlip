@@ -254,19 +254,31 @@ end
 -- Learning from your own disenchants ------------------------------------------------------------------
 -- When the Disenchant cast starts, the item it is aimed at is locked in the bags: it is noted. The
 -- loot window that opens right after holds its result, added to the item's band (F.db.deSeen).
+-- Other items can be locked at that moment too (attached to an unsent mail, in the trade window or
+-- the auction house's sell slot): only a weapon or armor piece of uncommon quality or better (or an
+-- item whose data is not loaded yet) can be the target, and two different ones leave it unknown,
+-- so nothing is learned rather than the loot booked into another item's band.
 local function lockedItem()
     local container = C_Container
     if not container or not container.GetContainerNumSlots or not container.GetContainerItemInfo then
         return nil
     end
+    local found
     for bag = 0, 4 do
         for slot = 1, (container.GetContainerNumSlots(bag) or 0) do
             local info = container.GetContainerItemInfo(bag, slot)
             if type(info) == "table" and info.isLocked and info.itemID then
-                return info.itemID
+                local _, _, quality, _, _, _, _, _, _, _, _, classID = U.itemInfo(info.itemID)
+                if quality == nil or (U.finite(quality) and quality >= 2 and (classID == 2 or classID == 4)) then
+                    if found and found ~= info.itemID then
+                        return nil
+                    end
+                    found = info.itemID
+                end
             end
         end
     end
+    return found
 end
 
 -- UNIT_SPELLCAST_START notes the item and the cast; _INTERRUPTED and _FAILED of that same cast

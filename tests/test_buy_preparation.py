@@ -6,7 +6,7 @@ from test_addon import SETUP, run
 
 
 BASE = SETUP + '''local F=ForeverFlip;local D,T,UI=F.Deals,F.Trade,F.UI
-F.db.settings.autoScan=false;F.db.settings.sniper=false;F.Engine.autoVerify=false
+F.db.settings.autoScan=false;F.db.settings.sniper=false;F.db.settings.autoVerify=false
 local key='g:20:northern shortsword of nature protection'
 fullScan();D.verify(key);answer();UI.show('deals:all')
 local function buys() local n=0 for _,c in ipairs(calls) do if c[1]=='PlaceBid' then n=n+1 end end return n end
@@ -62,7 +62,7 @@ class BuyPreparationTests(unittest.TestCase):
         run(BASE + '''UI.selectDeal(key)
         assert(UI.buyButton.scripts.OnEnter,'hover prepares and reserves the purchase')
         UI.buyButton.scripts.OnEnter(UI.buyButton)
-        F.Engine.autoVerify=true;F.db.settings.sniper=true
+        F.db.settings.autoVerify=true;F.db.settings.sniper=true
         run(D.SELECTED_HOLD+3)
         assert(D.holding() and not D.search,'background must not replace the lot while the cursor is on Buy')
         UI.buyButton.scripts.OnLeave(UI.buyButton)

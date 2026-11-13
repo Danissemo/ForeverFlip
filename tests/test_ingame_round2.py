@@ -6,13 +6,15 @@ from test_addon import SETUP, run
 
 OWN = SETUP + '''local F=ForeverFlip
 local T,UI=F.Trade,F.UI
--- a recipe only the player sells: the scan sees one unit and does not name sellers
+-- a recipe only the player sells: the scan sees one unit and does not name sellers (of any lot)
 addItem(70,'Recipe: Crispy Bat Wing',25,'item')
 for i=#auctions,1,-1 do if auctions[i].owner=='Me' then table.remove(auctions,i) end end
 addAuction(70,108000,1,'Unknown')
-fullScan()
+for _,a in ipairs(auctions) do a.owner='' end
+-- the player's auction list is read when the auction house opens, before the scan
 owned={{auctionID=9,itemKey={itemID=70},quantity=1,buyoutAmount=108000,status=0,timeLeftSeconds=7200}}
 fire('OWNED_AUCTIONS_UPDATED')
+fullScan()
 '''
 
 

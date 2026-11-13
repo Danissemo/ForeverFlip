@@ -21,8 +21,11 @@ function C.professions()
         return {}
     end
     local out, seen = {}, {}
+    -- A slot not learned (prof1, prof2, archaeology, fishing, cooking, first aid) is nil, so the
+    -- list has holes: each slot is read by its index.
     local ids = { p1, p2, p3, p4, p5, p6 }
-    for _, id in ipairs(ids) do
+    for i = 1, 6 do
+        local id = ids[i]
         if id and not seen[id] then
             local got, name, _, rank, maxRank = pcall(GetProfessionInfo, id)
             if got and type(name) == "string" and name ~= "" then
@@ -85,9 +88,9 @@ function C.rememberMerchantPrice(id, unit)
 end
 
 -- The auction price of an item: a fresh check (Check all on this page) before the scan's usual price.
+-- Gear is kept under its name (F.AH.keyFor; nil until the game has loaded the item).
 local function usual(history, id)
-    local kind = F.AH.kindOf(id)
-    local key = kind and kind ~= "gear" and U.key(kind, id)
+    local key = F.AH.keyFor(id)
     local h = key and history[key]
     local live = key and F.Trade.freshCheapest(key)
     return live or (h and F.Market.usual(h)) or nil, h
@@ -102,8 +105,7 @@ function C.keys()
             ids[#ids + 1] = m[1]
         end
         for _, id in ipairs(ids) do
-            local kind = F.AH.kindOf(id)
-            local key = kind and kind ~= "gear" and U.key(kind, id)
+            local key = F.AH.keyFor(id)
             if key and not seen[key] then
                 seen[key] = true
                 out[#out + 1] = key
@@ -197,7 +199,18 @@ function C.shopMaterials(recipeID, count)
             local key = U.key(kind, m[1])
             local name = U.itemInfo(m[1])
             local need = m[2] * (count or 1) - C.have(m[1])
-            if need > 0 and F.Shopping.add(key, unit, need, name) then
+            -- An entry already on the list (the player's own, another recipe's materials) is
+            -- widened, not replaced: its "any quantity", a larger quantity and a higher price stay.
+            -- Its quantity is not added to: an entry never counts down as units are bought
+            -- (F.Shopping.bought), so each click would grow it by a day of materials.
+            local e = type(F.db.shopping) == "table" and F.db.shopping[key]
+            local max, qty = unit, need
+            if type(e) == "table" then
+                max = math.max(unit, U.finite(e.max) and e.max or 0)
+                qty = U.finite(e.qty) and math.max(e.qty, need) or nil
+                name = name or e.name
+            end
+            if need > 0 and F.Shopping.add(key, max, qty, name) then
                 added = added + 1
             end
         end

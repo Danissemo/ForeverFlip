@@ -13,14 +13,13 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 
 | Field | Type | Meaning |
 |---|---|---|
-| `version` | number | Data format version (currently `1`). |
-| `salesModel` | number | Sales-estimation model (`3`). Older derived sales/flow/pending values and daily sold counts are reset once; prices, positions and journals are retained. |
+| `salesModel` | number | Sales-estimation model (`4`). Older derived sales/flow/pending values and daily sold counts are reset once; prices, positions and journals are retained. |
 | `vendorMarginReset` | boolean | The one-time default vendor-margin migration has run. |
 | `settings` | table | User settings, see below. |
 | `vendor` | table | `vendor[itemID]` = the client's vendor sell price; `0` means vendors do not buy the item. Shared by all characters. |
 | `vendorSeen` | table | `vendorSeen[itemID]` = what a merchant really paid, from the buyback list: `{ p = copper each, t = when, c = the client's price then }`. Preferred over `vendor`. |
 | `sellable` | table | Item IDs previously accepted for auction posting; fallback when the client's current sellability check is inconclusive. |
-| `itemKeys` | table | Cached non-commodity key versions, learned from owned auctions and browse results: `itemKeys[itemID] = { at, list = { { l, s, n }, ... } }` (level, suffix, optional lower-case name). |
+| `itemKeys` | table | Cached non-commodity key versions, learned from owned auctions and browse results: `itemKeys[itemID] = { at, list = { { l, s, n }, ... } }` (level, suffix, optional lower-case name). Entries not seen for 14 days are removed. |
 | `deSeen` | table | `deSeen[band]` = your own disenchant results per item band (`"2:w:25"` = green weapons up to item level 25): `{ n = disenchants, [itemID] = units }`. |
 | `lastScan` | number | Time of the last full-scan request (the 15-minute cooldown is per account). |
 | `scanPending` | table | The full-scan request still waiting for (or in the middle of) its answer: `{ at, scope, base, baseMark, other, answered }`. Kept over closing the auction house and `/reload`; cleared when the scan is read or given up. |
@@ -29,7 +28,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `chars` | table | `chars[owner]`, one per character, where owner = `<realm>-<character>`. |
 | `ui` | table | `ui.section`: the last opened page. |
 | `cuts` | table | `cuts[scope]` = the auction cut learned from invoices (for example `0.05` or `0.15`). |
-| `deposits` | table | `deposits[itemID][duration]` = deposit per unit the game charged for the last post of an item. |
+| `deposits` | table | `deposits[itemID][duration]` = deposit per unit the game charged for the last post of an item; `deposits[itemID].neutral[duration]` the same at a neutral house. |
 | `sharedSeen` | table | `sharedSeen["<scope>@<time>"]` = when a shared scan was merged, so each one is merged once (kept 7 days). |
 | `hiddenSell` | table | `hiddenSell[key]` = name of an item hidden from the Sell page and the posting queues. |
 | `lastPosted` | table | `lastPosted[key]` = the last unit price the player posted the item at. |
@@ -83,7 +82,7 @@ Missing settings are filled in with these defaults at load.
 |---|---|
 | `history[key]` | Per-item history, see below. Items not seen in a full scan for 14 days are removed. |
 | `peak` | Largest complete scan in the last day, `{ total, at }`, used to reject partial server answers. |
-| `last` | The last scan, written on logout and when another house opens, kept until the next scan: `{ at, total, read, skipped, own, stats, deals, pool, hot }`. `deals` are saved deals without their live rows, `pool` holds items still waiting for a vendor price (up to 6000), `hot` is the sniper list. |
+| `last` | The last scan, written on logout and when another house opens, kept until the next scan: `{ at, total, read, skipped, own, stats, deals, pool, hot, ownersKnown, ownUnits }`. `deals` are saved deals without their live rows, `pool` holds items still waiting for a vendor price (up to 6000), `hot` is the sniper list, `ownersKnown` whether the scan named sellers, `ownUnits[key]` the units of your own lots at the time of the scan. |
 
 ### `history[key]`
 
@@ -92,7 +91,7 @@ Missing settings are filled in with these defaults at load.
 | Field | Meaning |
 |---|---|
 | `scan` | The last scan of the item: `{ at, market, above = {4} }`. `market` is the usual price, `above[i]` the units listed at or above `LEVELS[i] × market`. |
-| `flow` | Sales between scans: `{ hours, sold = {4}, pairs, at, market }`. These are decayed sums with a 2-day half-life. `pairs` is capped at 99. |
+| `flow` | Sales between scans: `{ hours, sold = {4}, pairs, at, market, watched }`. These are decayed sums with a 2-day half-life. `pairs` is capped at 99; `watched` counts the hours watched since the last sale, without decay. |
 | `units` | Units listed in the last scan. |
 | `hits` | Decaying count of scans in which the item was near a deal (sniper score). |
 | `days` | Up to 14 daily records `{ d = day number, min = cheapest unit price, m = usual price, n = units listed, s = units sold }`. Present only for items traded often enough. |
@@ -101,7 +100,7 @@ Missing settings are filled in with these defaults at load.
 | `lotOwners` | Parallel comma-separated seller tags for `lots`; tags avoid storing seller names. |
 | `pending`, `pendingAt` | Whole lots awaiting another scan to distinguish a sale from a repost; derived sales-model data. |
 | `shared` | The newest shared scan of the item: `{ at, m = usual price, min = cheapest, n = units, from = sharer }`. |
-| `sales` | Lot-tracked sales: `{ hours, pairs, at, b = price histogram of sold units }`, decayed with a 3-day half-life. The histogram is flat: `b[2k]` = units, `b[2k+1]` = cheapest price of 2% bucket k. |
+| `sales` | Lot-tracked sales: `{ hours, pairs, at, b = price histogram of sold units, watched, soldAt }`, decayed with a 3-day half-life; `watched` counts the hours watched without decay and `soldAt` when units last sold at each price (up to 8). The histogram is flat: `b[2k]` = units, `b[2k+1]` = cheapest price of 2% bucket k. |
 | `t` | Time-of-week pattern: `{ b = baseline, w = {7}, wn = {7}, p = {4}, pn = {4} }`, with factors and observation counts per weekday (`w`, Sunday first) and per part of the day (`p`). |
 
 ## `chars[owner]`
@@ -109,16 +108,17 @@ Missing settings are filled in with these defaults at load.
 | Field | Meaning |
 |---|---|
 | `positions[key]` | Stock bought and not sold: `{ qty, cost, name, since, mode = "vendor" \| "flip" \| "shop" \| "disenchant", exit }`. `cost` is the total cost of the remaining units. |
-| `journal` | Up to 500 entries, oldest first: `{ at, kind = "buy" \| "sell" \| "vendor" \| "expired" \| "fail", key, name, qty, amount, profit }`. |
+| `journal` | Up to 500 entries, oldest first: `{ at, kind = "buy" \| "post" \| "sell" \| "vendor" \| "expired" \| "cancel" \| "return", key, name, qty, amount, profit }`. `expired`, `cancel` and `return` book the deposit (and cancel fee) a post lost; `return` is a buy that was really a post coming back by mail. Buy entries carry the auction house `scope`; a loss booked while no stock was held carries a negative `profit`. |
 | `stats[key]` | Item totals: `{ name, bought, spent, sold, earned, profit, days, lastSale }`. `days` is the sum of days held per unit sold. |
-| `listings` | Auctions posted through ForeverFlip: price, quantity and auction IDs, used to book sales. |
+| `listings` | Auctions posted through ForeverFlip: price, quantity, auction IDs and scope, used to book sales. After 3 days a listing no longer counts as on sale, but it is kept up to 31 days while a sale or cancel booked from it waits for its mail. |
+| `cancels` | `cancels[auctionID]` = a cancel made with ForeverFlip `{ at, scope, key, name, qty, lost, estimated, listed, back, booked }`; its loss is booked once the next list of your auctions or its mail confirms it. |
 | `booked[auctionID]` | Sold auctions already booked, so a sale is never counted twice. |
 | `unknown` | Purchases without an answer from the server, waiting to be settled on the Journal page. |
-| `awaitMail` | Per-item quantities already booked as purchases, awaiting matching buyer invoices so stock is not counted twice. |
+| `awaitMail` | Per-item quantities already booked as purchases, awaiting matching buyer invoices so stock is not counted twice (kept 31 days, the life of auction mail). |
 | `invoices` | The latest 200 sale invoices `{ at, item, qty, net, cut }`. |
 | `rates` | `rates[lower-case item name]` = `{ sold, failed }` posts, from auction mail. |
 | `recipes` | `recipes[recipeID]` = `{ name, out = itemID, n = units made, r = { { itemID, count }, ... } }`, read from profession windows. |
-| `bids` | `bids[auctionID]` = open bid `{ key, name, qty, amount, value, at }`. |
+| `bids` | `bids[auctionID]` = open bid `{ key, name, qty, amount, value, at }`; a bid first seen in the game's own window may also keep `id` and `link` until its key is known, and `missed` marks a bid the game's bids list never showed. |
 
 ## `ForeverFlipRaw`
 

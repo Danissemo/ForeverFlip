@@ -93,6 +93,12 @@ function S.entry(key)
     return S.orders[key] or F.db and list()[key]
 end
 
+-- The rule the player saved for the item, never a session order: what the list page shows and
+-- removes (S.entry, order first, is what deals are evaluated with).
+function S.saved(key)
+    return F.db and list()[key] or nil
+end
+
 function S.maxPrice(key)
     local e = F.db and list()[key]
     return e and e.max

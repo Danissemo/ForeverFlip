@@ -303,11 +303,13 @@ class SafetyTests(unittest.TestCase):
     def test_the_spending_limit_stops_buying(self):
         run(SETUP + '''fullScan(); local D, T = ForeverFlip.Deals, ForeverFlip.Trade
         ForeverFlip.db.settings.spendLimit = 1   -- 1 gold
-        ForeverFlip.Engine.spent = 9500
+        ForeverFlip.Engine.spent = 10000
         D.verify('c:10'); answer()
         local ok, why = T.buy('c:10'); assert(not ok and why == 'spend_limit', why)
-        ForeverFlip.Engine.spent = 0
-        assert(T.buy('c:10'))''')
+        ForeverFlip.Engine.spent = 9500 -- 5s left: the vendor deal shrinks to 8 cloth at 60c
+        assert(T.buy('c:10') and T.op.qty == 8 and T.op.cost == 480, T.op and T.op.qty)
+        T.cancel(); ForeverFlip.Engine.spent = 0
+        assert(T.buy('c:10') and T.op.qty == 15)''')
 
     def test_cheap_lots_are_left_for_others(self):
         run('''local M = ForeverFlip.Market
@@ -373,7 +375,6 @@ class OtherTests(unittest.TestCase):
         UI.show('deals:shop')
         assert(UI.categories[2].group.label == 'Shopping list' and UI.categories[2].selected:IsShown(), 'list deals sit with the list')
         assert(UI.section == 'shop' and #UI.categories[2].subs == 2, 'shopping list and live deals share one panel')
-        for _, b in ipairs(UI.groupTabs[deals.group]) do assert(not b:IsShown(), 'no tabs above the page') end
         UI.show('stats'); UI.categories[1].scripts.OnClick(UI.categories[1])
         assert(UI.section == 'bids', 'a group opens the page it showed last')
         UI.show('settings')

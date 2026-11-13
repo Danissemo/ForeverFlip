@@ -27,6 +27,7 @@ local MESSAGES = {
     share_sent = "Scan sent.",
     share_received = "A shared scan was added to the price history.",
     share_invalid = "This text is not a ForeverFlip scan.",
+    share_too_large = "The scan is too large to share: receivers take at most 5000 parts.",
     other_realm = "The shared scan is from another realm.",
     old = "The shared scan is more than 7 days old.",
     duplicate = "This scan is already in the history.",
@@ -79,12 +80,15 @@ local MESSAGES = {
     throttled = "The auction house is busy. Try again in a moment.",
     error = "The game refused the action.",
     values = "Check the quantity and the price.",
+    not_number = "A box did not hold a number and kept its old value; the others were saved.",
     confirm = "The game asks for a confirmation: press Post again.",
     cancelled = "Auction cancelled. The item comes back by mail; the deposit is lost.",
     spend_limit = "The spending limit of this auction house visit is reached (Settings, Safety tab).",
     no_deal = "No deal to buy right now.",
     run_done = "Buy all to vendor: done. Sell the items at any merchant (Sell all there).",
+    run_checking = "Checking the current price first: press again when it is ready.",
     bought_elsewhere = "A purchase made outside ForeverFlip was booked from its mail.",
+    older_lot = "An older purchase of this item is still open: mark that one first (sales are booked oldest first).",
 }
 
 -- Widgets ---------------------------------------------------------------------------------------------
@@ -346,7 +350,9 @@ local function firstText(frame, depth)
     if not frame or depth > 3 then
         return nil
     end
-    for _, region in ipairs({ frame.GetRegions and frame:GetRegions() }) do
+    -- `{ a and f() }` would keep only f's first result: the table is built from the call itself.
+    local regions = frame.GetRegions and { frame:GetRegions() } or {}
+    for _, region in ipairs(regions) do
         if region.GetObjectType and region:GetObjectType() == "FontString" and region.GetFont and region:GetFont() then
             local shown = region.GetText and region:GetText()
             if shown and shown ~= "" then
@@ -354,7 +360,8 @@ local function firstText(frame, depth)
             end
         end
     end
-    for _, child in ipairs({ frame.GetChildren and frame:GetChildren() }) do
+    local children = frame.GetChildren and { frame:GetChildren() } or {}
+    for _, child in ipairs(children) do
         local found = firstText(child, depth + 1)
         if found then
             return found
@@ -461,7 +468,8 @@ function UI.lookReport()
         local box = rawget(list, "ScrollBox")
         local target = type(box) == "table" and rawget(box, "ScrollTarget") or nil
         local kinds = {}
-        for _, child in ipairs({ target and target.GetChildren and target:GetChildren() }) do
+        local children = target and target.GetChildren and { target:GetChildren() } or {}
+        for _, child in ipairs(children) do
             local keys = {}
             for k, v in pairs(child) do
                 if type(k) == "string" and type(v) == "table" then
@@ -740,7 +748,9 @@ function UI.scrollBar(parent, anchor, height, onScroll, wheel)
             thumb:Hide()
             return
         end
-        state.thumb = math.max(23, math.floor(trackHeight * visible / total))
+        -- The thumb is at least 23 px, but shorter than the track, so it can move: the text boxes'
+        -- 22 px track gets a 16 px thumb (its two 8 px caps) with room left to drag and page.
+        state.thumb = math.max(math.min(23, trackHeight - 6), math.floor(trackHeight * visible / total))
         thumb:SetHeight(state.thumb)
         thumb:ClearAllPoints()
         thumb:SetPoint("TOP", track, "TOP", 0, -math.floor((trackHeight - state.thumb) * offset / state.max + 0.5))
@@ -945,6 +955,11 @@ local function table_(parent, columns, rows, onClick, onSort)
         for i, e in ipairs(out) do
             local v = value(e, index)
             if type(v) == "string" then
+                -- An item link sorts by the name it shows, not by its "|Hitem:<id>:..." text.
+                local shown = U.linkName(v)
+                if shown and shown ~= "" then
+                    v = shown
+                end
                 v = string.lower(v:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
             end
             keys[e], order[e] = v, i
@@ -1245,24 +1260,6 @@ function UI.create()
         page:Hide()
         UI.pages[id] = page
     end
-    -- Tabs of the pages of a group, above the page.
-    UI.groupTabs = {}
-    for _, group in ipairs(UI.GROUPS) do
-        if #group.pages > 1 then
-            local width = math.floor(math.min(150, 590 / #group.pages))
-            local tabs = {}
-            for i, entry in ipairs(group.pages) do
-                local b = button(right, entry[2], width - 4, function()
-                    UI.show(entry[1])
-                end)
-                b:SetPoint("TOPLEFT", right, "TOPLEFT", 6 + (i - 1) * width, -4)
-                b.id = entry[1]
-                b:Hide()
-                tabs[#tabs + 1] = b
-            end
-            UI.groupTabs[group] = tabs
-        end
-    end
     UI.createDeals(UI.pages.deals)
     UI.createShop(UI.pages.shop)
     UI.createBids(UI.pages.bids)
@@ -1364,7 +1361,9 @@ function UI.layoutMenu(group, id)
                 sub:ClearAllPoints()
                 sub:SetPoint("TOPLEFT", left, "TOPLEFT", NAV_X, y)
                 y = y - NAV_STEP
-                local open = sub.id == id or id:sub(1, #sub.id + 1) == sub.id .. ":"
+                -- A view ("journal:flip") opens its page's entry; a page id that only starts the same
+                -- way ("settings:keys" under "settings") is an entry of its own.
+                local open = sub.id == id or #(sub.kids or {}) > 0 and id:sub(1, #sub.id + 1) == sub.id .. ":"
                 if open then
                     sub.selected:Show()
                 else
@@ -1400,27 +1399,14 @@ function UI.layoutMenu(group, id)
     UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -4, y - 8)
 end
 
--- The tabs of the shown group share the page's width; before the window is laid out the width is
--- unknown, so the first refresh after that lays them out again. With the pages in the menu
--- (UI.layoutMenu) the tabs stay hidden: they are kept for their state (the open page disabled).
-function UI.layoutTabs(group, id)
-    UI.tabsShown = { group = group, id = id }
-    for g, tabs in pairs(UI.groupTabs) do
-        local width = UI.right and UI.right.GetWidth and UI.right:GetWidth()
-        local each = U.finite(width) and width > 100 and math.floor((width - 12 - (#tabs - 1) * 4) / #tabs) or nil
-        if each and g == group then
-            UI.tabsSized = true
-        end
-        for i, b in ipairs(tabs) do
-            if g == group and each then
-                b:SetWidth(each)
-                b:ClearAllPoints()
-                b:SetPoint("TOPLEFT", UI.right, "TOPLEFT", 6 + (i - 1) * (each + 4), -4)
-            end
-            b:Hide()
-            b:SetEnabled(b.id ~= id)
-        end
+-- The selected deal leaves the page (ignored, or hidden by the page's filter): a price quote asked
+-- for it goes with it, else the Buy button's Confirm would buy an item that is no longer selected.
+local function dropSelection()
+    local op = F.Trade.op
+    if op and op.key == UI.selected and (op.state == "quote" or op.state == "quoted") then
+        F.Trade.cancel()
     end
+    UI.selected = nil
 end
 
 function UI.show(id)
@@ -1434,6 +1420,10 @@ function UI.show(id)
     UI.section = page
     if page ~= "deals" then
         UI.buyHoverKey = nil
+    end
+    -- Another page: a key capture still waiting ends (in the game the catcher's OnHide does it too).
+    if UI.capturing and id ~= "settings:keys" then
+        UI.cancelCapture()
     end
     if page == "settings" then
         UI.setSettingsFrame(filter ~= "" and filter or "general")
@@ -1449,7 +1439,7 @@ function UI.show(id)
         UI.dealPage = 1
         local d = UI.selected and F.Deals.get(UI.selected)
         if d and UI.filter ~= "all" and d.mode ~= UI.filter then
-            UI.selected = nil
+            dropSelection()
         end
     end
     F.db.ui = F.db.ui or {}
@@ -1466,7 +1456,6 @@ function UI.show(id)
             p:Hide()
         end
     end
-    UI.layoutTabs(group, id)
     UI.layoutMenu(group, id)
     UI.refresh()
 end
@@ -1593,12 +1582,14 @@ function UI.createDeals(p)
             UI.refresh()
         end
     )
-    -- Header tooltips: what Sells at and Est./day are made of.
-    local function headerTip(header, title, body)
+    -- Header tooltips: what Sells at and Est./day are made of. `values` (optional) gives the numbers
+    -- of a body written as a format, read when the tooltip opens (the cut depends on the house).
+    local function headerTip(header, title, body, values)
         header:SetScript("OnEnter", function(self)
             if GameTooltip then
+                local shown = values and string.format(L(body), values()) or L(body)
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:SetText(L(title) .. "\n\n" .. L(body), 1, 1, 1, 1, true)
+                GameTooltip:SetText(L(title) .. "\n\n" .. shown, 1, 1, 1, 1, true)
                 GameTooltip:Show()
             end
         end)
@@ -1611,7 +1602,10 @@ function UI.createDeals(p)
     headerTip(
         UI.dealTable.headers[4],
         "Sells at",
-        "The price to sell one unit at: list it at this price on the auction house (a vendor deal: what a merchant pays for one). For a resale it is just below the next other seller, at most the usual price and at most what a quarter of the sales seen reached; only as many units as sell in a day at that price are bought. Profit counts the 5% cut and the deposits. * means no sales were seen yet: the price is only the asking price (vendor deal: not yet confirmed at a merchant)."
+        "The price to sell one unit at: list it at this price on the auction house (a vendor deal: what a merchant pays for one). For a resale it is just below the next other seller, at most the usual price and at most what a quarter of the sales seen reached; only as many units as sell in a day at that price are bought. Profit counts the %d%% cut and the deposits. * means no sales were seen yet: the price is only the asking price (vendor deal: not yet confirmed at a merchant).",
+        function()
+            return math.floor(F.Market.CUT * 100 + 0.5)
+        end
     )
     headerTip(
         UI.dealTable.headers[3],
@@ -1646,7 +1640,7 @@ function UI.createDeals(p)
     -- total, and the second click buys). UI.confirmButton stays for older key bindings, hidden.
     local function buyClick()
         local op = F.Trade.op
-        if op and UI.selected and op.key ~= UI.selected and (op.state == "quote" or op.state == "quoted") then
+        if op and op.key ~= UI.selected and (op.state == "quote" or op.state == "quoted") then
             F.Trade.cancel()
             return
         end
@@ -1698,7 +1692,7 @@ function UI.createDeals(p)
         local d = UI.selected and F.Deals.get(UI.selected)
         if d then
             F.Shopping.block(d.key, U.linkName(d.link) or d.key)
-            UI.selected = nil
+            dropSelection()
             UI.refresh()
         end
     end)
@@ -2058,7 +2052,7 @@ function UI.dealDetail(d, estimate, h, now)
         if estimate.age then
             line = line
                 .. "  ·  "
-                .. string.format(L("data %d min old"), math.floor(estimate.age / 60))
+                .. string.format(L("data %s old"), UI.duration(estimate.age))
                 .. (estimate.stale and L(" (old data)") or "")
         end
         lines[#lines + 1] = line
@@ -2080,9 +2074,14 @@ function UI.refreshDeals()
     local now = F.Engine.clock()
     local history = F.Data.market(F.db, F.Engine.scope()).history
     local estimates, sures = {}, {}
+    -- Sure is costly (a confidence model per deal): every deal needs it only to sort by it; else
+    -- the rows in view ask for theirs below (and the selected deal's details for its own).
+    local bySure = UI.dealSort == 7
     for _, d in ipairs(list) do
         estimates[d.key] = saleEstimate(d, history, now)
-        sures[d.key] = F.Deals.sure(d, now)
+        if bySure then
+            sures[d.key] = F.Deals.sure(d, now)
+        end
     end
     local function sortValue(d)
         local field = UI.dealSort
@@ -2146,7 +2145,7 @@ function UI.refreshDeals()
             r.cols[3]:SetText(sellsAtText(d, history))
             r.cols[4]:SetText(U.money(d.profit))
             r.cols[5]:SetText(estimateText(d, estimates[d.key], history[d.key]))
-            r.cols[6]:SetText(UI.sureText(sures[d.key]))
+            r.cols[6]:SetText(UI.sureText(F.Deals.sure(d, now)))
             r.cols[7]:SetText(dealStatus(d))
             if d.key == UI.selected then
                 r.selected:Show()
@@ -2280,7 +2279,7 @@ function UI.createShop(p)
     UI.shopAdd:SetPoint("LEFT", UI.shopQty, "RIGHT", 10, 0)
     UI.shopRemove = button(bar, "Remove", 100, function()
         if UI.shopSelected then
-            if F.Shopping.entry(UI.shopSelected) then
+            if F.Shopping.saved(UI.shopSelected) then
                 F.Shopping.remove(UI.shopSelected)
             else
                 F.Shopping.unblock(UI.shopSelected)
@@ -2302,17 +2301,19 @@ function UI.refreshShop()
     local history = F.Data.market(F.db, F.Engine.scope()).history
     local rows = {}
     for _, key in ipairs(F.Shopping.keys()) do
-        local e = F.Shopping.entry(key)
+        local e = F.Shopping.saved(key)
         rows[#rows + 1] = { key = key, name = e.name, max = e.max, qty = e.qty }
     end
     for _, b in ipairs(F.Shopping.blockedKeys()) do
         rows[#rows + 1] = { key = b.key, name = b.name, blocked = true }
     end
+    local day = math.floor(F.Engine.clock() / 86400)
     for _, e in ipairs(rows) do
         local h = history[e.key]
-        local today = h and h.days and h.days[#h.days]
+        local last = h and h.days and h.days[#h.days]
         local d = F.Deals.get(e.key)
-        e.cheap = today and today.min or nil
+        -- The last daily record is the item's last day seen, maybe days ago: today's only by its day.
+        e.cheap = last and last.d == day and last.min or nil
         e.state = e.blocked and 3 or (d and d.mode == "shop") and 1 or 2
     end
     rows = UI.shopTable.sort(rows, function(e, column)
@@ -2322,15 +2323,13 @@ function UI.refreshShop()
         local e = rows[i]
         if e then
             local item = U.parseKey(e.key)
-            local h = history[e.key]
-            local today = h and h.days and h.days[#h.days]
             local d = F.Deals.get(e.key)
             r.key = e.key
             r.icon:SetTexture(icon(item and item.id))
             r.name:SetText(e.name or nameOf(e.key))
             r.cols[1]:SetText(e.max and U.money(e.max) or "-")
             r.cols[2]:SetText(e.qty or (e.blocked and "" or L("any")))
-            r.cols[3]:SetText(today and today.min and U.money(today.min) or "-")
+            r.cols[3]:SetText(e.cheap and U.money(e.cheap) or "-")
             r.cols[4]:SetText(e.blocked and L("ignored") or L("shopping list"))
             r.cols[5]:SetText(
                 e.blocked and "|cff999999" .. L("ignored") .. "|r"
@@ -2454,7 +2453,7 @@ function UI.refreshBids()
     if #list == 0 then
         -- Why the page is empty: no scan yet, or the bid auctions of the last one have ended.
         local last = F.Scan.last
-        local age = last and last.at and math.floor((F.Engine.clock() - last.at) / 60)
+        local age = last and last.at and UI.age(last.at)
         if not age then
             empty:SetText(
                 L(
@@ -2465,7 +2464,7 @@ function UI.refreshBids()
             empty:SetText(
                 string.format(
                     L(
-                        "No bid is worth it now. The last full scan was %d min ago: its auctions ending soon are over or were not worth a bid. A new full scan finds new ones."
+                        "No bid is worth it now. The last full scan was %s: its auctions ending soon are over or were not worth a bid. A new full scan finds new ones."
                     ),
                     age
                 )
@@ -2482,8 +2481,10 @@ function UI.refreshBids()
         ),
     }
     if #open > 0 then
+        -- A bid placed in the game's own window may have no name yet (its item data not loaded).
+        local latest = open[1].name or open[1].key and nameOf(open[1].key) or "?"
         lines[#lines + 1] =
-            string.format(L("Your open bids: %d (latest: %s, %s)."), #open, open[1].name, U.money(open[1].amount))
+            string.format(L("Your open bids: %d (latest: %s, %s)."), #open, latest, U.money(open[1].amount))
     end
     UI.bidText:SetText(table.concat(lines, "\n"))
     local selected = UI.bidSelected
@@ -2640,7 +2641,9 @@ function UI.refreshMyBids()
             L("Select a bid: an outbid one shows whether bidding again still pays, from what the item brings you.")
     end
     UI.myBidText:SetText(table.concat(lines, "\n"))
-    local open = selected ~= nil and selected.status ~= "won" and selected.status ~= "lost"
+    -- Only a bid still on the house can be answered: an ended one (gone from the list, its mail not
+    -- read yet) has no auction left to bid on or buy out.
+    local open = selected ~= nil and (selected.status == "leading" or selected.status == "outbid")
     UI.myBidAgain:SetEnabled(open and selected.status == "outbid" and selected.next ~= nil and F.AH.isOpen())
     UI.myBidBuyout:SetEnabled(open and selected.buyout ~= nil and F.AH.isOpen())
     UI.myBidRefresh:SetEnabled(F.AH.isOpen())
@@ -3045,7 +3048,8 @@ function UI.statusTargets()
         verifyDeals = function(key, complete)
             return F.Bids.check(key, complete)
         end
-        for _, c in ipairs(F.Bids.candidates) do
+        -- The list the page shows: this house's, without auctions that ended.
+        for _, c in ipairs(F.Bids.current()) do
             keys[#keys + 1] = c.key
         end
     elseif UI.section == "crafting" then
@@ -3207,10 +3211,7 @@ function UI.refreshSell()
         lines[#lines + 1] = L("Bought as a vendor deal: sell it to any vendor (button at the merchant).")
     end
     if price and not F.Trade.prices[item.key] and F.Scan.notListed(item.key) then
-        lines[#lines + 1] = string.format(
-            L("Nobody listed it at the last full scan (%d min ago)."),
-            math.floor((F.Engine.clock() - F.Scan.last.at) / 60)
-        )
+        lines[#lines + 1] = string.format(L("Nobody listed it at the last full scan (%s)."), UI.age(F.Scan.last.at))
     elseif price and F.Trade.noAnswer[item.key] and not F.Trade.prices[item.key] then
         lines[#lines + 1] = L("The auction house did not answer the check: nobody seems to sell it.")
     end
@@ -3231,14 +3232,15 @@ function UI.refreshSell()
         elseif UI.sellPrice.SetTextColor then
             UI.sellPrice:SetTextColor(1, 1, 1)
         end
+        -- Every suggestion names the price the box gets: never below the floor (break-even, rule).
         if why == "normal" and cheapest then
             lines[#lines + 1] = string.format(
                 L("The cheapest other seller asks %s, above the maximum. Suggested: the normal price %s."),
                 U.money(cheapest),
-                U.money(price)
+                U.money(math.max(price, floor or 0))
             )
         elseif UI.FALLBACK_TEXT[why] then
-            lines[#lines + 1] = string.format(L(UI.FALLBACK_TEXT[why]), U.money(price))
+            lines[#lines + 1] = string.format(L(UI.FALLBACK_TEXT[why]), U.money(math.max(price, floor or 0)))
             if F.Trade.GUESSES[why] then
                 lines[#lines + 1] = "|cffffd100"
                     .. L(
@@ -3328,16 +3330,6 @@ function UI.refreshSell()
 end
 
 -- My auctions page ---------------------------------------------------------------------------------
-local function timeLeft(seconds)
-    if not seconds then
-        return "-"
-    end
-    if seconds >= 3600 then
-        return string.format("%d h", math.floor(seconds / 3600))
-    end
-    return string.format("%d min", math.floor(seconds / 60))
-end
-
 function UI.createAuctions(p)
     local list = CreateFrame("Frame", nil, p)
     list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
@@ -3430,9 +3422,18 @@ function UI.createUndercuts(p)
     local last
     for _, id in ipairs({ "wait", "undercut", "buyout", "raise", "vendor" }) do
         local b = button(bar, OPTION[id][2], 96, function()
+            local job = F.Trade.fightOrderActive()
             for _, plan in ipairs(F.Trade.fightPlans()) do
                 if plan.auction.auctionID == UI.fightSelected then
-                    F.Trade.fight(plan, id)
+                    if job and id == "buyout" then
+                        -- One buy-out runs at a time: the button carries it on (as Answer next does)
+                        -- for its own item only; another item's would replace it, nothing bought.
+                        if plan.key == job.key then
+                            F.Trade.fightOrderClick()
+                        end
+                    else
+                        F.Trade.fight(plan, id)
+                    end
                 end
             end
             UI.refresh()
@@ -3644,11 +3645,33 @@ local function situationLines(plan)
     return lines
 end
 
+-- The Advice column sorts in the order the options are offered.
+local ADVICE_RANK = { wait = 1, undercut = 2, buyout = 3, raise = 4, vendor = 5 }
+
 function UI.refreshUndercuts()
     local plans = F.Trade.fightPlans()
-    local act, selected = F.Trade.fightCount(), nil
+    -- Counted over the plans just made: each plan walks the sale model, too dear to make twice.
+    local act, selected = F.Trade.fightCount(plans), nil
+    -- The selected plan keeps its details and buttons while its row is scrolled out of view.
+    for _, plan in ipairs(plans) do
+        if plan.auction.auctionID == UI.fightSelected then
+            selected = plan
+        end
+    end
+    -- The rows show the sorted part in view; the counts below stay over every plan.
+    local shown = UI.undercutTable.sort(plans, function(plan, column)
+        local a = plan.auction
+        return ({
+            nameOf(a.key or ("i:" .. a.id), a.link),
+            a.qty,
+            a.price,
+            plan.cheapest,
+            plan.ahead,
+            ADVICE_RANK[plan.verdict],
+        })[column]
+    end)
     for i, r in ipairs(UI.undercutTable.rows) do
-        local plan = plans[i]
+        local plan = shown[i]
         if plan then
             local a = plan.auction
             r.plan, r.key, r.link = plan, a.key, a.link
@@ -3660,9 +3683,8 @@ function UI.refreshUndercuts()
             r.cols[4]:SetText(plan.ahead)
             local v = OPTION[plan.verdict]
             r.cols[5]:SetText(v[1] .. L(v[2]) .. "|r" .. (plan.war and " |cffff6060!|r" or ""))
-            if a.auctionID == UI.fightSelected then
+            if plan == selected then
                 r.selected:Show()
-                selected = plan
             else
                 r.selected:Hide()
             end
@@ -3700,11 +3722,12 @@ function UI.refreshUndercuts()
         lines[2] = L("from the measured sales (wait, undercut, buy out, raise, a merchant), and you choose.")
     end
     UI.fightBox.set(lines, selected and selected.auction.auctionID or #plans)
+    -- While a buy-out runs, only its own item's "buy out" goes on (the click acts on the selection).
+    local job = F.Trade.fightOrderActive()
     for id, b in pairs(UI.fightButtons) do
         local o = selected and selected[id]
-        local job = F.Trade.fightOrderActive()
         b:SetEnabled(
-            job and id == "buyout" and F.Trade.fightOrderReady()
+            job and id == "buyout" and selected ~= nil and selected.key == job.key and F.Trade.fightOrderReady()
                 or not job and o ~= nil and not o.blocked and (id == "wait" or F.Trade.wayReady())
         )
     end
@@ -3741,7 +3764,6 @@ function UI.refreshAuctions()
             if status == "sold" then
                 r.cols[4]:SetText("|cff40ff40" .. L("sold, gold in the mail") .. "|r")
             elseif status == "undercut" then
-                undercut = undercut + 1
                 r.cols[4]:SetText("|cffff6060" .. L("undercut") .. "|r")
             elseif status == "cheapest" then
                 r.cols[4]:SetText("|cff40ff40" .. L("cheapest") .. "|r")
@@ -3754,7 +3776,7 @@ function UI.refreshAuctions()
             else
                 r.cols[4]:SetText("|cff999999" .. L("not checked") .. "|r")
             end
-            r.cols[5]:SetText(a.sold and "" or timeLeft(a.timeLeft))
+            r.cols[5]:SetText(a.sold and "" or a.timeLeft and UI.duration(a.timeLeft) or "-")
             if a.auctionID == UI.ownedSelected then
                 r.selected:Show()
                 selected = a
@@ -3777,6 +3799,7 @@ function UI.refreshAuctions()
     local queue = F.Trade.checksRemaining()
     -- Total on sale (price of one unit x quantity of every auction still listed) and pending
     -- (sold, the gold on its way by mail), centered as in Auctionator's Cancelling tab.
+    -- The undercut count covers every auction too, not only the rows in view.
     local onSale, pending = 0, 0
     for _, a in ipairs(F.Trade.owned or {}) do
         local value = a.total or (a.price or 0) * (a.qty or 1)
@@ -3784,6 +3807,9 @@ function UI.refreshAuctions()
             pending = pending + value
         else
             onSale = onSale + value
+        end
+        if F.Trade.ownedStatus(a) == "undercut" then
+            undercut = undercut + 1
         end
     end
     UI.auctionTotal:SetText(
@@ -3843,7 +3869,8 @@ function UI.createStats(p)
 end
 
 function UI.refreshStats()
-    local stats = UI.statsTable.sort(F.Trade.itemStats(), function(s, column)
+    local all = F.Trade.itemStats()
+    local stats = UI.statsTable.sort(all, function(s, column)
         return ({ s.name, s.bought, s.sold, s.stock, s.sold > 0 and s.profit or nil, s.days, s.rate })[column]
     end)
     local stale = 0
@@ -3872,7 +3899,8 @@ function UI.refreshStats()
             r:Hide()
         end
     end
-    for _, s in ipairs(stats) do
+    -- Every item counts, not only the rows in view (sort returns the scrolled window).
+    for _, s in ipairs(all) do
         if s.stale then
             stale = stale + 1
         end
@@ -4416,19 +4444,31 @@ function UI.createJournal(p)
             return
         end
         local c = F.Data.char(F.db, F.Engine.owner())
-        local lot
+        local lot, older
         for _, candidate in ipairs(F.Data.lots(c)) do
             if candidate.id == pick.id and candidate.key == pick.key then
                 lot = candidate
                 break
             end
+            if candidate.key == pick.key and (candidate.left or 0) > 0 then
+                older = candidate
+            end
         end
-        if not lot then
+        -- A lot is resolved once: a second Vendor sold would book its units again.
+        if not lot or lot.reconciled then
             return
         end
         if state == "vendor" then
+            -- The sale is booked on the item's oldest open lots first (F.Data.sale): with an older
+            -- purchase still open it would empty that one, not the lot chosen here.
+            if older then
+                F.Engine.notify("older_lot")
+                return
+            end
             local item = U.parseKey(lot.key)
-            local price = item and F.AH.clientVendorPrice(item.id)
+            -- What a merchant really paid (buyback list), else the client's price without the
+            -- safety margin of deal estimates: the money that came in.
+            local price = item and F.AH.vendorPrice(item.id, true)
             if not price or lot.left <= 0 then
                 return
             end
@@ -4579,7 +4619,9 @@ function UI.refreshJournal()
         held[item.key] = (held[item.key] or 0) + item.count
     end
     for _, lot in ipairs(F.Data.lots(c)) do
-        if lot.mode == "vendor" then
+        -- A lot the player resolved (held, sold elsewhere) is accounted for: its units are not
+        -- expected in the bags.
+        if lot.mode == "vendor" and not lot.reconciled then
             pending[lot.key] = (pending[lot.key] or 0) + lot.left
         end
     end
@@ -4603,7 +4645,7 @@ function UI.refreshJournal()
         selected and (selected.key .. ":" .. selected.id) or ""
     )
     for _, b in pairs(UI.journalResolve or {}) do
-        b:SetEnabled(selected ~= nil)
+        b:SetEnabled(selected ~= nil and not selected.reconciled)
     end
     table.sort(lots, function(a, b)
         return (a.at or 0) > (b.at or 0)
@@ -4860,7 +4902,7 @@ function UI.showText(title, value, onImport)
 end
 
 -- Settings page ------------------------------------------------------------------------------------
--- Four tabs: General, Key bindings, Sharing, Safety.
+-- Four pages, opened from the menu (UI.GROUPS): General, Key bindings, Sharing, Safety.
 -- Settings pages share one look: a gold heading with a thin line under it per section, white
 -- labels, fields and buttons aligned on the right edge, and the full explanation in tooltips.
 local function hint(frame, title, body)
@@ -4924,24 +4966,23 @@ local function checkRow(p, x, y, label, body, checked, onClick)
     return box
 end
 
+-- A number as typed in a settings box, a decimal comma ("12,5") and a percent sign ("15%") allowed.
+-- Nil for anything else, a negative or an endless number: that box keeps its value, and Save says so.
+local function typedNumber(s)
+    local plain = tostring(s or ""):gsub(",", "."):gsub("%%", "")
+    local v = tonumber(plain)
+    if U.finite(v) and v >= 0 then
+        return v
+    end
+end
+
 function UI.createSettings(p)
-    UI.settingTabs, UI.settingFrames = {}, {}
-    local tabs = {
-        { "general", "General" },
-        { "keys", "Key bindings" },
-        { "share", "Sharing" },
-        { "safety", "Safety" },
-    }
-    for _, t in ipairs(tabs) do
+    UI.settingFrames = {}
+    for _, id in ipairs({ "general", "keys", "share", "safety" }) do
         local frame = CreateFrame("Frame", nil, p)
         frame:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
         frame:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 0)
-        UI.settingFrames[t[1]] = frame
-        local b = button(p, t[2], 140, function()
-            UI.showSettingsTab(t[1])
-        end)
-        b:Hide()
-        UI.settingTabs[t[1]] = b
+        UI.settingFrames[id] = frame
     end
     UI.createGeneralSettings(UI.settingFrames.general)
     UI.createKeySettings(UI.settingFrames.keys)
@@ -4985,17 +5026,24 @@ function UI.createSafetySettings(p)
     end
     local below = -28 - #fields * 28
     UI.safetySave = button(p, "Save", 90, function()
+        local bad = false
         for _, e in ipairs(UI.safetyBoxes) do
-            local v = tonumber(e:GetText())
-            if v and v >= 0 then
-                if e.field[1] == "vendorMargin" then
-                    v = U.clamp(math.floor(v), 0, 90)
-                end
-                F.db.settings[e.field[1]] = math.floor(v)
+            local key = e.field[1]
+            local v = typedNumber(e:GetText())
+            if not v then
+                bad = true
+            elseif key == "spendLimit" then
+                -- Gold with its fraction (0.5 is 50 silver), kept to the copper: a limit floored to
+                -- 0 would mean no limit at all.
+                F.db.settings[key] = v > 0 and math.max(1, math.floor(v * 10000 + 0.5)) / 10000 or 0
+            elseif key == "vendorMargin" then
+                F.db.settings[key] = U.clamp(math.floor(v), 0, 90)
+            else
+                F.db.settings[key] = math.floor(v)
             end
         end
         UI.loadSafety()
-        F.Engine.notify("saved")
+        F.Engine.notify(bad and "not_number" or "saved")
     end)
     UI.safetySave:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, below - 6)
     heading(p, "What ForeverFlip learned", 12, below - 40)
@@ -5100,12 +5148,7 @@ function UI.setSettingsFrame(id)
         else
             frame:Hide()
         end
-        UI.settingTabs[key]:SetEnabled(key ~= id)
     end
-end
-
-function UI.showSettingsTab(id)
-    UI.show(id == "general" and "settings" or ("settings:" .. id))
 end
 
 -- Key bindings: click a button, press the key. Right-click clears; Escape cancels.
@@ -5170,11 +5213,22 @@ function UI.keyName(key)
     return prefix .. key
 end
 
+-- The capture ends without a key: the key page was left, or the auction house closed with it.
+function UI.cancelCapture()
+    UI.capturing = nil
+    if UI.keyCatcher then
+        UI.keyCatcher:Hide()
+    end
+end
+
 function UI.captureKey(command)
     UI.capturing = command
     local c = UI.keyCatcher
     if not c then
-        c = CreateFrame("Frame", nil, UIParent)
+        -- A child of the key page that still covers the whole screen: when the page goes (another
+        -- page, the game's own tab, the auction house closed) the catcher goes with it, and the next
+        -- key the player presses walks or casts again instead of being bound and saved.
+        c = CreateFrame("Frame", nil, UI.settingFrames.keys)
         c:SetAllPoints(UIParent)
         c:SetFrameStrata("TOOLTIP")
         if c.EnableKeyboard then
@@ -5186,6 +5240,9 @@ function UI.captureKey(command)
         c:SetScript("OnKeyDown", function(_, key)
             UI.onCapturedKey(key)
         end)
+        -- The game runs OnHide when a parent hides too. The catcher then hides by its own flag as
+        -- well, or it would come back with the page and swallow a key with nothing waiting for it.
+        c:SetScript("OnHide", UI.cancelCapture)
         UI.keyCatcher = c
     end
     c:Show()
@@ -5441,14 +5498,10 @@ function UI.createGeneralSettings(p)
             UI.refresh()
         end)
     end
-    check(
+    toggle(
+        "autoVerify",
         "Check deals automatically",
-        "Check found deals on the auction house automatically (one search per second)",
-        F.Engine.autoVerify,
-        function(self)
-            F.Engine.autoVerify = self:GetChecked() and true or false
-            F.db.settings.autoVerify = F.Engine.autoVerify
-        end
+        "Check found deals on the auction house automatically (one search per second)"
     )
     toggle("autoScan", "Full scan every 15 minutes", "Full scan every 15 minutes while the auction house is open")
     UI.sniperBox =
@@ -5471,9 +5524,15 @@ function UI.createGeneralSettings(p)
     line:SetPoint("TOPLEFT", bar, "TOPLEFT", 4, 0)
     line:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -4, 0)
     UI.saveButton = button(bar, "Save", 90, function()
+        local bad = false
         for _, e in ipairs(UI.settingBoxes) do
             local key, kind = e.field[1], e.field[3]
-            local v = kind == "money" and U.parseMoney(e:GetText()) or tonumber(e:GetText())
+            local v
+            if kind == "money" then
+                v = U.parseMoney(e:GetText())
+            else
+                v = typedNumber(e:GetText())
+            end
             if v and v >= 0 then
                 if kind == "percent" then
                     v = U.clamp(v / 100, 0, 1)
@@ -5481,10 +5540,12 @@ function UI.createGeneralSettings(p)
                     v = U.clamp(v / 100, 0, 10)
                 end
                 F.db.settings[key] = v
+            else
+                bad = true
             end
         end
         UI.loadSettings()
-        F.Engine.notify("saved")
+        F.Engine.notify(bad and "not_number" or "saved")
     end)
     UI.saveButton:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 6)
     local last = UI.saveButton
@@ -5555,7 +5616,9 @@ function UI.loadSettings()
         if kind == "money" then
             e:SetText(U.plainMoney(v))
         else
-            e:SetText(tostring(math.floor(v * 100 + 0.5)))
+            -- The percent as saved (2.5, not 3): Save reads every box again, so a rounded one would
+            -- change a setting the player did not touch.
+            e:SetText(string.format("%g", v * 100))
         end
     end
 end
@@ -5575,6 +5638,7 @@ local BATCH_SCOPES = {
     ["deals:shop"] = "Shopping deals",
     sell = "Bags",
     auctions = "My auctions",
+    undercuts = "Undercuts",
     shop = "Shopping list",
     bids = "Bids",
     crafting = "Crafting",
@@ -5697,12 +5761,7 @@ function UI.refreshStatus()
         UI.status:SetText(string.format(L("Checking deals on the auction house: %d / %d"), checked, all))
     elseif F.Scan.last then
         UI.status:SetText(
-            string.format(
-                L("Deals: %d · checked: %d · from the scan %d min ago"),
-                all,
-                checked,
-                math.floor((F.Engine.clock() - F.Scan.last.at) / 60)
-            )
+            string.format(L("Deals: %d · checked: %d · from the scan %s"), all, checked, UI.age(F.Scan.last.at))
         )
     else
         UI.status:SetText(L("Press Full scan to read the whole auction house."))
@@ -5798,8 +5857,8 @@ function UI.refreshSummary()
     UI.summary:SetText(
         UI.houseLine()
             .. string.format(
-                L("Scan: %d min ago\nAuctions: %d\nItems: %d\nVendor price: %d\nBelow vendor: %d\nSales data: %d"),
-                math.floor((F.Engine.clock() - last.at) / 60),
+                L("Scan: %s\nAuctions: %d\nItems: %d\nVendor price: %d\nBelow vendor: %d\nSales data: %d"),
+                UI.age(last.at),
                 last.total,
                 s.items,
                 s.vendorKnown,
@@ -5829,7 +5888,18 @@ function UI.sniperSummary()
 end
 
 function UI.refresh()
-    if not UI.frame or not UI.frame:IsShown() then
+    local f = UI.frame
+    if not f then
+        return
+    end
+    -- IsVisible also counts the parents: the window keeps its own shown flag inside the auction
+    -- house frame after the auction house closes, and a page nobody sees is not drawn (OnShow draws
+    -- it when it comes back). Frames without a real IsVisible answer nil: IsShown is asked then.
+    local visible = f.IsVisible and f:IsVisible()
+    if visible == nil then
+        visible = f:IsShown()
+    end
+    if not visible then
         return
     end
     F.Engine.urgent, F.Engine.dirty = false, false
@@ -5838,9 +5908,6 @@ function UI.refresh()
     end
     if not UI.nativeRows then
         pcall(UI.copyNativeRows)
-    end
-    if not UI.tabsSized and UI.tabsShown then
-        UI.layoutTabs(UI.tabsShown.group, UI.tabsShown.id)
     end
     UI.refreshStatus()
     UI.refreshSummary()
@@ -6032,7 +6099,9 @@ function UI.showHistory(key, link)
             bar.price:SetHeight(math.max(1, 100 * (d.m or 0) / top))
             bar.cheap:SetHeight(math.max(1, 100 * (d.min or 0) / top))
             bar.sold:SetHeight(math.max(1, 40 * (d.s or 0) / math.max(1, most)))
-            bar.label:SetText(date and date("%d.%m", d.d * 86400) or tostring(d.d))
+            -- d.d counts UTC days (floor(time / 86400)): its UTC date, not the local one, which
+            -- west of UTC is the day before.
+            bar.label:SetText(date and date("!%d.%m", d.d * 86400) or tostring(d.d))
             bar.price:Show()
             bar.cheap:Show()
             bar.sold:Show()
@@ -6213,6 +6282,10 @@ local QUOTE_WHY = {
 function UI.quoteWhy(q)
     if q.belowFloor then
         return string.format(L("the market %s is below your minimum"), U.money(q.market))
+    end
+    -- The normal price also stands when nobody else sells the item: there is no seller to name.
+    if q.why == "normal" and not q.cheapest then
+        return L("normal price: nobody else sells it now")
     end
     local text = L(QUOTE_WHY[q.why] or QUOTE_WHY.estimate)
     if text:find("%%s") then
@@ -6404,7 +6477,10 @@ local function tooltipLines(tooltip)
             )
         end
     end
-    local deal = F.Deals.get(key)
+    -- The deal list is the last open house's (as ForeverFlipAPI.GetDeal): once a neutral house
+    -- closes, its deals are not on sale at the faction house the prices above come from.
+    local sameHouse = not F.Deals.scope or F.Deals.scope == F.Engine.scope()
+    local deal = sameHouse and F.Deals.get(key) or nil
     if deal then
         local sure = F.Deals.sure(deal, now)
         tipLine(
@@ -6581,7 +6657,8 @@ local function sellGear()
 end
 
 -- The merchant's item pages (buttons, page arrows, repair buttons) are drawn above the ForeverFlip
--- view: they are hidden while it is open, and the game shows them again on its own tabs.
+-- view: they are hidden while it is open and shown again when it goes (another tab, the merchant
+-- closed); the game's update then hides what its tab does not use.
 local MERCHANT_PARTS = {
     "MerchantPrevPageButton",
     "MerchantNextPageButton",
@@ -6593,7 +6670,7 @@ local MERCHANT_PARTS = {
     "MerchantBuyBackItem",
     "MerchantSellAllJunkButton",
 }
-local function merchantPages(show)
+local function merchantPages(show, closing)
     local names = {}
     for i = 1, (MERCHANT_ITEMS_PER_PAGE or 12) do
         names[#names + 1] = "MerchantItem" .. i
@@ -6611,8 +6688,9 @@ local function merchantPages(show)
             end
         end
     end
-    if show and MerchantFrame_Update then
-        pcall(MerchantFrame_Update) -- the game decides again what its tab shows
+    -- The game decides again what its tab shows; a closing merchant needs nothing decided now.
+    if show and not closing and MerchantFrame_Update then
+        pcall(MerchantFrame_Update)
     end
 end
 
@@ -6623,8 +6701,11 @@ function UI.merchantSelect(on, closing)
     end
     if on then
         merchantPages(false)
-    elseif view:IsShown() and not closing then
-        merchantPages(true)
+    elseif view:IsShown() then
+        -- Closing on this tab shows the pages again too: the game's update shows only the item
+        -- buttons inside MerchantItem1..10, never those frames, so every later merchant would
+        -- open with an empty list.
+        merchantPages(true, closing)
     end
     if on then
         view:Show()

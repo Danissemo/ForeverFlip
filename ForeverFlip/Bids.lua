@@ -18,6 +18,15 @@ local function char()
     return F.Data.char(F.db, F.Engine.owner())
 end
 
+-- A bid the game's Bids list no longer shows: its auction is over (the mail tells whether it was
+-- won), or, never listed since it was placed (b.missed, B.onLive), the server did not take it.
+local function gone(b)
+    if b.seen then
+        return B.liveAt ~= nil and b.seen < B.liveAt
+    end
+    return b.missed ~= nil
+end
+
 -- What one unit is worth: the vendor price, or the usual price after the cut when it sells.
 function B.value(key, id, history)
     local vendor = F.AH.vendorPrice(id)
@@ -58,49 +67,67 @@ function B.consider(j, key, kind, r)
 end
 
 -- The candidates of the last scan of this auction house whose auctions can still be running, kept
--- in the saved data so a /reload keeps them.
+-- in the saved data so a /reload keeps them. Every house (a neutral one too) has its own list, read
+-- whenever the house differs from the one shown last.
 function B.current()
     local scope = F.Engine.scope()
-    if #B.candidates == 0 and B.scope ~= scope then
+    if B.scope ~= scope then
         local saved = F.db.bidCandidates and F.db.bidCandidates[scope]
         B.candidates = type(saved) == "table" and type(saved.list) == "table" and saved.list or {}
         B.at, B.scope = type(saved) == "table" and saved.at or nil, scope
     end
-    local now, live = F.Engine.clock(), {}
-    for _, c in ipairs(B.candidates) do
-        if not c.ends or c.ends > now then
-            live[#live + 1] = c
+    -- Candidates whose auction ended are removed in place: the list is the saved one, so a candidate
+    -- a check drops (B.read) stays dropped after a /reload.
+    local now = F.Engine.clock()
+    for i = #B.candidates, 1, -1 do
+        local ends = B.candidates[i].ends
+        if ends and ends <= now then
+            table.remove(B.candidates, i)
         end
-    end
-    if #live < #B.candidates then
-        B.candidates = live
     end
     return B.candidates
 end
 
--- End of a scan: candidates with enough profit, best first.
+-- The order of candidates: more profit first, then by key.
+local function ahead(a, b)
+    if a.profit ~= b.profit then
+        return a.profit > b.profit
+    end
+    return a.key < b.key
+end
+
+-- End of a scan: the B.MAX candidates with the most profit, best first. It runs in the scan's last
+-- frame, and a big house has tens of thousands of auctions with a bid: an item's worth is reckoned
+-- once per item key (it depends on nothing else), and only the best B.MAX are kept in order.
 function B.finish(j, history)
     local out = {}
     local minProfit = F.db.settings.minProfit or 100
+    local worth = {} -- key -> B.value, false when ignored or worth nothing
     for _, c in ipairs(j.bids or {}) do
-        if not F.Shopping.blocked(c.key) then
-            local value = B.value(c.key, c.id, history)
-            local profit = value and value * c.count - c.bid
-            local most = value and B.maxBid(value * c.count)
-            if profit and profit >= minProfit and most and c.bid <= most then
-                c.value, c.profit = value * c.count, profit
-                out[#out + 1] = c
+        local value = worth[c.key]
+        if value == nil then
+            value = not F.Shopping.blocked(c.key) and B.value(c.key, c.id, history) or false
+            worth[c.key] = value
+        end
+        local profit = value and value * c.count - c.bid
+        local most = value and B.maxBid(value * c.count)
+        if profit and profit >= minProfit and most and c.bid <= most then
+            c.value, c.profit = value * c.count, profit
+            local n = #out
+            if n < B.MAX or ahead(c, out[n]) then
+                local lo, hi = 1, n + 1
+                while lo < hi do
+                    local mid = math.floor((lo + hi) / 2)
+                    if ahead(c, out[mid]) then
+                        hi = mid
+                    else
+                        lo = mid + 1
+                    end
+                end
+                table.insert(out, lo, c)
+                out[B.MAX + 1] = nil
             end
         end
-    end
-    table.sort(out, function(a, b)
-        if a.profit ~= b.profit then
-            return a.profit > b.profit
-        end
-        return a.key < b.key
-    end)
-    for i = #out, B.MAX + 1, -1 do
-        out[i] = nil
     end
     B.candidates, B.at, B.scope = out, F.Engine.clock(), j.scope
     F.db.bidCandidates = type(F.db.bidCandidates) == "table" and F.db.bidCandidates or {}
@@ -153,12 +180,17 @@ function B.read(k)
             return
         end
         local unitValue = c.value / c.count
+        local mine = char().bids or {}
         local best
         for _, r in ipairs(rows or {}) do
             local profit = unitValue * r.qty - r.bid
             local most = B.maxBid(unitValue * r.qty)
+            -- An auction the player leads is no offer: its next bid would only raise the player's
+            -- own bid. Outbid there, or with a bid the server did not take, the player can bid again.
+            local own = mine[r.auctionID]
             if
-                profit >= (F.db.settings.minProfit or 100)
+                (not own or own.outbid or gone(own))
+                and profit >= (F.db.settings.minProfit or 100)
                 and most
                 and r.bid <= most
                 and (not best or profit > best.profit)
@@ -195,14 +227,29 @@ function B.place(key)
     if o.bid > F.Engine.wallet() then
         return false, "no_money"
     end
+    if F.Trade.overLimit(o.bid) then
+        return false, "spend_limit"
+    end
     if not F.Trade.wayFree() then
         return false, "buy_busy"
+    end
+    local c = B.get(key)
+    local item = U.parseKey(key)
+    local id = c and c.id or item and item.id
+    if id and not F.AH.searchedLast(id) then
+        -- Another item was searched since this auction was read: the server takes a bid, like a
+        -- purchase, only from the last item search and drops it without an answer. It is read
+        -- again, and the next click bids.
+        B.offers[key] = nil
+        B.check(key)
+        return false, "buy_recheck"
     end
     if not pcall(F.AH.bid, o.auctionID, o.bid) then
         return false, "error"
     end
-    local c = B.get(key)
-    local item = U.parseKey(key)
+    -- The money leaves at once (it comes back only when someone bids more): a bid counts toward the
+    -- spending limit of the visit like a purchase.
+    F.Engine.spent = (F.Engine.spent or 0) + o.bid
     local name = (item and item.name) or (c and U.itemInfo(c.id)) or key
     local bids = char()
     bids.bids = bids.bids or {}
@@ -267,6 +314,14 @@ function B.won(name, fromInvoice)
     if not id then
         return false
     end
+    -- A bid from the game's own window read before its item was loaded has no key yet. Without one
+    -- it is not booked here: the buyer invoice of its mail books the item.
+    if not b.key and b.id then
+        b.key = F.AH.keyFor(b.id, b.link)
+    end
+    if not b.key then
+        return false
+    end
     local c = char()
     finishBid(id, b, "won")
     if not fromInvoice then
@@ -309,6 +364,7 @@ end
 -- leads and the next bid the house takes. Bids placed in the game's own window are tracked too.
 B.LIVE_EVERY = 60
 B.BAND_MAX = { [0] = 1800, [1] = 7200, [2] = 43200, [3] = 172800 }
+B.MAIL_GRACE = 3600 -- seconds after an auction's latest end for its "won" line or mail
 
 function B.step()
     if not F.AH.isOpen() or F.Engine.clock() < (B.liveDue or 0) then
@@ -317,16 +373,32 @@ function B.step()
     local bids = char().bids
     local running = bids ~= nil and next(bids) ~= nil
     local shown = F.UI and F.UI.section == "mybids"
+    -- Like a purchase, the query waits for a sniper browse or a post (AUCTION_CREATED) still
+    -- unanswered: the game queues a message behind an unanswered one, and on WoW Forever some are
+    -- never answered. The throttle is asked last: after a long "not ready" it lets one message
+    -- through, which a query that is not sent must not use up.
     if
         (running or shown)
-        and F.AH.ready()
         and not F.Deals.searching()
         and not F.Scan.blocking()
         and not F.Trade.busy()
+        and not (F.Sniper.inFlight and F.Sniper.inFlight())
+        and not (F.Trade.postingNow and F.Trade.postingNow())
+        and F.AH.ready()
     then
         B.liveDue = F.Engine.clock() + B.LIVE_EVERY
         pcall(F.AH.queryBids)
     end
+end
+
+-- The name of a Bids list row: its link's, else the item's (a link reads "[]" before the item is
+-- loaded).
+local function rowName(r)
+    local name = U.linkName(r.link)
+    if not name or name == "" then
+        name = r.id and U.itemInfo(r.id)
+    end
+    return name
 end
 
 function B.onLive()
@@ -343,18 +415,18 @@ function B.onLive()
         local b = c.bids[r.auctionID]
         if not b and r.id then
             -- A bid placed in the game's own window: its worth is reckoned like any bid's.
-            local key = F.AH.keyFor(r.id, r.link)
-            b = {
-                key = key,
-                name = U.linkName(r.link) or U.itemInfo(r.id) or key,
-                qty = 1,
-                amount = r.bid,
-                at = now,
-                native = true,
-            }
+            b = { qty = 1, amount = r.bid, at = now, native = true }
             c.bids[r.auctionID] = b
         end
         if b then
+            -- Read before its item is loaded, a bid has no key or name yet: a later read fills them
+            -- in, and the item is kept for its "won" line (B.won).
+            if not b.key and r.id then
+                b.key, b.id, b.link = F.AH.keyFor(r.id, r.link), r.id, r.link
+            end
+            if not b.name or b.name == "" then
+                b.name = rowName(r) or b.key
+            end
             local leading = r.leading
             if leading == nil then
                 -- The highest bidder is not named: the player leads while the highest bid is still
@@ -363,16 +435,27 @@ function B.onLive()
             end
             b.next, b.buyout, b.band = r.minBid, r.buyout, r.band
             b.outbid = not leading and (b.outbid or now) or nil
-            b.seen = now
+            b.seen, b.missed = now, nil
             local latest = now + (B.BAND_MAX[r.band] or B.BAND_MAX[3])
             b.ends = math.min(b.ends or latest, latest)
         end
     end
     -- A bid gone from the list has ended: lost when someone else led it; one the player led waits
-    -- for its "won" line or mail (B.won).
+    -- for its "won" line or mail (B.won). A bid the list has not shown since it was placed (10
+    -- seconds give the server time to list it) was not taken, or its auction ended at once. Missed
+    -- while its auction could still run, it is forgotten B.MAIL_GRACE after that auction's latest
+    -- end; one first missed later (the house was closed meanwhile) waits for its mail like the
+    -- others (B.prune).
     for id, b in pairs(c.bids) do
-        if not seen[id] and now - (b.at or 0) > 10 and b.outbid then
-            finishBid(id, b, "lost")
+        if not seen[id] and now - (b.at or 0) > 10 then
+            if b.outbid then
+                finishBid(id, b, "lost")
+            elseif not b.seen then
+                b.missed = b.missed or now
+                if b.ends and b.missed < b.ends and now > b.ends + B.MAIL_GRACE then
+                    c.bids[id] = nil
+                end
+            end
         end
     end
     B.liveAt = now
@@ -392,7 +475,7 @@ function B.maxBid(value)
 end
 
 -- Every bid of the player with its state and the advice:
---   status   leading | outbid | ended (led when last seen; the mail tells) | won | lost
+--   status   leading | outbid | ended (gone from the game's Bids list; the mail tells) | won | lost
 --   advice   rebid    outbid, and the next bid still leaves the minimum profit
 --            buyout   outbid or leading with hours left, and the buyout still leaves it: other
 --                     bidders get hours to come back, the buyout ends the auction now
@@ -426,7 +509,7 @@ function B.mine()
         row.maxBid = B.maxBid(value)
         if b.outbid then
             row.status = "outbid"
-        elseif b.seen and B.liveAt and b.seen < B.liveAt then
+        elseif gone(b) then
             row.status = "ended"
         else
             row.status = "leading"
@@ -480,7 +563,9 @@ end
 function B.answer(auctionID, how)
     local c = char()
     local b = c.bids and c.bids[auctionID]
-    if not b then
+    -- An auction gone from the game's Bids list is over: a bid would fail, and its amount would
+    -- replace the one the "won" mail is booked with.
+    if not b or gone(b) then
         return false, "nothing_to_bid"
     end
     local amount = how == "buyout" and b.buyout or b.next
@@ -490,13 +575,17 @@ function B.answer(auctionID, how)
     if amount > F.Engine.wallet() then
         return false, "no_money"
     end
+    if F.Trade.overLimit(amount) then
+        return false, "spend_limit"
+    end
     if not F.AH.isOpen() or not F.Trade.wayFree() then
         return false, "buy_busy"
     end
     if not pcall(F.AH.bid, auctionID, amount) then
         return false, "error"
     end
-    b.amount, b.at, b.outbid, b.seen = amount, F.Engine.clock(), nil, nil
+    F.Engine.spent = (F.Engine.spent or 0) + amount
+    b.amount, b.at, b.outbid, b.seen, b.missed = amount, F.Engine.clock(), nil, nil, nil
     b.next = nil
     B.liveDue = F.Engine.clock() + 2
     F.Engine.notify(how == "buyout" and "bid_bought" or "bid_placed")

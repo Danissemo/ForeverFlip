@@ -83,6 +83,9 @@ function M.recordFlow(h, buckets, market, now, sold)
             f = { hours = 0, sold = { 0, 0, 0, 0 }, pairs = 0, at = now }
         end
         local decay = 0.5 ^ (math.max(0, now - (f.at or now)) / (48 * 3600))
+        -- Hours watched, not decayed: what a level that never saw a unit go was watched for (the
+        -- unseen-sales chance of M.advice). Saves from before it start from the decayed hours.
+        f.watched = (U.finite(f.watched) and f.watched or f.hours) + hours
         f.hours = f.hours * decay + hours
         for i, level in ipairs(M.LEVELS) do
             local gone
@@ -98,7 +101,11 @@ function M.recordFlow(h, buckets, market, now, sold)
             end
             f.sold[i] = (f.sold[i] or 0) * decay + gone
         end
-        f.pairs, f.at, f.market = math.min(99, (f.pairs or 0) + 1), now, market
+        -- The levels were measured against the market of the scan before (prev.market), and
+        -- demandAt maps a price to a level through f.market, so it keeps that one. With the new
+        -- market, once the cheap units sold and the usual price doubled, units gone at the old
+        -- price read as sold at nearly twice it.
+        f.pairs, f.at, f.market = math.min(99, (f.pairs or 0) + 1), now, prev.market
         h.flow = f
     end
     local above = {}
@@ -219,12 +226,16 @@ end
 
 -- Display metadata for the existing demand model. Unknown is not an observed zero; old
 -- estimates stay numeric but carry the age of the last usable full-scan pair.
+-- `quiet`: the hours watched, not decayed, since the last sale counted at the price (nil in saves
+-- from before that count); `hours` decays with the sales.
+local quietHours -- with M.recordSales, below
 function M.saleability(h, price, now)
     local out = { known = false, pairs = 0, stale = false }
     local s = type(h) == "table" and h.sales
     if type(s) == "table" and (s.pairs or 0) >= 1 and U.finite(price) and price > 0 then
         local d = M.lotDemand(h, price)
         out.pairs, out.at, out.hours = s.pairs, s.at, s.hours
+        out.quiet = quietHours(s, 0.85 * price)
         if out.at and U.finite(now) then
             out.age = math.max(0, now - out.at)
             out.stale = out.age > 3 * 3600
@@ -241,6 +252,9 @@ function M.saleability(h, price, now)
     out.pairs = U.finite(f.pairs) and math.max(0, f.pairs) or 0
     out.at = U.finite(f.at) and f.at or nil
     out.hours = U.finite(f.hours) and f.hours > 0 and f.hours or nil
+    -- A level's units gone only decay and never reach 0 again: none seen there is none in all the
+    -- hours watched.
+    out.quiet = U.finite(f.watched) and f.watched or nil
     if out.at and U.finite(now) then
         out.age = math.max(0, now - out.at)
         out.stale = out.age > 3 * 3600
@@ -546,11 +560,52 @@ end
 --   sure / lots   decayed units of each kind, for the evidence shown with every estimate
 --   log           the last M.SALE_LOG sales: "time:price:units:kind" (p = part of a lot, l = lot)
 --   recent        units seen per scan pair, the last 12 pairs
+--   watched       hours watched, not decayed; soldAt: when the last sale at each price was (below)
 -- One-off sweeps: a pair that saw more than M.SWEEP times the median of the pairs before it (at
 -- least 3) is counted at that ceiling: one buyer clearing a shelf (often another reseller) is no
 -- daily demand, and counting it whole let one scan pair decide a day of buying.
 M.SALE_LOG = 30
 M.SWEEP = 3
+
+-- The unseen-sales chance of M.advice needs the hours an item was watched since its last sale at
+-- a price. s.hours decays (3-day half-life): it levels off near 104 hours, and stays under a day
+-- for a player who scans a few hours a day, so months without a sale read as four days at most.
+-- Kept beside it: s.watched, the hours of scan pairs without decay, and s.soldAt = { price,
+-- watched, ... }, the last sale at each price as s.watched was then: prices rising, those hours
+-- falling (a sale also answers for every price below it, so the older ones it covers go).
+M.SOLD_AT = 8
+local function noteSold(s, price)
+    local list = {}
+    for i = 1, #s.soldAt - 1, 2 do
+        if s.soldAt[i] > price then
+            list[#list + 1], list[#list + 2] = s.soldAt[i], s.soldAt[i + 1]
+        end
+    end
+    if not list[2] or list[2] < s.watched then
+        table.insert(list, 1, s.watched)
+        table.insert(list, 1, price)
+    end
+    -- Over M.SOLD_AT the dearest, oldest sale is forgotten: as if nothing sold that high.
+    while #list > 2 * M.SOLD_AT do
+        list[#list], list[#list - 1] = nil, nil
+    end
+    s.soldAt = list
+end
+
+-- Hours watched since the last sale at or above `price`; nil for sales saved before the count.
+function quietHours(s, price)
+    if not U.finite(s.watched) then
+        return nil
+    end
+    local list = type(s.soldAt) == "table" and s.soldAt or {}
+    for i = 1, #list - 1, 2 do
+        if list[i] >= price then
+            return math.max(0, s.watched - list[i + 1])
+        end
+    end
+    return s.watched
+end
+
 -- `undercuts` (optional): new lots posted below the cheapest lot of the scan before, kept decayed
 -- in s.cuts like the sales (M.undercutRate).
 function M.recordSales(h, byPrice, dt, now, lots, undercuts)
@@ -593,6 +648,9 @@ function M.recordSales(h, byPrice, dt, now, lots, undercuts)
     s.lots = (s.lots or 0) * decay
     s.cuts = (s.cuts or 0) * decay + (dt > 0 and undercuts or 0)
     s.log = type(s.log) == "table" and s.log or {}
+    -- Saves from before s.watched start it from their decayed hours (the measure used until then).
+    s.watched = (U.finite(s.watched) and s.watched or U.finite(s.hours) and s.hours or 0) + dt / 3600
+    s.soldAt = type(s.soldAt) == "table" and s.soldAt or {}
     s.hours = (s.hours or 0) * decay + dt / 3600
     for b, units in pairs(s.b) do
         if b % 2 == 0 then
@@ -618,6 +676,7 @@ function M.recordSales(h, byPrice, dt, now, lots, undercuts)
             if units - whole > 0 then
                 s.log[#s.log + 1] = string.format("%d:%.0f:%d:p", now, price, units - whole)
             end
+            noteSold(s, price)
         end
     end
     while #s.log > M.SALE_LOG do
@@ -885,10 +944,13 @@ function M.undercutRate(h)
 end
 
 -- Lowest prices seen outside full scans (the sniper's browse rounds, the player's searches) lower
--- today's cheapest price of an item. `r` = { id, minPrice }.
+-- today's cheapest price of an item. `r` = { id, minPrice, containsOwnerItem }. Only a commodity's
+-- lowest price is a buyout (of other items it may be a bid), and a row with the player's own
+-- units may show their price: full scans leave both out of the cheapest, and the player's own 40c
+-- cloth read as a bargain below the usual 1 silver (Analytics, shared scans).
 function M.learnLow(history, r, now)
     local kind = F.AH and F.AH.kindOf and F.AH.kindOf(r.id)
-    if not kind or kind == "gear" then
+    if kind ~= "commodity" or r.containsOwnerItem then
         return
     end
     local h = history[U.key(kind, r.id)]
@@ -936,24 +998,32 @@ function M.advice(id, key, h, post)
         local units = item.kind == "commodity" and M.STACK or 1
         local stack = depositFn and depositFn(units) or M.deposit(F.AH.clientVendorPrice(id), units)
         local one = stack / units
-        local name = U.itemInfo(id)
+        -- Sale rates are kept by the name of the mail or invoice: for gear the full name with its
+        -- ending, which the key carries ("of Healing"); the item's own name lacks the ending.
+        local name = item.kind == "gear" and item.name ~= "" and item.name or U.itemInfo(id)
         local rate = name and F.Trade.rate(name)
         -- s = the chance one post sells: your own share of posts that sold, else from the units
         -- sold a day over the post's duration (one unit, Poisson). Posts that expire before the
-        -- sale lose their deposit: E[failed] = (1 - s) / s, at most M.MAX_FAILED.
+        -- sale lose their deposit: E[failed] = (1 - s) / s, at most M.MAX_FAILED. A known share of
+        -- 0 (3 posts or more, none sold) is that worst case, not unknown: read as unknown, 0 of 50
+        -- posted again with no deposit counted lost, while 1 of 20 counted 19.
         local success = 1 / M.POSTINGS
-        if rate and rate > 0 then
+        if rate then
             success = rate
         elseif h then
             local s = M.saleability(h, price, F.Engine and F.Engine.clock and F.Engine.clock() or 0)
             if s.known and s.perDay then
-                -- No sale seen is no proof that none comes: over the hours the item was watched it
-                -- counts as half a sale (Jeffreys), so a short watch leaves a fair chance and a long
-                -- one nearly none. Taken as zero, a day without sales of a 28-silver glove booked
-                -- 20 lost deposits against its post and sent it to a merchant for 3 silver.
+                -- No sale seen is no proof that none comes: over the hours the item was watched
+                -- since its last sale at the price it counts as half a sale (Jeffreys), so a short
+                -- watch leaves a fair chance and a long one nearly none. Taken as zero, a day
+                -- without sales of a 28-silver glove booked 20 lost deposits against its post and
+                -- sent it to a merchant for 3 silver. The hours are not decayed (s.quiet): the
+                -- decayed ones level off near four days, and stay under one for a player who scans
+                -- a few hours a day, so months without a sale kept a chance of 11-39% a post.
                 local perDay = s.perDay
                 if perDay <= 0 then
-                    perDay = M.UNSEEN_SALES / math.max(1, (U.finite(s.hours) and s.hours or 24) / 24)
+                    local watched = U.finite(s.quiet) and s.quiet or U.finite(s.hours) and s.hours or 24
+                    perDay = M.UNSEEN_SALES / math.max(1, watched / 24)
                 end
                 local d = F.Trade.durationFor and F.Trade.durationFor() or 3
                 local hours = (F.Trade.DURATION_HOURS and F.Trade.DURATION_HOURS[d]) or 24
@@ -1000,11 +1070,18 @@ end
 
 -- Lowest legal listing price that returns `cost` for `qty` units after the cut.
 function M.breakEven(cost, qty, kind)
-    -- From the cost itself (a lower bound), up one legal step at a time: the cut is rounded, so the
-    -- price that returns the cost can be below cost / (1 - CUT).
-    local price = math.max(kind == "commodity" and 1 or 100, U.stepUp(cost / qty, kind))
+    -- Not below the cost itself. The cut is rounded, so the price that returns the cost can be a
+    -- step or two below cost / (1 - CUT): from there, down while a step lower still returns it,
+    -- then up until it does (net only grows with the price). Stepping up from the cost took half
+    -- a million steps for a 1000-gold commodity.
+    local step = kind == "commodity" and 1 or 100
+    local low = math.max(step, U.stepUp(cost / qty, kind))
+    local price = math.max(low, U.stepUp(cost / qty / (1 - M.CUT), kind))
+    while price - step >= low and M.net(price - step, qty) >= cost do
+        price = price - step
+    end
     while M.net(price, qty) < cost do
-        price = price + (kind == "commodity" and 1 or 100)
+        price = price + step
     end
     return price
 end
@@ -1075,13 +1152,20 @@ function M.evaluate(rows, ctx)
         end
     end
 
+    -- A deal is returned alone: `best and nil or reason` is always `reason`.
     if ctx.vendorOnly then
-        return best, best and nil or reason
+        if best then
+            return best
+        end
+        return nil, reason
     end
     -- Watched and never seen sold: the asking prices are no price to resell at (in game, gear
     -- bought at 27 silver to resell at the 94 silver others asked, and nobody paid that).
     if ctx.noResale then
-        return best, best and nil or (reason == "no_gap" and "not_selling" or reason)
+        if best then
+            return best
+        end
+        return nil, reason == "no_gap" and "not_selling" or reason
     end
 
     -- Resale: try every prefix of the cheapest listings. Each prefix has its own exit price and
@@ -1166,5 +1250,8 @@ function M.evaluate(rows, ctx)
     if flip and (not best or flip.profit > best.profit) then
         best = flip
     end
-    return best, best and nil or reason
+    if best then
+        return best
+    end
+    return nil, reason
 end

@@ -54,8 +54,8 @@ namespace, here written as `F`.
 ## Runtime flow
 
 ```
-ADDON_LOADED ──► Data.open(ForeverFlipData) (UI.noSavedData when nothing was read)
-             ─► Engine.hookReplicate ─► Locale.apply ─► Engine.applyCut ─► UI.tooltips
+ADDON_LOADED ──► Data.open(ForeverFlipData) ─► Locale.apply (UI.noSavedData when nothing was read)
+             ─► Engine.hookReplicate ─► Engine.applyCut ─► UI.tooltips
              ─► Mail.hook ─► Share.register ─► Raw.importCommunity (ForeverFlip_Shared) ─► Bids.prune
 PLAYER_ENTERING_WORLD ──► Share.join (realm channel, 8 seconds later)
 AUCTION_HOUSE_SHOW ──► Engine.detectHouse ─► Engine.applyCut ─► Scan.restore(scope) ─► UI.attach
@@ -67,10 +67,10 @@ OnUpdate (every frame, Engine.update)
   Scan.step          read (and capture raw lines) / recover / evaluate a portion of the scan
   Trade.stepChecks   own-auction price checks
   Deals.step         search timeouts, queued requests, automatic checks, sniper candidates
-  Sniper.step        other addons' browse rows (300 per frame), browse rounds and key batches
+  Sniper.step        other addons' browse rows (3 ms per frame), browse rounds and key batches
   Trade.step         purchase timeouts
   Mail.step          paced mail looting
-  Share.step         delayed realm-channel answers, one shared-scan message every 0.3 seconds
+  Share.step         delayed realm-channel answers, one shared-scan message a second, the scan text built in slices
   UI.highlightBrowse marks in the game's Buy tab, twice a second
   UI.refresh         at most 4 times a second, only when something changed
 
@@ -150,8 +150,10 @@ flight or queued and no candidate is waiting.
    tested exhaustively.
 3. **Nothing heavy in a single frame.** Scans are read and evaluated under a per-frame time budget
    (`debugprofilestop`); deal pages prepare lazily.
-4. **No automatic trading.** Every protected action (buy, post, cancel, use a container item, take
-   mail) is called from a click handler.
+4. **No automatic trading.** Every hardware-protected action (buy, quote and confirm, bid, post,
+   cancel) is sent only inside a click handler or a key binding. Selling to a merchant and taking
+   auction mail are not hardware-protected: a click starts them as paced jobs, `Trade.stepVendor`
+   and `Mail.step` continue them from OnUpdate, and they stop when the merchant or mailbox closes.
 5. **Fail soft.** Every event and frame handler runs under `xpcall`. API calls that may be missing
    on WoW Forever are guarded (`C_Item.GetItemInfo` vs `GetItemInfo`,
    `C_MerchantFrame.GetItemInfo` vs `GetMerchantItemInfo`, `SendSellSearchQuery`).
@@ -166,13 +168,14 @@ flight or queued and no candidate is waiting.
    | Invoices | 200 |
    | Scan history | pruned after 14 days without the item |
    | Daily records | 14 days |
-   | Lots per item | 300 |
+   | Purchase lots | 300 per character; open lots are never dropped |
    | Waiting pool | 6000 items |
    | Cheapest rows per item | 40 |
    | Bid candidates | 100 |
    | Gold records | 60 days |
    | Bids | 2 days |
    | Raw full scans | 8; uploaded older scans removed |
+   | Item-key versions | 14 days without the item |
 
 Full-scan working groups expire after five minutes; the lightweight listed-unit snapshot remains
 available for its twenty-minute no-seller check. Market analytics refreshes its cache each minute.

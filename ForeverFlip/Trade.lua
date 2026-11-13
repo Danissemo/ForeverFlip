@@ -16,7 +16,12 @@ end
 
 local function displayName(key, link)
     local item = U.parseKey(key)
-    return U.linkName(link) or (item and U.itemInfo(item.id)) or key
+    -- The client hands out links named "[]" while an item is not loaded: the item's own name then.
+    local name = U.linkName(link)
+    if name == "" then
+        name = nil
+    end
+    return name or (item and U.itemInfo(item.id)) or key
 end
 
 function T.busy()
@@ -45,7 +50,6 @@ end
 local function lotReady(deal)
     return deal.kind == "commodity" or F.AH.searchedLast(deal.id)
 end
-T.lotReady = lotReady
 
 -- Selection and mouse movement may prepare read-only data; buying still needs a click.
 function T.prepareBuy(key)
@@ -152,6 +156,9 @@ function T.buy(key)
         end
     end
     T.op = op
+    -- Money leaving the wallet from now on may be this purchase: an earlier one reported as not gone
+    -- through is no longer watched for (T.onMoney).
+    T.late = nil
     F.Engine.changed()
     return true
 end
@@ -182,6 +189,7 @@ function T.onQuoteFailed()
     end
 end
 
+-- Returns true, or false and the message it showed (a caller passing on its own would replace it).
 function T.confirm()
     local op = T.op
     if not op or op.state ~= "quoted" then
@@ -193,18 +201,18 @@ function T.confirm()
     if clock() - op.at > 25 or (left and left < 2) then
         pcall(F.AH.cancelQuote)
         op.state, op.at = "quote", clock()
+        local why = "requote"
         if not pcall(F.AH.quote, op.id, op.qty) then
             T.op = nil
-            F.Engine.notify("quote_expired")
-        else
-            F.Engine.notify("requote")
+            why = "quote_expired"
         end
+        F.Engine.notify(why)
         F.Engine.changed()
-        return false
+        return false, why
     end
     if not pcall(F.AH.confirm, op.id, op.qty) then
         F.Engine.notify("error")
-        return false
+        return false, "error"
     end
     op.state, op.at = "awaiting", clock()
     F.Engine.changed()
@@ -328,6 +336,11 @@ function T.runStep()
     -- Wallet changes, a completed purchase and live checks can all change the best next click.
     local d = T.runTargets(true)[1]
     if not d then
+        -- The other auctions of a bucket just bought are read again (Deals.afterPurchase): they have
+        -- no auction ID to buy until that check is back, so the run waits for it.
+        if run.key and F.Deals.pending(run.key) then
+            return
+        end
         T.run = nil
         F.Engine.notify(run.bought > 0 and "run_done" or "no_deal")
         F.Engine.changed()
@@ -364,13 +377,25 @@ function T.runStep()
     F.Deals.verify(d.key)
 end
 
--- One click of the run: confirms a quoted purchase, or buys the deal the run has ready.
+-- The quote of the deal the run is buying (a quote of another deal is not the run's to confirm).
+local function runQuote()
+    local op = T.op
+    return op ~= nil and T.run ~= nil and op.key == T.run.key and op.state == "quoted"
+end
+
+-- One click of the run: confirms the run's quoted purchase, or buys the deal the run has ready.
 function T.runClick()
     if T.run then
         T.run.clicked = clock()
     end
-    if T.op and T.op.state == "quoted" then
-        return T.confirm(), "confirm"
+    if runQuote() then
+        local ok, why = T.confirm()
+        return ok, why or "confirm"
+    end
+    -- A quote of another deal (Buy on another page or deal): this button never confirms it.
+    local op = T.op
+    if op and not (T.run and op.key == T.run.key) and (op.state == "quote" or op.state == "quoted") then
+        T.cancel()
     end
     if not T.run then
         if not T.runStart() then
@@ -404,7 +429,7 @@ end
 
 -- The run's state for its button: "confirm", "ready", "checking", "busy" or nil (no run).
 function T.runState()
-    if T.op and T.op.state == "quoted" then
+    if runQuote() then
         return "confirm"
     end
     if not T.run then
@@ -423,13 +448,16 @@ function T.overLimit(cost)
     return limit > 0 and (F.Engine.spent or 0) + (cost or 0) > limit * 10000
 end
 
+-- An auction house mail stays in the mailbox up to 30 days: what waits for one is kept that long.
+T.MAIL_DAYS = 31
+
 -- Purchases ForeverFlip booked whose buyer invoice is still to come by mail (T.onBuyerInvoice
--- must not book them again): name (lower case) -> { n = units, at = time }.
+-- must not book them again): name (lower case) -> { n = units, at = time of the last purchase }.
 local function awaitInvoice(c, name, qty)
     c.awaitMail = type(c.awaitMail) == "table" and c.awaitMail or {}
     local k = string.lower(name or "")
     local w = c.awaitMail[k]
-    if type(w) ~= "table" or clock() - (w.at or 0) > 3 * 86400 then
+    if type(w) ~= "table" or clock() - (w.at or 0) > T.MAIL_DAYS * 86400 then
         w = { n = 0 }
     end
     w.n, w.at = w.n + qty, clock()
@@ -440,7 +468,32 @@ function T.awaitBuyerInvoice(name, qty)
     awaitInvoice(char(), name, qty)
 end
 
-local function bought(op)
+-- The units of a buyer invoice that belong to purchases awaiting it; returns the units left.
+local function takeAwaited(c, name, count)
+    local w = type(c.awaitMail) == "table" and c.awaitMail[string.lower(name or "")]
+    if type(w) == "table" and (w.n or 0) > 0 and clock() - (w.at or 0) <= T.MAIL_DAYS * 86400 then
+        local n = math.min(count, w.n)
+        w.n, count = w.n - n, count - n
+    end
+    return count
+end
+
+-- Purchases booked from their money or event in the last T.OWN_LINE seconds: { name (lower case),
+-- qty, at }. Their own "You won an auction" line can still come after that, and it must neither
+-- close an open bid on the same item nor confirm the next purchase of it (T.onChat).
+T.OWN_LINE = 10
+local ownLines = {}
+
+local function forgetOwnLines()
+    for i = #ownLines, 1, -1 do
+        if clock() - ownLines[i].at > T.OWN_LINE then
+            table.remove(ownLines, i)
+        end
+    end
+end
+
+-- `line`: booked from its own chat line, so no line of it is still to come.
+local function bought(op, line)
     F.Engine.spent = (F.Engine.spent or 0) + (op.cost or 0)
     local c = char()
     local name = displayName(op.key, op.link)
@@ -450,7 +503,14 @@ local function bought(op)
         c,
         { at = clock(), kind = "buy", key = op.key, name = name, qty = op.qty, amount = op.cost, mode = op.mode }
     )
-    T.op = nil
+    if not line then
+        forgetOwnLines()
+        ownLines[#ownLines + 1] = { name = string.lower(name), qty = op.qty, at = clock() }
+    end
+    -- A purchase booked late (T.late) must not end another one under way.
+    if T.op == op then
+        T.op = nil
+    end
     F.Engine.notify("bought")
     F.Shopping.bought(op.key, op.qty)
     -- Gear and items are bought one auction per click: the deal is worked out again from the lots
@@ -464,6 +524,19 @@ local function bought(op)
         F.Engine.notify("bought_more")
     end
     F.Engine.changed()
+end
+
+-- The won line of a purchase booked a moment ago (ownLines) is taken: true when it was one.
+local function ownLine(name, count)
+    local lower = string.lower(name)
+    forgetOwnLines()
+    for i, b in ipairs(ownLines) do
+        if b.name == lower and (not count or count == b.qty) then
+            table.remove(ownLines, i)
+            return true
+        end
+    end
+    return false
 end
 
 local function failed(op, why)
@@ -485,25 +558,44 @@ function T.onCommodityFailed()
     end
 end
 
+-- A bid placed or raised since `at` (Bids.place, Bids.answer): it took money from the wallet too.
+local function bidSince(at)
+    for _, b in pairs(char().bids or {}) do
+        if type(b) == "table" and (b.at or 0) >= at then
+            return true
+        end
+    end
+    return false
+end
+
 -- PLAYER_MONEY: the price of an awaited item purchase left the wallet. On WoW Forever the purchase
 -- event does not always come, and the chat line "You won an auction" is hidden from addons on newer
 -- clients, so the money is the sign that does not fail.
 function T.onMoney()
+    local wallet = F.Engine.wallet()
+    local late = T.late
+    -- What this change took from the wallet: T.late keeps the wallet as of the change before.
+    local step = late and (late.wallet or wallet) - wallet
+    if late then
+        late.wallet = wallet
+    end
     local op = T.op
     if op and op.kind ~= "commodity" and op.state == "awaiting" and op.money then
-        if F.Engine.wallet() <= op.money - (op.cost or 0) then
+        if wallet <= op.money - (op.cost or 0) then
             bought(op)
         end
         return
     end
-    local late = T.late
-    if late and clock() <= late.untilAt and F.Engine.wallet() <= late.op.money - (late.op.cost or 0) then
-        -- The purchase reported as not gone through was taken after all.
+    if late and (clock() > late.untilAt or bidSince(late.at)) then
+        -- Over, or a bid took money meanwhile: a change of the purchase's price may be the bid's.
+        T.late = nil
+    elseif late and not op and step == late.op.cost then
+        -- The purchase reported as not gone through was taken after all: one change of exactly its
+        -- price, with no other purchase under way (a repair, a deposit or two smaller costs that
+        -- only add up to it are not the purchase).
         T.late = nil
         bought(late.op)
         F.Engine.notify("bought_late")
-    elseif late and clock() > late.untilAt then
-        T.late = nil
     end
 end
 
@@ -526,6 +618,20 @@ function T.onError()
     end
 end
 
+-- A purchase kept as unknown (no answer in 30 seconds, T.step) whose won line came after all is
+-- settled as bought: true when the line was one.
+local function settleUnknown(name, count)
+    local lower = string.lower(name)
+    for i, u in ipairs(char().unknown or {}) do
+        if string.lower(u.name or "") == lower and (not count or count == u.qty) then
+            T.settle(i, true)
+            F.Engine.notify("bought")
+            return true
+        end
+    end
+    return false
+end
+
 -- "You won an auction for X" (also printed when the purchase event never comes).
 function T.onChat(msg)
     if F.Util.secret(msg) or type(msg) ~= "string" then
@@ -541,18 +647,20 @@ function T.onChat(msg)
         end
     end
     local pattern = U.globalPattern(ERR_AUCTION_WON_S)
-    if pattern then
-        local name = msg:match(pattern)
+    local name = pattern and msg:match(pattern)
+    if name then
+        local count = tonumber(name:match("%(x(%d+)%)%s*$"))
+        name = name:gsub("%s*%(x%d+%)%s*$", "")
         local op = T.op
-        if name and not (op and op.state == "awaiting") then
-            F.Bids.won((name:gsub("%s*%(x%d+%)%s*$", "")))
+        if ownLine(name, count) then
+            return -- the line of a purchase already booked from its money or event
         end
-        if name and op and op.state == "awaiting" then
-            local count = tonumber(name:match("%(x(%d+)%)%s*$"))
-            name = name:gsub("%s*%(x%d+%)%s*$", "")
+        if op and op.state == "awaiting" then
             if string.lower(name) == string.lower(displayName(op.key, op.link)) and (not count or count == op.qty) then
-                bought(op)
+                bought(op, true)
             end
+        elseif not settleUnknown(name, count) then
+            F.Bids.won(name)
         end
     end
     local pattern = U.globalPattern(ERR_AUCTION_SOLD_S)
@@ -564,7 +672,7 @@ function T.onChat(msg)
 end
 
 -- A purchase without any answer for 30 seconds is kept as unknown; the player settles it in the
--- journal (the chat line "You won an auction" tells).
+-- journal (the chat line "You won an auction" tells), else its won line or its mail settles it.
 function T.step()
     T.recount()
     T.stepVendor()
@@ -574,7 +682,7 @@ function T.step()
         -- No money spent in 30 seconds: reported, and the deal is checked again. The server can
         -- still take it later (seen in game: the money left after the report), so the wallet is
         -- watched 3 more minutes and a late purchase is booked then (T.onMoney).
-        T.late = { op = op, untilAt = clock() + 180 }
+        T.late = { op = op, at = clock(), untilAt = clock() + 180, wallet = F.Engine.wallet() }
         failed(op, "buy_no_answer")
     elseif op and op.state == "awaiting" and clock() - op.at > 30 then
         local c = char()
@@ -609,18 +717,24 @@ function T.step()
     end
     T.posting = T.postingNow()
     T.stepChecks()
+    -- The own-auction list waits only for messages on the wire (a search, a sniper browse, a
+    -- purchase, a post's answer), not for queued searches: a paused Check all would hold it, and
+    -- a cancel would stay unconfirmed (T.onOwned) while its auction is offered again.
     if
         F.AH.isOpen()
         and clock() >= (T.ownedDue or 0)
         and not F.Deals.searching()
-        and not F.Deals.pending()
+        and not (F.Sniper.inFlight and F.Sniper.inFlight())
         and not F.Scan.blocking()
         and not T.busy()
+        and not T.postingNow()
         and not F.Deals.buyHolding()
         and F.AH.ready()
     then
         T.ownedDue = clock() + 60
-        pcall(F.AH.queryOwned)
+        if pcall(F.AH.queryOwned) then
+            T.ownedAsked = clock()
+        end
     end
     F.Bids.step()
 end
@@ -661,14 +775,26 @@ local function rememberPrice(k, rows)
     end
 end
 
+-- Checks tell the lots of the auction house they were made at: another house (a neutral one, the
+-- other faction's) has other sellers and prices. Called when the house changes.
+function T.forgetHouse()
+    for k in pairs(T.prices) do
+        T.prices[k] = nil
+    end
+    for k in pairs(T.noAnswer) do
+        T.noAnswer[k] = nil
+    end
+end
+
 -- A full scan read in the last 5 minutes stands for a price search of an item to post: its other
 -- sellers' lots are what the search would return (one search per item, gear by name and then
 -- version by version, took minutes in game). Not for an item the player has listed: the scan may
--- not tell those lots apart. Returns { rows, at, scan = true } or nil.
+-- not tell those lots apart. Returns { rows, at, scan = true } or nil. A scan restored from the saved
+-- data has no groups: a partial one an older version saved is never used here.
 T.SCAN_ROWS = 10
 function T.scanPrice(key)
     local last = F.Scan.last
-    if not last or type(last.groups) ~= "table" or last.partial or last.scope ~= F.Engine.scope() then
+    if not last or type(last.groups) ~= "table" or last.scope ~= F.Engine.scope() then
         return nil
     end
     if clock() - (last.at or 0) > 300 then
@@ -687,8 +813,15 @@ function T.scanPrice(key)
             end
         end
     end
+    -- A check of the item since the scan (Deals) holds its lots now, less the units bought since.
+    -- After a purchase without one, the scan still lists the lots just bought: a price below them
+    -- would undercut lots that are gone.
+    local checked = type(last.checkedGroups) == "table" and last.checkedGroups[key] or nil
+    if not checked and type(last.purchased) == "table" and last.purchased[key] then
+        return nil
+    end
     -- An item the scan did not see needs no price either: nobody sells it (T.noSellers).
-    local g = last.groups[key]
+    local g = checked or last.groups[key]
     if type(g) ~= "table" or type(g.rows) ~= "table" or #g.rows == 0 then
         return nil
     end
@@ -839,7 +972,7 @@ function T.suggest(item)
     local rule = T.rule(item.key) or {}
     local usual = usualOf(item.key)
     local normal = rule.normal or usual
-    local cap = rule.max or (normal and (s.maxPricePercent or 0) > 0 and normal * s.maxPricePercent) or nil
+    local cap = rule.max or (normal and s.maxPricePercent > 0 and normal * s.maxPricePercent) or nil
     local cheapest = check.rows[1] and check.rows[1].unit
     local price, why
     if cheapest and not (cap and cheapest > cap and normal) then
@@ -1079,6 +1212,7 @@ function T.post(item, qty, price, duration)
         return true, "confirm"
     end
     T.pendingPost = nil
+    T.late = nil -- its deposit leaves the wallet: no longer told from a late purchase (T.onMoney)
     -- Booked when the game reports the created auction (AUCTION_HOUSE_AUCTION_CREATED).
     T.lastPost = {
         key = item.key,
@@ -1090,6 +1224,7 @@ function T.post(item, qty, price, duration)
         open = qty,
         auctions = item.kind == "commodity" and 1 or qty,
         deposit = T.depositFor(item.key, qty, duration),
+        scope = F.Engine.scope(), -- the house whose own-auction list holds its auctions (T.onOwned)
     }
     T.ownedDue = clock() + 3
     F.Engine.changed()
@@ -1097,7 +1232,9 @@ function T.post(item, qty, price, duration)
     return true, "post_sent"
 end
 
--- AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED right after a post: the server threw it away.
+-- AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED right after a purchase, a post or a cancel: the server
+-- threw it away.
+local undoCancel
 function T.onDropped()
     local op = T.op
     if op and op.state == "awaiting" and clock() - op.at <= 3 then
@@ -1107,8 +1244,22 @@ function T.onDropped()
         F.Engine.changed()
         return
     end
-    local l = T.lastPost
-    if l and #l.ids == 0 and clock() - l.at <= 3 then
+    local l, x = T.lastPost, T.lastCancel
+    local post = l and #l.ids == 0 and clock() - l.at <= 3
+    -- A cancel, unless the own-auction list was asked for after it (that may be what was dropped).
+    local cancel = x and clock() - x.at <= 3 and not (T.ownedAsked and T.ownedAsked > x.at)
+    if cancel and not (post and l.at > x.at) then
+        T.lastCancel = nil
+        local c = char()
+        local rec = type(c.cancels) == "table" and c.cancels[x.id]
+        if rec and not rec.booked then
+            undoCancel(c, x.id)
+            F.Engine.notify("throttled")
+            F.Engine.changed()
+            return
+        end
+    end
+    if post then
         T.lastPost = nil
         F.Engine.notify("post_dropped")
         F.Engine.changed()
@@ -1143,12 +1294,76 @@ function T.onAuctionCreated(auctionID)
             deposit = l.deposit,
         })
         F.Engine.notify("posted")
+        -- Posted again: the advice to sell it to a merchant (T.fight "vendor") was not taken.
+        if type(F.db.toVendor) == "table" then
+            F.db.toVendor[l.key] = nil
+        end
     end
     l.ids[#l.ids + 1] = auctionID
     if #l.ids >= l.auctions then
         T.lastPost = nil
     end
     F.Engine.changed()
+end
+
+-- Cancels -------------------------------------------------------------------------------------------
+-- Cancelling loses the deposit (and maybe more: GetCancelCost); the item comes back by mail. The loss
+-- is booked once the cancel is seen done: the next own-auction list asked for after it no longer
+-- shows the auction (T.onOwned), or its "Auction cancelled" mail comes (T.onFailedPost). A cancel the
+-- server throws away or refuses (the auction sold meanwhile) costs nothing, and the auction can be
+-- cancelled again. c.cancels[auctionID] = { at, scope, key, name, qty, lost (deposit and fee),
+-- estimated, listed (units taken off its listing, l.open -> l.cancelled), back (units no listing
+-- waits for, matched to their mail by name), booked (time) }.
+T.cancelled = {} -- auctionID -> time: cancels sent this session and not seen refused
+
+local function cancelsOf(c)
+    c.cancels = type(c.cancels) == "table" and c.cancels or {}
+    return c.cancels
+end
+
+-- A cancel of the auction was sent and not seen refused: it is neither offered nor sent again.
+local function cancelSent(id)
+    local list = char().cancels
+    return T.cancelled[id] ~= nil or (type(list) == "table" and list[id] ~= nil)
+end
+
+-- The cancel did not go through: its units are on sale again, and nothing is booked.
+function undoCancel(c, id)
+    local rec = cancelsOf(c)[id]
+    for _, l in ipairs(rec and c.listings or {}) do
+        for _, lid in ipairs(l.ids or {}) do
+            if lid == id and (rec.listed or 0) > 0 then
+                local n = math.min(rec.listed, l.cancelled or 0)
+                l.open, l.cancelled, rec.listed = (l.open or 0) + n, (l.cancelled or 0) - n, rec.listed - n
+            end
+        end
+    end
+    c.cancels[id], T.cancelled[id] = nil, nil
+end
+
+-- The cancel went through: its deposit and fee join the stock's real cost, once. The record stays
+-- while its mail is still to come.
+local function bookCancel(c, id)
+    local rec = cancelsOf(c)[id]
+    if rec and not rec.booked then
+        rec.booked = clock()
+        if rec.key then
+            F.Data.addCost(c, rec.key, rec.lost or 0, rec.at, rec.qty)
+            -- Logged, so a recount of the journal (F.Data.recount) keeps it.
+            F.Data.log(c, {
+                at = rec.at,
+                kind = "cancel",
+                key = rec.key,
+                name = rec.name,
+                qty = rec.qty,
+                amount = rec.lost or 0,
+                estimated = rec.estimated,
+            })
+        end
+    end
+    if rec and rec.booked and (rec.listed or 0) + (rec.back or 0) <= 0 then
+        c.cancels[id] = nil
+    end
 end
 
 -- Own auctions refreshed: auctions marked sold are booked once, with their real quantity and price.
@@ -1172,6 +1387,45 @@ function T.onOwned()
     local c = char()
     c.booked = c.booked or {}
     local changed = false
+    -- A post confirmed late, after the next one was sent, gave its auction ID to that post's listing
+    -- (T.onAuctionCreated): the list tells each auction's item. An ID of another item leaves the
+    -- listing, and a listing of this house short of IDs takes an auction of its item no listing names.
+    local byId, named, scope = {}, {}, F.Engine.scope()
+    for _, a in ipairs(owned) do
+        byId[a.auctionID] = a
+    end
+    for _, l in ipairs(c.listings) do
+        local item = (l.scope == nil or l.scope == scope) and U.parseKey(l.key)
+        for i = #(l.ids or {}), 1, -1 do
+            local a = byId[l.ids[i]]
+            if a and item and a.id ~= item.id then
+                table.remove(l.ids, i)
+            else
+                named[l.ids[i]] = true
+            end
+        end
+    end
+    for _, a in ipairs(owned) do
+        for _, l in ipairs(c.listings) do
+            -- Its own late IDs come within 30 seconds of the post (T.onAuctionCreated).
+            local short = l.scope == scope and #l.ids < (l.auctions or 1) and clock() - (l.at or 0) > 30
+            if short and a.key and not named[a.auctionID] and l.key == a.key and (l.open or 0) > 0 then
+                l.ids[#l.ids + 1], named[a.auctionID] = a.auctionID, true
+            end
+        end
+    end
+    -- Cancels sent before this list was asked for: an auction still listed, or sold meanwhile, was
+    -- not cancelled (the server threw the cancel away or refused it); the others were. Settled
+    -- before the sales, so a sale the cancel came too late for is booked here.
+    for id, rec in pairs(type(c.cancels) == "table" and c.cancels or {}) do
+        if not rec.booked and T.ownedAsked and rec.at < T.ownedAsked and rec.scope == scope then
+            if byId[id] then
+                undoCancel(c, id)
+            else
+                bookCancel(c, id)
+            end
+        end
+    end
     for _, a in ipairs(owned) do
         if a.sold and not c.booked[a.auctionID] then
             for _, l in ipairs(c.listings) do
@@ -1201,16 +1455,30 @@ function T.onOwned()
             end
         end
     end
-    -- Forget finished listings and old booking marks.
+    -- Forget finished listings and old booking marks. An auction lasts a day at most: after 3 days
+    -- its units are no longer on sale. Its mail stays up to 30 days, so a listing whose sale's
+    -- invoice or cancel's mail is still to come is kept until then: the mail is matched, not booked
+    -- again.
     for i = #c.listings, 1, -1 do
         local l = c.listings[i]
-        if clock() - l.at > 3 * 86400 then
-            table.remove(c.listings, i)
+        local age = clock() - (l.at or clock())
+        if age > 3 * 86400 then
+            l.open = 0
+            if age > T.MAIL_DAYS * 86400 or ((l.awaiting or 0) <= 0 and (l.cancelled or 0) <= 0) then
+                table.remove(c.listings, i)
+            end
         end
     end
     for id, at in pairs(c.booked) do
         if clock() - at > 7 * 86400 then
             c.booked[id] = nil
+        end
+    end
+    -- A cancel whose mail never came: taken as done (no list showed it refused).
+    for id, rec in pairs(type(c.cancels) == "table" and c.cancels or {}) do
+        if clock() - (rec.at or 0) > T.MAIL_DAYS * 86400 then
+            bookCancel(c, id)
+            c.cancels[id] = nil
         end
     end
     if changed then
@@ -1365,11 +1633,19 @@ end
 -- addon) is booked as stock bought elsewhere ("other": counted, never posted automatically).
 function T.onBuyerInvoice(inv, link)
     local c = char()
-    local count = math.max(1, inv.count or 1)
-    local w = type(c.awaitMail) == "table" and c.awaitMail[string.lower(inv.item)]
-    if type(w) == "table" and (w.n or 0) > 0 and clock() - (w.at or 0) <= 3 * 86400 then
-        local n = math.min(count, w.n)
-        w.n, count = w.n - n, count - n
+    local count = takeAwaited(c, inv.item, math.max(1, inv.count or 1))
+    -- A purchase kept as unknown (no answer in 30 seconds) went through after all: this is its
+    -- mail. It is booked as ForeverFlip's purchase, at its own cost, mode and exit, and is no
+    -- longer listed to settle (else "It was bought" would book it a second time).
+    local lower, i = string.lower(inv.item), 1
+    while count > 0 and type(c.unknown) == "table" and c.unknown[i] do
+        if string.lower(c.unknown[i].name or "") == lower then
+            T.settle(i, true)
+            F.Engine.notify("bought")
+            count = takeAwaited(c, inv.item, count)
+        else
+            i = i + 1
+        end
     end
     if count <= 0 then
         F.Engine.changed()
@@ -1385,7 +1661,17 @@ function T.onBuyerInvoice(inv, link)
     end
     local amount = math.floor(inv.bid * count / math.max(1, inv.count or 1) + 0.5)
     F.Data.addPosition(c, key, inv.item, count, amount, "other", nil, clock(), nil, "buyer_invoice")
-    F.Data.log(c, { at = clock(), kind = "buy", key = key, name = inv.item, qty = count, amount = amount })
+    -- The mode is logged too: a recount of the journal takes it from here.
+    F.Data.log(c, {
+        at = clock(),
+        kind = "buy",
+        key = key,
+        name = inv.item,
+        qty = count,
+        amount = amount,
+        mode = "other",
+        source = "buyer_invoice",
+    })
     F.Engine.notify("bought_elsewhere")
     F.Engine.changed()
 end
@@ -1393,6 +1679,11 @@ end
 -- Something was sold to a merchant without ForeverFlip's button (seen in the buyback list): stock
 -- of it is booked as a vendor sale. `each` is what the merchant paid for one.
 function T.onVendorSale(key, qty, each)
+    -- Sold by hand: a mark of the anti-undercut (T.fight "vendor") is done with, also for an item
+    -- without stock (else the next stock of it, bought for resale, would go to the merchant).
+    if type(F.db.toVendor) == "table" then
+        F.db.toVendor[key] = nil
+    end
     local c = char()
     local p = c.positions[key]
     if not p or p.qty <= 0 then
@@ -1423,6 +1714,42 @@ function T.onFailedPost(name, count)
     r.failed = r.failed + count
     local c = char()
     local lower, left = string.lower(name or ""), count
+    -- Cancels ForeverFlip sent (T.cancelAuction), oldest first: their units were taken off already,
+    -- also those no listing waited for, and their deposit is booked by the cancel. The mail shows
+    -- that a cancel not seen done yet went through.
+    local mine = {}
+    for id, rec in pairs(type(c.cancels) == "table" and c.cancels or {}) do
+        if string.lower(rec.name or "") == lower then
+            mine[#mine + 1] = id
+        end
+    end
+    table.sort(mine, function(x, y)
+        local a, b = c.cancels[x].at or 0, c.cancels[y].at or 0
+        if a ~= b then
+            return a < b
+        end
+        return x < y
+    end)
+    for _, id in ipairs(mine) do
+        local rec = c.cancels[id]
+        local due = (rec.listed or 0) + (rec.back or 0)
+        if left > 0 and due > 0 then
+            local n = math.min(left, due)
+            local listed = math.min(n, rec.listed or 0)
+            rec.listed, rec.back, left = (rec.listed or 0) - listed, (rec.back or 0) - (n - listed), left - n
+            -- Those units' mark on the listing goes with them.
+            for _, l in ipairs(c.listings) do
+                for _, lid in ipairs(l.ids or {}) do
+                    if lid == id and listed > 0 and (l.cancelled or 0) > 0 then
+                        local k = math.min(listed, l.cancelled)
+                        l.cancelled, listed = l.cancelled - k, listed - k
+                    end
+                end
+            end
+            bookCancel(c, id)
+        end
+    end
+    -- Cancels marked on a listing only (sent before the cancels were kept).
     for _, l in ipairs(c.listings) do
         if left > 0 and string.lower(l.name or "") == lower and (l.cancelled or 0) > 0 then
             local n = math.min(left, l.cancelled)
@@ -1430,8 +1757,8 @@ function T.onFailedPost(name, count)
         end
     end
     local cancelled = count - left
-    -- An expired post loses its deposit: it joins the stock's real cost (a cancel was booked when
-    -- it was made). A post not made by ForeverFlip: its deposit estimated for a 24-hour post.
+    -- An expired post loses its deposit: it joins the stock's real cost (a cancel's is booked by the
+    -- cancel). A post not made by ForeverFlip: its deposit estimated for a 24-hour post.
     local lost, key, estimated = 0, nil, false
     for _, l in ipairs(c.listings) do
         if left > 0 and string.lower(l.name or "") == lower and (l.open or 0) > 0 then
@@ -1476,9 +1803,10 @@ end
 
 -- Recount of the journal (F.Data.recount), once per character: the returns booked as purchases are
 -- found, and the deposits of posts that came back without one are estimated for the duration set
--- in the settings. It waits for the items' merchant prices, at most T.RECOUNT_TRIES calls.
-T.RECOUNT, T.RECOUNT_TRIES = 1, 20
-local recountTries = 0
+-- in the settings. It waits for the items' merchant prices up to T.RECOUNT_WAIT seconds from its
+-- first try (it runs every frame: a count of tries was over long before the item data came back).
+T.RECOUNT, T.RECOUNT_WAIT = 1, 20
+local recountFrom
 function T.recount()
     local c = F.db and char()
     if not c or c.recount == T.RECOUNT or type(c.journal) ~= "table" then
@@ -1491,8 +1819,8 @@ function T.recount()
         end
         c.returnsMarked = true
     end
-    recountTries = recountTries + 1
-    local settle = recountTries >= T.RECOUNT_TRIES
+    recountFrom = recountFrom or clock()
+    local settle = clock() - recountFrom >= T.RECOUNT_WAIT
     local d = tonumber(F.db.settings.duration)
     d = d and d >= 1 and d <= 3 and d or 2
     local done = F.Data.recount(c, function(key, qty)
@@ -1500,7 +1828,8 @@ function T.recount()
         if not item then
             return 0
         end
-        if not settle and not F.AH.clientVendorPrice(item.id) then
+        -- A merchant price of 0 is known too: the vendor does not buy the item.
+        if not settle and not F.AH.clientVendorPrice(item.id) and not F.AH.vendorKnown(item.id) then
             return nil
         end
         return T.depositFor(key, qty, d) or 0
@@ -1511,21 +1840,31 @@ function T.recount()
     end
 end
 
--- Bought for resale, still in the bags and not yet listed: oldest purchase first.
+-- Bought for resale, still in the bags and not yet listed: oldest purchase first. `unposted` is
+-- what is left to post of each: the units bought, less those on sale already, at most the units in
+-- the bags beyond the keep rule (other units of the item can share its stacks).
 function T.toPost()
     local c = char()
-    local listed = {}
+    local listed, bags = {}, {}
     for _, l in ipairs(c.listings) do
         listed[l.key] = (listed[l.key] or 0) + l.open
     end
+    local items = F.AH.bagItems()
+    for _, b in ipairs(items) do
+        bags[b.key] = (bags[b.key] or 0) + b.count
+    end
     local out, seen = {}, {}
-    for _, b in ipairs(F.AH.bagItems()) do
+    for _, b in ipairs(items) do
         local p = c.positions[b.key]
         local own = p and (p.mode == "vendor" or p.mode == "shop" or p.mode == "disenchant" or p.mode == "other")
-        if p and not own and not T.hidden(b.key) and p.qty > (listed[b.key] or 0) and not seen[b.key] then
+        if p and not own and not T.hidden(b.key) and not seen[b.key] then
             seen[b.key] = true
-            b.position = p
-            out[#out + 1] = b
+            local rule = T.rule(b.key)
+            local unposted = math.min(p.qty - (listed[b.key] or 0), bags[b.key] - (rule and rule.keep or 0))
+            if unposted >= 1 then
+                b.position, b.unposted = p, unposted
+                out[#out + 1] = b
+            end
         end
     end
     table.sort(out, function(a, b)
@@ -1568,8 +1907,6 @@ end
 
 -- One click posts the first item of the queue whose price is known; items whose search is still on
 -- the way are passed over until their answer comes.
-T.readAhead = readAhead
-
 local function postFirst(list, quantity)
     local waiting = false
     for _, item in ipairs(list) do
@@ -1615,7 +1952,7 @@ end
 
 function T.postNext()
     return postFirst(T.toPost(), function(item)
-        return math.min(F.AH.postCount(item), item.position.qty)
+        return math.min(F.AH.postCount(item), item.unposted)
     end)
 end
 
@@ -1671,9 +2008,10 @@ function T.bestWay(key, id)
     return q.best, q.value, q
 end
 
--- Every sellable bag item, not only purchases: vendor-deal stock and blocked items are left out,
--- and each item's "keep" rule stays in the bags. With `auctionOnly`, items a merchant pays at least
--- as much for (T.bestWay) are left out too: they are better sold to a vendor.
+-- Every sellable bag item, not only purchases: vendor-deal stock, stock bought from the shopping
+-- list or to disenchant (for the player's own use) and blocked items are left out, and each item's
+-- "keep" rule stays in the bags. With `auctionOnly`, items a merchant pays at least as much for
+-- (T.bestWay) are left out too: they are better sold to a vendor.
 function T.toPostAll(auctionOnly)
     local positions = char().positions
     local out, seen = {}, {}
@@ -1684,7 +2022,7 @@ function T.toPostAll(auctionOnly)
         if
             not seen[b.key]
             and not T.hidden(b.key)
-            and not (p and p.mode == "vendor")
+            and not (p and (p.mode == "vendor" or p.mode == "shop" or p.mode == "disenchant"))
             and not blocked
             and not (rule and rule.keep and rule.keep >= T.bagCount(b.key))
             and not (auctionOnly and T.bestWay(b.key, b.id) == "vendor")
@@ -1718,10 +2056,9 @@ end
 function T.undercutList()
     local out = {}
     for _, a in ipairs(T.owned or {}) do
-        local just = T.cancelled[a.auctionID] and clock() - T.cancelled[a.auctionID] < 30
         local status, cheapest = T.ownedStatus(a)
-        if just then
-            status = nil
+        if cancelSent(a.auctionID) then
+            status = nil -- cancelled, until a list shows the cancel refused
         end
         local item = status == "undercut" and U.parseKey(a.key)
         if item then
@@ -1758,33 +2095,21 @@ function T.checksRemaining()
     return count
 end
 
--- Own units on sale of an item.
-local ownedSource, ownedCounts
-local function ownedUnits(key)
-    if ownedSource ~= T.owned then
-        ownedSource, ownedCounts = T.owned, {}
-        for _, a in ipairs(T.owned or {}) do
-            local itemKey = a.key
-            if itemKey and not a.sold then
-                ownedCounts[itemKey] = (ownedCounts[itemKey] or 0) + (a.qty or 1)
-            end
-        end
-    end
-    return ownedCounts and ownedCounts[key] or 0
-end
-
--- True when a recent full scan saw no more units of the item than the player has listed: nobody
--- else sells it. WoW Forever does not answer a search for an item without lots of other players.
--- `maxAge` (optional): how old the full scan may be (20 minutes by default).
+-- True when a recent full scan saw no more units of the item than the player had listed then:
+-- nobody else sells it. WoW Forever does not answer a search for an item without lots of other
+-- players. `maxAge` (optional): how old the full scan may be (20 minutes by default).
 function T.alone(key, maxAge)
     local units = F.Scan.listedUnits(key, maxAge)
     if units == nil then
         return false
     end
-    if F.Scan.last.ownersKnown then
+    local last = F.Scan.last
+    if last.ownersKnown then
         return units == 0 -- own lots are not in the count: any unit is another seller's
     end
-    return units <= ownedUnits(key)
+    -- The count holds the player's own lots of the scan's moment (Scan: ownUnits), not those posted
+    -- since: compared with the lots listed now, other sellers' units would pass for the player's.
+    return units <= (type(last.ownUnits) == "table" and last.ownUnits[key] or 0)
 end
 
 function T.checkOwned()
@@ -1857,13 +2182,14 @@ function T.ownedStatus(a)
     return "cheapest", cheapest
 end
 
--- Cancelling loses the deposit (and maybe more: GetCancelCost); the item comes back by mail.
-T.cancelled = {}
+-- Cancelling loses the deposit (and maybe more: GetCancelCost); the item comes back by mail. The
+-- loss is booked once the cancel is seen done (see Cancels above).
 function T.cancelAuction(a)
     if not a or a.sold or not F.AH.isOpen() then
         return false
     end
-    if T.cancelled[a.auctionID] and clock() - T.cancelled[a.auctionID] < 30 then
+    -- Once per auction: lists asked for before the cancel still show it (T.onOwned settles it).
+    if cancelSent(a.auctionID) then
         return false
     end
     if not T.wayFree() then
@@ -1875,38 +2201,36 @@ function T.cancelAuction(a)
         return false
     end
     local c = char()
+    local qty = a.qty or 1
+    local rec = { at = clock(), scope = F.Engine.scope(), key = a.key, name = a.name, qty = qty, listed = 0 }
     local lost
     for _, l in ipairs(c.listings) do
         for _, id in ipairs(l.ids) do
             if id == a.auctionID then
-                local n = math.min(l.open, a.qty or 1)
+                local n = math.min(l.open, qty - rec.listed)
                 l.open = l.open - n
                 -- The "Auction cancelled" mail comes later: it must not take units off again.
                 l.cancelled = (l.cancelled or 0) + n
+                rec.listed, rec.name = rec.listed + n, rec.name or l.name
                 if l.deposit and (l.qty or 0) > 0 then
-                    lost = math.floor(l.deposit * (a.qty or 1) / l.qty + 0.5)
+                    lost = math.floor(l.deposit * qty / l.qty + 0.5)
                 end
             end
         end
     end
+    -- Units no listing waits for (a post made elsewhere, or units another mail of the item already
+    -- took off): their mail is matched by name, so it books no deposit again.
+    rec.back = qty - rec.listed
+    rec.name = rec.name or (a.key and displayName(a.key, a.link))
     -- A cancel loses the post's deposit and the game's fee: both join the stock's real cost.
     -- A post not made by ForeverFlip: its deposit estimated for an 8-hour post.
     if a.key then
-        local estimated = lost == nil
-        lost = lost or T.depositFor(a.key, a.qty or 1, 2) or 0
-        F.Data.addCost(c, a.key, lost + fee, clock(), a.qty)
-        -- Logged, so a recount of the journal (F.Data.recount) keeps it.
-        F.Data.log(c, {
-            at = clock(),
-            kind = "cancel",
-            key = a.key,
-            name = a.name or displayName(a.key),
-            qty = a.qty or 1,
-            amount = lost + fee,
-            estimated = estimated,
-        })
+        rec.estimated = lost == nil
+        rec.lost = (lost or T.depositFor(a.key, qty, 2) or 0) + fee
     end
+    cancelsOf(c)[a.auctionID] = rec
     T.cancelled[a.auctionID] = clock()
+    T.lastCancel = { id = a.auctionID, at = clock() }
     T.ownedDue = clock() + 2
     F.Engine.notify("cancelled")
     F.Engine.changed()
@@ -1948,7 +2272,6 @@ end
 T.WAR_ROUNDS = 3
 T.WAR_RATE = 1 / 4 -- an answer every 4 hours or sooner: a price war
 T.BUYOUT_UNITS = 50
-local HOURS = { 2, 8, 24 }
 
 local function fights()
     F.db.fights = type(F.db.fights) == "table" and F.db.fights or {}
@@ -1967,7 +2290,8 @@ function T.rounds(key)
     return n
 end
 
--- P(N >= k) for N ~ Poisson(m); a normal approximation for large numbers.
+-- The error function (Abramowitz and Stegun 7.1.26), for the normal approximation of the chances
+-- of many units (T.saleChances).
 local function erf(x)
     local sign = x < 0 and -1 or 1
     x = math.abs(x)
@@ -1977,25 +2301,6 @@ local function erf(x)
             * t
             * math.exp(-x * x)
     return sign * y
-end
-
-function T.atLeast(k, m)
-    if k <= 0 then
-        return 1
-    end
-    if not U.finite(m) or m <= 0 then
-        return 0
-    end
-    if k > 150 or m > 150 then
-        local z = (k - 0.5 - m) / math.sqrt(m)
-        return math.max(0, math.min(1, 1 - 0.5 * (1 + erf(z / math.sqrt(2)))))
-    end
-    local term, below = math.exp(-m), 0
-    for i = 0, k - 1 do
-        below = below + term
-        term = term * m / (i + 1)
-    end
-    return math.max(0, math.min(1, 1 - below))
 end
 
 -- Chances of the units sold in `t` hours when n units sold in h hours watched (T.saleChances):
@@ -2185,7 +2490,7 @@ function T.fightPlan(a)
     if floor and new < floor then
         add({ id = "undercut", blocked = "floor" })
     else
-        local hours = HOURS[T.durationFor(a.key, qty, new)] or 24
+        local hours = T.DURATION_HOURS[T.durationFor(a.key, qty, new)] or 24
         local newDeposit = depositFor(qty)
         if known then
             local d2 = M.demandAt(h, new)
@@ -2293,8 +2598,7 @@ local ORDER = { undercut = 1, raise = 2, buyout = 3, vendor = 4, wait = 5 }
 function T.fightPlans()
     local out = {}
     for _, a in ipairs(T.owned or {}) do
-        local just = T.cancelled[a.auctionID] and clock() - T.cancelled[a.auctionID] < 30
-        local plan = not just and T.fightPlan(a)
+        local plan = not cancelSent(a.auctionID) and T.fightPlan(a)
         if plan then
             out[#out + 1] = plan
         end
@@ -2323,10 +2627,12 @@ function T.fightOrderActive()
     return job
 end
 
-function T.fightCount()
+-- Auctions worth answering (Answer next). `plans`: T.fightPlans() when the caller has them already
+-- (each plan prices every option: building them twice per page refresh doubled its cost).
+function T.fightCount(plans)
     local job = T.fightOrderActive()
     local n = job and 1 or 0
-    for _, plan in ipairs(T.fightPlans()) do
+    for _, plan in ipairs(plans or T.fightPlans()) do
         local waited = T.waiting and T.waiting[plan.auction.auctionID] == plan.cheapest
         if
             plan.verdict ~= "wait"
@@ -2358,7 +2664,8 @@ function T.fightOrderClick()
         return false, "nothing_to_fight"
     end
     if T.op and T.op.key == job.key and T.op.state == "quoted" then
-        return T.confirm(), "confirm"
+        local ok, why = T.confirm()
+        return ok, why or "confirm"
     end
     if not T.fightOrderReady() then
         if not T.busy() and not F.Deals.pending(job.key) then
@@ -2512,8 +2819,11 @@ function T.itemStats()
         end
     end
     for _, s in ipairs(out) do
-        -- Stale: in stock for 3 days without a sale since it was bought.
-        s.stale = s.stock > 0 and (s.held or 0) > 3 and (not s.lastSale or now - s.lastSale > 3 * 86400)
+        -- Stale: in stock for 3 days without a sale since it was bought. Not stock bought from the
+        -- shopping list or to disenchant: it is for the player's own use, not for sale.
+        local p = c.positions[s.key]
+        local own = p and (p.mode == "shop" or p.mode == "disenchant")
+        s.stale = not own and s.stock > 0 and (s.held or 0) > 3 and (not s.lastSale or now - s.lastSale > 3 * 86400)
     end
     table.sort(out, function(a, b)
         if a.stale ~= b.stale then
@@ -2527,36 +2837,22 @@ function T.itemStats()
     return out
 end
 
--- Selling vendor deals at a merchant (one click sells every bag item bought as a vendor deal).
-function T.vendorItems()
-    local c = char()
-    local out = {}
-    if not C_Container then
-        return out
+-- An item the anti-undercut sent to a merchant (T.fight "vendor") joins Sell all for
+-- T.VENDOR_MARK_DAYS: time for the cancelled auction's units to come back by mail and reach a
+-- merchant. The mark ends sooner when the item leaves another way (sold by hand, posted again): a
+-- mark kept for good sold later stock of the item, bought for resale, at the merchant's price.
+T.VENDOR_MARK_DAYS = 3
+local function vendorMarked(key)
+    local marks = type(F.db.toVendor) == "table" and F.db.toVendor or nil
+    local at = marks and marks[key]
+    if not at then
+        return false
     end
-    for bag = 0, 4 do
-        for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
-            local info = C_Container.GetContainerItemInfo(bag, slot)
-            if info and info.itemID then
-                for key, p in pairs(c.positions) do
-                    local item = U.parseKey(key)
-                    -- Never at a loss: the merchant must pay at least what a unit cost on average.
-                    local vendor = item and F.AH.vendorPrice(item.id, true) or 0
-                    if
-                        p.mode == "vendor"
-                        and p.qty > 0
-                        and vendor * p.qty >= p.cost
-                        and item.id == info.itemID
-                        and (item.kind ~= "gear" or string.lower(U.linkName(info.hyperlink) or "") == item.name)
-                    then
-                        out[#out + 1] = { bag = bag, slot = slot, key = key, count = info.stackCount or 1 }
-                        break
-                    end
-                end
-            end
-        end
+    if U.finite(at) and clock() - at <= T.VENDOR_MARK_DAYS * 86400 then
+        return true
     end
-    return out
+    marks[key] = nil -- too old: the item is judged like any other again
+    return false
 end
 
 -- Everything to sell at a merchant, stack by stack: vendor-deal stock (never at a loss), and every
@@ -2567,22 +2863,42 @@ end
 -- dearest first.
 function T.vendorSellList()
     local c = char()
-    local out = {}
-    for _, b in ipairs(F.AH.merchantItems()) do
+    local items = F.AH.merchantItems()
+    -- Vendor-deal stock is the units bought: the smallest stacks of the item that hold them (bought
+    -- units merged into a stack of looted ones cannot be told apart). The item's other stacks are
+    -- judged like any bag item: else farmed units worth more at the auction house went too.
+    local smallest, stock, held = {}, {}, {}
+    for i, b in ipairs(items) do
+        smallest[i] = b
+    end
+    table.sort(smallest, function(a, b)
+        if a.count ~= b.count then
+            return a.count < b.count
+        end
+        if a.bag ~= b.bag then
+            return a.bag < b.bag
+        end
+        return a.slot < b.slot
+    end)
+    for _, b in ipairs(smallest) do
         local p = c.positions[b.key]
+        if p and p.qty > 0 and p.mode == "vendor" and (held[b.key] or 0) < p.qty then
+            held[b.key], stock[b] = (held[b.key] or 0) + b.count, true
+        end
+    end
+    local out = {}
+    for _, b in ipairs(items) do
         local rule = T.rule(b.key)
         local price = F.AH.vendorPrice(b.id, true)
-        local vendorStock = p and p.qty > 0 and p.mode == "vendor"
-        local eligible = vendorStock and price and price * p.qty >= p.cost
-            or not vendorStock and (T.bestWay(b.key, b.id) == "vendor" or (F.db.toVendor and F.db.toVendor[b.key]))
-        if
-            not T.hidden(b.key)
-            and not (rule and rule.keep)
-            and not b.locked
-            and (not b.bound or vendorStock)
-            and eligible
-        then
-            if price and price > 0 then
+        if price and price > 0 and not T.hidden(b.key) and not (rule and rule.keep) and not b.locked then
+            local p = c.positions[b.key]
+            local eligible
+            if stock[b] then
+                eligible = price * p.qty >= p.cost
+            else
+                eligible = not b.bound and (T.bestWay(b.key, b.id) == "vendor" or vendorMarked(b.key))
+            end
+            if eligible then
                 out[#out + 1] = {
                     bag = b.bag,
                     slot = b.slot,
@@ -2605,8 +2921,8 @@ function T.vendorSellList()
 end
 
 -- Equipment in the bags the class can never use (AH.unusableGear), to sell to a merchant: bound
--- pieces, and pieces the auction house would not pay more for. Hidden items and resale stock stay.
--- { bag, slot, key, id, count, price, link }, dearest first.
+-- pieces, and pieces the auction house would not pay more for. Hidden items, items with a "keep"
+-- rule and resale stock stay. { bag, slot, key, id, count, price, link }, dearest first.
 function T.unusableGearList()
     local c = char()
     local out = {}
@@ -2622,11 +2938,13 @@ function T.unusableGearList()
                 local p = key and c.positions[key]
                 local price = F.AH.vendorPrice(id, true)
                 local auction = not info.isBound and key and T.bestWay(key, id) == "auction"
+                local rule = key and T.rule(key)
                 if
                     price
                     and price > 0
                     and not auction
                     and not (key and T.hidden(key))
+                    and not (rule and rule.keep)
                     and not (p and p.qty > 0 and p.mode ~= "vendor")
                 then
                     local count = info.stackCount or 1
@@ -2649,27 +2967,13 @@ function T.unusableGearList()
     return out
 end
 
-function T.sellUnusableGear()
-    if not MerchantFrame or not MerchantFrame:IsShown() then
-        return 0, 0
-    end
-    local stacks, money = 0, 0
-    for _, v in ipairs(T.unusableGearList()) do
-        C_Container.UseContainerItem(v.bag, v.slot)
-        stacks, money = stacks + 1, money + v.price
-    end
-    if stacks > 0 then
-        F.Engine.changed()
-    end
-    return stacks, money
-end
-
--- Sells the whole list (T.vendorSellList) to the open merchant, in paced batches. Selling every
--- stack in one frame lost part of them: the server took 17 of 24 (seen in game), the rest stayed
--- in the bags and was booked as sold anyway. Now T.VENDOR_BATCH stacks go every T.VENDOR_GAP
--- seconds (T.stepVendor), a stack counts as sold only once it left its bag slot, and a stack
--- still there after T.VENDOR_WAIT seconds is sent again (up to 3 tries). Returns the stacks and
--- money of the whole list; the chat line with what really sold comes at the end.
+-- Sells a whole list (Sell all: T.vendorSellList; gear the class cannot use: T.unusableGearList)
+-- to the open merchant, in paced batches. Selling every stack in one frame lost part of them: the
+-- server took 17 of 24 (seen in game), the rest stayed in the bags and was booked as sold anyway.
+-- Now T.VENDOR_BATCH stacks go every T.VENDOR_GAP seconds (T.stepVendor), a stack counts as sold
+-- only once it left its bag slot, and a stack still there after T.VENDOR_WAIT seconds is sent
+-- again (up to 3 tries). Returns the stacks and money of the whole list; the chat line with what
+-- really sold comes at the end.
 T.VENDOR_BATCH = 6
 T.VENDOR_GAP = 0.3
 T.VENDOR_WAIT = 2
@@ -2683,25 +2987,28 @@ local function slotHolds(v)
     return info ~= nil and info.itemID == v.id and (info.stackCount or 1) == v.count
 end
 
--- A stack that left its slot: booked (stock as its sale, the buyback entry only matched).
+-- A stack that left its slot: booked (stock as its sale, the buyback entry only matched). A stack
+-- can hold more units than the stock (looted ones merged into it): only the stock's units are its
+-- sale, at the stack's price each, as with a sale by hand (T.onVendorSale).
 local function bookVendorSale(job, v)
     local c = char()
     job.sold, job.money = job.sold + 1, job.money + v.price
-    if F.db.toVendor then
+    if type(F.db.toVendor) == "table" then
         F.db.toVendor[v.key] = nil -- marked by the anti-undercut: sold now
     end
     local p = c.positions[v.key]
     if p and p.qty > 0 then
-        local name = p.name or v.key
-        local cost = F.Data.sale(c, v.key, name, v.count, v.price, clock())
+        local name, qty = p.name or v.key, math.min(v.count, p.qty)
+        local amount = math.floor(v.price * qty / v.count)
+        local cost = F.Data.sale(c, v.key, name, qty, amount, clock())
         F.Data.log(c, {
             at = clock(),
             kind = "vendor",
             key = v.key,
             name = name,
-            qty = v.count,
-            amount = v.price,
-            profit = v.price - cost,
+            qty = qty,
+            amount = amount,
+            profit = amount - cost,
         })
     end
 end
@@ -2709,10 +3016,9 @@ end
 local function finishVendorJob(job)
     T.vendorJob = nil
     if job.sold > 0 then
-        print(
-            "ForeverFlip: "
-                .. string.format(F.Locale.text("sold %d stacks to the vendor for %s"), job.sold, U.money(job.money))
-        )
+        local text = job.gear and "sold %d pieces of gear you cannot use for %s"
+            or "sold %d stacks to the vendor for %s"
+        print("ForeverFlip: " .. string.format(F.Locale.text(text), job.sold, U.money(job.money)))
     end
     if job.failed > 0 then
         print(
@@ -2739,8 +3045,11 @@ function T.stepVendor()
                 F.Merchant.cancelExpectedSale(v.id, v.count)
             end
         end
+        -- A stack queued to be sent again may have gone meanwhile: the answer to its try came late.
         for _, v in ipairs(job.queue) do
-            if v.expected then
+            if v.expected and not slotHolds(v) then
+                bookVendorSale(job, v)
+            elseif v.expected then
                 F.Merchant.cancelExpectedSale(v.id, v.count)
             end
         end
@@ -2780,6 +3089,10 @@ function T.stepVendor()
                 end
                 C_Container.UseContainerItem(v.bag, v.slot)
                 job.sent[#job.sent + 1] = v
+            elseif v.expected then
+                -- Queued again after a try, whose answer came late: it was sold after all (the
+                -- merchant watch counts it as this sale, Merchant.expectSale).
+                bookVendorSale(job, v)
             end
         end
     end
@@ -2788,11 +3101,12 @@ function T.stepVendor()
     end
 end
 
-function T.sellAllToVendor()
+-- `listOf` makes the list, only once the merchant is open and no other sale is under way.
+local function startVendorJob(listOf, gear)
     if not MerchantFrame or not MerchantFrame:IsShown() or T.vendorJob then
         return 0, 0
     end
-    local list = T.vendorSellList()
+    local list = listOf()
     if #list == 0 then
         return 0, 0
     end
@@ -2800,30 +3114,40 @@ function T.sellAllToVendor()
     for _, v in ipairs(list) do
         money = money + v.price
     end
-    T.vendorJob = { queue = list, sent = {}, sold = 0, money = 0, failed = 0 }
+    T.vendorJob = { queue = list, sent = {}, sold = 0, money = 0, failed = 0, gear = gear }
     T.stepVendor() -- the first batch goes with the click
     F.Engine.changed()
     return stacks, money
 end
 
--- True while a vendor sale is under way (the Sell all button waits).
+function T.sellAllToVendor()
+    return startVendorJob(T.vendorSellList, false)
+end
+
+-- Gear I can't use goes the same paced way: sold in one frame, it ran the loop that lost part of
+-- Sell all, and the chat said all of it sold.
+function T.sellUnusableGear()
+    return startVendorJob(T.unusableGearList, true)
+end
+
+-- True while a vendor sale is under way (Sell all and Gear I can't use wait).
 function T.sellingToVendor()
     return T.vendorJob ~= nil
 end
 
--- Summary for the journal.
+-- Summary for the journal: the last `days` days, today included. From the daily totals, as
+-- Analytics: the journal keeps its last 500 entries only, and posts alone fill it in a busy day.
 function T.summary(days)
     local c = char()
-    local since = clock() - (days or 7) * 86400
+    local today = math.floor(clock() / 86400)
     local s = { spent = 0, earned = 0, profit = 0, sales = 0, buys = 0 }
-    for _, e in ipairs(c.journal) do
-        if e.at >= since then
-            if e.kind == "buy" then
-                s.spent, s.buys = s.spent + e.amount, s.buys + 1
-            elseif e.kind == "sell" or e.kind == "vendor" then
-                s.earned, s.sales = s.earned + e.amount, s.sales + 1
-                s.profit = s.profit + (e.profit or 0)
-            end
+    local daily = F.Data.daily(c)
+    for day = today - (days or 7) + 1, today do
+        local d = daily[day]
+        if d then
+            s.spent, s.buys = s.spent + (d.spent or 0), s.buys + (d.buys or 0)
+            s.earned, s.sales = s.earned + (d.earned or 0), s.sales + (d.sales or 0)
+            s.profit = s.profit + (d.profit or 0)
         end
     end
     local held = 0

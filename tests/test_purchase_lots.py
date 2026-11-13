@@ -76,25 +76,36 @@ class PurchaseLotTests(unittest.TestCase):
 
 
     def test_returns_booked_as_purchases_are_recounted(self):
-        run(LOTS + '''c.journal = {
-            { at = now - 100, kind = 'buy', key = 'c:10', name = 'Linen Cloth', qty = 10, amount = 1000 },
-            { at = now - 50, kind = 'buy', key = 'c:10', name = 'Linen Cloth', qty = 20, amount = 4000 },
-            { at = now - 45, kind = 'buy', key = 'c:10', name = 'Linen Cloth', qty = 20, amount = 4000 },
-            { at = now - 30, kind = 'sell', key = 'c:10', name = 'Linen Cloth', qty = 5, amount = 900, profit = 0 },
-            { at = now - 20, kind = 'expired', name = 'Linen Cloth', qty = 5, amount = 0 },
-        }
-        c.lots, c.positions, c.stats, c.recount, c.returnsMarked = nil, {}, {}, nil, nil
+        # Booked as 2.0.0-beta.1 did when it happened: the mail of two cancelled posts as purchases.
+        run(LOTS + '''local D = F.Data
+        c.journal, c.positions, c.stats, c.lots, c.daily = {}, {}, {}, nil, nil
+        local function book(e)
+            if e.kind == 'buy' then D.addPosition(c, e.key, e.name, e.qty, e.amount, 'other', nil, e.at) end
+            if e.kind == 'sell' then e.profit = e.amount - D.sale(c, e.key, e.name, e.qty, e.amount, e.at) end
+            D.log(c, e)
+        end
+        book({ at = now - 100, kind = 'buy', key = 'c:10', name = 'Linen Cloth', qty = 10, amount = 1000 })
+        book({ at = now - 90, kind = 'post', key = 'c:10', name = 'Linen Cloth', qty = 40, amount = 8000, deposit = 40 })
+        book({ at = now - 50, kind = 'buy', key = 'c:10', name = 'Linen Cloth', qty = 20, amount = 4000 })
+        book({ at = now - 45, kind = 'buy', key = 'c:10', name = 'Linen Cloth', qty = 20, amount = 4000 })
+        book({ at = now - 30, kind = 'sell', key = 'c:10', name = 'Linen Cloth', qty = 5, amount = 900 })
+        book({ at = now - 20, kind = 'expired', name = 'Linen Cloth', qty = 5, amount = 0 })
+        assert(c.journal[5].profit == 0, 'sold at the price the returns were booked at')
+        c.recount, c.returnsMarked = nil, nil
         T.recount()
-        assert(c.journal[2].kind == 'return' and c.journal[3].kind == 'return' and c.journal[1].kind == 'buy')
-        assert(c.journal[2].posted == 4000 and c.journal[2].amount > 0, 'the deposit lost')
+        assert(c.journal[3].kind == 'return' and c.journal[4].kind == 'return' and c.journal[1].kind == 'buy')
+        assert(c.journal[3].posted == 4000 and c.journal[3].amount > 0, 'the deposit lost')
         local p = c.positions['c:10']
         assert(p.qty == 5, 'only the real purchase is stock: ' .. p.qty)
         local s = c.stats['c:10']
         assert(s.bought == 10 and s.spent == 1000 and s.lost > 0, s.spent)
-        -- the real price (500 for 5) plus a share of the deposits the returned posts lost
-        assert(c.journal[4].profit < 400 and c.journal[4].profit > 0, 'profit at the real cost: ' .. c.journal[4].profit)
+        -- the sale at the real price (500 for 5); the deposits lost join the cost of the stock left
+        assert(c.journal[5].profit == 400 and s.profit == 400, 'profit at the real cost: ' .. c.journal[5].profit)
+        assert(p.cost == 500 + s.lost, p.cost)
         local lot = F.Data.lots(c)[1]
-        assert(#F.Data.lots(c) == 1 and lot.qty == 10 and lot.lost == s.lost)
+        assert(#F.Data.lots(c) == 1 and lot.qty == 10 and lot.left == 5 and lot.lost == s.lost)
+        local d = c.daily[math.floor(now / 86400)]
+        assert(d.spent == 1000 and d.buys == 1 and d.profit == 400, d.spent)
         assert(c.recount == T.RECOUNT)''')
 
     def test_items_the_journal_never_mentions_are_kept(self):

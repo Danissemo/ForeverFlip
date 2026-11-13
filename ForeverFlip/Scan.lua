@@ -152,12 +152,20 @@ function S.resume(scope)
     end
     local age = clock() - (p.at or 0)
     if p.scope ~= scope or age > S.ANSWER_WAIT + (p.answered and 600 or 0) or age < 0 then
+        if p.scope ~= scope then
+            -- Its answer can still come while this house is open: that list is not this house's.
+            S.foreign = { scope = p.scope, at = p.at }
+        end
         settle(p.answered and "closed while reading" or "closed while waiting")
         return false
     end
     S.job = {
         state = "waiting",
         at = p.at,
+        -- An answer that already arrived is in the client: its wait counts from the reopening.
+        -- Counted from the call, such a request (kept 10 minutes longer above) was given up on the
+        -- first frame.
+        waitFrom = p.answered and clock() or nil,
         scope = scope,
         base = p.base,
         -- An answer that already arrived is read at once (any list differs from this mark).
@@ -181,9 +189,10 @@ S.SETTLE = 5
 S.SHORT = 60
 
 -- The size of a complete list of this house: the largest complete scan of the last day (saved as
--- `peak`), else the last scan. Measuring against the last scan alone let partial answers pass once
--- one had been taken (in game: 28 672, 30 720, 73 728 of about 250 000 auctions, read one after the
--- other).
+-- `peak`), else the last scan of the last day. Measuring against the last scan alone let partial
+-- answers pass once one had been taken (in game: 28 672, 30 720, 73 728 of about 250 000 auctions,
+-- read one after the other). An older scan is no measure: a house that shrank to under half of it
+-- meanwhile would have every later list rejected as a part, and none read again.
 S.PEAK_AGE = 86400
 -- The largest complete list of the last day, or nil.
 function S.freshPeak(market)
@@ -201,7 +210,7 @@ function S.reference(scope)
     local best = S.freshPeak(market) or 0
     local last = S.last and S.last.scope == scope and S.last or market.last
     local total = type(last) == "table" and not last.partial and last.total or nil
-    if U.finite(total) and total > best then
+    if U.finite(total) and total > best and clock() - (last.at or 0) <= S.PEAK_AGE then
         best = total
     end
     return best
@@ -210,7 +219,8 @@ end
 -- A part of the answer: a list far smaller than a complete one of this house, or one whose size is
 -- a whole number of the server's 1024-auction parts. In game every part read so far was such a
 -- multiple (36 864, 54 272, 64 512, 88 064, 122 880, 185 344) while complete lists were not
--- (188 401); a complete list lands on a multiple once in 1024 scans and then is only read as partial.
+-- (188 401); a complete list lands on a multiple once in 1024 scans and then is not read at all (the
+-- next scan is).
 -- A house changes little between two scans 15 minutes apart: a list under 75% of the last complete
 -- scan of the last 3 hours is a part (in game 185 980 of 283 783 stopped for a minute and was read
 -- as a smaller house). With no complete scan that recent (after a break the house may have changed
@@ -252,10 +262,13 @@ local function polled(j, now)
         j.quietSince = now
     end
     j.last, j.lastMark = n, mark
-    j.seen = math.max(j.seen or 0, n)
     if n <= 0 or mark == j.baseMark then
         return false
     end
+    -- Only a list other than the one before the call counts as seen: the last scan's list, still
+    -- in the client, made every unanswered call look like a list that kept changing (no miss
+    -- counted, so the wait before the next call never grew).
+    j.seen = math.max(j.seen or 0, n)
     local quiet = now - (j.quietSince or now)
     if quiet < S.SETTLE then
         return false
@@ -272,16 +285,18 @@ local function beginReading(j, total)
     j.state, j.total, j.index = "reading", total, 0
     j.groups, j.order, j.deferred = {}, {}, {}
     j.read, j.skipped, j.own = 0, 0, 0
+    -- Units of the player's own lots per item key; items with a row waiting for item data (ingest).
+    j.ownUnits, j.held = {}, {}
     F.AH.refreshPlayer()
-    -- Only a whole number of the server's parts is a part; a smaller house read after a quiet
-    -- minute is the house as it is.
-    j.partial = S.isPart(total) or nil
-    j.lots = F.AH.canTrackLots() and not j.partial
+    -- Every caller holds a part back (S.isShort): what is read here is the whole list.
+    j.lots = F.AH.canTrackLots()
     j.raw = F.Raw.active() and {} or nil
 end
 
 -- Automatic full scan: as soon as the 15-minute cooldown ends while the auction house is open
--- and nothing else talks to it. Regular scans are what measures sales for resale.
+-- and nothing else talks to it. Regular scans are what measures sales for resale. The throttle is
+-- only watched here (AH.available): S.start spends the one allowance of a throttle stuck on "not
+-- ready" (AH.ready), and spending it here first left S.start "throttled" every time.
 function S.auto()
     if
         F.db.settings.autoScan
@@ -294,17 +309,21 @@ function S.auto()
         and not F.Deals.pending()
         and not F.Deals.searching()
         and not (F.Sniper and F.Sniper.query)
-        and F.AH.ready()
+        and F.AH.available()
     then
         S.start()
     end
 end
 
--- The auction house closed: the scan stops, but its request stays remembered (S.resume).
+-- The auction house closed: the scan stops, but its request stays remembered (S.resume). A list
+-- already read is finished all the same: that is local work, and its request is settled already
+-- (beginFinish), so nothing would read it again.
 function S.stop()
-    if S.job then
-        F.Engine.notify(S.job.state == "waiting" and "scan_paused" or "scan_paused_reading")
+    local j = S.job
+    if not j or j.state == "finishing" then
+        return
     end
+    F.Engine.notify(j.state == "waiting" and "scan_paused" or "scan_paused_reading")
     S.job = nil
 end
 
@@ -323,10 +342,18 @@ end
 -- Another addon called ReplicateItems (Core: E.hookReplicate). The answer comes later, and the
 -- event may never come: the scan waits for the number of auctions to change and settle.
 function S.onOtherScan()
-    if S.job or not F.AH.isOpen() then
+    if not F.AH.isOpen() then
         return
     end
-    F.db.lastScan = clock()
+    -- Each call starts the server's 15 minutes again, also one made while a scan of ours runs: our
+    -- next call waits for the window counted from this one.
+    local previous = F.db.lastScan or 0
+    F.db.lastScan = math.max(previous, clock())
+    -- A call inside the window counted from the call before is not answered: no wait for it, which
+    -- would hold searches back for 10 minutes. An answer that comes all the same is read (S.onReplicate).
+    if S.job or clock() - previous < S.COOLDOWN then
+        return
+    end
     S.job = {
         state = "waiting",
         at = clock(),
@@ -349,6 +376,12 @@ function S.onReplicate()
         -- A late event for the scan just read (it was taken by polling) is not a new scan.
         local last = S.last
         if last and last.total == total and clock() - (S.finishedAt or 0) < 300 then
+            return
+        end
+        -- A late answer to a request made at another house (S.resume): the account's window
+        -- counted from that call lets no other answer come before its end.
+        local foreign = S.foreign
+        if foreign and foreign.scope ~= F.Engine.scope() and clock() - (foreign.at or 0) <= S.GROW_WAIT then
             return
         end
         if F.AH.isOpen() and U.finite(total) and total > 0 then
@@ -389,16 +422,33 @@ function S.onReplicate()
     beginReading(j, total)
 end
 
-local function ingest(j, i)
+-- Row i of the list (F.AH.replicateRow); nil when it cannot be read.
+local function readRow(i)
     local ok, r = pcall(F.AH.replicateRow, i)
-    if not ok or not r then
+    return ok and r or nil
+end
+
+-- One row of the list as read (readRow; nil when it could not be read); false when it has to wait
+-- for item data (read again later, S.step).
+-- `held`: items with a row waiting in this pass. Their later rows wait too: an item's lots must be
+-- read in scan order (lot tracking compares them in that order), and a row read before an earlier
+-- one of its item made a lot look partly sold.
+local function ingest(j, r, held)
+    if not r then
         j.skipped = j.skipped + 1
         j.unreadable = (j.unreadable or 0) + 1
         return true
     end
     if not r.complete then
         F.AH.requestItem(r.id)
+        held[r.id] = true
         return false
+    end
+    if held[r.id] then
+        return false
+    end
+    if not j.named and r.owner and r.owner ~= "" then
+        j.named = true -- the list names the sellers: the player's own lots are told apart
     end
     local mine = F.AH.isPlayer(r.owner)
     if (r.minBid or 0) > 0 and r.band and r.band <= 1 and not mine then
@@ -410,13 +460,15 @@ local function ingest(j, i)
     if r.buyout <= 0 or r.count <= 0 then
         return true -- bid only
     end
-    if mine then
-        j.own = j.own + 1
-        return true
-    end
     local key, kind = F.AH.keyFor(r.id, r.link)
     if not key then
+        held[r.id] = true
         return false
+    end
+    if mine then
+        j.own = j.own + 1
+        j.ownUnits[key] = (j.ownUnits[key] or 0) + r.count
+        return true
     end
     local g = j.groups[key]
     if not g then
@@ -487,7 +539,7 @@ local function finish(j, done)
             -- Lots first: when they cover the whole item, the flow counts only confirmed sales.
             local confirmed
             if j.lots then
-                soldToday, confirmed = S.trackLots(h, g.seq or {}, now, g.owners, key)
+                soldToday, confirmed = S.trackLots(h, g.seq or {}, now, g.owners, key, j.scope)
             end
             M.recordFlow(h, g.buckets, value, now, confirmed)
             h.units = g.units
@@ -604,7 +656,7 @@ local function finish(j, done)
             -- last one (a partial answer): then a missing item proves nothing.
             local item = U.parseKey(key)
             if not (item and j.unread and j.unread[item.id]) then
-                local sold = S.trackLots(h, {}, now, {}, key)
+                local sold = S.trackLots(h, {}, now, {}, key, j.scope)
                 local today = h.days and h.days[#h.days]
                 if sold > 0 and today and today.d == math.floor(now / 86400) then
                     today.s = (today.s or 0) + sold
@@ -625,27 +677,44 @@ local function finish(j, done)
     return true
 end
 
+-- Is the character `owner` one of the realm of `scope`? Owners are "<realm>-<character>", scopes
+-- "<realm>[ (HC)]-<faction>", and realm names may hold "-".
+local function ofRealm(owner, scope)
+    local realm = (tostring(scope):match("^(.*)%-[^%-]*$") or ""):gsub(" %(HC%)$", "")
+    return type(owner) == "string" and realm ~= "" and owner:sub(1, #realm + 1) == realm .. "-"
+end
+
 -- Compares an item's lots with those of the previous scan and records the sales; keeps this scan's
 -- lots for the next comparison. Two steps protect every figure built on sales (sold per day, sale
 -- prices, the flow, the daily history and what is shared) from reposts: a lot that got smaller is
 -- sold at once; a lot that vanished whole is a suspect (h.pending) and sold only when the next scan
 -- shows no new lot of its price and count (M.confirmGone). Returns the units sold, and the confirmed
 -- sales by price when the lots cover the whole item (nil otherwise).
--- Units of `key` the player's characters bought on this auction house after `since` and up to
--- `now`: their purchases took lots too, and are no demand of the market.
-function S.ownBought(key, since, now)
+-- Units of `key` the player's characters bought on the auction house `scope` (the scan's) after
+-- `since` and up to `now`: their purchases took lots too, and are no demand of the market. A purchase
+-- at another house or realm took none of these lots. A purchase booked without its house (older
+-- versions) counts for the characters of this realm.
+function S.ownBought(key, since, now, scope)
     local units = 0
     if not F.db or type(F.db.chars) ~= "table" or not key then
         return units
     end
-    for _, c in pairs(F.db.chars) do
+    scope = scope or F.Engine.scope()
+    for owner, c in pairs(F.db.chars) do
         local journal = type(c) == "table" and c.journal
         for i = #(journal or {}), 1, -1 do
             local e = journal[i]
             if type(e) == "table" and (e.at or 0) <= since then
                 break
             end
-            if type(e) == "table" and e.kind == "buy" and e.key == key and not e.merchant and (e.at or 0) <= now then
+            if
+                type(e) == "table"
+                and e.kind == "buy"
+                and e.key == key
+                and not e.merchant
+                and (e.at or 0) <= now
+                and (e.scope == scope or e.scope == nil and ofRealm(owner, scope))
+            then
                 units = units + (e.qty or 0)
             end
         end
@@ -697,7 +766,8 @@ local function takeOwnFromGone(gone, units)
     return out, units
 end
 
-function S.trackLots(h, seq, now, owners, key)
+-- `scope`: the house of the scan (the current one when left out).
+function S.trackLots(h, seq, now, owners, key, scope)
     local sold, byPrice, confirmed, fresh, sellers, gone, complete = 0, {}, {}, nil, nil, nil, false
     local undercuts = 0
     local dt = now - (h.lotsAt or 0)
@@ -705,7 +775,7 @@ function S.trackLots(h, seq, now, owners, key)
     owners = owners or {}
     if compared then
         local prev = M.unpackLots(h.lots)
-        local all, reposted
+        local _, all, reposted
         _, all, gone, reposted, sellers, undercuts = M.trackSales(prev, seq, dt, M.unpackOwners(h.lotOwners), owners)
         for i = 1, #gone - 2, 3 do
             all[gone[i]] = all[gone[i]] - gone[i + 1]
@@ -717,7 +787,7 @@ function S.trackLots(h, seq, now, owners, key)
         end
         -- The player's own purchases since the last scan are no market demand: they come out of
         -- the lots that vanished first (bought whole), then of the lots bought in part.
-        local own = S.ownBought(key, h.lotsAt or 0, now)
+        local own = S.ownBought(key, h.lotsAt or 0, now, scope)
         gone, own = takeOwnFromGone(gone, own)
         takeCheapest(byPrice, own)
         fresh = reposted
@@ -750,8 +820,18 @@ function S.trackLots(h, seq, now, owners, key)
     return sold, complete and byPrice or nil
 end
 
+-- Did the last scan leave rows of the item unread (their item data never loaded)? Its count of
+-- the item then says nothing.
+local function unread(last, key)
+    if not (last.unread and next(last.unread)) then
+        return false
+    end
+    local item = U.parseKey(key)
+    return item ~= nil and last.unread[item.id] == true
+end
+
 -- Units of an item in a recent full scan (up to 20 minutes old) of this auction house; nil when
--- there is no such scan.
+-- there is no such scan, or it could not read the item's rows.
 -- `maxAge` (optional): how old the scan may be, 20 minutes by default.
 function S.listedUnits(key, maxAge)
     local last = S.last
@@ -760,6 +840,7 @@ function S.listedUnits(key, maxAge)
         or not last.listed
         or last.scope ~= F.Engine.scope()
         or F.Engine.clock() - (last.at or 0) > (maxAge or 1200)
+        or unread(last, key)
     then
         return nil
     end
@@ -775,12 +856,32 @@ function S.notListed(key)
         and last.scope == F.Engine.scope()
         and F.Engine.clock() - (last.at or 0) <= 1200
         and not last.listed[key]
+        and not unread(last, key)
 end
 
 local function beginFinish(j, now)
     j.state, j.cursor, j.finishAt = "finishing", 1, now
     j.deals, j.waitVendor, j.hot, j.listed = {}, {}, {}, {}
     j.stats = { items = 0, vendorKnown = 0, belowVendor = 0, collecting = 0, salesReady = 0, reasons = {} }
+    -- The history is written from here on: the request is over, so nothing reads the list again
+    -- (S.resume after a reload) and books its sales a second time.
+    settle("read", j.total)
+end
+
+-- Units of the player's own auctions per item key when the scan was read (S.last.ownUnits): the
+-- lots the scan named as the player's, or, when it names no sellers, the player's auction list of
+-- that moment (lots posted later are not in the scan's counts).
+local function ownUnitsAt(j)
+    if j.named then
+        return j.ownUnits
+    end
+    local units = {}
+    for _, a in ipairs(F.Trade.owned or {}) do
+        if a.key and not a.sold then
+            units[a.key] = (units[a.key] or 0) + (a.qty or 1)
+        end
+    end
+    return units
 end
 
 -- A money gain can make leads affordable without another server scan. Reuse only the short-lived
@@ -848,7 +949,7 @@ function S.step()
         return
     end
     S.repricing = nil
-    if j.scope ~= F.Engine.scope() or not F.AH.isOpen() then
+    if j.state ~= "finishing" and (j.scope ~= F.Engine.scope() or not F.AH.isOpen()) then
         S.stop()
         return
     end
@@ -859,22 +960,24 @@ function S.step()
     end
     if j.state == "waiting" then
         local growing = j.quietSince and now - j.quietSince < S.SHORT and (j.seen or 0) > 0
+        local waited = now - (j.waitFrom or j.at)
         if polled(j, now) then
             beginReading(j, j.last)
-        elseif now - j.at > S.ANSWER_WAIT and growing and now - j.at <= S.GROW_WAIT then
+        elseif waited > S.ANSWER_WAIT and growing and waited <= S.GROW_WAIT then
             return -- the list still grows: the rest is on its way
-        elseif now - j.at > S.ANSWER_WAIT and (j.seen or 0) > 0 and S.isShort(j.scope, j.last or j.seen) then
+        elseif waited > S.ANSWER_WAIT and (j.seen or 0) > 0 and S.isShort(j.scope, j.last or j.seen) then
             -- Only a part came: not used. The deals and sales of the last complete scan stay.
             S.job = nil
-            F.db.lastScan = j.at
+            F.db.lastScan = math.max(F.db.lastScan or 0, j.at)
             settle("partial, not used", j.last or j.seen)
             F.Engine.notify("scan_partial")
-        elseif now - j.at > S.ANSWER_WAIT then
-            -- No answer: the next try waits the whole window counted from this call. Trying sooner
-            -- starts the server's 15 minutes again and keeps the answer away. Whether the server
-            -- sent nothing or a list that kept changing tells the two cases apart.
+        elseif waited > S.ANSWER_WAIT then
+            -- No answer: the next try waits the whole window counted from this call (or from a later
+            -- call of another addon, S.onOtherScan). Trying sooner starts the server's 15 minutes
+            -- again and keeps the answer away. Whether the server sent nothing or a list that kept
+            -- changing tells the two cases apart.
             S.job = nil
-            F.db.lastScan = j.at
+            F.db.lastScan = math.max(F.db.lastScan or 0, j.at)
             local seen = j.seen or 0
             settle(seen > 0 and "list kept changing" or "no answer", seen)
             F.Engine.notify(seen > 0 and "scan_unsettled" or "scan_timeout")
@@ -886,8 +989,16 @@ function S.step()
         while j.index < j.total do
             local i = j.index
             j.index = i + 1
-            F.Raw.capture(j, i)
-            if not ingest(j, i) then
+            local r
+            if j.raw then
+                -- The raw line and the row from one read of the auction (F.AH.replicateRaw).
+                local ok, fields, row = pcall(F.AH.replicateRaw, i)
+                F.Raw.capture(j, ok and fields or nil)
+                r = ok and row or nil
+            else
+                r = readRow(i)
+            end
+            if not ingest(j, r, j.held) then
                 j.deferred[#j.deferred + 1] = i
             end
             if done() then
@@ -902,18 +1013,19 @@ function S.step()
         -- cost O(n) per frame and starved loaded rows behind a long uncached prefix.
         j.recoverLeft = j.recoverLeft or {}
         j.recoverIndex = j.recoverIndex or 1
+        j.recoverHeld = j.recoverHeld or {}
         local done = budget(4, 200)
         while j.recoverIndex <= #j.deferred do
             local i = j.deferred[j.recoverIndex]
             j.recoverIndex = j.recoverIndex + 1
-            if not ingest(j, i) then
+            if not ingest(j, readRow(i), j.recoverHeld) then
                 j.recoverLeft[#j.recoverLeft + 1] = i
             end
             if done() then
                 return
             end
         end
-        j.deferred, j.recoverLeft, j.recoverIndex = j.recoverLeft, nil, nil
+        j.deferred, j.recoverLeft, j.recoverIndex, j.recoverHeld = j.recoverLeft, nil, nil, nil
         if #j.deferred == 0 then
             beginFinish(j, now)
         elseif now >= j.recoverUntil then
@@ -944,20 +1056,17 @@ function S.step()
         if not finish(j, budget(6, 300)) then
             return
         end
-        if not j.partial then
-            -- The largest complete list of the last day: a smaller one never lowers it (each part
-            -- read as complete lowered the bar for the next, 185 344 down to 36 864 in game).
-            local market = F.Data.market(F.db, j.scope)
-            if j.total >= (S.freshPeak(market) or 0) then
-                market.peak = { total = j.total, at = j.finishAt }
-            end
+        -- The largest complete list of the last day: a smaller one never lowers it (each part
+        -- read as complete lowered the bar for the next, 185 344 down to 36 864 in game).
+        local market = F.Data.market(F.db, j.scope)
+        if j.total >= (S.freshPeak(market) or 0) then
+            market.peak = { total = j.total, at = j.finishAt }
         end
         S.last = {
             at = j.finishAt,
             wallet = F.Engine.wallet(),
             scope = j.scope,
             total = j.total,
-            partial = j.partial,
             read = j.read,
             skipped = j.skipped,
             own = j.own,
@@ -965,14 +1074,17 @@ function S.step()
             waitVendor = j.waitVendor,
             -- Units of every item listed in the scan, by key (kept in memory only).
             listed = j.listed,
+            -- Items whose rows could not be read: `listed` tells nothing about them.
+            unread = j.unread,
             -- Every item's cheapest lots, for 5 minutes: they stand for a price search of an item
             -- to post (T.scanPrice).
-            groups = not j.partial and j.groups or nil,
-            -- The scan named the player's own lots (and left them out of `listed`).
-            ownersKnown = j.own > 0,
+            groups = j.groups,
+            -- The scan named the sellers: the player's own lots, if any, were told apart and left
+            -- out of `listed`.
+            ownersKnown = j.named == true,
+            ownUnits = ownUnitsAt(j),
         }
         S.job, S.finishedAt = nil, clock()
-        settle(j.partial and "read, partial" or "read", j.total)
         F.Raw.finish(j)
         S.setHot(j.hot)
         if F.Analytics then
@@ -987,6 +1099,11 @@ function S.step()
             pcall(F.Trade.afterScan)
         end
         F.Share.afterScan()
+        -- Finished after its house closed (S.stop) and another one opened meanwhile, which then
+        -- could not restore its own scan (S.restore waits for a running job): it does so now.
+        if F.AH.isOpen() and j.scope ~= F.Engine.scope() then
+            S.restore(F.Engine.scope())
+        end
     end
 end
 
@@ -1058,6 +1175,8 @@ function S.save()
         read = last.read,
         skipped = last.skipped,
         own = last.own,
+        ownersKnown = last.ownersKnown,
+        ownUnits = last.ownUnits,
         stats = U.copy(last.stats),
         deals = deals,
         pool = pool,
@@ -1107,6 +1226,8 @@ function S.restore(scope)
         read = saved.read or 0,
         skipped = saved.skipped or 0,
         own = saved.own or 0,
+        ownersKnown = saved.ownersKnown == true,
+        ownUnits = type(saved.ownUnits) == "table" and saved.ownUnits or {},
         stats = saved.stats,
         waitVendor = waitVendor,
     }
@@ -1149,12 +1270,21 @@ function S.itemLoaded(id)
         return
     end
     last.stats.vendorKnown = last.stats.vendorKnown + 1
-    local history = F.Data.market(F.db, last.scope).history
     for _, g in ipairs(list) do
         if g.rows[1] and g.rows[1].unit < vendor then
             last.stats.belowVendor = last.stats.belowVendor + 1
-            local deal = F.Deals.evaluate(g, vendor, history[g.key], last.at)
-            if deal then
+            -- A vendor deal only. The waiting copy keeps 3 rows: a resale priced from them sees no
+            -- lot after them and is priced at the item's usual price, above the lots the copy left
+            -- out. Without the item's sales no resale is priced; the deal the scan found from every
+            -- row stays unless this one pays more.
+            local deal = F.Deals.evaluate(g, vendor, nil, last.at)
+            local old = F.Deals.get(g.key)
+            if
+                deal
+                and deal.mode == "vendor"
+                and not (last.purchased and last.purchased[g.key])
+                and not (old and (old.verified or (old.profit or 0) >= deal.profit))
+            then
                 F.Deals.add(deal, last.scope)
             end
         end
@@ -1168,7 +1298,7 @@ function S.progress()
         return nil
     end
     if j.state == "waiting" then
-        return "scan_waiting", math.floor(clock() - j.at), S.ANSWER_WAIT
+        return "scan_waiting", math.floor(clock() - (j.waitFrom or j.at)), S.ANSWER_WAIT
     elseif j.state == "reading" then
         return "scan_reading", j.index, j.total
     elseif j.state == "recovering" or j.state == "unread" then

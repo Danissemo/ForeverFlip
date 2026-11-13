@@ -77,7 +77,7 @@ class MarketTests(unittest.TestCase):
 
 
 SETUP = '''
-ForeverFlip.Engine.autoVerify=false;ForeverFlip.db.settings.autoScan=false
+ForeverFlip.db.settings.autoVerify=false;ForeverFlip.db.settings.autoScan=false
 ForeverFlip.db.settings.sniper=false
 addItem(10,'Linen Cloth',100,'commodity')
 addItem(20,'Northern Shortsword',1070,'gear')
@@ -129,7 +129,7 @@ class ScanTests(unittest.TestCase):
 
 class TradeTests(unittest.TestCase):
     def test_deal_is_verified_then_commodity_bought_with_quote_and_confirm(self):
-        run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false
+        run(SETUP + '''fullScan();ForeverFlip.db.settings.autoVerify=false
         local D,T=ForeverFlip.Deals,ForeverFlip.Trade
         local ok,why=T.buy('c:10');assert(not ok and why=='verify_first')
         assert(D.verify('c:10') and lastCall('SendSearchQuery')[2]==10);answer()
@@ -143,13 +143,14 @@ class TradeTests(unittest.TestCase):
         assert(c.journal[1].kind=='buy' and not T.op)''')
 
     def test_higher_quote_is_cancelled(self):
-        run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false
+        run(SETUP + '''fullScan();ForeverFlip.db.settings.autoVerify=false
         local D,T=ForeverFlip.Deals,ForeverFlip.Trade
         D.verify('c:10');answer();T.buy('c:10');fire('COMMODITY_PRICE_UPDATED',70,1050)
-        assert(not T.op and lastCall('CancelCommoditiesPurchase') and D.retry);run(1.1);assert(D.searching())''')
+        assert(not T.op and lastCall('CancelCommoditiesPurchase') and (D.requests[1] or D.backgroundRetry))
+        run(1.1);assert(D.searching())''')
 
     def test_gear_is_searched_across_versions_and_bought_one_auction_per_click(self):
-        run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false
+        run(SETUP + '''fullScan();ForeverFlip.db.settings.autoVerify=false
         local D,T,U=ForeverFlip.Deals,ForeverFlip.Trade,ForeverFlip.Util
         local key=U.key('gear',20,'Northern Shortsword of Healing')
         assert(D.verify(key) and lastCall('SendSellSearchQuery')[2]==20);answer()
@@ -164,7 +165,7 @@ class TradeTests(unittest.TestCase):
 
     def test_several_lots_are_bought_one_click_each_without_a_new_search(self):
         run(SETUP + '''local F,D,T=ForeverFlip,ForeverFlip.Deals,ForeverFlip.Trade
-        F.Engine.autoVerify=false;F.db.settings.sniper=false
+        F.db.settings.autoVerify=false;F.db.settings.sniper=false
         addItem(40,'Moon Gem',2000,'item') -- a merchant pays 20s: lots under it are vendor deals
         for i=1,30 do addAuction(40,5000+i,1) end
         fullScan()
@@ -181,7 +182,7 @@ class TradeTests(unittest.TestCase):
         assert(not D.get('i:40') or D.get('i:40').lots[1].unit>4000,'the cheap lots are all bought')''')
 
     def test_item_purchase_without_answer_times_out_and_books_late_money(self):
-        run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false
+        run(SETUP + '''fullScan();ForeverFlip.db.settings.autoVerify=false
         local D,T,U=ForeverFlip.Deals,ForeverFlip.Trade,ForeverFlip.Util
         local key=U.key('gear',20,'Northern Shortsword of Nature Protection')
         C_AuctionHouse.PlaceBid=function() end -- the game sends nothing back
@@ -195,7 +196,7 @@ class TradeTests(unittest.TestCase):
         assert(c.positions[key] and c.positions[key].qty==1 and ForeverFlip.Engine.message=='bought_late','the late purchase is booked')''')
 
     def test_a_commodity_purchase_without_answer_is_settled_in_the_journal(self):
-        run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false
+        run(SETUP + '''fullScan();ForeverFlip.db.settings.autoVerify=false
         local D,T=ForeverFlip.Deals,ForeverFlip.Trade
         C_AuctionHouse.ConfirmCommoditiesPurchase=function() end
         D.verify('c:10');answer();assert(T.buy('c:10'));fire('COMMODITY_PRICE_UPDATED',60,900)
@@ -204,13 +205,13 @@ class TradeTests(unittest.TestCase):
         assert(not T.op and #c.unknown==1);T.settle(1,true);assert(c.positions['c:10'].qty==15 and #c.unknown==0)''')
 
     def test_vanished_deal_is_removed_after_verification(self):
-        run(SETUP + '''fullScan();ForeverFlip.Engine.autoVerify=false
+        run(SETUP + '''fullScan();ForeverFlip.db.settings.autoVerify=false
         local D=ForeverFlip.Deals
         for i=#auctions,1,-1 do if auctions[i].item==10 and auctions[i].buyout<500 then table.remove(auctions,i) end end
         D.verify('c:10');answer();assert(not D.get('c:10'))''')
 
     def test_automatic_verification_keeps_the_short_pace(self):
-        run(SETUP + '''ForeverFlip.Engine.autoVerify=true;fullScan()
+        run(SETUP + '''ForeverFlip.db.settings.autoVerify=true;fullScan()
         run(0.5);local D=ForeverFlip.Deals;assert(D.search);local t1=D.lastRequest;answer()
         while not D.search do run(0.05) end;local gap=D.lastRequest-t1
         assert(gap>=ForeverFlip.Deals.GAP-1e-9 and gap<0.9,gap)''')
@@ -254,7 +255,7 @@ class TradeTests(unittest.TestCase):
 
 class UITests(unittest.TestCase):
     def test_pages_render_and_buy_button_needs_a_fresh_check(self):
-        run(SETUP + '''local UI=ForeverFlip.UI;ForeverFlip.Engine.autoVerify=false
+        run(SETUP + '''local UI=ForeverFlip.UI;ForeverFlip.db.settings.autoVerify=false
         UI.refresh();assert(UI.dealTable.empty:IsShown())
         fullScan();UI.refresh();assert(UI.dealTable.rows[1]:IsShown())
         UI.dealTable.rows[1]:Click();assert(ForeverFlip.Deals.searching());answer();UI.refresh()
@@ -379,7 +380,7 @@ class EarlyObservationTests(unittest.TestCase):
 
 
 SNIPE = '''
-ForeverFlip.Engine.autoVerify=false;ForeverFlip.db.settings.autoScan=false
+ForeverFlip.db.settings.autoVerify=false;ForeverFlip.db.settings.autoScan=false
 ForeverFlip.db.settings.sniper=false
 addItem(10,'Linen Cloth',100,'commodity')
 addItem(40,'Wool Cloth',300,'commodity')
@@ -396,7 +397,7 @@ class SniperTests(unittest.TestCase):
         assert(h.hits==1)''')
 
     def test_sniper_finds_a_cheap_lot_between_scans_and_alerts_once(self):
-        run(SNIPE + '''fullScan();ForeverFlip.Engine.autoVerify=true;ForeverFlip.db.settings.sniper=true
+        run(SNIPE + '''fullScan();ForeverFlip.db.settings.autoVerify=true;ForeverFlip.db.settings.sniper=true
         assert(#ForeverFlip.Deals.list==0)
         addAuction(40,200,4)                         -- someone lists wool far below vendor price
         run(1.1);local s=ForeverFlip.Deals.search;assert(s and s.key=='c:40');answer()
@@ -407,7 +408,7 @@ class SniperTests(unittest.TestCase):
         assert(sounds==1,'one notice per deal')''')
 
     def test_sniper_and_alerts_can_be_turned_off(self):
-        run(SNIPE + '''fullScan();ForeverFlip.Engine.autoVerify=true;ForeverFlip.db.settings.sniper=false
+        run(SNIPE + '''fullScan();ForeverFlip.db.settings.autoVerify=true;ForeverFlip.db.settings.sniper=false
         addAuction(40,200,4);run(3);assert(not ForeverFlip.Deals.search)
         ForeverFlip.db.settings.sniper=true;ForeverFlip.db.settings.alerts=false
         run(1.1);answer();assert(ForeverFlip.Deals.get('c:40') and sounds==0)''')
@@ -513,7 +514,7 @@ class FeatureTests(unittest.TestCase):
 
 
     def test_items_a_vendor_does_not_buy_never_wait_for_a_vendor_price(self):
-        run('''ForeverFlip.Engine.autoVerify=false;ForeverFlip.db.settings.autoScan=false
+        run('''ForeverFlip.db.settings.autoVerify=false;ForeverFlip.db.settings.autoScan=false
         addItem(50,'Quest Thing',0,'item');addAuction(50,100,1)
         fullScan();assert(not ForeverFlip.Scan.last.waitVendor[50])''')
 
@@ -561,7 +562,7 @@ class AnalyticsTests(unittest.TestCase):
 class DealTabTests(unittest.TestCase):
     def test_found_deals_are_checked_at_the_faster_pace(self):
         run(SETUP + '''addItem(11,'A',100,'commodity');addItem(12,'B',100,'commodity');addAuction(11,50,5);addAuction(12,50,5)
-        fullScan();ForeverFlip.Engine.autoVerify=true;local seen={}
+        fullScan();ForeverFlip.db.settings.autoVerify=true;local seen={}
         for _=1,30 do run(0.1);local s=ForeverFlip.Deals.search;if s and not seen[s.key] then seen[s.key]=true;answer() end end
         local n=0;for _ in pairs(seen) do n=n+1 end;assert(n>=3,n)''')
 

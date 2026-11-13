@@ -8,7 +8,7 @@ class GearKeyCacheTests(unittest.TestCase):
     GEAR = SETUP + '''enableBrowse()
     fullScan()
     local F, D, U = ForeverFlip, ForeverFlip.Deals, ForeverFlip.Util
-    F.Engine.autoVerify = false
+    F.db.settings.autoVerify = false
     local key = U.key('gear', 20, 'Northern Shortsword of Nature Protection')
     local function browses()
         local n = 0
@@ -43,7 +43,7 @@ class GearKeyCacheTests(unittest.TestCase):
 class CheckAllGivesWayTests(unittest.TestCase):
     BATCH = SETUP + '''fullScan()
     local F, D, UI = ForeverFlip, ForeverFlip.Deals, ForeverFlip.UI
-    F.Engine.autoVerify = false
+    F.db.settings.autoVerify = false
     local keys = {}
     for _, d in ipairs(D.list) do keys[#keys + 1] = d.key end
     '''
@@ -68,7 +68,7 @@ class CheckAllGivesWayTests(unittest.TestCase):
 
     def test_a_click_goes_while_a_full_scan_waits(self):
         run(self.BATCH + '''run(1); now = now + 1000; assert(F.Scan.start())
-        assert(F.Scan.blocking()); F.Trade.checkPrice('c:10')
+        assert(F.Scan.blocking()); F.Engine.input(); F.Trade.checkPrice('c:10') -- the click
         assert(D.search and D.search.key == 'c:10')''')
 
 
@@ -77,7 +77,6 @@ class NewPlayerDefaultsTests(unittest.TestCase):
         lua = runtime()
         lua.execute('''local s = ForeverFlip.db.settings
         assert(not s.autoScan and not s.sniper and not s.autoVerify and not s.shareAuto)
-        assert(not ForeverFlip.Engine.autoVerify, 'no automatic deal checks')
         assert(s.rawScans, 'full scans are kept for the Sync helper')''')
 
     def test_a_player_choice_is_kept(self):

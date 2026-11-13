@@ -3,7 +3,6 @@ local U = F.Util
 local E = {}
 F.Engine = E
 
-E.autoVerify = false -- F.db.settings.autoVerify once the saved data is read
 E.message = nil
 
 function E.clock()
@@ -156,10 +155,6 @@ local events = {
     "MERCHANT_UPDATE",
     "BAG_UPDATE_DELAYED",
     "LOOT_OPENED",
-    "UNIT_SPELLCAST_START",
-    "UNIT_SPELLCAST_SUCCEEDED",
-    "UNIT_SPELLCAST_INTERRUPTED",
-    "UNIT_SPELLCAST_FAILED",
     "CHAT_MSG_CHANNEL_NOTICE",
     "TRADE_SKILL_SHOW",
     "TRADE_SKILL_LIST_UPDATE",
@@ -172,6 +167,20 @@ local events = {
 for _, event in ipairs(events) do
     pcall(frame.RegisterEvent, frame, event)
 end
+-- Only the player's own casts matter (Disenchant.onCast). Registered for every unit, the casts of
+-- nameplates, party and target would repaint the window several times a second. A client without
+-- RegisterUnitEvent sends every unit's casts, and E.handle drops the others.
+local playerEvents = {
+    "UNIT_SPELLCAST_START",
+    "UNIT_SPELLCAST_SUCCEEDED",
+    "UNIT_SPELLCAST_INTERRUPTED",
+    "UNIT_SPELLCAST_FAILED",
+}
+for _, event in ipairs(playerEvents) do
+    if not (frame.RegisterUnitEvent and pcall(frame.RegisterUnitEvent, frame, event, "player")) then
+        pcall(frame.RegisterEvent, frame, event)
+    end
+end
 
 function E.handle(event, ...)
     if event == "ADDON_LOADED" then
@@ -181,13 +190,13 @@ function E.handle(event, ...)
             E.noSavedData = type(ForeverFlipData) ~= "table"
             ForeverFlipData = F.Data.open(ForeverFlipData)
             F.db = ForeverFlipData
-            E.autoVerify = F.db.settings.autoVerify and true or false
+            -- Before the dialog below: its text and buttons are translated when it is built.
+            F.Locale.apply(F.db.settings.language)
             if E.noSavedData and F.UI and F.UI.noSavedData then
                 F.UI.noSavedData()
             end
             E.hookReplicate()
             F.AH.hookBrowse()
-            F.Locale.apply(F.db.settings.language)
             E.applyCut()
             F.Mail.hook()
             F.Share.register()
@@ -207,8 +216,15 @@ function E.handle(event, ...)
         F.AH.refreshPlayer()
         E.house = E.detectHouse()
         E.applyCut()
-        F.Scan.restore(E.scope())
-        F.Scan.resume(E.scope())
+        local scope = E.scope()
+        -- Price checks are kept for the house they were made at: another house's cheapest prices
+        -- would price posts and call own auctions undercut here.
+        if E.openedScope and E.openedScope ~= scope and F.Trade.forgetHouse then
+            F.Trade.forgetHouse()
+        end
+        E.openedScope = scope
+        F.Scan.restore(scope)
+        F.Scan.resume(scope)
         if F.UI then
             F.UI.attach()
         end
@@ -246,6 +262,11 @@ function E.handle(event, ...)
     elseif event == "AUCTION_HOUSE_SHOW_ERROR" then
         F.Trade.onError()
     elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
+        -- The sniper hears it first, while the purchase, scan or exact search that may own the
+        -- dropped message is still marked as waiting for its answer.
+        if F.Sniper.onDropped then
+            F.Sniper.onDropped()
+        end
         F.Trade.onDropped()
         F.Scan.onDropped()
         F.Deals.onDropped()
@@ -253,9 +274,10 @@ function E.handle(event, ...)
         F.AH.throttleReset()
     elseif event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or event == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then
         -- Every browse answer teaches item-key versions (AH.learnKeys). A gear search browses for
-        -- the item's versions; every other browse feeds the sniper.
+        -- the item's versions; every other browse feeds the sniper. UPDATED brings a new list, read
+        -- from its first row even when no browse sent through the hook (AH.hookBrowse) said so.
         if F.AH.learnKeys then
-            F.AH.learnKeys()
+            F.AH.learnKeys(event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
         end
         if not F.Deals.onBrowse() then
             F.Sniper.onResults(event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
@@ -278,9 +300,17 @@ function E.handle(event, ...)
         -- The auction house now knows the item's kind: the Sell page and the deals may list it.
         E.changed()
     elseif event == "ITEM_DATA_LOAD_RESULT" then
+        -- Other addons and the game's own windows load items all the time. Only an item a deal of
+        -- the scan waits for (its vendor price) changes the window at once; the names of other
+        -- items show at the next one-second refresh.
         local id, ok = ...
+        local last = F.Scan.last
+        local waited = ok and last and last.waitVendor and last.waitVendor[id]
         if ok then
             F.Scan.itemLoaded(id)
+        end
+        if not waited then
+            return
         end
     elseif event == "CHAT_MSG_SYSTEM" then
         F.Trade.onChat(...)
@@ -320,10 +350,15 @@ function E.handle(event, ...)
             F.UI.mail(F.Mail.open)
         end
     elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_LIST_UPDATE" then
-        -- Recipes are read at most every two seconds; the list event fires often.
-        if E.clock() - (E.recipesAt or 0) >= 2 then
-            E.recipesAt = E.clock()
+        -- Recipes are read at once at most every two seconds; the list event fires often. An event
+        -- inside those two seconds is read half a second after the last one (E.update): the list
+        -- at TRADE_SKILL_SHOW can still be empty, and the loaded list comes with an update.
+        local t = GetTime and GetTime() or E.clock()
+        if not E.recipesAt or t - E.recipesAt >= 2 then
+            E.recipesAt, E.recipesDue = t, nil
             F.Crafting.learn()
+        else
+            E.recipesDue = t + 0.5
         end
     elseif event == "MERCHANT_UPDATE" then
         F.Merchant.watchBuyback(false)
@@ -341,6 +376,9 @@ function E.handle(event, ...)
         or event == "UNIT_SPELLCAST_INTERRUPTED"
         or event == "UNIT_SPELLCAST_FAILED"
     then
+        if ... ~= "player" then
+            return -- another unit's cast (registered for every unit without RegisterUnitEvent)
+        end
         F.Disenchant.onCast(event, ...)
     elseif event == "LOOT_OPENED" then
         F.Disenchant.onLoot()
@@ -415,6 +453,22 @@ local function part(name, fn, ...)
         report(name .. ": " .. tostring(err))
     end
 end
+
+-- The ForeverFlip window is on screen. IsVisible also counts the parents: the window keeps its own
+-- "shown" flag inside the auction house frame after the auction house closes. Frames without a real
+-- IsVisible (the tests' fakes) answer nil, and IsShown is asked then.
+local function onScreen()
+    local f = F.UI and F.UI.frame
+    if not f then
+        return false
+    end
+    local visible = f.IsVisible and f:IsVisible()
+    if visible == nil then
+        visible = f:IsShown()
+    end
+    return visible and true or false
+end
+
 function E.update(elapsed)
     if not F.db then
         return
@@ -438,11 +492,15 @@ function E.update(elapsed)
     part("Mail.step", F.Mail.step, now)
     part("Share.step", F.Share.step, now)
     part("Analytics.step", F.Analytics.step)
+    if E.recipesDue and now >= E.recipesDue then
+        E.recipesAt, E.recipesDue = now, nil
+        part("Crafting.learn", F.Crafting.learn)
+    end
     -- Timers on screen (the scan cooldown, a message running out) change without an event.
     tick = tick + (elapsed or 0)
     if tick >= 1 then
         tick = 0
-        if F.UI and F.UI.frame and F.UI.frame:IsShown() then
+        if onScreen() then
             E.dirty = true
         end
     end
@@ -459,10 +517,15 @@ function E.update(elapsed)
     end
 end
 
+-- One function for every frame: xpcall passes no arguments in Lua 5.1, and a closure built for each
+-- frame would be garbage sixty times a second.
+local updateElapsed
+local function runUpdate()
+    E.update(updateElapsed)
+end
 frame:SetScript("OnUpdate", function(_, elapsed)
-    local ok, err = xpcall(function()
-        E.update(elapsed)
-    end, trace)
+    updateElapsed = elapsed
+    local ok, err = xpcall(runUpdate, trace)
     if not ok then
         report(err)
     end
@@ -474,7 +537,9 @@ end)
 function E.keyBuyNext()
     E.input()
     local T, UI = F.Trade, F.UI
-    if UI and UI.section == "deals" and UI.filter == "vendor" then
+    -- Only the To-vendor page on screen takes the key for its run: a hidden window keeps the page
+    -- it showed last, and the key then buys the best deal like on any other page.
+    if UI and UI.section == "deals" and UI.filter == "vendor" and onScreen() then
         local ok, why = T.runClick()
         if not ok then
             E.notify(why)
@@ -600,6 +665,12 @@ end
 -- The current deal of an item: mode ("vendor", "flip", "shop", "disenchant"), profit, cost, units,
 -- and whether it was checked on the auction house in the last five minutes.
 function API.GetDeal(item)
+    -- The deal list is the last open house's: once a neutral house closes, its deals are not on
+    -- sale at the faction house the prices come from. A list without a house holds only checks
+    -- made before the first scan, at the house open then.
+    if F.Deals.scope and F.Deals.scope ~= E.scope() then
+        return nil
+    end
     local key = keyOf(item)
     local d = key and F.Deals.get(key)
     if not d then

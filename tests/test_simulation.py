@@ -16,7 +16,7 @@ SESSION = '''
 local F = ForeverFlip
 reported = {}
 F.Engine.report = function(err) reported[#reported + 1] = tostring(err) end
-F.Engine.autoVerify = true
+F.db.settings.autoVerify = true
 F.db.settings.autoScan = false
 F.db.settings.sniper = true
 F.db.settings.vendorMargin = 0
@@ -198,7 +198,7 @@ class LargeScanTests(unittest.TestCase):
     def test_a_scan_of_100000_auctions_is_read_in_small_frames(self):
         lua = runtime()
         lua.execute("""ForeverFlip.db.settings.autoScan=false;ForeverFlip.db.settings.sniper=false
-        ForeverFlip.Engine.autoVerify=false
+        ForeverFlip.db.settings.autoVerify=false
         for id = 1000, 1999 do addItem(id, 'Ware ' .. id, 50 + id % 300, id % 3 == 0 and 'item' or 'commodity') end
         for i = 1, 100000 do addAuction(1000 + i % 1000, 100 + (i * 7) % 900, 1 + i % 20) end""")
         began = time.perf_counter()

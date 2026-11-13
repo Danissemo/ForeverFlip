@@ -6,7 +6,7 @@ from test_addon import SETUP, run
 BATCH = '''
 local F=ForeverFlip
 local D,T=F.Deals,F.Trade
-F.Engine.autoVerify=false;F.db.settings.autoScan=false;F.db.settings.sniper=false
+F.db.settings.autoVerify=false;F.db.settings.autoScan=false;F.db.settings.sniper=false
 local keys={}
 for id=101,220 do
     addItem(id,'Batch item '..id,100,'commodity');addAuction(id,60,1)

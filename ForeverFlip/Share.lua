@@ -12,7 +12,8 @@
 --   !H|<scope>|<time>          "I have a scan from <time>" (after a full scan, or to answer a Q)
 --   !R|<holder>|<scope>|<time> "<holder>, please send it"; the holder sends it once on the channel
 --                              and everyone who is behind keeps it
--- A random short wait before answering lets one player answer for everyone.
+-- A random short wait before answering lets one player answer for everyone. A scan is offered and
+-- sent only when a receiver can take all its parts (S.MAX_PARTS).
 --
 -- Received items far from what the player already knows (more than S.TRUST times off the usual
 -- price) are left out: one player's silly or edited scan cannot move the prices.
@@ -33,9 +34,14 @@ S.PREFIX = "ForeverFlip"
 S.VERSION = 3
 S.HISTORY_DAYS = 7
 S.CHUNK = 240 -- payload characters per addon message (a message holds 255)
-S.PACE = 0.3 -- seconds between two messages sent
+-- Seconds between two messages sent. The client gives each prefix 10 messages, then one a second,
+-- and refuses the rest (Enum.SendAddonMessageResult.AddonMessageThrottle): at 0.3 s two parts of a
+-- scan in three would be refused.
+S.PACE = 1
 S.MAX_AGE = 7 * 86400 -- older scans are not merged
-S.TIMEOUT = 300 -- seconds to wait for the rest of a scan being received
+S.FUTURE = 600 -- a scan time further ahead of the clock is not believed
+S.TIMEOUT = 300 -- seconds a scan being received waits for its next part
+S.MAX_PARTS = 5000 -- the most parts of one scan a receiver takes, so the most a sender sends
 S.CHANNEL = "ForeverFlipPrices" -- the hidden realm channel
 S.TRUST = 10 -- a shared price more than this many times off the usual price is left out
 S.SAME_SCAN = 600 -- a scan this close to the newest one held adds nothing
@@ -63,9 +69,10 @@ function S.dec(s)
     return tonumber(s, 36)
 end
 
--- Item keys may hold any character of an item name; the separators are escaped.
+-- Item keys may hold any character of an item name; the separators are escaped, and so are control
+-- characters: an addon message cannot carry a NUL.
 local function esc(s)
-    return (s:gsub("[%%,;|]", function(c)
+    return (s:gsub("[%%,;|%c]", function(c)
         return string.format("%%%02X", c:byte())
     end))
 end
@@ -74,6 +81,35 @@ local function unesc(s)
     return (s:gsub("%%(%x%x)", function(h)
         return string.char(tonumber(h, 16))
     end))
+end
+
+-- An item key exactly as U.key writes it. "c:10:x", "i:30x" or a key with a NUL would each be one
+-- more history entry, kept and shared on.
+local function canonical(key)
+    local k = U.parseKey(key)
+    return k ~= nil and U.key(k.kind, k.id, k.name) == key and not key:find("%c")
+end
+
+-- The item's entry in the snapshot of the scan `last` (`day`: the scan's day), or nil when the scan
+-- did not see it and it has no record of the last S.HISTORY_DAYS days.
+local function snapItem(key, h, last, day)
+    if type(h) ~= "table" or not canonical(key) then
+        return nil
+    end
+    local seen = type(h.scan) == "table" and h.scan.at == last.at and U.finite(h.scan.market)
+    local days = {}
+    for _, d in ipairs(type(h.days) == "table" and h.days or {}) do
+        local o = day - (d.d or 0)
+        if o >= 0 and o < S.HISTORY_DAYS and (U.finite(d.m) or U.finite(d.min)) then
+            days[#days + 1] = { o = o, min = d.min, m = d.m, n = d.n, s = d.s }
+        end
+    end
+    if not seen and #days == 0 then
+        return nil
+    end
+    local today = h.days and h.days[#h.days]
+    local low = seen and (today and today.d == day and today.min or h.scan.market) or 0
+    return { key = key, m = seen and h.scan.market or 0, min = low, n = seen and (h.units or 0) or 0, days = days }
 end
 
 -- The player's price history: { scope, at, history = true, items = { { key, m, min, n, days } } }.
@@ -87,26 +123,9 @@ function S.snapshot()
     local history = F.Data.market(F.db, last.scope).history
     local items, day = {}, math.floor(last.at / 86400)
     for key, h in pairs(history) do
-        if type(h) == "table" then
-            local seen = type(h.scan) == "table" and h.scan.at == last.at and U.finite(h.scan.market)
-            local days = {}
-            for _, d in ipairs(type(h.days) == "table" and h.days or {}) do
-                local o = day - (d.d or 0)
-                if o >= 0 and o < S.HISTORY_DAYS and (U.finite(d.m) or U.finite(d.min)) then
-                    days[#days + 1] = { o = o, min = d.min, m = d.m, n = d.n, s = d.s }
-                end
-            end
-            if seen or #days > 0 then
-                local today = h.days and h.days[#h.days]
-                local low = seen and (today and today.d == day and today.min or h.scan.market) or 0
-                items[#items + 1] = {
-                    key = key,
-                    m = seen and h.scan.market or 0,
-                    min = low,
-                    n = seen and (h.units or 0) or 0,
-                    days = days,
-                }
-            end
+        local it = snapItem(key, h, last, day)
+        if it then
+            items[#items + 1] = it
         end
     end
     table.sort(items, function(a, b)
@@ -117,35 +136,28 @@ end
 
 -- Text form: "FF1|<scope>|<time>|key,usual,cheapest,units;..." with numbers in base 36. FF2 adds
 -- ",<days>" to each item: records "o.cheapest.usual.units.sold" joined by "/".
+local function record(it, history)
+    local text = esc(it.key) .. "," .. S.enc(it.m) .. "," .. S.enc(it.min) .. "," .. S.enc(it.n)
+    if not history then
+        return text
+    end
+    local days = {}
+    for k, d in ipairs(it.days or {}) do
+        days[k] = S.enc(d.o) .. "." .. S.enc(d.min) .. "." .. S.enc(d.m) .. "." .. S.enc(d.n) .. "." .. S.enc(d.s)
+    end
+    return text .. "," .. table.concat(days, "/")
+end
+
+local function header(history, scope, at)
+    return "FF" .. (history and S.VERSION or 1) .. "|" .. esc(scope) .. "|" .. S.enc(at) .. "|"
+end
+
 function S.encode(snap)
     local parts = {}
     for i, it in ipairs(snap.items) do
-        local record = esc(it.key) .. "," .. S.enc(it.m) .. "," .. S.enc(it.min) .. "," .. S.enc(it.n)
-        if snap.history then
-            local days = {}
-            for k, d in ipairs(it.days or {}) do
-                days[k] = S.enc(d.o)
-                    .. "."
-                    .. S.enc(d.min)
-                    .. "."
-                    .. S.enc(d.m)
-                    .. "."
-                    .. S.enc(d.n)
-                    .. "."
-                    .. S.enc(d.s)
-            end
-            record = record .. "," .. table.concat(days, "/")
-        end
-        parts[i] = record
+        parts[i] = record(it, snap.history)
     end
-    return "FF"
-        .. (snap.history and S.VERSION or 1)
-        .. "|"
-        .. esc(snap.scope)
-        .. "|"
-        .. S.enc(snap.at)
-        .. "|"
-        .. table.concat(parts, ";")
+    return header(snap.history, snap.scope, snap.at) .. table.concat(parts, ";")
 end
 
 local function dayRecords(text, noSales)
@@ -185,8 +197,9 @@ function S.decodeBegin(text)
     if type(text) ~= "string" then
         return nil
     end
-    -- Line breaks a chat or editor may add are dropped; item names keep their spaces.
-    text = text:gsub("[\r\n]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    -- Line breaks a chat or editor may add are dropped; item names keep their spaces. The game's
+    -- edit box may give a pasted "|" back doubled; a scan's text never holds two in a row.
+    text = text:gsub("[\r\n]", ""):gsub("||", "|"):gsub("^%s+", ""):gsub("%s+$", "")
     local version, scope, at, body = text:match("^FF(%d+)|([^|]+)|(%w+)|(.*)$")
     version = tonumber(version)
     if version ~= 1 and version ~= 2 and version ~= 3 then
@@ -213,7 +226,7 @@ function S.decodeSome(ctx, done)
             key, m, min, n = record:match("^([^,]+),(%w+),(%w+),(%w+)$")
         end
         key = key and unesc(key)
-        if key and U.parseKey(key) then
+        if key and canonical(key) then
             ctx.snap.items[#ctx.snap.items + 1] = {
                 key = key,
                 m = S.dec(m),
@@ -238,8 +251,20 @@ function S.decode(text)
     return ctx.snap
 end
 
+-- The realm and the side of a scope ("<realm>-<faction>").
 local function realmOf(scope)
-    return scope and scope:match("^(.*)%-[^%-]+$")
+    if type(scope) ~= "string" then
+        return nil
+    end
+    return scope:match("^(.*)%-([^%-]+)$")
+end
+
+local SIDES = { Alliance = true, Horde = true, Neutral = true }
+-- One of the auction houses of the player's realm. Any other text would be a market table that is
+-- kept forever (only the scanned house is tidied).
+local function house(scope)
+    local realm, side = realmOf(scope)
+    return realm == F.Engine.realm() and SIDES[side] == true
 end
 
 -- Merging in steps: S.mergeBegin checks the scan (realm, age, seen before), S.mergeSome merges its
@@ -252,7 +277,10 @@ function S.mergeBegin(snap, from, how)
     if realmOf(snap.scope) ~= F.Engine.realm() then
         return nil, "other_realm"
     end
-    if now - snap.at > S.MAX_AGE or snap.at > now + 600 then
+    if not house(snap.scope) then
+        return nil, "share_invalid"
+    end
+    if now - snap.at > S.MAX_AGE or snap.at > now + S.FUTURE then
         return nil, "old"
     end
     F.db.sharedSeen = type(F.db.sharedSeen) == "table" and F.db.sharedSeen or {}
@@ -282,6 +310,16 @@ function S.mergeBegin(snap, from, how)
     }
 end
 
+-- Units a shared day can have seen sold: each unit listed, at every full scan of the day (one per
+-- 15 minutes).
+local SCANS_A_DAY = 96
+local function sold(d)
+    if not U.finite(d.s) or d.s <= 0 or not U.finite(d.n) or d.n <= 0 then
+        return nil
+    end
+    return math.min(d.s, d.n * SCANS_A_DAY)
+end
+
 function S.mergeSome(ctx, done)
     local snap, history, day, from = ctx.snap, ctx.history, ctx.day, ctx.from
     while ctx.i <= #snap.items do
@@ -293,11 +331,15 @@ function S.mergeSome(ctx, done)
                 and price > 0
                 and (not U.finite(known) or known <= 0 or (price <= known * S.TRUST and price * S.TRUST >= known))
         end
-        local current = trusted(it.m)
+        -- The cheapest price is checked on its own and the units sold are bounded: a trusted usual
+        -- price carried 1c as the cheapest and 10^12 units sold, and the day records keep the lower
+        -- price and the higher count, which own scans never undo.
+        local current = trusted(it.m) and { m = it.m, min = trusted(it.min) and it.min or nil, n = it.n }
         local days = {}
         for _, d in ipairs(it.days or {}) do
-            if trusted(d.m or d.min) then
-                days[#days + 1] = d
+            local min = trusted(d.min) and d.min or nil
+            if (d.m and trusted(d.m)) or (not d.m and min) then
+                days[#days + 1] = { o = d.o, m = d.m, min = min, n = d.n, s = sold(d) }
             end
         end
         if current or #days > 0 then
@@ -308,11 +350,11 @@ function S.mergeSome(ctx, done)
             end
             if current then
                 if type(h.shared) ~= "table" or snap.at > (h.shared.at or 0) then
-                    h.shared = { at = snap.at, m = it.m, min = it.min, n = it.n, from = from }
+                    h.shared = { at = snap.at, m = current.m, min = current.min, n = current.n, from = from }
                 end
-                S.mergeDay(h, day, it)
-                if (it.n or 0) >= 10 or h.t then
-                    F.Market.recordTiming(h, it.m, snap.at)
+                S.mergeDay(h, day, current)
+                if (current.n or 0) >= 10 or h.t then
+                    F.Market.recordTiming(h, current.m, snap.at)
                 end
             end
             -- Earlier days of the sender's history: every full scan of theirs is in them.
@@ -337,6 +379,10 @@ function S.mergeEnd(ctx)
     )
     while #S.received > 10 do
         table.remove(S.received)
+    end
+    -- The history changed: what is sent next is built again.
+    if S.built and S.built.scope == snap.scope then
+        S.built = nil
     end
     if F.Analytics then
         F.Analytics.invalidate()
@@ -400,7 +446,103 @@ function S.register()
     end
 end
 
--- Queues the last scan for `channel` ("GUILD", "PARTY", "RAID" or "WHISPER" with `target`).
+-- The last scan's history as text, kept for that scan: { id = "<scope>@<time>", scope, at, items,
+-- total = parts, text }, text only when a receiver can take all parts. Built a slice per frame:
+-- 5 000 items took 100 ms to snapshot and encode at once, and every request did it again.
+S.built = nil
+S.building = nil -- { id, history, day, keys, i, records, after = { run(built) } }
+
+-- Returns the built text of the last scan, or nil: no scan, or still being built (`atOnce` finishes
+-- it in this frame, for a click).
+function S.build(atOnce)
+    local last = F.Scan.last
+    if not F.db or not last or not last.at or not last.scope or last.partial then
+        S.building = nil
+        return nil
+    end
+    local id = last.scope .. "@" .. last.at
+    if S.built and S.built.id == id then
+        return S.built
+    end
+    local b = S.building
+    if not b or b.id ~= id then
+        local history = F.Data.market(F.db, last.scope).history
+        local keys = {}
+        for key in pairs(history) do
+            if type(key) == "string" then
+                keys[#keys + 1] = key
+            end
+        end
+        table.sort(keys)
+        b = {
+            id = id,
+            history = history,
+            day = math.floor(last.at / 86400),
+            keys = keys,
+            i = 1,
+            records = {},
+            after = {},
+        }
+        S.building = b
+    end
+    local done = not atOnce and budget(4, 400) or nil
+    while b.i <= #b.keys do
+        local key = b.keys[b.i]
+        b.i = b.i + 1
+        local it = snapItem(key, b.history[key], last, b.day)
+        if it then
+            b.records[#b.records + 1] = record(it, true)
+        end
+        if done and done() then
+            return nil
+        end
+    end
+    local text = header(true, last.scope, last.at) .. table.concat(b.records, ";")
+    local built = { id = id, scope = last.scope, at = last.at, items = #b.records, total = math.ceil(#text / S.CHUNK) }
+    if built.items > 0 and built.total <= S.MAX_PARTS then
+        built.text = text
+    end
+    S.built, S.building = built, nil
+    for _, run in ipairs(b.after) do
+        local ok, err = pcall(run, built)
+        if not ok then
+            F.Engine.report(err)
+        end
+    end
+    return built
+end
+
+-- Runs `run(built)` once the last scan's text is built (at once when it is).
+local function whenBuilt(run)
+    local built = S.build()
+    if built then
+        run(built)
+    elseif S.building then
+        table.insert(S.building.after, run)
+    end
+end
+
+local function queue(built, channel, target)
+    local id = S.enc(built.at % 46656) .. S.enc(math.random(0, 1295))
+    local transfer = { channel = channel, total = built.total, sent = 0 }
+    for i = 1, built.total do
+        local part = built.text:sub((i - 1) * S.CHUNK + 1, i * S.CHUNK)
+        S.outbox[#S.outbox + 1] = {
+            channel = channel,
+            target = target,
+            transfer = transfer,
+            text = id .. ":" .. S.enc(i) .. ":" .. S.enc(built.total) .. ":" .. part,
+        }
+    end
+    if channel == "CHANNEL" then
+        S.serving = transfer
+    end
+    S.sending = { items = built.items, total = built.total, channel = channel, target = target }
+    F.Engine.changed()
+end
+
+-- Queues the last scan for `channel` ("GUILD", "PARTY", "RAID", "WHISPER" with `target`, or
+-- "CHANNEL" with the channel's number).
 function S.send(channel, target)
     if not S.canSend() then
         return false, "error"
@@ -417,23 +559,29 @@ function S.send(channel, target)
     if channel == "CHANNEL" and not target then
         return false, "error"
     end
-    local snap = S.snapshot()
-    if not snap or #snap.items == 0 then
+    local built = S.build(true)
+    if not built or built.items == 0 then
         return false, "no_scan"
     end
-    local text = S.encode(snap)
-    local id = S.enc(snap.at % 46656) .. S.enc(math.random(0, 1295))
-    local total = math.ceil(#text / S.CHUNK)
-    for i = 1, total do
-        S.outbox[#S.outbox + 1] = {
-            channel = channel,
-            target = target,
-            text = id .. ":" .. S.enc(i) .. ":" .. S.enc(total) .. ":" .. text:sub((i - 1) * S.CHUNK + 1, i * S.CHUNK),
-        }
+    if not built.text then
+        return false, "share_too_large" -- more parts than a receiver takes: nobody could complete it
     end
-    S.sending = { items = #snap.items, total = total, channel = channel, target = target }
-    F.Engine.changed()
+    queue(built, channel, target)
     return true, "share_queued"
+end
+
+-- Enum.SendAddonMessageResult: Success (0); AddonMessageThrottle (3) and ChannelThrottle (8) refuse
+-- a message for now, anything else for good. Older clients return nothing, or true.
+local function outcome(ok, result)
+    local R = Enum and Enum.SendAddonMessageResult or {}
+    if not ok then
+        return "failed"
+    elseif result == nil or result == true or result == (R.Success or 0) then
+        return "sent"
+    elseif result == (R.AddonMessageThrottle or 3) or result == (R.ChannelThrottle or 8) then
+        return "wait"
+    end
+    return "failed"
 end
 
 -- One message per S.PACE seconds (S.step, every frame).
@@ -443,23 +591,58 @@ local function stepOutbox(now)
     end
     local m = table.remove(S.outbox, 1)
     S.nextSend = now + S.PACE
-    pcall(C_ChatInfo.SendAddonMessage, S.PREFIX, m.text, m.channel, m.target)
-    if #S.outbox == 0 then
-        F.Engine.notify("share_sent")
+    local how = outcome(pcall(C_ChatInfo.SendAddonMessage, S.PREFIX, m.text, m.channel, m.target))
+    local transfer = m.transfer
+    if how == "wait" then
+        table.insert(S.outbox, 1, m) -- first again once the allowance is back
+    elseif transfer and how == "sent" then
+        transfer.sent = transfer.sent + 1
+        if transfer.sent == transfer.total then
+            transfer.done = true
+            F.Engine.notify("share_sent")
+        end
+    elseif transfer then
+        -- A refused part: no receiver can complete the scan, so its other parts stay unsent.
+        transfer.done = true
+        local kept = 0
+        for i = 1, #S.outbox do
+            local other = S.outbox[i]
+            S.outbox[i] = nil
+            if other.transfer ~= transfer then
+                kept = kept + 1
+                S.outbox[kept] = other
+            end
+        end
+        if transfer.channel ~= "CHANNEL" then
+            F.Engine.notify("error")
+        end
     end
     F.Engine.changed()
+end
+
+-- Announces the last scan on the realm channel, once built: only a scan receivers can take, and not
+-- when someone announced the same or a newer one.
+local function offer()
+    whenBuilt(function(built)
+        if built.text and (S.heard[built.scope] or 0) < built.at then
+            S.control("H", built.scope, built.at)
+        end
+    end)
 end
 
 -- After each own full scan: send it to the guild when the setting asks for it, and tell the realm
 -- channel that a new scan is there.
 function S.afterScan()
-    if F.db.settings.shareAuto and IsInGuild and IsInGuild() and #S.outbox == 0 then
-        S.send("GUILD")
+    local guild = F.db.settings.shareAuto and IsInGuild and IsInGuild()
+    if not guild and not (F.db.settings.shareChannel and S.channelID()) then
+        return
     end
-    local snap = F.Scan.last
-    if snap and snap.at then
-        S.control("H", snap.scope, snap.at)
-    end
+    whenBuilt(function()
+        if guild and #S.outbox == 0 then
+            S.send("GUILD")
+        end
+        offer()
+    end)
 end
 
 -- Receiving ----------------------------------------------------------------------------------------
@@ -470,24 +653,31 @@ end
 
 -- CHAT_MSG_ADDON
 function S.onMessage(prefix, text, channel, sender)
-    if prefix ~= S.PREFIX or type(text) ~= "string" or not F.db or not F.db.settings.shareReceive then
+    if prefix ~= S.PREFIX or type(text) ~= "string" or not F.db then
         return
     end
     if not sender or isSelf(sender) then
         return
     end
+    -- The realm channel is served with receiving off too (S.onControl needs shareChannel): only
+    -- asking for scans needs shareReceive.
     if text:sub(1, 1) == "!" then
         S.onControl(text, sender)
         return
     end
-    local id, seq, total, payload = text:match("^(%w+):(%w+):(%w+):(.*)$")
-    seq, total = S.dec(seq or ""), S.dec(total or "")
-    if not id or not seq or not total or seq < 1 or seq > total or total > 5000 then
+    if not F.db.settings.shareReceive then
         return
     end
+    local id, seq, total, payload = text:match("^(%w+):(%w+):(%w+):(.*)$")
+    seq, total = S.dec(seq or ""), S.dec(total or "")
+    if not id or not seq or not total or seq < 1 or seq > total or total > S.MAX_PARTS then
+        return
+    end
+    -- A scan is dropped when its parts stop coming, not after a fixed time: one part a second, a
+    -- scan of 1 000 parts takes 17 minutes.
     local now = F.Engine.clock()
     for k, r in pairs(S.inbox) do
-        if now - r.started > S.TIMEOUT then
+        if now - r.last > S.TIMEOUT then
             S.inbox[k] = nil
         end
     end
@@ -499,12 +689,20 @@ function S.onMessage(prefix, text, channel, sender)
         return
     end
     if not r then
-        r = { parts = {}, got = 0, total = total, started = now }
+        -- A sender sends one scan after another: the missing parts of its scan before are not
+        -- coming. One scan per sender also bounds what a sender can make this player hold.
+        for k, old in pairs(S.inbox) do
+            if old.sender == sender then
+                S.inbox[k] = nil
+            end
+        end
+        r = { parts = {}, got = 0, total = total, last = now, sender = sender }
         S.inbox[key] = r
     end
     if not r.parts[seq] then
         r.parts[seq] = payload
         r.got = r.got + 1
+        r.last = now
     end
     if r.got >= r.total then
         S.inbox[key] = nil
@@ -709,8 +907,16 @@ function S.control(kind, ...)
 end
 
 function S.ask()
+    -- Asking is for receiving; the channel is answered and served with receiving off too.
+    if not F.db or not F.db.settings.shareReceive then
+        return
+    end
     local scope = F.Engine.scope()
     S.control("Q", scope, S.newest(scope))
+end
+
+local function serving()
+    return S.serving ~= nil and not S.serving.done
 end
 
 -- !Q, !H and !R from other players of the channel.
@@ -735,18 +941,16 @@ function S.onControl(text, sender)
             return
         end
         -- Wait a moment: someone else may announce the same or a newer scan first.
-        S.later(1 + math.random() * 3, function()
-            if (S.heard[scope] or 0) < last.at then
-                S.control("H", scope, last.at)
-            end
-        end, "H" .. scope)
+        S.later(1 + math.random() * 3, offer, "H" .. scope)
     elseif kind == "!H" then
         local scope, at = unesc(fields[2] or ""), S.dec(fields[3] or "")
-        if not at then
+        -- A time ahead of the clock (an edited message, a clock that runs ahead) would silence the
+        -- answers to newcomers for the whole session: S.heard only grows.
+        if not at or not house(scope) or at > now + S.FUTURE or now - at > S.MAX_AGE then
             return
         end
         S.heard[scope] = math.max(S.heard[scope] or 0, at)
-        if scope ~= F.Engine.scope() or at <= S.newest(scope) + S.SAME_SCAN or now - at > S.MAX_AGE then
+        if not F.db.settings.shareReceive or scope ~= F.Engine.scope() or at <= S.newest(scope) + S.SAME_SCAN then
             return
         end
         local ask = name .. "@" .. at
@@ -761,24 +965,37 @@ function S.onControl(text, sender)
         if not at then
             return
         end
+        -- Requests come from anyone and name anyone: they are kept for the 120 s they are used.
+        for k, t in pairs(S.asked) do
+            if now - t > 120 then
+                S.asked[k] = nil
+            end
+        end
         S.asked[holder .. "@" .. at] = now
         local last = F.Scan.last
         if not F.AH.isPlayer(holder) or not last or last.scope ~= scope or last.at ~= at then
             return
         end
+        -- One copy at a time, and not again within 120 s: everyone behind keeps the copy being sent.
         local served = scope .. "@" .. at
-        if S.served[served] and now - S.served[served] < 120 then
+        if serving() or (S.served[served] and now - S.served[served] < 120) then
             return
         end
-        S.served[served] = now
-        S.send("CHANNEL", S.channelID())
+        whenBuilt(function(built)
+            if built.id == served and not serving() and S.send("CHANNEL", S.channelID()) then
+                S.served[served] = F.Engine.clock()
+            end
+        end)
     end
 end
 
--- Called every frame: delayed answers, then one message per S.PACE seconds.
+-- Called every frame: delayed answers, the last scan's text, then one message per S.PACE seconds.
 function S.step(now)
     if #S.waits > 0 then
         runWaits(now)
+    end
+    if S.building then
+        S.build()
     end
     stepOutbox(now)
     if S.working or #S.pending > 0 then

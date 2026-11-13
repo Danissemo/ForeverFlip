@@ -125,7 +125,9 @@ function D.evaluate(g, vendor, history, now)
     end
     if not ordered and g.kind == "gear" and F.Disenchant.active() then
         local de = F.Disenchant.evaluate(g.rows, g.id, D.budget())
-        if de and (not deal or de.profit > deal.profit) then
+        -- A shopping deal counts one auction (the player wants the item), a disenchant deal every
+        -- lot: their profits do not compare, and the shopping list wins as an order does.
+        if de and (not deal or deal.mode ~= "shop" and de.profit > deal.profit) then
             deal, reason = de, nil
         end
     end
@@ -159,18 +161,30 @@ function D.sure(d, now)
 end
 
 -- Sure of selling `qty` of an item at `price`, kept D.SURE_KEEP seconds for the same price,
--- quantity and sales data (it changes with a scan; the tooltip and the deals share it).
+-- quantity and sales data (it changes with a scan; the tooltip and the deals share it). Each price
+-- and quantity has its own entry: the tooltip asks for one unit and for the deal's units of the
+-- same item, and one entry per item made each of them throw the other's away.
 function D.sureAt(key, price, qty, now)
     now = now or clock()
     local h = F.Data.market(F.db, F.Engine.scope()).history[key]
     local data = type(h) == "table" and (h.sales and h.sales.at or h.flow and h.flow.at) or 0
     local stamp = price .. ":" .. qty .. ":" .. tostring(data)
-    local c = D.sureCache[key]
-    if c and c.stamp == stamp and now - c.at < D.SURE_KEEP then
+    local slots = D.sureCache[key]
+    local c = slots and slots[stamp]
+    if c and now - c.at < D.SURE_KEEP then
         return c.sure, c.parts
     end
     local sure, parts = F.Market.confidence(h, price, qty, now, D.trust(key, now))
-    D.sureCache[key] = { stamp = stamp, at = now, sure = sure, parts = parts }
+    if not slots then
+        slots = {}
+        D.sureCache[key] = slots
+    end
+    for old, entry in pairs(slots) do
+        if now - entry.at >= D.SURE_KEEP then
+            slots[old] = nil
+        end
+    end
+    slots[stamp] = { at = now, sure = sure, parts = parts }
     return sure, parts
 end
 
@@ -259,6 +273,7 @@ end
 D.requests = {}
 D.queued = {} -- queued key -> request; batch setup remains linear even for a whole category
 D.sent = {} -- successful or attempted new searches during the last rolling minute
+D.infoSince = {} -- key -> since when its search waits for the item's auction house data
 -- A search waits for an answer. A gear search between two of its steps (waitKey: its next version
 -- is not sent yet) has nothing on the way: a purchase may go meanwhile.
 function D.searching()
@@ -348,34 +363,56 @@ function D.holding()
     return ui.section == "deals" and selectedHold(ui)
 end
 
+-- What may be spent now: the money in the bags, and no more than what is left of this visit's
+-- spending limit (Settings) when one is set. The Buy button, Buy next and Buy all to vendor shrink a
+-- vendor deal to the same amount; T.overLimit stays the last guard of a purchase.
+local function spendable()
+    local budget = F.Engine.wallet()
+    local limit = tonumber(settings().spendLimit) or 0
+    if limit > 0 then
+        budget = math.min(budget, limit * 10000 - (F.Engine.spent or 0))
+    end
+    return budget
+end
+
 -- A vendor deal the money no longer covers (other purchases since the scan) shrinks to the units
--- the money in the bags buys, cheapest lots first: the merchant pays for each unit at once, so
--- there is nothing to wait for. Other deals are left as they are. Returns the deal.
+-- the money buys, cheapest lots first: the merchant pays for each unit at once, so there is nothing
+-- to wait for. An item row is a bucket of identical auctions bought one by one: a part of it fits
+-- too. The deal as found is kept (d.full) and every fit starts from it, so the deal grows back when
+-- the money does. Other deals are left as they are. Returns the deal, its fields the fitted view.
 function D.fitWallet(d)
-    local wallet = F.Engine.wallet()
-    if not d or d.mode ~= "vendor" or (d.cost or 0) <= wallet or type(d.lots) ~= "table" then
+    if not d or d.mode ~= "vendor" then
+        return d
+    end
+    local budget, full = spendable(), d.full
+    if full then
+        if d.fitBudget == budget then
+            return d
+        end
+        d.qty, d.cost, d.lots, d.maxUnit = full.qty, full.cost, full.lots, full.maxUnit
+        d.profit, d.roi = full.profit, full.roi
+        d.full, d.fitBudget = nil, nil
+    end
+    if (d.cost or 0) <= budget or type(d.lots) ~= "table" or not U.finite(d.exit) then
         return d
     end
     local qty, cost, used = 0, 0, {}
     for _, l in ipairs(d.lots) do
-        local unit, take = l.unit or 0, l.qty or 1
-        if unit <= 0 then
-            break
-        end
-        if d.kind == "commodity" then
-            take = math.min(take, math.floor((wallet - cost) / unit))
-        elseif cost + unit * take > wallet then
-            take = 0
-        end
+        local unit = l.unit or 0
+        local take = unit > 0 and math.min(l.qty or 1, math.floor((budget - cost) / unit)) or 0
         if take < 1 then
             break
         end
         qty, cost = qty + take, cost + take * unit
         used[#used + 1] = { unit = unit, qty = take, auctionID = l.auctionID }
     end
-    if qty < 1 or not U.finite(d.exit) then
+    if qty < 1 then
         return d
     end
+    full = full or {}
+    full.qty, full.cost, full.lots, full.maxUnit = d.qty, d.cost, d.lots, d.maxUnit
+    full.profit, full.roi = d.profit, d.roi
+    d.full, d.fitBudget = full, budget
     d.qty, d.cost, d.lots, d.maxUnit = qty, cost, used, used[#used].unit
     d.profit = qty * d.exit - cost
     d.roi = cost > 0 and d.profit / cost or 0
@@ -397,11 +434,6 @@ local function precise()
     return GetTime and GetTime() or clock()
 end
 
-local function retryChanged()
-    -- Kept for callers that used this to tell whether a recheck is waiting.
-    D.retry = D.requests[1] or D.backgroundRetry
-end
-
 function D.pending(key)
     if D.search and (key and D.search.key == key or not key and D.search.source == "manual") then
         return true
@@ -409,9 +441,13 @@ function D.pending(key)
     if key and D.queued[key] or not key and #D.requests > 0 then
         return true
     end
-    for _, queued in ipairs(F.Trade.checkQueue or {}) do
-        if not key or queued == key then
-            return true
+    -- Called every frame: no table is made for a missing queue (outside the auction house).
+    local checks = F.Trade.checkQueue
+    if checks then
+        for _, queued in ipairs(checks) do
+            if not key or queued == key then
+                return true
+            end
         end
     end
     -- Keep a dropped/timed-out background check visible as pending until its bounded retry
@@ -438,6 +474,14 @@ end
 -- Pacing and priority are independent: a click can promote an already queued fast batch.
 local function priority(r)
     return r.priority or (r.source ~= "manual" and 2 or r.fast and 1 or 0)
+end
+
+-- The player's own click (r.click: asked or promoted while Engine.interacting, half a second after a
+-- button, a row or a key binding). Only such a request goes while a full scan waits for its answer:
+-- the preparation on Buy hover and the frame step of Buy all to vendor ask with the same priority
+-- without a click, and their searches kept the scan's answer from coming.
+local function isClick(r)
+    return r.click and priority(r) == 0 or false
 end
 
 function D.foreground()
@@ -494,7 +538,9 @@ local function completeRequest(r, rows, complete)
     r.completed = true
     -- Gear: the item-key versions searched, for callbacks that read each of them (bids). Kept
     -- apart from the arguments: callbacks such as D.verifyCallback take a 4th argument of their own.
-    D.versions = r.keys
+    -- The keys the answer was read under: the exact key of a plain search answered under it, the
+    -- versions of the search that answered a request from its sweep (r.readKeys).
+    D.versions = r.readKeys or r.keys
     for _, cb in ipairs(r.callbacks or {}) do
         local ok, err = pcall(cb.run, r.key, rows, complete)
         if not ok then
@@ -516,12 +562,36 @@ end
 
 -- A batch from another page stays queued while Selling is open. Its paused head
 -- must not hold this page's own checks behind it; retain FIFO among runnable work.
-local function nextRequest()
+-- `clicks`: a full scan waits for its answer, only the player's clicks may go.
+local function nextRequest(clicks)
     for i, r in ipairs(D.requests) do
-        if not batchHeld(r) then
+        if not batchHeld(r) and (not clicks or isClick(r)) then
             return r, i
         end
     end
+end
+
+-- A browse of ours that ended without its answer (dropped, timed out, stopped) may still be
+-- answered, and that answer would be read as the answer to the next gear search. It is noted with
+-- its item (F.AH.droppedBrowse): a search of the same item sends the same browse, so the late answer
+-- is as good as its own (a dropped browse's retry was never complete before).
+local function browseLeft(s)
+    local left, now = F.AH.droppedBrowse, clock()
+    if left and left.id ~= s.item.id and now - left.at < F.AH.FOREIGN_WAIT then
+        -- Answers of two items may be on the way: the older one is foreign to both.
+        F.AH.foreignAt = math.max(F.AH.foreignAt or 0, left.at)
+    end
+    F.AH.droppedBrowse = { id = s.item.id, at = now }
+end
+
+-- A browse sent now may get somebody else's answer: a browse of another addon, or of ours for
+-- another item, a moment ago.
+local function browseForeign(id)
+    local left = F.AH.droppedBrowse
+    if left and left.id ~= id and clock() - left.at < F.AH.FOREIGN_WAIT then
+        return true
+    end
+    return F.AH.foreignRecent()
 end
 
 local nextGearKey -- below: the next version of a gear search
@@ -540,7 +610,7 @@ local function startRequest(r)
         or F.Trade.postingNow()
         or F.Sniper.inFlight()
         -- A full scan waits for its answer: only the player's own clicks go meanwhile.
-        or (F.Scan.blocking() and priority(r) > 0)
+        or (F.Scan.blocking() and not isClick(r))
         or batchHeld(r)
         -- The game's own Buy or Sell page is shown: what it shows is not replaced.
         or (priority(r) > 0 and F.AH.nativeShown and F.AH.nativeShown())
@@ -563,11 +633,15 @@ local function startRequest(r)
     end
     local plain = not (cached or r.item.kind == "gear" or D.byName[r.item.id])
     if (cached or plain) and F.AH.keyInfoReady and not F.AH.keyInfoReady(r.item, cached and cached[1]) then
-        r.infoSince = r.infoSince or now
-        if now - r.infoSince < 2 then
+        -- Kept per item, not per request: an automatic check or a sniper candidate is a new request
+        -- at every try, and its wait never ran out (nothing behind it was ever checked).
+        local since = D.infoSince[r.key] or now
+        D.infoSince[r.key] = since
+        if now - since < 2 then
             return false
         end
     end
+    D.infoSince[r.key] = nil
     if r.waitKey then
         D.search, r.waitKey, r.at, r.budgetAt = r, nil, clock(), now
         if not pcall(F.AH.searchKey, r.keys[r.keyIndex]) then
@@ -578,7 +652,7 @@ local function startRequest(r)
         return true
     end
     -- Cached answers and dropped-message events may fire inside the API call.
-    r.at, r.pages, r.budgetAt = clock(), 0, now
+    r.at, r.pages, r.budgetAt, r.readKeys = clock(), 0, now, nil
     D.search, D.lastRequest = r, now
     D.sent[#D.sent + 1] = now
     r.attempts = (r.attempts or 0) + 1
@@ -599,7 +673,7 @@ local function startRequest(r)
         -- Gear: a browse by name first (its item-key versions), then each version (see AH.lua).
         r.phase, r.keys, r.keyIndex, r.found, r.foundIDs, r.allComplete = "browse", nil, 0, {}, {}, true
         -- A browse somebody else sent just before may answer in place of this one.
-        r.foreign = F.AH.foreignRecent()
+        r.foreign = browseForeign(r.item.id)
         F.Sniper.yield()
         ok = pcall(F.AH.gearBrowse, r.item)
     else
@@ -656,9 +730,10 @@ function D.enqueue(key, callback, identity, fast)
         r.priority = math.min(priority(r), fast and 1 or 0)
         r.source = "manual"
         r.fast = r.fast or fast
+        -- Only a single check asked by a click marks it (not Check all's, which a click starts too).
+        r.click = r.click or not fast and F.Engine.interacting()
         addCallback(r, callback, identity)
         if D.search == r then
-            retryChanged()
             F.Engine.changed()
             return true
         end
@@ -675,6 +750,7 @@ function D.enqueue(key, callback, identity, fast)
         if not r then
             return false
         end
+        r.click = not fast and F.Engine.interacting()
     end
     if D.search and priority(D.search) > priority(r) then
         parkSearch()
@@ -688,7 +764,6 @@ function D.enqueue(key, callback, identity, fast)
             D.queued[key] = r
         end
     end
-    retryChanged()
     F.Engine.changed()
     return true
 end
@@ -700,21 +775,57 @@ local function finishSearch(rows, complete)
     F.Engine.changed()
 end
 
--- WoW Forever never answers a search of an item no other player sells. A search with no answer
--- of an item the last full scan (up to D.ALONE_AGE old) saw no other seller of is that case:
--- answered as "nobody else sells it", its item-key versions kept. Before, each such check waited
--- for nothing, forgot the versions (the next check browsed again) and was sent a second time.
+-- WoW Forever never answers a search of an item no other player sells. A search with no answer of
+-- an item the player has listed, that the last full scan (up to D.ALONE_AGE old) saw no other
+-- seller of and no check since saw one of, is that case: answered as "nobody else sells it", its
+-- item-key versions kept. Before, each such check waited for nothing, forgot the versions (the next
+-- check browsed again) and was sent a second time. Without a lot of the player's own the silence
+-- proves nothing (a slow answer, a lot listed after the scan): deals were removed for it.
 D.ALONE_AGE = 2 * 3600
+local function onlyYours(key)
+    local T = F.Trade
+    if not T.alone(key, D.ALONE_AGE) then
+        return false
+    end
+    local listed = false
+    for _, a in ipairs(T.owned or {}) do
+        if a.key == key and not a.sold then
+            listed = true
+            break
+        end
+    end
+    -- Another seller seen after the scan: a deal checked since, or a price check since with lots.
+    local last = F.Scan.last
+    local since = last and last.at or 0
+    local d = D.get(key)
+    local check = T.prices and T.prices[key]
+    return listed
+        and not (d and (d.verified or 0) >= since)
+        and not (check and (check.at or 0) >= since and type(check.rows) == "table" and #check.rows > 0)
+end
+
+local function cheaper(a, b)
+    return a.unit < b.unit
+end
+
 local function timeoutSearch(s)
     if s.phase == "browse" then
-        F.AH.foreignAt = clock() -- its late browse reply must not certify the next item
+        browseLeft(s) -- its late browse reply must not certify the next item
     end
-    if F.Trade.alone(s.key, D.ALONE_AGE) then
+    -- Gear: the lots of the versions answered so far are kept. They prove another seller, but the
+    -- versions without an answer may hold cheaper lots: not a complete list.
+    local found = s.phase == "keys" and #s.found > 0 and s.found
+    if not found and onlyYours(s.key) then
         finishSearch({}, true)
         return
     end
     if s.cached then
         F.AH.forgetKeys(s.item.id)
+    end
+    if found then
+        table.sort(found, cheaper)
+        finishSearch(found, false)
+        return
     end
     finishSearch(nil, false)
 end
@@ -724,10 +835,13 @@ function nextGearKey(s)
     s.keyIndex, s.keyPages, s.keyRows = s.keyIndex + 1, 0, nil
     local key = s.keys[s.keyIndex]
     if not key then
-        if s.cached and #s.found == 0 then
+        if #s.found == 0 and (s.cached or s.ownSkipped) then
             -- None of the remembered versions is listed now: the ending may have moved to a new
-            -- version. Unknown for now; the next check browses again.
-            F.AH.forgetKeys(s.item.id)
+            -- version. Unknown for now; the next check browses again. A version passed over for the
+            -- player's own lot proves nothing without another seller's lot found elsewhere.
+            if s.cached then
+                F.AH.forgetKeys(s.item.id)
+            end
             finishSearch(nil, false)
             return
         end
@@ -737,13 +851,13 @@ function nextGearKey(s)
         local shared = s.every and s.allComplete and s.shared
         finishSearch(s.found, s.allComplete)
         if shared then
-            D.shareSweep(s.item.id, s.key, shared)
+            D.shareSweep(s.item.id, s.key, shared, s.keys)
         end
         return
     end
     -- Yield between versions: the next frame can serve a new click or purchase first.
     s.phase, s.at, s.waitKey = "keys", clock(), true
-    if priority(s) == 0 and not F.Trade.busy() and F.AH.ready() then
+    if priority(s) == 0 and (isClick(s) or not F.Scan.blocking()) and not F.Trade.busy() and F.AH.ready() then
         s.waitKey, s.budgetAt = nil, precise()
         if not pcall(F.AH.searchKey, key) then
             finishSearch(nil, false)
@@ -754,8 +868,9 @@ end
 -- One search went through every version of a gear item, each read to its end: the queued checks
 -- of the item's other endings are answered from those lots at once, without a search of their
 -- own (Check all searched the same versions again for every ending of one item). An ending with
--- no lot there waits for its own search: the versions remembered may be out of date.
-function D.shareSweep(id, done, shared)
+-- no lot there waits for its own search: the versions remembered may be out of date. `keys`: the
+-- versions searched, where the answered requests' callbacks read them (D.versions, bids).
+function D.shareSweep(id, done, shared, keys)
     local answered = {}
     for i = #D.requests, 1, -1 do
         local r = D.requests[i]
@@ -776,10 +891,10 @@ function D.shareSweep(id, done, shared)
         end
     end
     for _, a in ipairs(answered) do
+        a.r.readKeys = keys
         completeRequest(a.r, a.rows, true)
     end
     if answered[1] then
-        retryChanged()
         F.Engine.changed()
     end
     return #answered
@@ -844,6 +959,17 @@ local function sameKey(a, b)
         and (a.itemLevel or 0) == (b.itemLevel or 0)
 end
 
+-- An item-key version holds an auction of the player's own: WoW Forever never answers a search
+-- that only the player's own lots match, so its silence is explained.
+local function ownVersion(searchKey)
+    for _, a in ipairs(F.Trade.owned or {}) do
+        if not a.sold and sameKey(a.itemKey, searchKey) then
+            return true
+        end
+    end
+    return false
+end
+
 -- Search results arrived (commodity: itemID; item or gear: item key table).
 function D.onResults(itemID, searchKey)
     if not F.AH.isOpen() then
@@ -851,11 +977,14 @@ function D.onResults(itemID, searchKey)
     end
     local s = D.search
     if s and s.phase == "keys" and s.item.id == itemID and sameKey(searchKey, s.keys[s.keyIndex]) then
-        local ok, rows, complete = pcall(F.AH.rows, s.item, searchKey)
-        if ok and not complete and s.keyPages > 0 and #rows <= (s.keyRows or 0) then
+        local ok, rows, complete, count = pcall(F.AH.rows, s.item, searchKey)
+        -- Pages are counted in results (AH.rows), not in the rows kept: a page of only other
+        -- endings' or the player's own lots is the page asked for all the same.
+        count = ok and (count or #rows) or 0
+        if ok and not complete and s.keyPages > 0 and count <= (s.keyRows or 0) then
             return -- the same rows again: wait for the page asked for (or the timeout)
         end
-        s.keyRows = ok and #rows or 0
+        s.keyRows = count
         -- A version with more listings than one page: up to 3 more pages, unless the cheapest
         -- page already reaches past the deal's price.
         local d = D.get(s.key)
@@ -909,15 +1038,19 @@ function D.onResults(itemID, searchKey)
     -- The answer comes under the item's exact key (it may carry an item level): read it there, not
     -- under the plain key of the request, which would find no rows.
     local exact = type(searchKey) == "table" and s.item.kind ~= "commodity" and searchKey or nil
-    local ok, rows, complete = pcall(F.AH.rows, s.item, exact)
+    local ok, rows, complete, count = pcall(F.AH.rows, s.item, exact)
     if not ok then
         finishSearch(nil, false)
         return
     end
-    if not complete and s.pages > 0 and #rows <= (s.rows or 0) then
+    -- Callbacks that read the answer themselves (bids) read it there too (D.versions).
+    s.readKeys = exact and { exact } or nil
+    -- Counted in results, as above: a page of only the player's own lots or of bids is a page too.
+    count = count or #rows
+    if not complete and s.pages > 0 and count <= (s.rows or 0) then
         return -- the same rows again: wait for the page asked for (or the timeout)
     end
-    s.rows = #rows
+    s.rows = count
     -- Enough when complete, or when the cheapest page already reaches past every deal price.
     local d = D.get(s.key)
     local last = rows[#rows]
@@ -946,9 +1079,11 @@ function D.learn(itemID, searchKey)
     end
     local keys = {}
     if kind == "gear" then
+        -- Every search event of the game's Buy tab comes here: the item's own keys ("g:<id>:<name>",
+        -- U.key) are picked by their start, not by parsing every key of the history.
+        local prefix = "g:" .. itemID .. ":"
         for key in pairs(F.Data.market(F.db, D.scope).history) do
-            local item = U.parseKey(key)
-            if item and item.id == itemID and item.kind == "gear" then
+            if string.find(key, prefix, 1, true) == 1 then
                 keys[#keys + 1] = key
             end
         end
@@ -970,9 +1105,9 @@ function D.onDropped()
     if s then
         D.search = nil
         if s.phase == "browse" then
-            -- Its browse may still be answered: the next gear search must not take that answer
-            -- for its own (AH.foreignRecent).
-            F.AH.foreignAt = F.Engine.clock()
+            -- Its browse may still be answered: the next gear search of another item must not take
+            -- that answer for its own; its own retry may.
+            browseLeft(s)
         end
         s.readyAt = precise() + 2
         if (s.attempts or 0) >= 3 then
@@ -984,7 +1119,6 @@ function D.onDropped()
         else
             completeRequest(s, nil, false)
         end
-        retryChanged()
         F.Engine.changed()
     end
 end
@@ -998,7 +1132,6 @@ function D.setSniper(enabled)
     if not enabled and r and r.source == "sniper" then
         D.backgroundRetry = nil
         completeRequest(r, nil, false)
-        retryChanged()
     end
     F.Engine.changed()
 end
@@ -1017,15 +1150,22 @@ end
 
 -- Stops all of it at once (the Stop button): queued and running searches are dropped (an answer
 -- still on its way is ignored), the full scan is stopped, the sniper's round ends, a merchant sale
--- stops after what was sent. Settings stay as they are.
+-- stops after what was sent, Buy all to vendor ends. Settings stay as they are.
 function D.stopAll()
     D.clear()
     D.holdUntil = nil
     if F.Trade.checkQueue then
         F.Trade.checkQueue = {}
     end
+    -- The own-auction checks still to send were only in that queue (the sent ones were answered by
+    -- D.clear): My auctions must not wait for them as "checking" until the house is closed.
+    F.Trade.checkingOwned = nil
     if F.Trade.vendorJob then
         F.Trade.vendorJob.queue = {}
+    end
+    -- Its frame step would send the check of its next deal at once.
+    if F.Trade.runStop then
+        F.Trade.runStop()
     end
     if F.Scan.job then
         F.Scan.stop()
@@ -1041,7 +1181,11 @@ end
 function D.clear()
     D.clearing = true
     local active, requests, background = D.search, D.requests, D.backgroundRetry
-    D.search, D.requests, D.queued, D.backgroundRetry, D.retry = nil, {}, {}, nil, nil
+    if active and active.phase == "browse" then
+        browseLeft(active) -- its answer may still come, as after a timeout
+    end
+    D.search, D.requests, D.queued, D.backgroundRetry = nil, {}, {}, nil
+    D.infoSince = {}
     completeRequest(active, nil, false)
     for _, r in ipairs(requests) do
         completeRequest(r, nil, false)
@@ -1211,8 +1355,10 @@ function D.verify(key, callback, source)
 end
 
 -- A purchase went through: the deal is evaluated again from the rows of its check, less what was
--- bought (the auction for gear and items, the cheapest units for commodities). No search is sent;
--- the deal keeps the time of its check, so it is checked again once that is too old.
+-- bought (the auction for gear and items, the cheapest units for commodities), and keeps the time of
+-- its check, so it is checked again once that is too old. No search is sent, except after a bucket:
+-- an item row of identical auctions loses only the one bought, and the others stay listed under
+-- auction IDs not known yet, which a new search reads before the next purchase.
 function D.afterPurchase(op)
     if F.Scan.last then
         F.Scan.last.purchased = F.Scan.last.purchased or {}
@@ -1223,11 +1369,16 @@ function D.afterPurchase(op)
         D.verify(op.key)
         return
     end
-    local rows, left = {}, op.kind == "commodity" and (op.qty or 0) or 0
+    local rows, left, bucket = {}, op.kind == "commodity" and (op.qty or 0) or 0, false
     for _, r in ipairs(d.rows) do
         if op.kind ~= "commodity" then
             if not (op.auctionID and r.auctionID == op.auctionID) then
                 rows[#rows + 1] = r
+            elseif (r.qty or 1) > (op.qty or 1) then
+                local copy = U.copy(r)
+                copy.qty, copy.auctionID = r.qty - (op.qty or 1), nil
+                rows[#rows + 1] = copy
+                bucket = true
             end
         elseif left >= (r.qty or 0) then
             left = left - (r.qty or 0)
@@ -1243,6 +1394,9 @@ function D.afterPurchase(op)
     local live = D.get(op.key)
     if live then
         live.verified = verified
+    end
+    if bucket then
+        D.verify(op.key)
     end
 end
 
@@ -1303,20 +1457,26 @@ function D.step()
             s = nil
         end
     end
-    local first = nextRequest()
-    if s and s.waitKey and first and (priority(first) < priority(s) or batchHeld(s)) then
+    -- A full scan waits for its answer: only the player's clicks go meanwhile. A gear search held
+    -- between its versions by it gives way to a click.
+    local blocking = F.Scan.blocking()
+    local first = nextRequest(blocking)
+    if s and s.waitKey and first and (priority(first) < priority(s) or batchHeld(s) or blocking and not isClick(s)) then
         parkSearch()
         s = nil
     end
+    -- The throttle is asked last: with a stuck throttle AH.ready lets one message through, and a
+    -- step then held back by another test wasted it (the Buy button never got one).
     if
         s
         and s.waitKey
-        and F.AH.ready()
-        and (priority(s) == 0 or not F.Scan.blocking() and not (F.AH.nativeShown and F.AH.nativeShown()))
+        and (isClick(s) or not blocking)
+        and (priority(s) == 0 or not (F.AH.nativeShown and F.AH.nativeShown()))
         and not batchHeld(s)
         and not F.Trade.busy()
         and not F.Trade.postingNow()
         and (priority(s) == 0 or not D.buyHolding(s.key))
+        and F.AH.ready()
     then
         s.waitKey, s.at, s.budgetAt = nil, now, precise()
         if not pcall(F.AH.searchKey, s.keys[s.keyIndex]) then
@@ -1325,9 +1485,14 @@ function D.step()
     end
     s = D.search
     if s and not s.waitKey and now - s.at > (s.fast and D.FAST_WAIT or D.ANSWER_WAIT) then
-        -- Nobody else sells it (the last scan): no retry by name, it is answered as such.
-        local alone = F.Trade.alone(s.key, D.ALONE_AGE)
-        if not alone and s.item.kind == "item" and not s.phase and F.AH.canSearchGear() and not s.byNameTried then
+        -- Nobody else sells it (only yours): no retry by name, it is answered as such.
+        local alone = onlyYours(s.key)
+        if s.phase == "keys" and not (alone and #s.found == 0) and ownVersion(s.keys[s.keyIndex]) then
+            -- A version with the player's own lot gave no answer: the next one is searched, and the
+            -- rows read so far are kept. Other endings are not answered from an unread version.
+            s.ownSkipped, s.every = true, false
+            nextGearKey(s)
+        elseif not alone and s.item.kind == "item" and not s.phase and F.AH.canSearchGear() and not s.byNameTried then
             -- No answer to the plain search: tried again at once by name (a browse lists the
             -- item's exact keys, then each is searched), as gear is. Remembered for next time.
             D.byName[s.item.id] = true
@@ -1335,7 +1500,6 @@ function D.step()
             D.search = nil
             s.readyAt = precise()
             queueRequest(s, true)
-            retryChanged()
         else
             timeoutSearch(s)
         end
@@ -1343,8 +1507,8 @@ function D.step()
     if D.search or F.Trade.busy() or not F.AH.isOpen() then
         return
     end
-    local r, index = nextRequest()
-    if F.Scan.blocking() and not (r and priority(r) == 0) then
+    local r, index = nextRequest(blocking)
+    if blocking and not r then
         return
     end
     if r then
@@ -1355,7 +1519,6 @@ function D.step()
                 table.insert(D.requests, index, r)
                 D.queued[r.key] = r
             end
-            retryChanged()
         end
         return
     end
@@ -1370,22 +1533,20 @@ function D.step()
     end
     r = D.backgroundRetry
     if r then
-        if r.source == "sniper" and not settings().sniper or r.source == "auto" and not F.Engine.autoVerify then
+        if r.source == "sniper" and not settings().sniper or r.source == "auto" and not settings().autoVerify then
             D.backgroundRetry = nil
             completeRequest(r, nil, false)
-            retryChanged()
         elseif precise() >= r.readyAt then
             D.backgroundRetry = nil
             if not startRequest(r) then
                 D.backgroundRetry = r
             end
-            retryChanged()
             return
         else
             return
         end
     end
-    if F.Engine.autoVerify then
+    if settings().autoVerify then
         for _, d in ipairs(D.list) do
             if (not d.verified or now - d.verified > 300) and now - (d.tried or 0) > 120 then
                 if D.verify(d.key, nil, "auto") then
@@ -1405,9 +1566,11 @@ function D.snipe()
     if not F.db.settings.sniper or not D.scope then
         return false
     end
+    -- The throttle is only looked at (AH.available): with a stuck throttle AH.ready lets one message
+    -- through, and taking it here left none for the search itself, nor for the Buy button.
     if F.Sniper.active() then
         -- Fast sniper: exact checks of the candidates its browse rounds found.
-        if precise() - (D.lastRequest or -10) < 0.4 or not F.AH.ready() then
+        if precise() - (D.lastRequest or -10) < 0.4 or not F.AH.available() then
             return false
         end
         local key = F.Sniper.next()
@@ -1423,7 +1586,7 @@ function D.snipe()
     if not hot or #hot == 0 then
         return false
     end
-    if precise() - (D.lastRequest or -10) < 1 or not F.AH.ready() then
+    if precise() - (D.lastRequest or -10) < 1 or not F.AH.available() then
         return false
     end
     D.snipeIndex = (D.snipeIndex or 0) % #hot + 1
@@ -1444,7 +1607,7 @@ end
 D.alerted = {}
 function D.alert(d)
     local s = settings()
-    if not s.alerts or d.profit < (s.alertMinProfit or 0) then
+    if not s.alerts or d.profit < s.alertMinProfit then
         return false
     end
     local last = D.alerted[d.key]

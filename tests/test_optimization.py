@@ -118,23 +118,25 @@ class RecoveryWorkTests(unittest.TestCase):
 
 
 class OwnedWorkTests(unittest.TestCase):
-    def test_owned_unit_counts_are_indexed_once_per_server_snapshot(self):
+    def test_alone_compares_with_the_own_units_saved_with_the_scan(self):
         run('''local F = ForeverFlip; local T = F.Trade
         local reads = 0
         T.owned = {}
+        local own = {}
         for i=1,150 do
             local key = 'i:'..i
             T.owned[i] = setmetatable({qty=1}, {__index=function(_, field)
                 if field=='key' then reads=reads+1; return key end
             end})
+            own[key] = 1
         end
-        F.Scan.last = { ownersKnown=false }
+        F.Scan.last = { ownersKnown=false, ownUnits=own }
         F.Scan.listedUnits = function() return 1 end
         for i=1,150 do assert(T.alone('i:'..i)) end
-        assert(reads<=300, 'counting each row rescanned the snapshot '..reads..' times')
+        assert(reads==0, 'each row read the own-auction snapshot '..reads..' times')
         T.owned = {{key='i:1',qty=2}}
         F.Scan.listedUnits = function() return 2 end
-        assert(T.alone('i:1'), 'the new snapshot invalidates the index')''')
+        assert(not T.alone('i:1'), 'a lot posted after the scan is not in its count')''')
 
 
 if __name__ == '__main__':

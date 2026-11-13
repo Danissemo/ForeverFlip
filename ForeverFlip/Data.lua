@@ -7,6 +7,7 @@
 --   markets[scope]    per auction house: history[key] = { scan = {...}, flow = {...} }, stats
 --   chars[owner]      per character: positions, journal, pending purchases, listings
 local F = ForeverFlip
+local U = F.Util
 local D = {}
 F.Data = D
 
@@ -49,7 +50,6 @@ D.DEFAULTS = {
 
 function D.open(saved)
     local db = type(saved) == "table" and saved or {}
-    db.version = 1
     db.settings = type(db.settings) == "table" and db.settings or {}
     for k, v in pairs(D.DEFAULTS) do
         if db.settings[k] == nil then
@@ -131,17 +131,25 @@ function D.char(db, owner)
 end
 
 -- Journal entries: { at, kind = "buy" | "sell" | "vendor" | "expired" | "cancel" | "return", key, name,
--- qty, amount, profit }: for the last three, amount is the deposit (and cancel fee) lost.
+-- qty, amount, profit }: for the last three, amount is the deposit (and cancel fee) lost, and
+-- profit (negative) the part of it that left the item's profit at once (no stock was held).
+-- Journal kinds of a post that came back: its deposit (amount) was lost.
+local FAILED_KINDS = { expired = true, ["return"] = true, cancel = true }
 -- Daily totals of the journal, kept D.DAILY_DAYS days: the journal keeps only its last 500
 -- entries, and a busy week of Analytics read from it alone came out short.
 D.DAILY_DAYS = 60
-local function addDay(char, e)
-    local day = math.floor((e.at or 0) / 86400)
+local function dayOf(char, at)
+    local day = math.floor((at or 0) / 86400)
     local d = char.daily[day]
     if not d then
         d = { spent = 0, buys = 0, earned = 0, profit = 0, cost = 0, sales = 0, wins = 0, vendor = 0, auction = 0 }
         char.daily[day] = d
     end
+    return d
+end
+
+local function addDay(char, e)
+    local d = dayOf(char, e.at)
     if e.kind == "buy" then
         d.spent, d.buys = d.spent + (e.amount or 0), d.buys + 1
     elseif e.kind == "sell" or e.kind == "vendor" then
@@ -154,6 +162,10 @@ local function addDay(char, e)
         else
             d.auction = d.auction + profit
         end
+    elseif FAILED_KINDS[e.kind] and e.profit then
+        -- A deposit or fee lost while none of the item was held (D.addCost); one lost on stock joins
+        -- its cost and reaches the profit with the sale.
+        d.profit = d.profit + e.profit
     end
 end
 
@@ -169,6 +181,11 @@ function D.daily(char)
 end
 
 function D.log(char, entry)
+    -- A purchase names the auction house it was made at: a full scan of one house counts only the
+    -- player's purchases there as its own (F.Scan.ownBought).
+    if entry.kind == "buy" and entry.scope == nil and F.Engine and F.Engine.scope then
+        entry.scope = F.Engine.scope()
+    end
     D.logLotEvent(char, entry)
     D.daily(char)
     char.journal[#char.journal + 1] = entry
@@ -195,15 +212,23 @@ function D.itemStats(char, key, name)
     return s
 end
 
--- Journal kinds of a post that came back: its deposit (amount) was lost.
-local FAILED_KINDS = { expired = true, ["return"] = true, cancel = true }
-
 -- Purchase lots: every purchase with what became of it, first in, first out. char.lots = {
 -- { id, key, name, at, qty, cost, mode, left, sold, received, lost, soldAt } }: cost = what the
 -- purchase cost, received = the money its sold units brought after the cut, lost = deposits of
 -- posts that expired or were cancelled and the game's cancel fees, booked on the lot whose units
--- were on sale. The last D.LOTS lots are kept.
+-- were on sale. Past D.LOTS lots the oldest closed ones are dropped; an open lot is the stock
+-- sales take from first, so it is never dropped.
 D.LOTS = 300
+local function trimLots(lots)
+    local i = 1
+    while #lots > D.LOTS and i <= #lots do
+        if (lots[i].left or 0) <= 0 then
+            table.remove(lots, i)
+        else
+            i = i + 1
+        end
+    end
+end
 -- Durable movements belong to a purchase, not to the rolling 500-entry activity journal.
 -- Keep the purchase origin when trimming movements; mark any missing history explicitly.
 D.LOT_EVENTS = 300
@@ -237,6 +262,7 @@ local function remember(char, kind, key, refs, at)
     local p = pendingEvents[char] or {}
     pendingEvents[char] = p
     p[kind] = { key = key, refs = refs, at = at }
+    return p[kind]
 end
 
 -- Accounting records exact FIFO allocations first; the journal supplies the observed exit kind.
@@ -257,6 +283,10 @@ function D.logLotEvent(char, e)
             event.kind, event.estimated, event.accounted = e.kind, e.estimated, e.accounted
             event.source = e.source or event.source
             e.lots[#e.lots + 1] = { id = ref.lot.id, qty = event.qty, amount = event.amount }
+        end
+        if (p.written or 0) > 0 then
+            -- D.addCost found no stock: the loss left the item's profit, so the day counts it.
+            e.profit = -p.written
         end
         pending[category] = nil
         return
@@ -368,6 +398,8 @@ local function shareLoss(lots, amount, qty, at, refs)
     end
 end
 
+-- Per character: the lots table D.lots checked last, and the last bid log entry it looked at.
+local checkedLots = setmetatable({}, { __mode = "k" })
 function D.lots(char)
     if type(char.lots) ~= "table" then
         char.lots = {}
@@ -416,23 +448,38 @@ function D.lots(char)
                 shareLoss(open[e.key], e.amount, e.lossQty or e.qty)
             end
         end
-        while #char.lots > D.LOTS do
-            table.remove(char.lots, 1)
-        end
+        trimLots(char.lots)
         char.lotsJoined = 1
     elseif char.lotsJoined ~= 1 then
         joinSaved(char)
     end
+    -- The repairs below run once per lots table (the journal page asks for the lots on every
+    -- refresh): a table built or joined above is a new one and is checked again.
+    local seen = checkedLots[char]
+    if not seen or seen.lots ~= char.lots then
+        for _, lot in ipairs(char.lots) do
+            if type(lot.events) ~= "table" then
+                -- Surviving totals are authoritative; the global journal may have lost the origin
+                -- and cannot safely attribute sales to these old lots.
+                lot.events, lot.historyIncomplete = {}, true
+            end
+        end
+        seen = { lots = char.lots }
+        checkedLots[char] = seen
+    end
     -- Older bid wins predate the purchase's bid flag. Require a unique exact match;
-    -- the item alone cannot distinguish a bid from a later buyout.
-    for _, lot in ipairs(char.lots) do
-        if type(lot.events) ~= "table" then
-            -- Surviving totals are authoritative; the global journal may have lost the origin
-            -- and cannot safely attribute sales to these old lots.
-            lot.events, lot.historyIncomplete = {}, true
+    -- the item alone cannot distinguish a bid from a later buyout. The bid log only grows at its
+    -- end: wins after the last one checked are new.
+    local log = type(char.bidLog) == "table" and char.bidLog or {}
+    local from = 1
+    for i = #log, 1, -1 do
+        if log[i] == seen.last then
+            from = i + 1
+            break
         end
     end
-    for _, b in ipairs(char.bidLog or {}) do
+    for i = from, #log do
+        local b = log[i]
         if b.outcome == "won" and b.ended then
             local match, n = nil, 0
             for _, lot in ipairs(char.lots) do
@@ -445,6 +492,7 @@ function D.lots(char)
             end
         end
     end
+    seen.last = log[#log]
     return char.lots
 end
 
@@ -460,18 +508,22 @@ end
 
 -- A cost of holding the item that is not its price: a deposit lost on an expired or cancelled post,
 -- a cancel fee. It joins the stock's cost, so the floor and the next sale's profit count it; with no
--- stock left it is booked straight into the item's profit.
+-- stock left it is booked straight into the item's profit. Returns that part (0 when stock took
+-- it): the journal entry logged next for the loss carries it as its profit (D.logLotEvent).
 function D.addCost(char, key, amount, at, qty)
-    if not key or type(amount) ~= "number" or amount ~= amount or amount <= 0 then
-        return
+    -- An infinite amount would make every floor and break-even price infinite.
+    if not key or not U.finite(amount) or amount <= 0 then
+        return 0
     end
     local p = char.positions[key]
     local s = D.itemStats(char, key, p and p.name)
     s.lost = (s.lost or 0) + amount
+    local written = 0
     if p and p.qty > 0 then
         p.cost, p.lost = p.cost + amount, (p.lost or 0) + amount
     else
         s.profit = s.profit - amount
+        written = amount
     end
     local lots, refs = openLots(char, key), {}
     if #lots > 0 then
@@ -486,7 +538,8 @@ function D.addCost(char, key, amount, at, qty)
             end
         end
     end
-    remember(char, "loss", key, refs, at)
+    remember(char, "loss", key, refs, at).written = written
+    return written
 end
 
 -- Journal losses can be exact recorded charges, reconstructed estimates, or an older
@@ -509,18 +562,37 @@ end
 -- was booked as a purchase at the post's price: tens of gold "spent" that never left the bags. The
 -- journal holds such returns as buys of one item that follow each other within D.RETURN_GAP
 -- seconds, each of D.RETURN_MIN units or more: taking mail books them a second apart, while a
--- purchase on the auction house (a quote, then a confirmation) takes longer. They become kind
--- "return": `posted` keeps the price they were booked at, `amount` becomes the deposit lost.
+-- purchase on the auction house (a quote, then a confirmation) takes longer. Only what the buyer
+-- invoice booked counts (ForeverFlip's purchases carry a mode, a merchant's `merchant`, a won bid
+-- `bid`), and only units the player had posted before at the price they were booked at. They
+-- become kind "return": `posted` keeps the price they were booked at, `amount` becomes the deposit
+-- lost, `booked` says the purchase is still in the books until D.recount takes it out (returns an
+-- older recount found were taken out by it).
 D.RETURN_GAP, D.RETURN_MIN = 10, 5
+local function returnedPost(posts, e)
+    if e.kind ~= "buy" or not e.key or (e.qty or 0) < D.RETURN_MIN or e.mode or e.merchant or e.bid then
+        return nil
+    end
+    for _, p in ipairs(posts[e.key] or {}) do
+        -- The post's price for the units that came back, to the copper the invoice was rounded to.
+        if p.qty >= e.qty and math.abs((e.amount or 0) * p.qty - (p.amount or 0) * e.qty) <= p.qty then
+            return p
+        end
+    end
+end
+
 function D.markReturns(journal)
-    local last, out = {}, {}
+    local last, out, posts = {}, {}, {}
     for i, e in ipairs(journal) do
-        if e.kind == "buy" and e.key and (e.qty or 0) >= D.RETURN_MIN then
+        if e.kind == "post" and e.key and (e.qty or 0) > 0 then
+            posts[e.key] = posts[e.key] or {}
+            table.insert(posts[e.key], e)
+        elseif returnedPost(posts, e) then
             local p = last[e.key] and journal[last[e.key]]
             if p and (e.at or 0) - (p.at or 0) <= D.RETURN_GAP then
                 for _, x in ipairs({ p, e }) do
                     if x.kind == "buy" then
-                        x.kind, x.posted, x.amount = "return", x.amount, 0
+                        x.kind, x.posted, x.amount, x.booked = "return", x.amount, 0, true
                         out[#out + 1] = x
                     end
                 end
@@ -531,22 +603,174 @@ function D.markReturns(journal)
     return out
 end
 
--- Rebuilds the item totals, stock, purchase lots and daily totals from the journal (which keeps
--- every trade: D.log drops entries only past 500). A post that came back (expired, cancelled,
--- returned) without its deposit gets `deposit(key, qty)`, the estimate of what posting it cost; nil
--- when that is not known yet (the item's merchant price is still loading): then nothing changes
--- and false is returned. Losses the journal never held (cancels made before they were logged)
--- are kept: what an item lost beyond the journal is booked again, less the returns' estimates
--- (a return is often that very cancel).
+-- A sale costed again: its entry, the item's profit and the day's totals take the new profit.
+local function reprofit(char, s, e, profit)
+    local old = e.profit or 0
+    if profit == old then
+        return
+    end
+    s.profit, e.profit = s.profit + profit - old, profit
+    local d = type(char.daily) == "table" and char.daily[math.floor((e.at or 0) / 86400)]
+    if d then
+        d.profit, d.cost = d.profit + profit - old, d.cost - (profit - old)
+        d.wins = d.wins + (profit > 0 and 1 or 0) - (old > 0 and 1 or 0)
+        if e.kind == "vendor" then
+            d.vendor = d.vendor + profit - old
+        else
+            d.auction = d.auction + profit - old
+        end
+    end
+end
+
+-- The lot a return was booked into gives back its units and price: the lot its journal entry names,
+-- else the item's lot it joined or started (lots built from the journal before it was found). Sales
+-- that FIFO gave to the returned units sold units of the item's next lots.
+local function unbookLot(char, e)
+    local lots, refs, index = char.lots, type(e.lots) == "table" and e.lots or {}, nil
+    for i, lot in ipairs(lots) do
+        for _, ref in ipairs(refs) do
+            if lot.id == ref.id and lot.key == e.key then
+                index = i
+            end
+        end
+    end
+    for i = #lots, 1, -1 do
+        local lot = lots[i]
+        if #refs == 0 and lot.key == e.key and lot.at and e.at and lot.at <= e.at then
+            if e.at - lot.at <= D.LOT_MERGE and lotKind(lot.mode, lot.bid) == "flip" then
+                index = i
+            end
+            break
+        end
+    end
+    local lot = index and lots[index]
+    if not lot or (lot.qty or 0) < e.qty then
+        return
+    end
+    lot.qty, lot.cost, lot.left = lot.qty - e.qty, (lot.cost or 0) - e.posted, (lot.left or 0) - e.qty
+    local over, sold = -lot.left, lot.sold or 0
+    if over > 0 then
+        local moved = sold > 0 and math.floor((lot.received or 0) * over / sold + 0.5) or 0
+        lot.left, lot.sold, lot.received = 0, sold - over, (lot.received or 0) - moved
+        for i = index + 1, #lots do
+            local l = lots[i]
+            if over > 0 and l.key == e.key and (l.left or 0) > 0 then
+                local n = math.min(over, l.left)
+                local share = n == over and moved or math.floor(moved * n / over + 0.5)
+                l.left, l.sold, l.received = l.left - n, (l.sold or 0) + n, (l.received or 0) + share
+                over, moved = over - n, moved - share
+            end
+        end
+        -- Sold beyond the item's later lots: those sales stay on this one.
+        lot.sold, lot.received = lot.sold + over, lot.received + moved
+    end
+    for i, event in ipairs(lot.events or {}) do
+        if event.kind == "buy" and event.at == e.at and event.qty == e.qty and event.amount == e.posted then
+            table.remove(lot.events, i)
+            break
+        end
+    end
+    if lot.qty <= 0 and (lot.sold or 0) <= 0 and (lot.lost or 0) <= 0 then
+        table.remove(lots, index)
+    end
+end
+
+-- Takes the returns of `key` still booked as purchases out of the books. Every movement after the
+-- first of them is still in the journal (it drops its oldest entries): the item's stock before it
+-- is worked back from today's, and those movements are booked again without the returns, so the
+-- sales since get their real cost. Losses stay where they were booked.
+local function unbookReturns(char, key, from)
+    local journal, entries = char.journal, {}
+    for i = from, #journal do
+        if journal[i].key == key then
+            entries[#entries + 1] = journal[i]
+        end
+    end
+    local function returned(e)
+        return e.kind == "return" and e.booked and e.posted
+    end
+    local p, s = char.positions[key], D.itemStats(char, key)
+    local qty, cost, units, price, known = p and p.qty or 0, p and p.cost or 0, 0, 0, true
+    for i = #entries, 1, -1 do
+        local e = entries[i]
+        if returned(e) then
+            qty, cost, units, price = qty - e.qty, cost - e.posted, units + e.qty, price + e.posted
+        elseif e.kind == "buy" then
+            qty, cost = qty - (e.qty or 0), cost - (e.amount or 0)
+        elseif e.kind == "sell" or e.kind == "vendor" then
+            known = known and e.profit ~= nil
+            qty, cost = qty + (e.qty or 0), cost + (e.amount or 0) - (e.profit or 0)
+        end
+    end
+    if known and qty >= 0 and cost >= 0 then
+        for _, e in ipairs(entries) do
+            if e.kind == "buy" then
+                qty, cost = qty + (e.qty or 0), cost + (e.amount or 0)
+            elseif e.kind == "sell" or e.kind == "vendor" then
+                local n = math.min(e.qty or 0, qty)
+                local taken = n > 0 and math.floor(cost * n / qty + 0.5) or 0
+                qty, cost = qty - n, cost - taken
+                reprofit(char, s, e, (e.amount or 0) - taken)
+            end
+        end
+        if qty <= 0 then
+            -- Cost left without stock (a loss booked on the returned units) belongs to the sales.
+            s.profit = s.profit - cost
+        end
+    else
+        -- Today's stock does not follow from the journal: the returned units leave it at its
+        -- average cost, and the sales keep their profits.
+        qty = (p and p.qty or 0) - units
+        cost = qty > 0 and math.floor(p.cost * qty / p.qty + 0.5) or 0
+    end
+    if p and qty > 0 then
+        p.qty, p.cost = qty, cost
+    elseif p then
+        char.positions[key] = nil
+    end
+    s.bought, s.spent = math.max(0, s.bought - units), math.max(0, s.spent - price)
+    for _, e in ipairs(entries) do
+        if returned(e) then
+            local d = type(char.daily) == "table" and char.daily[math.floor((e.at or 0) / 86400)]
+            if d then
+                d.spent, d.buys = math.max(0, d.spent - e.posted), math.max(0, d.buys - 1)
+            end
+            if type(char.lots) == "table" then
+                unbookLot(char, e)
+            end
+            e.booked = nil
+        end
+    end
+end
+
+-- Stock, item totals, purchase lots and daily totals are never rebuilt from the journal: it keeps
+-- only its last 500 entries, and what was booked before them would be lost. A recount corrects them.
+-- The returns D.markReturns just found leave them at once, in the call right after it: lots and
+-- daily totals that did not exist then are built from the journal later, where they are no
+-- purchases. A post that came back (expired, cancelled, returned) without its deposit gets
+-- `deposit(key, qty)`, the estimate of what posting it cost, booked as a loss now (D.addCost); nil
+-- when that is not known yet (the item's merchant price is still loading): then no estimate is
+-- booked and false is returned. What an item lost beyond the journal (cancels made before they were
+-- logged) is often the very cancel a return came back from: a return's estimate is booked only past
+-- it.
 function D.recount(char, deposit)
     local journal = char.journal or {}
+    local first = {}
+    for i, e in ipairs(journal) do
+        if e.kind == "return" and e.booked and e.posted and e.key and not first[e.key] then
+            first[e.key] = i
+        end
+    end
+    for key, i in pairs(first) do
+        unbookReturns(char, key, i)
+    end
     local keyOf = {}
     for _, e in ipairs(journal) do
         if e.key and e.name then
             keyOf[string.lower(e.name)] = e.key
         end
     end
-    local fills, known, guessed = {}, {}, {}
+    local fills, known = {}, {}
     for _, e in ipairs(journal) do
         if FAILED_KINDS[e.kind] then
             local key = e.key or (e.name and keyOf[string.lower(e.name)])
@@ -556,88 +780,38 @@ function D.recount(char, deposit)
                     return false
                 end
                 fills[#fills + 1] = { e = e, key = key, amount = d }
-                if e.kind == "return" then
-                    guessed[key] = (guessed[key] or 0) + d
-                end
             elseif key then
                 known[key] = (known[key] or 0) + (e.amount or 0)
             end
         end
     end
-    local extra = {}
+    local beyond = {}
     for key, s in pairs(char.stats or {}) do
-        local x = (s.lost or 0) - (known[key] or 0) - (guessed[key] or 0)
-        if x > 0 then
-            extra[key] = x
-        end
+        beyond[key] = math.max(0, (s.lost or 0) - (known[key] or 0))
+    end
+    if #fills > 0 then
+        -- Built before the estimates are written into the journal, which a new lots table reads.
+        D.lots(char)
     end
     for _, f in ipairs(fills) do
-        f.e.key, f.e.amount, f.e.estimated = f.key, f.amount, true
-    end
-    local old, oldStats, modes, traded = char.positions or {}, char.stats or {}, {}, {}
-    for _, e in ipairs(journal) do
-        if e.key then
-            traded[e.key] = true
+        local e, book = f.e, f.amount
+        if e.kind == "return" then
+            local same = math.min(book, beyond[f.key] or 0)
+            beyond[f.key], book = (beyond[f.key] or 0) - same, book - same
+        end
+        pendingEvents[char] = nil
+        local written = D.addCost(char, f.key, book, e.at, e.lossQty or e.qty)
+        e.key, e.amount, e.estimated = f.key, f.amount, true
+        if pendingEvents[char] then
+            -- The lots' shares of the loss take the entry's kind (no second booking).
+            D.logLotEvent(char, e)
+        end
+        if written > 0 and type(char.daily) == "table" then
+            local d = dayOf(char, e.at)
+            d.profit = d.profit - written
         end
     end
-    -- Recover metadata from the matching purchase, never from another lot of the same item.
-    local oldLots = char.lots or {}
-    for _, e in ipairs(journal) do
-        if e.kind == "vendor" and e.key then
-            modes[e.key] = "vendor"
-        end
-    end
-    local function purchaseLot(e)
-        for i = #oldLots, 1, -1 do
-            local lot = oldLots[i]
-            if lot.key == e.key and e.at and lot.at and e.at >= lot.at and e.at - lot.at <= D.LOT_MERGE then
-                return lot
-            end
-        end
-    end
-    char.stats, char.positions, char.lots, char.lotSeq, char.lotsJoined = {}, {}, {}, 0, 1
-    for _, e in ipairs(journal) do
-        if e.kind == "buy" and e.key then
-            local p, lot = old[e.key], purchaseLot(e)
-            local bid = e.bid
-            if bid == nil and e.mode == nil and lot then
-                bid = lot.bid
-            end
-            D.addPosition(
-                char,
-                e.key,
-                e.name,
-                e.qty or 0,
-                e.amount or 0,
-                e.mode or lot and lot.mode or p and p.mode or modes[e.key],
-                p and p.exit,
-                e.at,
-                bid
-            )
-        elseif (e.kind == "sell" or e.kind == "vendor") and e.key then
-            local cost = D.sale(char, e.key, e.name, e.qty or 0, e.amount or 0, e.at)
-            e.profit = (e.amount or 0) - cost
-        elseif FAILED_KINDS[e.kind] and e.key and (e.amount or 0) > 0 then
-            D.addCost(char, e.key, e.amount, e.at, e.lossQty or e.qty)
-        end
-    end
-    -- Items the journal never mentions (stock from before it) keep what they had.
-    for key, p in pairs(old) do
-        if not traded[key] then
-            char.positions[key] = p
-        end
-    end
-    for key, st in pairs(oldStats) do
-        if not traded[key] then
-            char.stats[key] = st
-            extra[key] = nil
-        end
-    end
-    for key, x in pairs(extra) do
-        D.addCost(char, key, x)
-    end
-    char.daily = nil
-    D.daily(char)
+    pendingEvents[char] = nil
     return true
 end
 
@@ -682,9 +856,7 @@ function D.addPosition(char, key, name, qty, cost, mode, exit, at, bid, source)
             cost
         )
         remember(char, "buy", key, { { lot = into, event = event } }, at)
-        while #lots > D.LOTS do
-            table.remove(lots, 1)
-        end
+        trimLots(lots)
     end
     -- Stock held for resale stays for resale when a vendor deal of the same item adds cheap units:
     -- else the vendor sale would sell the dearer resale units at a loss too.

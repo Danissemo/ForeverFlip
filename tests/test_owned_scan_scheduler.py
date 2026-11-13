@@ -4,7 +4,7 @@ import unittest
 from test_addon import SETUP, run
 
 BASE = SETUP + '''local F=ForeverFlip;local D,T=F.Deals,F.Trade
-F.db.settings.autoScan=false;F.db.settings.sniper=false;F.Engine.autoVerify=false
+F.db.settings.autoScan=false;F.db.settings.sniper=false;F.db.settings.autoVerify=false
 '''
 
 

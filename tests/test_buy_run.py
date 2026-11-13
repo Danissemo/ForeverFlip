@@ -4,7 +4,7 @@ import unittest
 from test_addon import SETUP, run
 
 RUN = SETUP + '''local F, T, D, UI = ForeverFlip, ForeverFlip.Trade, ForeverFlip.Deals, ForeverFlip.UI
-F.Engine.autoVerify = false
+F.db.settings.autoVerify = false
 fullScan()
 UI.show('deals:vendor'); UI.refresh()
 local function purchases()

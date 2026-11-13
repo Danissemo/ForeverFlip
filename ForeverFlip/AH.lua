@@ -23,7 +23,10 @@ local function plainKey(id)
     return { itemID = id, itemLevel = 0, itemSuffix = 0, battlePetSpeciesID = 0 }
 end
 
-local kinds = {}
+-- kinds: the auction house's own answer (item-key info). guesses: a bag item's kind worked out
+-- before that answer (kindOfBagItem), used only until the answer comes. Kept as if it were the
+-- answer, a wrong guess moved the item to another key once the auction house listed it.
+local kinds, guesses = {}, {}
 -- "commodity", "gear" or "item"; nil while the game has not loaded the item.
 function A.kindOf(id)
     if kinds[id] then
@@ -32,11 +35,31 @@ function A.kindOf(id)
     local ok, info = pcall(AH.GetItemKeyInfo, plainKey(id))
     if not ok or type(info) ~= "table" then
         A.requestItem(id)
-        return nil
+        return guesses[id]
     end
     local kind = info.isCommodity and "commodity" or info.isEquipment and "gear" or "item"
-    kinds[id] = kind
+    kinds[id], guesses[id] = kind, nil
     return kind
+end
+
+-- Gear whose links carry an ending its own name lacks ("Northern Shortsword of Healing"): told by
+-- the first link read with a name this session, or by the endings of versions searched before.
+local endings = {}
+local function otherName(name, base)
+    return type(name) == "string" and name ~= "" and name ~= base
+end
+local function hasEndings(id, base)
+    if endings[id] then
+        return true
+    end
+    base = string.lower(base)
+    local e = F.db and type(F.db.itemKeys) == "table" and F.db.itemKeys[id]
+    for _, v in ipairs(type(e) == "table" and type(e.list) == "table" and e.list or {}) do
+        if otherName(v.e, base) or otherName(v.n, base) then
+            return true
+        end
+    end
+    return false
 end
 
 function A.keyFor(id, link)
@@ -45,13 +68,22 @@ function A.keyFor(id, link)
         return nil
     end
     if kind == "gear" then
-        -- The game hands out links with an empty name ("[]") while the item is not loaded (own
-        -- auctions, in game): the item's own name then, and its data is asked for.
         local name = U.linkName(link)
-        if not name or name == "" then
-            name = U.itemInfo(id)
+        if name and name ~= "" then
+            if endings[id] == nil then
+                local base = U.itemInfo(id)
+                if base then
+                    endings[id] = string.lower(name) ~= string.lower(base)
+                end
+            end
+            return U.key(kind, id, name), kind
         end
-        if not name or name == "" then
+        -- The game hands out links with an empty name ("[]") while the item is not loaded (own
+        -- auctions, in game): the item's own name then, and its data is asked for. Not for gear
+        -- with endings: its own name names no lot, so the key stays unknown and the read is tried
+        -- again (Trade.onOwned) until the link carries the ending.
+        name = U.itemInfo(id)
+        if not name or name == "" or hasEndings(id, name) then
             A.requestItem(id)
             return nil
         end
@@ -132,10 +164,11 @@ function A.unusableGear(id)
     return false
 end
 
--- Item data requests, paced at 40 per second.
-local queue, queued, nextPump, sentAt = {}, {}, 0, {}
+-- Item data requests, paced at 40 per second. The queue is read from a head index: taking the
+-- first of up to 4000 entries off the list moved all the others each time.
+local queue, head, tail, queued, nextPump, sentAt = {}, 1, 0, {}, 0, {}
 function A.requestItem(id)
-    if queued[id] or #queue >= 4000 then
+    if queued[id] or tail - head + 1 >= 4000 then
         return
     end
     local t = GetTime and GetTime() or 0
@@ -146,7 +179,8 @@ function A.requestItem(id)
         return
     end
     queued[id] = true
-    queue[#queue + 1] = id
+    tail = tail + 1
+    queue[tail] = id
 end
 function A.pump(now)
     if now < nextPump then
@@ -154,10 +188,12 @@ function A.pump(now)
     end
     nextPump = now + 0.1
     for _ = 1, 4 do
-        local id = table.remove(queue, 1)
-        if not id then
+        if head > tail then
+            head, tail = 1, 0
             return
         end
+        local id = queue[head]
+        queue[head], head = nil, head + 1
         queued[id] = nil
         sentAt[id] = now
         if C_Item and C_Item.RequestLoadItemDataByID then
@@ -316,45 +352,41 @@ function A.replicateMark()
     end
     return table.concat(parts, ":")
 end
--- One auction of the full scan: buyout is for the whole stack.
-function A.replicateRow(i)
+-- One auction of the full scan: buyout is for the whole stack. With `raw`, also every field as the
+-- server sent it (second result), read before the game has loaded the item too.
+local function replicateRead(i, raw)
     local _, _, count, _, _, _, _, minBid, increment, buyout, bidAmount, _, _, owner, _, _, id, complete =
         AH.GetReplicateItemInfo(i)
     if not id then
         return nil
     end
-    if not complete then
-        return { id = id, complete = false }
+    local band, link
+    if complete or raw then
+        if AH.GetReplicateItemTimeLeft then
+            local ok, left = pcall(AH.GetReplicateItemTimeLeft, i)
+            band = ok and U.finite(left) and math.max(0, math.min(3, left - 1)) or nil
+        end
+        link = AH.GetReplicateItemLink and AH.GetReplicateItemLink(i) or nil
     end
-    local band
-    if AH.GetReplicateItemTimeLeft then
-        local ok, left = pcall(AH.GetReplicateItemTimeLeft, i)
-        band = ok and U.finite(left) and math.max(0, math.min(3, left - 1)) or nil
+    local row
+    if complete then
+        row = {
+            id = id,
+            count = count or 1,
+            buyout = buyout or 0,
+            owner = owner,
+            band = band,
+            minBid = (bidAmount or 0) > 0 and bidAmount + (increment or 0) or minBid,
+            link = link,
+            complete = true,
+        }
+    else
+        row = { id = id, complete = false }
     end
-    return {
-        id = id,
-        count = count or 1,
-        buyout = buyout or 0,
-        owner = owner,
-        band = band,
-        minBid = (bidAmount or 0) > 0 and bidAmount + (increment or 0) or minBid,
-        link = AH.GetReplicateItemLink and AH.GetReplicateItemLink(i) or nil,
-        complete = true,
-    }
-end
-
--- Every field of a full-scan auction, also before the game has loaded the item (raw scans).
-function A.replicateRaw(i)
-    local _, _, count, _, _, _, _, minBid, _, buyout, bidAmount, _, _, owner, _, _, id = AH.GetReplicateItemInfo(i)
-    if not id then
-        return nil
+    if not raw then
+        return row
     end
-    local band
-    if AH.GetReplicateItemTimeLeft then
-        local ok, left = pcall(AH.GetReplicateItemTimeLeft, i)
-        band = ok and U.finite(left) and math.max(0, math.min(3, left - 1)) or nil
-    end
-    return {
+    local fields = {
         id = id,
         count = count,
         buyout = buyout,
@@ -362,8 +394,20 @@ function A.replicateRaw(i)
         bid = bidAmount,
         band = band,
         own = A.isPlayer(owner),
-        link = AH.GetReplicateItemLink and AH.GetReplicateItemLink(i) or nil,
+        link = link,
     }
+    return row, fields
+end
+function A.replicateRow(i)
+    return (replicateRead(i, false))
+end
+
+-- Every field of a full-scan auction, also before the game has loaded the item (raw scans), and the
+-- auction as A.replicateRow reads it, from one read: read for each separately, every row of a scan
+-- (up to 290 000) asked the client six times.
+function A.replicateRaw(i)
+    local row, raw = replicateRead(i, true)
+    return raw, row
 end
 
 -- The full scan tells how long each auction has left: sales can be tracked lot by lot.
@@ -386,6 +430,10 @@ function A.search(item)
     end
 end
 
+-- Browse rows of the current answer whose item-key versions were learned (A.learnKeys). Every
+-- browse sent, ours or another addon's (the hook), replaces the results: reading starts over.
+local learnedRows = 0
+
 -- Gear in two steps (see the top of the file). Step 1: a browse by the item's own name (without
 -- the ending), which lists its item-key versions.
 function A.canSearchGear()
@@ -393,6 +441,7 @@ function A.canSearchGear()
 end
 function A.gearBrowse(item)
     local name = U.itemInfo(item.id)
+    learnedRows = 0
     A.ownBrowse = true
     local ok, err = pcall(AH.SendBrowseQuery, {
         searchString = name or item.name or "",
@@ -436,6 +485,7 @@ function A.hookBrowse()
     for _, name in ipairs({ "SendBrowseQuery", "SearchForItemKeys" }) do
         if AH[name] then
             hooksecurefunc(AH, name, function()
+                learnedRows = 0
                 if not A.ownBrowse then
                     A.foreignAt = F.Engine.clock()
                     F.Deals.onForeignBrowse()
@@ -460,6 +510,18 @@ end
 -- item-key info is in the client's cache before a version is searched.
 A.KEYS_FRESH = 6 * 3600
 A.KEYS_MAX = 60
+-- Every item browsed gets an entry: those not seen for two weeks are forgotten, once a session.
+A.KEYS_KEEP = 14 * 86400
+local keysPruned = false
+local function pruneKeys()
+    keysPruned = true
+    local now = F.Engine.clock()
+    for id, e in pairs(F.db.itemKeys) do
+        if type(e) ~= "table" or not U.finite(e.at) or now - e.at > A.KEYS_KEEP then
+            F.db.itemKeys[id] = nil
+        end
+    end
+end
 function A.rememberKey(key, link, owned)
     local id = type(key) == "table" and key.itemID
     if not F.db or not id or kinds[id] == "commodity" then
@@ -468,6 +530,7 @@ function A.rememberKey(key, link, owned)
     local info = select(2, pcall(AH.GetItemKeyInfo, key))
     if type(info) == "table" then
         kinds[id] = info.isCommodity and "commodity" or info.isEquipment and "gear" or "item"
+        guesses[id] = nil
     end
     if kinds[id] == "commodity" then
         return
@@ -478,6 +541,9 @@ function A.rememberKey(key, link, owned)
         return
     end
     F.db.itemKeys = type(F.db.itemKeys) == "table" and F.db.itemKeys or {}
+    if not keysPruned then
+        pruneKeys()
+    end
     local e = F.db.itemKeys[id]
     if type(e) ~= "table" or type(e.list) ~= "table" then
         e = { list = {} }
@@ -498,7 +564,10 @@ function A.rememberKey(key, link, owned)
     end
 end
 
-function A.learnKeys()
+-- Each browse answer event learns only the rows added since the last one (learnedRows): a
+-- whole-house browse comes in 16 pages, and reading every row again on each page made 73,000
+-- reads of 7,700 items. updated: the answer replaced the results (a new browse).
+function A.learnKeys(updated)
     if not F.db then
         return
     end
@@ -506,10 +575,14 @@ function A.learnKeys()
     if not ok or type(results) ~= "table" then
         return
     end
-    for _, r in ipairs(results) do
-        local k = type(r) == "table" and r.itemKey
-        A.rememberKey(k)
+    if updated or #results < learnedRows then
+        learnedRows = 0
     end
+    for i = learnedRows + 1, #results do
+        local r = results[i]
+        A.rememberKey(type(r) == "table" and r.itemKey)
+    end
+    learnedRows = #results
 end
 
 -- The versions to search for `item` (gear: those named like its ending when the names are known,
@@ -655,12 +728,15 @@ function A.more(item)
         AH.RequestMoreItemSearchResults(plainKey(item.id))
     end
 end
--- Listings of other players, cheapest first: {unit, qty, auctionID}. Returns rows, complete.
+-- Listings of other players, cheapest first: {unit, qty, auctionID}. Returns rows, complete, and
+-- the number of results the answer holds so far, those left out included (the player's own lots,
+-- bids, other endings): a next page of only those adds no row, yet it is the page asked for.
 function A.rows(item, searchKey)
-    local rows, complete = {}, false
+    local rows, complete, count = {}, false, 0
     if item.kind == "commodity" then
         complete = AH.HasFullCommoditySearchResults(item.id)
-        for i = 1, (AH.GetNumCommoditySearchResults(item.id) or 0) do
+        count = AH.GetNumCommoditySearchResults(item.id) or 0
+        for i = 1, count do
             local r = AH.GetCommoditySearchResultInfo(item.id, i)
             local qty = r and (r.quantity - (r.numOwnerItems or 0)) or 0
             if r and qty > 0 and (r.unitPrice or 0) > 0 then
@@ -670,7 +746,8 @@ function A.rows(item, searchKey)
     else
         local key = type(searchKey) == "table" and searchKey or plainKey(item.id)
         complete = AH.HasFullItemSearchResults(key)
-        for i = 1, (AH.GetNumItemSearchResults(key) or 0) do
+        count = AH.GetNumItemSearchResults(key) or 0
+        for i = 1, count do
             local r = AH.GetItemSearchResultInfo(key, i)
             if
                 r
@@ -688,7 +765,7 @@ function A.rows(item, searchKey)
     table.sort(rows, function(a, b)
         return a.unit < b.unit
     end)
-    return rows, complete
+    return rows, complete, count
 end
 
 -- Browse and key queries: the lowest price of many items at once (fast sniper) --------------------
@@ -696,6 +773,7 @@ function A.canBrowse()
     return AH.SendBrowseQuery ~= nil and AH.GetBrowseResults ~= nil and AH.HasFullBrowseResults ~= nil
 end
 function A.browse()
+    learnedRows = 0
     A.ownBrowse = true
     local ok, err =
         pcall(AH.SendBrowseQuery, { searchString = "", sorts = sorts(), filters = {}, itemClassFilters = {} })
@@ -715,6 +793,7 @@ function A.searchKeys(ids)
     for i, id in ipairs(ids) do
         keys[i] = plainKey(id)
     end
+    learnedRows = 0
     A.ownBrowse = true
     local ok, err = pcall(AH.SearchForItemKeys, keys, sorts())
     A.ownBrowse = false
@@ -722,13 +801,19 @@ function A.searchKeys(ids)
         error(err, 0)
     end
 end
--- Every result row so far: { id, minPrice, qty }. The lowest price of an item may be a bid.
+-- Every result row so far: { id, minPrice, qty, containsOwnerItem }. The lowest price of an item may
+-- be a bid, or the price of the player's own lot (containsOwnerItem: the item has one listed).
 function A.browseResults()
     local out = {}
     local ok, results = pcall(AH.GetBrowseResults)
     for _, r in ipairs(ok and results or {}) do
         if r.itemKey and (r.minPrice or 0) > 0 and (r.totalQuantity or 0) > 0 then
-            out[#out + 1] = { id = r.itemKey.itemID, minPrice = r.minPrice, qty = r.totalQuantity }
+            out[#out + 1] = {
+                id = r.itemKey.itemID,
+                minPrice = r.minPrice,
+                qty = r.totalQuantity,
+                containsOwnerItem = r.containsOwnerItem,
+            }
         end
     end
     return out
@@ -747,6 +832,7 @@ function A.bidRows(item, searchKey)
             r
             and (r.minBid or 0) > 0
             and not r.containsOwnerItem
+            and not r.containsAccountItem
             and (item.kind ~= "gear" or string.lower(U.linkName(r.itemLink) or "") == item.name)
         then
             out[#out + 1] = { auctionID = r.auctionID, bid = r.minBid, qty = 1 }
@@ -778,6 +864,12 @@ function A.bids()
     for i = 1, (AH.GetNumBids() or 0) do
         local b = AH.GetBidInfo(i)
         if b and b.auctionID then
+            -- nil when the server does not name the highest bidder (Bids.onLive decides then);
+            -- false when it names another player.
+            local leading
+            if b.bidder ~= nil and me ~= nil then
+                leading = b.bidder == me
+            end
             out[#out + 1] = {
                 auctionID = b.auctionID,
                 id = b.itemKey and b.itemKey.itemID,
@@ -786,8 +878,7 @@ function A.bids()
                 bid = b.bidAmount,
                 buyout = (b.buyoutAmount or 0) > 0 and b.buyoutAmount or nil,
                 band = b.timeLeft,
-                -- nil when the server does not name the highest bidder (Bids.onLive decides then).
-                leading = b.bidder ~= nil and me ~= nil and (b.bidder == me) or nil,
+                leading = leading,
             }
         end
     end
@@ -813,7 +904,9 @@ end
 -- Selling ----------------------------------------------------------------------------------------
 -- The kind of a bag item when the auction house has not told it yet (A.kindOf asks for the item
 -- key's info, which the game only has for items it has seen on the auction house): the game's own
--- Sell window asks the item location whether it is a commodity, and gear is what can be equipped.
+-- Sell window asks the item location whether it is a commodity, and gear is a weapon or armour
+-- (the item classes the auction house keys by level and ending). Bags and quivers are equipped
+-- too, but are no gear: counted as gear, they changed key once the auction house answered.
 local function kindOfBagItem(id, loc)
     if not AH.GetItemCommodityStatus or not Enum or not Enum.ItemCommodityStatus then
         return nil
@@ -826,8 +919,8 @@ local function kindOfBagItem(id, loc)
     if status == Enum.ItemCommodityStatus.Commodity then
         return "commodity"
     elseif status == Enum.ItemCommodityStatus.Item then
-        local equip = C_Item and C_Item.GetItemInfoInstant and select(4, C_Item.GetItemInfoInstant(id))
-        return (type(equip) == "string" and equip ~= "" and equip ~= "INVTYPE_NON_EQUIP_IGNORE") and "gear" or "item"
+        local classID = C_Item and C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(id))
+        return (classID == 2 or classID == 4) and "gear" or "item"
     end
 end
 
@@ -839,6 +932,25 @@ local function bagList()
         list[#list + 1] = reagent
     end
     return list
+end
+
+-- Free slots of the general bags (bags 0-4 of bag family 0) for a mail item or a merchant purchase.
+-- A quiver, ammo pouch, soul bag or herb bag holds only its own kind of item: counted as room, the
+-- game refused the take or the purchase with the other bags full. A client that tells no family
+-- counts every bag.
+function A.freeBagSlots()
+    local get = C_Container and C_Container.GetContainerNumFreeSlots
+    if not get then
+        return 0
+    end
+    local free = 0
+    for bag = 0, 4 do
+        local n, family = get(bag)
+        if U.finite(n) and n > 0 and (family == nil or family == 0) then
+            free = free + n
+        end
+    end
+    return free
 end
 
 -- /ff bags: why bag items are not on the Sell page. { { link, reason } }, reason one of "bound",
@@ -918,7 +1030,7 @@ function A.readBags(merchant)
                 if valid and not key then
                     kind = kindOfBagItem(info.itemID, loc)
                     if kind then
-                        kinds[info.itemID] = kind
+                        guesses[info.itemID] = kind
                         key = A.keyFor(info.itemID, info.hyperlink)
                     end
                 end
@@ -961,12 +1073,6 @@ function A.postCount(item)
     return math.min(math.floor(available), matching)
 end
 
-function A.deposit(item, qty, duration)
-    if item.kind == "commodity" then
-        return AH.CalculateCommodityDeposit(item.id, duration, qty)
-    end
-    return AH.CalculateItemDeposit(item.loc, duration, qty)
-end
 -- Returns true when the game asks for a confirmation (call again with confirm = true).
 function A.post(item, qty, price, duration, confirm)
     if item.kind == "commodity" then
@@ -978,36 +1084,61 @@ function A.post(item, qty, price, duration, confirm)
 end
 
 -- Deposit of a stack of n units as the game charges it, for deal evaluation. Commodities ask the
--- game directly (twice per item and session); items need a bag location, so the deposit per unit
--- learned from the last post of the item is used. nil: the caller estimates from the vendor price.
+-- game directly (twice per item, auction house and session); items need a bag location, so the
+-- deposit per unit learned from the last post of the item is used. nil: the caller estimates from
+-- the vendor price. A neutral house may charge other deposits: its values are kept apart.
 local depositRates = {}
+-- A read that failed is not kept for the session: the game may answer only at the auction house
+-- or once the item's data has loaded. It is asked again when the auction house has opened since,
+-- else after A.DEPOSIT_RETRY seconds.
+A.DEPOSIT_RETRY = 60
 -- Forgets the deposits asked for this session (tests, or a patch that changed them).
 function A.resetDeposits()
     depositRates = {}
 end
+-- The deposits per unit learned for an item, by duration: deposits[id][duration], and a neutral
+-- house's in deposits[id].neutral[duration].
+local function learnedDeposits(id, create)
+    local all = F.db and F.db.deposits
+    local t = type(all) == "table" and all[id]
+    if create and type(t) ~= "table" then
+        F.db.deposits = type(all) == "table" and all or {}
+        t = {}
+        F.db.deposits[id] = t
+    end
+    if type(t) == "table" and F.Engine.house == "Neutral" then
+        if create and type(t.neutral) ~= "table" then
+            t.neutral = {}
+        end
+        t = t.neutral
+    end
+    return type(t) == "table" and t or nil
+end
 function A.depositFn(id, kind, duration)
     if kind == "commodity" and AH.CalculateCommodityDeposit then
-        local cacheKey = id .. ":" .. duration
+        -- Realm and faction stay the same for a session: the house tells the scope apart.
+        local cacheKey = tostring(F.Engine.house) .. ":" .. id .. ":" .. duration
         local rate = depositRates[cacheKey]
-        if rate == nil then
+        local now, open = F.Engine.clock(), A.isOpen()
+        if rate == nil or rate.failed and (open and not rate.open or now - rate.failed >= A.DEPOSIT_RETRY) then
             local ok1, one = pcall(AH.CalculateCommodityDeposit, id, duration, 1)
             local ok20, twenty = pcall(AH.CalculateCommodityDeposit, id, duration, 20)
             if ok1 and ok20 and U.finite(one) and U.finite(twenty) and one > 0 then
                 rate = { one = one, unit = twenty / 20 }
             else
-                rate = false
+                rate = { failed = now, open = open }
             end
             depositRates[cacheKey] = rate
         end
-        if rate then
+        if not rate.failed then
             return function(qty)
                 return math.max(rate.one, math.floor(rate.unit * qty + 0.5))
             end
         end
         return nil
     end
-    local learned = F.db and F.db.deposits and F.db.deposits[id]
-    local unit = type(learned) == "table" and learned[duration]
+    local learned = learnedDeposits(id)
+    local unit = learned and learned[duration]
     if U.finite(unit) and unit > 0 then
         return function(qty)
             return unit * qty
@@ -1023,9 +1154,7 @@ function A.learnDeposit(item, duration)
     end
     local ok, unit = pcall(AH.CalculateItemDeposit, item.loc, duration, 1)
     if ok and U.finite(unit) and unit > 0 then
-        F.db.deposits = F.db.deposits or {}
-        F.db.deposits[item.id] = F.db.deposits[item.id] or {}
-        F.db.deposits[item.id][duration] = unit
+        learnedDeposits(item.id, true)[duration] = unit
     end
 end
 
