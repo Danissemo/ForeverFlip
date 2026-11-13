@@ -54,11 +54,13 @@ class MarkTests(unittest.TestCase):
         local function row(data) local r=CreateFrame('Button');r.rowData=data;return r end
         local cheap=row({itemID=10,unitPrice=60,quantity=5,numOwnerItems=0})
         local dear=row({itemID=10,unitPrice=150,quantity=5,numOwnerItems=0})
-        local list={ScrollBox={ForEachFrame=function(_,fn) fn(cheap);fn(dear) end}}
+        local list={ScrollBox={ScrollTarget={GetChildren=function() return cheap,dear end}}}
         AuctionHouseFrame.CommoditiesBuyFrame=CreateFrame('Frame');AuctionHouseFrame.CommoditiesBuyFrame.ItemList=list
         run(0.6)
-        assert(rawget(cheap,'ffMark') and cheap.ffMark:IsShown(),'60c is below the 100c vendor price')
-        assert(rawget(dear,'ffMark') and not dear.ffMark:IsShown())''')
+        local UI=F.UI
+        assert(UI.markOf(cheap) and UI.markOf(cheap):IsShown(),'60c is below the 100c vendor price')
+        assert(not UI.markOf(dear) or not UI.markOf(dear):IsShown())
+        assert(rawget(cheap,'ffMark')==nil,'nothing is written into the rows of the game')''')
 
 
 if __name__ == '__main__':

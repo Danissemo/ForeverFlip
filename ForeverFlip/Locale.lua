@@ -30,6 +30,7 @@ T.uk = {
     ["Community data: %d scans, updated %s."] = "Дані спільноти: сканів %d, оновлено %s.",
     ["Community data: none. Run the ForeverFlip Sync helper to get it."] = "Даних спільноти немає. Запустіть помічник ForeverFlip Sync, щоб їх отримати.",
     ["Shared by the helper: %d of your scans, the newest taken %s."] = "Помічник поширив ваших сканів: %d, найновіший зроблено %s.",
+    ["the game blocked %s. Type /ff diag and send the lines to the developer."] = "гра заблокувала %s. Введіть /ff diag і надішліть рядки розробнику.",
     ["Full scans waiting for the helper: %d (it shares them, then /reload)."] = "Повних сканів чекають на помічника: %d (він їх поширить, потім /reload).",
     ["No full scan waits for the helper: all are shared."] = "Жоден повний скан не чекає на помічника: усі поширено.",
     ["General"] = "Основні",

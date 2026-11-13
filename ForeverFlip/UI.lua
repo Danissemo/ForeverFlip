@@ -5991,6 +5991,11 @@ function UI.highlightBrowse()
     if not AuctionHouseFrame or not F.db then
         return
     end
+    -- Off: the game's rows are not looked at at all (their marks are hidden once).
+    if not F.db.settings.highlight then
+        UI.hideMarks()
+        return
+    end
     for _, spec in ipairs(BUY_LISTS) do
         local frame = rawget(AuctionHouseFrame, spec[1])
         local list = type(frame) == "table" and rawget(frame, "ItemList")
@@ -6001,26 +6006,46 @@ function UI.highlightBrowse()
     end
 end
 
+-- The marks in the game's Buy tab must leave its code untouched: the game blames an addon for any
+-- protected action (a purchase) whose code read a value the addon wrote or made. Calling the list's
+-- own Lua methods (ForEachFrame, GetElementData, GetItemID) or writing a field into its rows did
+-- both, twice a second, and a new player buying in the Buy tab saw "ForeverFlip has been blocked
+-- from an action only available to the Blizzard UI". Now the rows come from the widget API
+-- (ScrollTarget:GetChildren), their data is only read (rawget), and the marks are kept here.
+local marks = setmetatable({}, { __mode = "k" }) -- the game's row -> its mark texture
+
 local function eachRow(box, fn)
-    if box.ForEachFrame then
-        box:ForEachFrame(fn)
-    elseif box.GetFrames then
-        for _, row in ipairs(box:GetFrames() or {}) do
-            fn(row)
-        end
+    local target = rawget(box, "ScrollTarget")
+    if type(target) ~= "table" or not target.GetChildren then
+        return
+    end
+    for _, row in ipairs({ target:GetChildren() }) do
+        fn(row)
+    end
+end
+
+-- The mark of a row of the game's Buy tab (tests and the off switch).
+function UI.markOf(row)
+    return marks[row]
+end
+
+function UI.hideMarks()
+    for _, mark in pairs(marks) do
+        mark:Hide()
     end
 end
 
 function UI.markRows(box, perRow, frame)
     local on = F.db.settings.highlight
     eachRow(box, function(row)
-        local data = row.rowData or (row.GetElementData and row:GetElementData())
+        local data = rawget(row, "rowData") or rawget(row, "elementData")
         local id, price, link
         if type(data) == "table" then
-            id = data.itemKey and data.itemKey.itemID or data.itemID
-            if not id and frame and frame.GetItemID then
-                local ok, frameID = pcall(frame.GetItemID, frame)
-                id = ok and frameID or nil
+            local key = rawget(data, "itemKey")
+            id = type(key) == "table" and rawget(key, "itemID") or rawget(data, "itemID")
+            if not id and frame then
+                local itemKey = rawget(frame, "itemKey")
+                id = type(itemKey) == "table" and rawget(itemKey, "itemID") or rawget(frame, "itemID")
             end
             price = data.minPrice or data.buyoutAmount or data.unitPrice
             link = data.itemLink
@@ -6028,19 +6053,17 @@ function UI.markRows(box, perRow, frame)
                 id = nil
             end
         end
-        local mark = rawget(row, "ffMark")
-        if not mark then
+        local mark = marks[row]
+        if not mark and on and id and dealItem(id, price, link, perRow) then
             mark = row:CreateTexture(nil, "OVERLAY")
-            rawset(row, "ffMark", mark)
+            marks[row] = mark
             mark:SetColorTexture(0.25, 1, 0.25, 0.9)
             mark:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
             mark:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
             mark:SetWidth(4)
         end
-        if on and id and dealItem(id, price, link, perRow) then
-            mark:Show()
-        else
-            mark:Hide()
+        if mark then
+            mark:SetShown(on and id ~= nil and dealItem(id, price, link, perRow))
         end
     end)
 end

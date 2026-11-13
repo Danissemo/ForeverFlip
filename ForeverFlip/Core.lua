@@ -163,6 +163,9 @@ local events = {
     "PLAYER_MONEY",
     "CHAT_MSG_ADDON",
     "PLAYER_ENTERING_WORLD",
+    -- The game names the addon and the function it blocked (E.onBlocked).
+    "ADDON_ACTION_FORBIDDEN",
+    "ADDON_ACTION_BLOCKED",
 }
 for _, event in ipairs(events) do
     pcall(frame.RegisterEvent, frame, event)
@@ -182,7 +185,72 @@ for _, event in ipairs(playerEvents) do
     end
 end
 
+-- The game blocked a protected action (a purchase, a post, a cancel...) and named this addon. What
+-- it blocked and what ForeverFlip was doing then are kept (the last 10, shown by /ff diag): the
+-- game's own dialog says neither.
+E.BLOCKED_KEEP = 10
+function E.onBlocked(event, addon, func)
+    if addon ~= "ForeverFlip" or not F.db then
+        return
+    end
+    local T, UI = F.Trade, F.UI
+    local doing = {}
+    if UI and UI.section then
+        doing[#doing + 1] = "page " .. tostring(UI.section)
+    end
+    if T and T.op then
+        doing[#doing + 1] = "purchase " .. tostring(T.op.state)
+    end
+    if T and T.vendorJob then
+        doing[#doing + 1] = "merchant sale"
+    end
+    if F.Mail and F.Mail.job then
+        doing[#doing + 1] = "taking mail"
+    end
+    if F.Scan and F.Scan.job then
+        doing[#doing + 1] = "full scan " .. tostring(F.Scan.job.state)
+    end
+    for name, shown in pairs({
+        AH = AuctionHouseFrame and AuctionHouseFrame:IsShown(),
+        merchant = MerchantFrame and MerchantFrame:IsShown(),
+        mail = MailFrame and MailFrame:IsShown(),
+    }) do
+        if shown then
+            doing[#doing + 1] = name .. " open"
+        end
+    end
+    if InCombatLockdown and InCombatLockdown() then
+        doing[#doing + 1] = "in combat"
+    end
+    F.db.blocked = type(F.db.blocked) == "table" and F.db.blocked or {}
+    table.insert(F.db.blocked, 1, {
+        at = E.clock(),
+        version = F.version,
+        event = event == "ADDON_ACTION_FORBIDDEN" and "forbidden" or "blocked",
+        func = tostring(func),
+        doing = table.concat(doing, ", "),
+    })
+    while #F.db.blocked > E.BLOCKED_KEEP do
+        table.remove(F.db.blocked)
+    end
+    E.blockedSeen = E.blockedSeen or {}
+    if not E.blockedSeen[tostring(func)] then
+        E.blockedSeen[tostring(func)] = true
+        print(
+            "|cffff4040ForeverFlip:|r "
+                .. string.format(
+                    F.Locale.text("the game blocked %s. Type /ff diag and send the lines to the developer."),
+                    tostring(func)
+                )
+        )
+    end
+end
+
 function E.handle(event, ...)
+    if event == "ADDON_ACTION_FORBIDDEN" or event == "ADDON_ACTION_BLOCKED" then
+        E.onBlocked(event, ...)
+        return
+    end
     if event == "ADDON_LOADED" then
         if ... == "ForeverFlip" then
             -- The client may fail to read the saved file (other Forever addons report it). Starting
@@ -718,6 +786,18 @@ SlashCmdList.FOREVERFLIP = function(msg)
         return
     end
     if msg == "diag" then
+        for _, b in ipairs(F.db and type(F.db.blocked) == "table" and F.db.blocked or {}) do
+            print(
+                string.format(
+                    "ForeverFlip %s: %s %s, %s ago; %s",
+                    tostring(b.version),
+                    tostring(b.event),
+                    tostring(b.func),
+                    F.UI and F.UI.age and F.UI.age(b.at) or tostring(b.at),
+                    b.doing ~= "" and b.doing or "-"
+                )
+            )
+        end
         local last = F.Scan.last
         if not last then
             print("ForeverFlip: " .. L("No full scan yet."))

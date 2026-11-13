@@ -6,6 +6,16 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **"ForeverFlip has been blocked from an action only available to the Blizzard UI" for new
+  players.** The deal marks in the game's Buy tab (on by default) called the list's own Lua
+  methods and wrote a field into its rows twice a second; a purchase in the Buy tab could then run
+  on values the addon had touched, and the game blamed ForeverFlip. The marks now read the rows
+  only through the widget API and keep their textures apart; switched off, the rows are not read.
+- **What the game blocks is recorded.** When the game blocks an action and names ForeverFlip, the
+  chat says which function, and `/ff diag` lists it with what the addon was doing (the last 10).
+
 ## [2.1.0-beta.2] - 2026-11-13
 
 Full scans keep the whole house again, and the Sync helper is fast and can stay in the tray.
