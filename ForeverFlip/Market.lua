@@ -919,6 +919,7 @@ M.POSTINGS = 2
 M.MAX_FAILED = 20
 M.STACK = 20
 -- `post` (optional): the price each to post at (F.Trade.quote); without it the usual price.
+M.UNSEEN_SALES = 0.5
 function M.advice(id, key, h, post)
     local item = U.parseKey(key)
     if not item then
@@ -945,13 +946,19 @@ function M.advice(id, key, h, post)
             success = rate
         elseif h then
             local s = M.saleability(h, price, F.Engine and F.Engine.clock and F.Engine.clock() or 0)
-            if s.known and s.perDay and s.perDay > 0 then
+            if s.known and s.perDay then
+                -- No sale seen is no proof that none comes: over the hours the item was watched it
+                -- counts as half a sale (Jeffreys), so a short watch leaves a fair chance and a long
+                -- one nearly none. Taken as zero, a day without sales of a 28-silver glove booked
+                -- 20 lost deposits against its post and sent it to a merchant for 3 silver.
+                local perDay = s.perDay
+                if perDay <= 0 then
+                    perDay = M.UNSEEN_SALES / math.max(1, (U.finite(s.hours) and s.hours or 24) / 24)
+                end
                 local d = F.Trade.durationFor and F.Trade.durationFor() or 3
                 local hours = (F.Trade.DURATION_HOURS and F.Trade.DURATION_HOURS[d]) or 24
-                success = 1 - math.exp(-s.perDay * hours / 24)
+                success = 1 - math.exp(-perDay * hours / 24)
                 out.perDay = s.perDay
-            elseif s.known then
-                success = 0
             end
         end
         local failed = success > 0 and math.min(M.MAX_FAILED, (1 - success) / success) or M.MAX_FAILED

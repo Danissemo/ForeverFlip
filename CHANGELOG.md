@@ -8,6 +8,10 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- **Journal: Sold and Profit columns are wider** ("4878/5148", "4878 in stock" fit), the name
+  column gives up the room.
+- **Cancels made with ForeverFlip are logged in the journal** (kind "cancel", the deposit and fee
+  lost), so a recount keeps them.
 - **Analytics, By item.** The name column is narrower, the others wider with full names (Bought,
   Sold, In stock, Profit, Days to sell, Posts sold), and each header explains its column when
   hovered. Table headers can carry such a tooltip.
@@ -21,6 +25,19 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Cancelled auctions were booked as purchases.** WoW Forever mails a cancelled auction's items
+  with a buyer invoice; it was booked as a purchase at the post's price (in one game: 35 gold of
+  Fish Bowls and Enchanted Lutes never bought). A buyer invoice from yourself, or with a cancelled
+  or expired subject, is now a post that came back. Once per character the journal is recounted:
+  such returns (buys of one item booked within 10 seconds of each other while mail was taken)
+  become returns, and the stock, costs, profits, purchase lots and daily totals are rebuilt.
+- **Lost is calculated.** Posts that came back without a known deposit (expired before deposits
+  were booked, the returns above) get the deposit worked out from the merchant price, the quantity
+  and the duration in the settings.
+- **An item without a sale seen was sent to a merchant.** No sale over the hours it was watched
+  counted as a chance of zero: 20 lost deposits were charged against its post (a 28-silver glove:
+  -17 silver at the auction house, so the merchant's 3 silver won). It now counts as half a sale
+  over the time watched: a short watch leaves a fair chance, months without a sale nearly none.
 - **Analytics overview text ran into the tabs.** The left column is wider, Earned most, Lost most
   and What to do share one label column and wrap under their own text, at most two lines each.
 - **The journal table's scroll bar jumped back to the top.** The rows were windowed twice; the

@@ -4229,12 +4229,12 @@ function UI.createJournal(p)
     UI.journalList = CreateFrame("Frame", nil, p)
     UI.lotTable = table_(UI.journalList, {
         { "Name" },
-        { "Sold", 54 },
-        { "Buy each", 74 },
+        { "Sold", 86 }, -- "4878/5148" fits
+        { "Buy each", 70 },
         { "Cost", 76 },
-        { "Lost", 60 },
+        { "Lost", 64 },
         { "Sold for", 80 },
-        { "Profit", 80 },
+        { "Profit", 96 }, -- "4878 in stock" fits
     }, 16, function() end)
     UI.placeJournalLines(false)
 end

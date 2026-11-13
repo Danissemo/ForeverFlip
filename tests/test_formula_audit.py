@@ -126,5 +126,20 @@ class AnalyticsDaysTests(unittest.TestCase):
         assert(r.profit == 501 and r.sales == 501, r.profit .. ' / ' .. r.sales)''')
 
 
+
+class UnseenSalesTests(unittest.TestCase):
+    def test_a_day_without_a_sale_is_no_proof_it_never_sells(self):
+        run(SETUP + '''local F, M = ForeverFlip, ForeverFlip.Market
+        local real = M.saleability
+        local hours = 24
+        M.saleability = function() return { known = true, perDay = 0, hours = hours } end
+        local short = M.advice(30, 'i:30', { sales = {} }, 280000)
+        hours = 60 * 24
+        local long = M.advice(30, 'i:30', { sales = {} }, 280000)
+        M.saleability = real
+        assert(short.tries < 6, 'a day watched: a fair chance ' .. short.tries)
+        assert(long.tries > short.tries * 3, 'two months without a sale: hardly any')''')
+
+
 if __name__ == '__main__':
     unittest.main()

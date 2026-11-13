@@ -77,5 +77,16 @@ class InvoiceTests(unittest.TestCase):
         assert(math.abs(F.db.cuts['Realm-Neutral']-0.15)<1e-9 and not F.db.cuts['Realm-Alliance'])''')
 
 
+    def test_a_cancelled_auction_mailed_with_a_buyer_invoice_is_no_purchase(self):
+        run(MAIL + '''local me = UnitName('player')
+        F.Data.addPosition(c,'i:30','Linen Bag',3,3000,'flip',1500,now-3600)
+        inbox={{sender='Auction House',subject='Linen Bag',items=1,
+          invoice={kind='buyer',item='Linen Bag',player=me,bid=4500,count=3}}}
+        local n = #c.journal
+        fire('MAIL_SHOW');fire('MAIL_INBOX_UPDATE');F.Mail.start();for _=1,10 do run(0.1) end
+        assert(c.positions['i:30'].qty == 3, 'no units added: ' .. c.positions['i:30'].qty)
+        for i = n + 1, #c.journal do assert(c.journal[i].kind ~= 'buy', 'booked as a purchase') end''')
+
+
 if __name__ == '__main__':
     unittest.main()

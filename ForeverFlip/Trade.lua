@@ -497,6 +497,7 @@ end
 -- A purchase without any answer for 30 seconds is kept as unknown; the player settles it in the
 -- journal (the chat line "You won an auction" tells).
 function T.step()
+    T.recount()
     T.stepVendor()
     T.runStep()
     local op = T.op
@@ -1368,6 +1369,43 @@ function T.onFailedPost(name, count)
     F.Engine.changed()
 end
 
+-- Recount of the journal (F.Data.recount), once per character: the returns booked as purchases are
+-- found, and the deposits of posts that came back without one are estimated for the duration set
+-- in the settings. It waits for the items' merchant prices, at most T.RECOUNT_TRIES calls.
+T.RECOUNT, T.RECOUNT_TRIES = 1, 20
+local recountTries = 0
+function T.recount()
+    local c = F.db and char()
+    if not c or c.recount == T.RECOUNT or type(c.journal) ~= "table" then
+        return
+    end
+    if not c.returnsMarked then
+        for _, e in ipairs(F.Data.markReturns(c.journal)) do
+            local r = rateOf(e.name or "")
+            r.failed = r.failed + (e.qty or 1)
+        end
+        c.returnsMarked = true
+    end
+    recountTries = recountTries + 1
+    local settle = recountTries >= T.RECOUNT_TRIES
+    local d = tonumber(F.db.settings.duration)
+    d = d and d >= 1 and d <= 3 and d or 2
+    local done = F.Data.recount(c, function(key, qty)
+        local item = U.parseKey(key)
+        if not item then
+            return 0
+        end
+        if not settle and not F.AH.clientVendorPrice(item.id) then
+            return nil
+        end
+        return T.depositFor(key, qty, d) or 0
+    end)
+    if done then
+        c.recount = T.RECOUNT
+        F.Engine.changed()
+    end
+end
+
 -- Bought for resale, still in the bags and not yet listed: oldest purchase first.
 function T.toPost()
     local c = char()
@@ -1748,6 +1786,15 @@ function T.cancelAuction(a)
     if a.key then
         lost = lost or T.depositFor(a.key, a.qty or 1, 2) or 0
         F.Data.addCost(c, a.key, lost + fee, clock())
+        -- Logged, so a recount of the journal (F.Data.recount) keeps it.
+        F.Data.log(c, {
+            at = clock(),
+            kind = "cancel",
+            key = a.key,
+            name = a.name or displayName(a.key),
+            qty = a.qty or 1,
+            amount = lost + fee,
+        })
     end
     T.cancelled[a.auctionID] = clock()
     T.ownedDue = clock() + 2

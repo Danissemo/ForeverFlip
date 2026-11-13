@@ -130,7 +130,8 @@ function D.char(db, owner)
     return c
 end
 
--- Journal entries: { at, kind = "buy" | "sell" | "vendor" | "fail", key, name, qty, amount, profit }
+-- Journal entries: { at, kind = "buy" | "sell" | "vendor" | "expired" | "cancel" | "return", key, name,
+-- qty, amount, profit }: for the last three, amount is the deposit (and cancel fee) lost.
 -- Daily totals of the journal, kept D.DAILY_DAYS days: the journal keeps only its last 500
 -- entries, and a busy week of Analytics read from it alone came out short.
 D.DAILY_DAYS = 60
@@ -192,6 +193,9 @@ function D.itemStats(char, key, name)
     s.name = name or s.name
     return s
 end
+
+-- Journal kinds of a post that came back: its deposit (amount) was lost.
+local FAILED_KINDS = { expired = true, ["return"] = true, cancel = true }
 
 -- Purchase lots: every purchase with what became of it, first in, first out. char.lots = {
 -- { id, key, name, at, qty, cost, mode, left, sold, received, lost, soldAt } }: cost = what the
@@ -276,7 +280,7 @@ function D.lots(char)
                         left = left - take
                     end
                 end
-            elseif e.kind == "expired" and e.key and open[e.key] and (e.amount or 0) > 0 then
+            elseif FAILED_KINDS[e.kind] and e.key and open[e.key] and (e.amount or 0) > 0 then
                 for _, lot in ipairs(open[e.key]) do
                     if lot.left > 0 then
                         lot.lost = lot.lost + e.amount
@@ -333,6 +337,126 @@ function D.addCost(char, key, amount, at)
     if lot then
         lot.lost = (lot.lost or 0) + amount
     end
+end
+
+-- Recount ------------------------------------------------------------------------------------------
+-- WoW Forever mails the items of a cancelled auction with a buyer invoice. Up to 2.0.0-beta.1 that
+-- was booked as a purchase at the post's price: tens of gold "spent" that never left the bags. The
+-- journal holds such returns as buys of one item that follow each other within D.RETURN_GAP
+-- seconds, each of D.RETURN_MIN units or more: taking mail books them a second apart, while a
+-- purchase on the auction house (a quote, then a confirmation) takes longer. They become kind
+-- "return": `posted` keeps the price they were booked at, `amount` becomes the deposit lost.
+D.RETURN_GAP, D.RETURN_MIN = 10, 5
+function D.markReturns(journal)
+    local last, out = {}, {}
+    for i, e in ipairs(journal) do
+        if e.kind == "buy" and e.key and (e.qty or 0) >= D.RETURN_MIN then
+            local p = last[e.key] and journal[last[e.key]]
+            if p and (e.at or 0) - (p.at or 0) <= D.RETURN_GAP then
+                for _, x in ipairs({ p, e }) do
+                    if x.kind == "buy" then
+                        x.kind, x.posted, x.amount = "return", x.amount, 0
+                        out[#out + 1] = x
+                    end
+                end
+            end
+            last[e.key] = i
+        end
+    end
+    return out
+end
+
+-- Rebuilds the item totals, stock, purchase lots and daily totals from the journal (which keeps
+-- every trade: D.log drops entries only past 500). A post that came back (expired, cancelled,
+-- returned) without its deposit gets `deposit(key, qty)`, the estimate of what posting it cost; nil
+-- when that is not known yet (the item's merchant price is still loading): then nothing changes
+-- and false is returned. Losses the journal never held (cancels made before they were logged)
+-- are kept: what an item lost beyond the journal is booked again, less the returns' estimates
+-- (a return is often that very cancel).
+function D.recount(char, deposit)
+    local journal = char.journal or {}
+    local keyOf = {}
+    for _, e in ipairs(journal) do
+        if e.key and e.name then
+            keyOf[string.lower(e.name)] = e.key
+        end
+    end
+    local fills, known, guessed = {}, {}, {}
+    for _, e in ipairs(journal) do
+        if FAILED_KINDS[e.kind] then
+            local key = e.key or (e.name and keyOf[string.lower(e.name)])
+            if key and (e.amount or 0) <= 0 then
+                local d = deposit(key, e.qty or 1)
+                if d == nil then
+                    return false
+                end
+                fills[#fills + 1] = { e = e, key = key, amount = d }
+                if e.kind == "return" then
+                    guessed[key] = (guessed[key] or 0) + d
+                end
+            elseif key then
+                known[key] = (known[key] or 0) + (e.amount or 0)
+            end
+        end
+    end
+    local extra = {}
+    for key, s in pairs(char.stats or {}) do
+        local x = (s.lost or 0) - (known[key] or 0) - (guessed[key] or 0)
+        if x > 0 then
+            extra[key] = x
+        end
+    end
+    for _, f in ipairs(fills) do
+        f.e.key, f.e.amount, f.e.estimated = f.key, f.amount, true
+    end
+    local old, oldStats, modes, traded = char.positions or {}, char.stats or {}, {}, {}
+    for _, e in ipairs(journal) do
+        if e.key then
+            traded[e.key] = true
+        end
+    end
+    for _, lot in ipairs(char.lots or {}) do
+        modes[lot.key] = lot.mode or modes[lot.key]
+    end
+    char.stats, char.positions, char.lots, char.lotSeq, char.lotsJoined = {}, {}, {}, 0, 1
+    for _, e in ipairs(journal) do
+        if e.kind == "buy" and e.key then
+            local p = old[e.key]
+            D.addPosition(
+                char,
+                e.key,
+                e.name,
+                e.qty or 0,
+                e.amount or 0,
+                p and p.mode or modes[e.key],
+                p and p.exit,
+                e.at
+            )
+        elseif (e.kind == "sell" or e.kind == "vendor") and e.key then
+            local cost = D.sale(char, e.key, e.name, e.qty or 0, e.amount or 0, e.at)
+            e.profit = (e.amount or 0) - cost
+        elseif FAILED_KINDS[e.kind] and e.key and (e.amount or 0) > 0 then
+            D.addCost(char, e.key, e.amount, e.at)
+        end
+    end
+    -- Items the journal never mentions (stock from before it) keep what they had.
+    for key, p in pairs(old) do
+        if not traded[key] then
+            char.positions[key] = p
+        end
+    end
+    for key, st in pairs(oldStats) do
+        if not traded[key] then
+            char.stats[key] = st
+            extra[key] = nil
+        end
+    end
+    for key, x in pairs(extra) do
+        D.addCost(char, key, x)
+    end
+    char.daily = nil
+    D.daily(char)
+    return true
 end
 
 -- Positions: what was bought and not yet sold, with its cost (average price).

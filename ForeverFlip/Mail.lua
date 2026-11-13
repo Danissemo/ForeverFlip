@@ -63,7 +63,7 @@ local function read(i)
         -- type, item, player, bid, buyout, deposit, cut, money delay, eta hour, eta minute, count:
         -- the count is the 11th value. Reading the 10th (the minute of delivery, nearly always 0)
         -- booked no sale from any invoice. Without a count, the subject's "(5)" tells it.
-        local kind, item, _, bid, _, deposit, consignment, _, _, _, count = GetInboxInvoiceInfo(i)
+        local kind, item, player, bid, _, deposit, consignment, _, _, _, count = GetInboxInvoiceInfo(i)
         if not U.finite(count) or count < 1 then
             count = tonumber(type(subject) == "string" and subject:match("%((%d+)%)%s*$")) or 1
         end
@@ -71,6 +71,7 @@ local function read(i)
             snap.invoice = {
                 kind = kind,
                 item = item,
+                player = player,
                 bid = bid or 0,
                 deposit = deposit or 0,
                 cut = consignment or 0,
@@ -161,6 +162,17 @@ function Mail.record(i)
     end
     snap.recorded = true
     local inv = snap.invoice
+    -- A post that came back. WoW Forever mails a cancelled auction's items with a buyer invoice
+    -- (from the player): that is no purchase. Up to 2.0.0-beta.1 it was booked as one.
+    local name, count = subjectItem(snap.subject, FAILED)
+    local me = UnitName and UnitName("player")
+    if not name and inv and inv.kind == "buyer" and type(inv.item) == "string" and me and inv.player == me then
+        name, count = inv.item, inv.count
+    end
+    if name then
+        F.Trade.onFailedPost(name, count)
+        return
+    end
     if inv and inv.kind == "seller" and type(inv.item) == "string" then
         F.Trade.onInvoice(inv)
         return
@@ -169,11 +181,6 @@ function Mail.record(i)
     -- Buy tab or another addon: purchases ForeverFlip did not make are booked from it.
     if inv and inv.kind == "buyer" and type(inv.item) == "string" then
         F.Trade.onBuyerInvoice(inv, snap.link)
-        return
-    end
-    local name, count = subjectItem(snap.subject, FAILED)
-    if name then
-        F.Trade.onFailedPost(name, count)
         return
     end
     name = subjectItem(snap.subject, { "AUCTION_WON_MAIL_SUBJECT" })
