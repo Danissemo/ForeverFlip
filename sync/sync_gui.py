@@ -22,6 +22,7 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 import addon_update
 import github_login
+import tray
 from game_location import AmbiguousGame, GameNotFound, normalize_game
 
 SOURCES = {'helper': '', 'gh': ' (GitHub CLI)', 'environment': ' (FF_GITHUB_TOKEN)', 'config': ' (config.json)'}
@@ -123,6 +124,23 @@ def window_icons(root, images):
         icons = (app_icon_image(root, 32),)
     root.iconphoto(True, *icons)
     return icons
+
+
+_FONTS = {}
+
+
+def measure(font, text):
+    """Width of `text` in `font`. Font objects are made once each: making one for every redraw (a
+    button on each mouse move, the status on each change) was a large part of the window's work."""
+    key = tuple(font) if isinstance(font, (list, tuple)) else font
+    f = _FONTS.get(key)
+    if f is not None:
+        try:
+            return f.measure(text)
+        except tk.TclError:  # made for a window that is gone (a new Tk root since)
+            pass
+    f = _FONTS[key] = tkfont.Font(font=font)
+    return f.measure(text)
 
 
 def fonts(root):
@@ -330,8 +348,7 @@ class RoundButton(Widget, tk.Canvas):
 
     def redraw(self):
         s = self.s
-        f = tkfont.Font(font=self.font)
-        w = max(self.fixed or s(106), f.measure(self.text) + s(36))
+        w = max(self.fixed or s(106), measure(self.font, self.text) + s(36))
         state = 'disabled' if self.disabled else 'pressed' if self.pressed else 'hover' if self.hover else 'default'
         image = self.images.stretched(f'button-{state}', w) if self.images else None
         h = image.height() if image else s(32)
@@ -423,25 +440,28 @@ class ActivityBar(tk.Canvas):
 
     def __init__(self, master, bg):
         super().__init__(master, height=3, bg=bg, highlightthickness=0, bd=0)
-        self.running, self.x = False, 0
+        self.running, self.x, self.bar = False, 0, None
 
     def start(self):
         if not self.running:
             self.running = True
+            self.bar = self.create_rectangle(-160, 0, 0, 3, fill=ACCENT, outline='')
             self.tick()
 
     def stop(self):
         self.running = False
         self.delete('all')
+        self.bar = None
 
     def tick(self):
         if not self.running:
             return
-        width = max(self.winfo_width(), 1)
-        self.x = (self.x + 6) % (width + 160)
-        self.delete('all')
-        self.create_rectangle(self.x - 160, 0, self.x, 3, fill=ACCENT, outline='')
-        self.after(16, self.tick)
+        # Hidden (closed to the tray): nothing to draw, look again later.
+        if self.winfo_ismapped():
+            width = max(self.winfo_width(), 1)
+            self.x = (self.x + 9) % (width + 160)
+            self.coords(self.bar, self.x - 160, 0, self.x, 3)
+        self.after(30, self.tick)
 
 
 def shorten(path: str, limit: int = 46) -> str:
@@ -474,6 +494,12 @@ class SyncWindow:
         self.code_text = tk.StringVar()
         self.log_open = False
         self.tone_name = 'idle'
+        self.tray_on = tk.BooleanVar(value=bool(config.get('tray', False)))
+        self.tray = tray.Tray(ASSETS/'app-icon.png', lambda what: self.events.put(('tray', what)))
+        self.quitting = False  # Quit from the tray: the window closes for good
+        self.spin_angle, self.spinning = 90, False
+        self.layout_pending = False
+        self.drawn_size = self.header_width = None
         s = self.s = Scale(root)
         f = self.f = fonts(root)
         img = self.img = Images(root, s)
@@ -493,7 +519,7 @@ class SyncWindow:
         # The background: gradient and waves; the header and the card are drawn on it.
         self.bg = tk.Canvas(root, highlightthickness=0, bd=0)
         self.bg.pack(fill='both', expand=True)
-        self.bg.bind('<Configure>', lambda _: self.layout())
+        self.bg.bind('<Configure>', lambda _: self.request_layout())
 
         self.progress = ActivityBar(self.bg, hexcolor(TOP))
         self.progress_item = self.bg.create_window(0, 0, anchor='nw', window=self.progress)
@@ -502,7 +528,7 @@ class SyncWindow:
         self.inner = tk.Frame(self.bg, bg=CARD)
         self.inner_item = self.bg.create_window(0, 0, anchor='nw', window=self.inner)
         self.inner.columnconfigure(3, weight=1)
-        self.inner.bind('<Configure>', lambda _: self.layout())
+        self.inner.bind('<Configure>', lambda _: self.request_layout())
         self.row_count = 0
 
         game = self.row('game', 'Game')
@@ -545,6 +571,11 @@ class SyncWindow:
         tk.Label(prices, textvariable=self.last_sync, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(anchor='w')
         self.auto_button = Switch(prices, 'Sync automatically', self.auto, self.options_changed, f['switch'], s, images=img)
         self.auto_button.pack(anchor='w', pady=(s(10), 0))
+        self.tray_button = Switch(prices, 'Keep syncing in the tray when closed', self.tray_on, self.tray_changed,
+                                  f['switch'], s, images=img)
+        self.tray_button.pack(anchor='w', pady=(s(8), 0))
+        if not tray.available():
+            self.tray_button.state(['disabled'])
         self.sync_button = RoundButton(self.actions, 'Sync now', lambda: self.start_sync(force=True), f['button'], s,
                                        width=s(106), images=img)
         self.sync_button.pack(side='right')
@@ -647,8 +678,8 @@ class SyncWindow:
     def title_end(self):
         s, f = self.s, self.f
         return s(self.HEADER_X + self.HEADER_ICON + self.HEADER_GAP) + max(
-            tkfont.Font(font=f['title']).measure('ForeverFlip Sync'),
-            tkfont.Font(font=f['subtitle']).measure('Community prices and addon updates for WoW Forever'))
+            measure(f['title'], 'ForeverFlip Sync'),
+            measure(f['subtitle'], 'Community prices and addon updates for WoW Forever'))
 
     def draw_header(self, w):
         c, s, f = self.bg, self.s, self.f
@@ -691,8 +722,7 @@ class SyncWindow:
         w = max(self.bg.winfo_width(), self.width)
         c.delete('status')
         text = self.status.get()
-        font = tkfont.Font(font=f['status'])
-        width = min(font.measure(text), s(240))
+        width = min(measure(f['status'], text), s(240))
         right = w - s(22)
         tx = right - width
         cy = s(self.HEADER_Y + self.HEADER_ICON / 2)
@@ -701,14 +731,33 @@ class SyncWindow:
         if rule_x > self.title_end() + s(12):
             c.create_line(rule_x, cy - s(18), rule_x, cy + s(18), fill=DIVIDER, tags='status')
         tone = TONES.get(self.tone_name, FAINT)
-        before = set(c.find_all())
-        glyph = {'ok': 'check', 'busy': 'ring', 'error': 'alert', 'idle': 'ring'}.get(self.tone_name, 'alert')
-        if self.tone_name == 'warn' and 'GitHub' in text:
-            glyph = 'github'
-        icon(c, glyph, icon_x, cy, s(24), tone, hexcolor(TOP))
-        for item in set(c.find_all()) - before:
-            c.addtag_withtag('status', item)
+        if self.tone_name == 'busy':
+            # A ring with a turning arc (self.spin): the work goes on.
+            r = s(9)
+            c.create_oval(icon_x - r, cy - r, icon_x + r, cy + r, outline=TILE, width=s(3), tags='status')
+            c.create_arc(icon_x - r, cy - r, icon_x + r, cy + r, start=self.spin_angle, extent=110, style='arc',
+                         outline=tone, width=s(3), tags=('status', 'spinner'))
+        else:
+            before = set(c.find_all())
+            glyph = {'ok': 'check', 'error': 'alert', 'idle': 'ring'}.get(self.tone_name, 'alert')
+            if self.tone_name == 'warn' and 'GitHub' in text:
+                glyph = 'github'
+            icon(c, glyph, icon_x, cy, s(24), tone, hexcolor(TOP))
+            for item in set(c.find_all()) - before:
+                c.addtag_withtag('status', item)
         c.create_text(tx, cy, text=text, font=f['status'], fill=TEXT, anchor='w', width=s(240), tags='status')
+        self.tray.title(text)
+
+    def request_layout(self):
+        """Lays the window out once the current events are handled: a resize sends Configure from the
+        canvas and the card both, and each layout moved items that sent more of them."""
+        if not self.layout_pending:
+            self.layout_pending = True
+            self.root.after_idle(self.layout_now)
+
+    def layout_now(self):
+        self.layout_pending = False
+        self.layout()
 
     def layout(self):
         c, s = self.bg, self.s
@@ -748,8 +797,13 @@ class SyncWindow:
             self.log_item = None
         height = bottom + s(28)
         h = max(c.winfo_height(), height)
-        self.draw_background(w, h)
-        self.draw_header(w)
+        # The backdrop (48 bands and the waves) and the header change only with the size.
+        if self.drawn_size != (w, h):
+            self.drawn_size = (w, h)
+            self.draw_background(w, h)
+        if self.header_width != w:
+            self.header_width = w
+            self.draw_header(w)
         c.tag_raise('card')
         c.tag_raise('header')
         c.tag_raise('status')
@@ -762,6 +816,19 @@ class SyncWindow:
     def tone(self, name):
         self.tone_name = name
         self.draw_status()
+        if name == 'busy' and not self.spinning:
+            self.spinning = True
+            self.spin()
+
+    def spin(self):
+        """Turns the status ring while busy; only the arc's angle changes, nothing is drawn again."""
+        if self.tone_name != 'busy':
+            self.spinning = False
+            return
+        if self.root.winfo_viewable():
+            self.spin_angle = (self.spin_angle - 15) % 360
+            self.bg.itemconfigure('spinner', start=self.spin_angle)
+        self.root.after(40, self.spin)
 
     def toggle_log(self):
         self.log_open = not self.log_open
@@ -948,6 +1015,24 @@ class SyncWindow:
         if chosen:
             self.select_game(chosen)
 
+    def tray_changed(self):
+        self.config['tray'] = self.tray_on.get()
+        try:
+            self.core.save_json(self.folder/'config.json', self.config)
+        except OSError as error:
+            self.status.set(f'Could not save options: {error}')
+
+    def show_window(self):
+        """Back from the tray."""
+        self.tray.hide()
+        self.root.deiconify()
+        self.root.lift()
+        try:
+            self.root.focus_force()
+        except tk.TclError:
+            pass
+        self.request_layout()
+
     def options_changed(self):
         self.config['automatic'], self.config['upload'] = self.auto.get(), self.share.get()
         try:
@@ -997,6 +1082,17 @@ class SyncWindow:
                 kind, value = self.events.get_nowait()
             except queue.Empty:
                 break
+            if kind == 'tray':
+                if value == 'open':
+                    self.show_window()
+                elif value == 'sync':
+                    self.start_sync(force=True)
+                elif value == 'quit':
+                    self.quitting = True
+                    self.tray.hide()
+                    self.root.deiconify()
+                    self.close()
+                continue
             if kind == 'log':
                 self.output.configure(state='normal')
                 self.output.insert('end', value+'\n')
@@ -1067,6 +1163,7 @@ class SyncWindow:
                     self.tone('error')
                     self.core.log(value)
                 if self.closing:
+                    self.tray.hide()
                     self.root.destroy()
                     return
         if not self.updating and not self.closing and self.game and time.monotonic() >= self.next_update:
@@ -1080,11 +1177,18 @@ class SyncWindow:
             except OSError as error:
                 self.status.set(str(error))
         if self.closing and not self.busy:
+            self.tray.hide()
             self.root.destroy()
             return
         self.poll_job = self.root.after(250, self.poll)
 
     def close(self):
+        # With "Keep syncing in the tray" the window only hides: syncing and sharing go on.
+        if self.tray_on.get() and tray.available() and not self.quitting:
+            self.root.withdraw()
+            self.tray.show('ForeverFlip Sync keeps syncing here. Right-click the icon to open it or quit.')
+            self.core.log('The window is closed: syncing goes on in the tray (right-click its icon to quit).')
+            return
         if self.busy:
             self.closing = True
             self.auto.set(False)
@@ -1093,6 +1197,7 @@ class SyncWindow:
             if getattr(self, 'poll_job', None):
                 self.root.after_cancel(self.poll_job)
             self.progress.stop()
+            self.tray.hide()
             self.root.destroy()
 
 

@@ -201,6 +201,7 @@ function E.handle(event, ...)
             F.Mail.hook()
             F.Share.register()
             F.Raw.importCommunity()
+            F.Raw.prune()
             F.Bids.prune()
             if F.UI and F.UI.tooltips then
                 F.UI.tooltips()

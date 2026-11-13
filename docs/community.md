@@ -44,7 +44,13 @@ The status line shows progress or a retry message; the log gives the result. Aut
 for changed saves every five seconds, refreshes community prices every fifteen minutes and checks
 pending uploads about once a minute. A failed attempt keeps unsent scans and retries after thirty
 seconds. File changes made during a transfer are processed on the next pass. The window stays
-responsive while parsing and network work run in the background.
+responsive while parsing and network work run in the background; the ring at the top right turns
+while the helper works. Reading the game's saved file takes a few seconds even when it holds eight
+full scans: only the scans table is read, and scans already shared are not parsed again.
+
+**Keep syncing in the tray when closed** (under Prices, off by default): closing the window then
+hides it into the notification area, and the helper goes on syncing prices and sharing new scans.
+Click the tray icon to open the window again; right-click it for **Sync now** and **Quit**.
 
 ### Updating the helper
 
@@ -96,6 +102,9 @@ A folder that is a developer's checkout (a link or a `.git` folder inside) is ne
    checked, uploaded to a secret gist of your account, and announced by a **Scan upload: ...**
    issue in the data repository. The repository checks it again and archives it within minutes;
    the helper shows its answer and deletes the gist.
+4. In game, after `/reload`: **Settings → Sharing** shows **Shared by the helper: N of your scans**
+   with the age of the newest one, and how many full scans still wait for the helper. Shared scans
+   are dropped from the saved file at login.
 
 A sign-in of the [GitHub CLI](https://cli.github.com) (`gh auth login`), `FF_GITHUB_TOKEN` or a
 `token` in `config.json` also works; the window shows which one is used and never displays it.

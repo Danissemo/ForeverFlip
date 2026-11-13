@@ -133,6 +133,37 @@ function R.finish(j)
     j.raw, j.rawSeal, j.rawParts, j.rawLines = nil, nil, nil, nil
 end
 
+-- Scans the helper reports shared are dropped at login, not only after the next full scan: each
+-- holds several megabytes, and the Sharing page counted them as still waiting for the helper.
+function R.prune()
+    local scans = type(ForeverFlipRaw) == "table" and ForeverFlipRaw.scans
+    if type(scans) ~= "table" then
+        return 0
+    end
+    local sent, dropped = R.uploaded(), 0
+    for i = #scans, 1, -1 do
+        local s = scans[i]
+        if type(s) == "table" and sent[tostring(s.scope) .. "@" .. tostring(s.at)] then
+            table.remove(scans, i)
+            dropped = dropped + 1
+        end
+    end
+    return dropped
+end
+
+-- What the helper reports shared: how many scans, and when the newest of them was taken.
+function R.sharedSummary()
+    local count, newest = 0, nil
+    for ident in pairs(R.uploaded()) do
+        count = count + 1
+        local at = tonumber(tostring(ident):match("@(%d+)$"))
+        if at and (not newest or at > newest) then
+            newest = at
+        end
+    end
+    return count, newest
+end
+
 function R.saved()
     local scans = type(ForeverFlipRaw) == "table" and ForeverFlipRaw.scans
     return type(scans) == "table" and scans or {}

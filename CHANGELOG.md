@@ -14,6 +14,15 @@ All notable changes are listed here. The format follows
   The scan then knew 1 588 items instead of 1 732, and resale found 2 deals. Waiting rows are now
   kept per item and read again only once its data has arrived; the count moves at once, and the
   wait runs on 30 seconds after the last item came in (5 minutes at most).
+- **The Sync helper froze for a minute after each `/reload`.** It read the whole saved file (68 MB with
+  eight full scans) a character at a time: 65 seconds in a thread that held the window. It now
+  reads only the scans table, quoted strings in one step and the rows of scans not shared yet:
+  about 3 seconds. Window layouts no longer repeat for each resize event and the progress bar moves
+  one shape instead of drawing a new one 60 times a second.
+- **The helper's status ring turns while it works**, instead of standing still.
+- **Settings → Sharing tells what the helper shared**: how many of your scans and the age of the
+  newest, and how many still wait. Shared scans leave the saved file at login, not only after the
+  next full scan.
 - **Item data loads faster after a full scan.** It was asked for at a fixed 40 items a second, seven
   minutes for the 16 000 items of a busy house. Now up to 100 go every 0.1 seconds while fewer than
   400 are unanswered, so the pace follows how fast the game answers.

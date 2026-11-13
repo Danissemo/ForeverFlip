@@ -1,0 +1,3 @@
+# What the packaged Sync helper needs besides the standard library (tools/build_sync_helper.py).
+pystray==0.19.5
+pillow==11.3.0

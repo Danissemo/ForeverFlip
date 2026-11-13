@@ -28,7 +28,9 @@ def main():
                '--workpath', str(work), '--specpath', str(work),
                # the window's images (the ForeverFlip Sync asset kit) and the executable's icon
                '--add-data', f'{ROOT/"sync/assets"}{os.pathsep}assets',
-               '--icon', str(ROOT/'sync/assets/app-icon.ico')]
+               '--icon', str(ROOT/'sync/assets/app-icon.ico'),
+               # the tray icon (sync/tray.py): pystray picks its Windows backend at run time
+               '--hidden-import', 'pystray._win32']
     # Some Python distributions load this public rejection policy in SSLContext.__new__.
     # Bundle it unchanged next to frozen ssl.py; omitting it breaks even context creation.
     # Standard Python distributions do not require this additional resource.
@@ -43,9 +45,9 @@ def main():
         subprocess.run([str(executable), '--self-test', '--self-test-report', str(report)],
                        check=True, timeout=45, creationflags=subprocess.CREATE_NO_WINDOW)
         result = json.loads(report.read_text(encoding='utf-8'))
-        if not result.get('ok') or not result.get('tls_verified') or not result.get('gui_checked'):
+        if not result.get('ok') or not result.get('tls_verified') or not result.get('gui_checked')                 or not result.get('tray'):
             raise RuntimeError(f'Packaged helper runtime failed: {result}')
-    print(f'Built {executable}; frozen TLS verification and Tk runtime passed.')
+    print(f'Built {executable}; frozen TLS verification, Tk runtime and tray icon support passed.')
 
 
 if __name__ == '__main__':

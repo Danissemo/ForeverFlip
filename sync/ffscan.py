@@ -36,6 +36,15 @@ class _Reader:
 
     ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", '"': '"', "'": "'", "a": "\a", "b": "\b",
                "f": "\f", "v": "\v", "\n": "\n"}
+    # Compiled once: compiling them again for every value cost two seconds of a large file.
+    LONG_OPEN = re.compile(r"\[(=*)\[")
+    NUMBER = re.compile(r"-?(0[xX][0-9a-fA-F]+|\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?)")
+    NAME_KEY = re.compile(r"([A-Za-z_]\w*)\s*=(?!=)")
+    DIGITS3 = re.compile(r"\d{1,3}")
+    # The characters of a quoted string up to its closing quote or an escape, read in one step:
+    # a saved full scan is one string of several megabytes, read a character at a time it took
+    # most of a minute.
+    PLAIN = {'"': re.compile(r'[^"\\]*'), "'": re.compile(r"[^'\\]*")}
 
     def __init__(self, text: str):
         self.s, self.i = text, 0
@@ -66,9 +75,9 @@ class _Reader:
             return self.table()
         if c in "\"'":
             return self.string()
-        if c == "[" and re.compile(r"\[=*\[").match(self.s, self.i):
+        if c == "[" and self.LONG_OPEN.match(self.s, self.i):
             return self.long_string()
-        m = re.compile(r"-?(0[xX][0-9a-fA-F]+|\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?)").match(s, self.i)
+        m = self.NUMBER.match(s, self.i)
         if m:
             self.i = m.end()
             text = m.group(0)
@@ -84,32 +93,34 @@ class _Reader:
 
     def string(self):
         s, quote = self.s, self.s[self.i]
+        plain = self.PLAIN[quote]
         self.i += 1
         out = []
         while True:
+            end = plain.match(s, self.i).end()
+            if end > self.i:
+                out.append(s[self.i:end])
+                self.i = end
             if self.i >= len(s):
                 raise LuaError("unfinished string")
             c = s[self.i]
             if c == quote:
                 self.i += 1
                 return "".join(out)
-            if c == "\\":
-                if self.i + 1 >= len(s):
-                    raise LuaError("unfinished string escape")
-                nxt = s[self.i + 1]
-                if nxt.isdigit():
-                    m = re.compile(r"\d{1,3}").match(s, self.i + 1)
-                    out.append(chr(int(m.group(0))))
-                    self.i += 1 + len(m.group(0))
-                    continue
-                out.append(self.ESCAPES.get(nxt, nxt))
-                self.i += 2
+            # an escape
+            if self.i + 1 >= len(s):
+                raise LuaError("unfinished string escape")
+            nxt = s[self.i + 1]
+            if nxt.isdigit():
+                m = self.DIGITS3.match(s, self.i + 1)
+                out.append(chr(int(m.group(0))))
+                self.i += 1 + len(m.group(0))
                 continue
-            out.append(c)
-            self.i += 1
+            out.append(self.ESCAPES.get(nxt, nxt))
+            self.i += 2
 
     def long_string(self):
-        m = re.compile(r"\[(=*)\[").match(self.s, self.i)
+        m = self.LONG_OPEN.match(self.s, self.i)
         close = "]" + m.group(1) + "]"
         start = self.i + len(m.group(0))
         end = self.s.find(close, start)
@@ -129,7 +140,7 @@ class _Reader:
             if self.s[self.i] == "}":
                 self.i += 1
                 break
-            if self.s[self.i] == "[" and not re.compile(r"\[=*\[").match(self.s, self.i):
+            if self.s[self.i] == "[" and not self.LONG_OPEN.match(self.s, self.i):
                 self.i += 1
                 key = self.value()
                 if key is None or not isinstance(key, (str, int, float, bool)):
@@ -144,7 +155,7 @@ class _Reader:
                 self.i += 1
                 result[key] = self.value()
                 continue
-            m = re.compile(r"([A-Za-z_]\w*)\s*=(?!=)").match(self.s, self.i)
+            m = self.NAME_KEY.match(self.s, self.i)
             if m:
                 self.i = m.end()
                 result[m.group(1)] = self.value()
@@ -156,6 +167,21 @@ class _Reader:
         return result
 
 
+GLOBAL = re.compile(r"([A-Za-z_]\w*)\s*=")
+
+
+def lua_assignment(text: str, name: str):
+    """The value assigned to the global `name` in a SavedVariables file, None when it is not there.
+    The game writes each global at the start of a line; only that one value is read, not the
+    whole file (the addon's price history is most of it)."""
+    m = re.search(r"(?m)^" + re.escape(name) + r"\s*=", text)
+    if not m:
+        return None
+    reader = _Reader(text)
+    reader.i = m.end()
+    return reader.value()
+
+
 def lua_assignments(text: str) -> dict:
     """Global assignments of a SavedVariables file: {name: value}."""
     reader, out = _Reader(text), {}
@@ -163,7 +189,7 @@ def lua_assignments(text: str) -> dict:
         reader.skip()
         if reader.i >= len(text):
             return out
-        m = re.compile(r"([A-Za-z_]\w*)\s*=").match(text, reader.i)
+        m = GLOBAL.match(text, reader.i)
         if not m:
             raise LuaError(f"expected an assignment at {reader.i}")
         reader.i = m.end()
@@ -226,9 +252,10 @@ def parse_rows(text: str) -> list:
     return rows
 
 
-def scans_from_saved_variables(text: str) -> list[RawScan]:
-    """Raw scans the addon kept in ForeverFlipRaw (newest first)."""
-    data = lua_assignments(text).get("ForeverFlipRaw")
+def scans_from_saved_variables(text: str, skip=None) -> list[RawScan]:
+    """Raw scans the addon kept in ForeverFlipRaw (newest first). Scans named in `skip`
+    ("scope@time", already shared) come without their rows parsed."""
+    data = lua_assignment(text, "ForeverFlipRaw")
     if not isinstance(data, dict):
         return []
     scans = data.get("scans") or []
@@ -237,7 +264,8 @@ def scans_from_saved_variables(text: str) -> list[RawScan]:
     out = []
     for s in scans:
         if isinstance(s, dict) and s.get("scope") and s.get("at") and isinstance(s.get("rows"), str):
-            rows = parse_rows(s["rows"]) if s.get("count") else []
+            skipped = skip is not None and f'{s["scope"]}@{int(s["at"])}' in skip
+            rows = parse_rows(s["rows"]) if s.get("count") and not skipped else []
             seal = s.get("seal")
             out.append(RawScan(scope=s["scope"], at=int(s["at"]), realm=s.get("realm") or "",
                                faction=s.get("faction") or "", addon=str(s.get("addon") or ""),

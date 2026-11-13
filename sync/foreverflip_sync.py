@@ -205,7 +205,7 @@ def shareable_scans(game: pathlib.Path, state: dict, paths=None):
     done = set(state.setdefault("uploaded", []))
     for path in saved_variable_files(game) if paths is None else paths:
         try:
-            scans = ffscan.scans_from_saved_variables(path.read_text(encoding="utf-8", errors="replace"))
+            scans = ffscan.scans_from_saved_variables(path.read_text(encoding="utf-8", errors="replace"), skip=done)
         except ffscan.LuaError as exc:
             log(f"Cannot read {path}: {exc}")
             continue
@@ -499,7 +499,9 @@ def runtime_check(check_gui=True, check_network=False):
         url = f'https://raw.githubusercontent.com/{DEFAULT_REPO}/main/shared/index.json'
         with urllib.request.urlopen(url, timeout=20) as response:
             response.read()
-    return {'ok': True, 'tls_verified': True, 'gui_checked': check_gui, 'network_checked': check_network}
+    import tray
+    return {'ok': True, 'tls_verified': True, 'gui_checked': check_gui, 'network_checked': check_network,
+            'tray': tray.available()}
 
 
 def main(argv=None) -> int:

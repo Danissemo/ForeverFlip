@@ -5405,9 +5405,17 @@ function UI.refreshShare()
     else
         lines[#lines + 1] = L("Community data: none. Run the ForeverFlip Sync helper to get it.")
     end
+    -- What the helper did with the player's own scans (it lists the ones it shared, read at /reload).
+    local shared, newest = F.Raw.sharedSummary()
+    if shared > 0 then
+        lines[#lines + 1] =
+            string.format(L("Shared by the helper: %d of your scans, the newest taken %s."), shared, UI.age(newest))
+    end
     if F.db.settings.rawScans then
         local saved = F.Raw.saved()
-        lines[#lines + 1] = string.format(L("Full scans kept for the helper: %d."), #saved)
+        lines[#lines + 1] = #saved > 0
+                and string.format(L("Full scans waiting for the helper: %d (it shares them, then /reload)."), #saved)
+            or L("No full scan waits for the helper: all are shared.")
     end
     if #F.Share.received > 0 then
         lines[#lines + 1] = L("Received:")
