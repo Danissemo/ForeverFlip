@@ -52,7 +52,7 @@ from game_location import locate_game, GameNotFound, AmbiguousGame  # noqa: E402
 import github_login  # noqa: E402
 import addon_update  # noqa: E402
 
-VERSION = "2.0.0-beta.1"
+VERSION = "2.1.0-beta.1"
 DEFAULT_REPO = "Danissemo/ForeverFlip-Data"
 ADDON_REPO = "Danissemo/ForeverFlip"
 UPDATE_EVERY = 6 * 3600  # how often new addon releases are looked for

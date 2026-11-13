@@ -406,7 +406,9 @@ Buttons:
   yours** without a search: WoW Forever does not answer a search for an item that nobody else sells.
 - **Refresh** reloads your auctions from the server.
 - **Cancel auction** cancels the selected auction. The item comes back by mail. **The deposit is
-  lost**, and the game may charge more for cancelling.
+  lost**, and the game may charge more for cancelling. The loss is booked in the journal once the
+  cancel is confirmed (the next list of your auctions, about 2 seconds later, or the "Auction
+  cancelled" mail), once per auction; a cancel the server refused costs nothing.
 - **Cancel undercut (N)** cancels the next undercut auction on each click. It only counts auctions
   whose repost price would still reach the item's floor; an auction that could only be reposted
   below its floor is left alone. Each cancel still costs the deposit. When the items are back from
@@ -744,7 +746,10 @@ on the Merchant tab:
   and the mouse wheel over the list scrolls it. **Buy N** purchases the suggested
   quantity (no more than about one day of sales, within your budget and what your bags hold), one
   stack per purchase, so items that do not stack are bought one by one. They are booked as stock for
-  resale.
+  resale once they reach your bags: units the merchant did not sell (no room, sold out) are not
+  booked.
+- While a sale to the merchant runs, **Sell all** and both gear buttons show **Selling...** and wait;
+  the chat tells what really sold when it ends.
 
 The merchant's prices are remembered for the [Crafting](#crafting) page.
 

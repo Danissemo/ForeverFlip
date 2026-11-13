@@ -94,10 +94,12 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> **Current beta: [1.2.0-beta.7](https://github.com/Danissemo/ForeverFlip/releases/tag/v1.2.0-beta.7)**
-> posts all available units of an item across bag stacks and fixes scan uploads after delayed
-> GitHub sign-in discovery in the Sync helper, together with its window icon. Includes all earlier
-> beta improvements. Download the new helper EXE as well as updating the addon. See the
+> **Current beta: [2.1.0-beta.1](https://github.com/Danissemo/ForeverFlip/releases/tag/v2.1.0-beta.1)**
+> brings the fixes of a full code review (160 findings): accounting of purchases, cancels, returns
+> and mail, buying limits, searches and scans, sharing and the interface. Deposits are estimated
+> one way everywhere, for the duration each item's post would go for, and merchant sales and
+> purchases are booked only once the bags show them. Includes all earlier beta improvements.
+> Download the new helper EXE as well as updating the addon. See the
 > [current beta checklist](docs/testing.md#current-beta-checklist) and
 > [Beta testing](docs/testing.md#beta-testing).
 

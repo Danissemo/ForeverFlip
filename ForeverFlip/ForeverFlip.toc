@@ -14,7 +14,7 @@
 ## Category-zhCN: 拍卖
 ## Category-zhTW: 拍賣
 ## IconTexture: Interface\AddOns\ForeverFlip\Media\Logo
-## Version: 2.0.0-beta.1
+## Version: 2.1.0-beta.1
 ## OptionalDeps: LibAHTab, auxForever, ForeverFlip_Shared
 ## SavedVariables: ForeverFlipData, ForeverFlipRaw
 

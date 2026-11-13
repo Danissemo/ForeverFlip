@@ -84,6 +84,8 @@ If you add a game API call, add a fake for it to `mock.lua`, based on behaviour 
 1. Update the version in **both** `ForeverFlip/ForeverFlip.toc` (`## Version:`) and
    `ForeverFlip/Util.lua` (`F.version`). The build fails if they differ.
 2. Move the `Unreleased` notes in `CHANGELOG.md` under a new `## [x.y.z] - YYYY-MM-DD` heading.
+   Update the version in `docs/testing.md` and its cards, then rebuild the tester workbook with
+   `python tools/make_tester_workbook.py` (a test fails while it is out of date).
 3. Go through the [in-game checklist](docs/testing.md#in-game-checklist).
 4. Commit, then tag and push:
 

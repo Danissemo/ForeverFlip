@@ -6,6 +6,11 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [2.1.0-beta.1] - 2026-11-13
+
+A full code review (160 findings) and its fixes. Deposits are estimated one way everywhere, and
+merchant sales and purchases are booked only once the bags show them.
+
 ### Fixed
 
 - Best sale advice compares vendor proceeds with observed auction prices, before raising a post
@@ -1005,7 +1010,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v1.2.0-beta.6...HEAD
+[Unreleased]: ../../compare/v2.1.0-beta.1...HEAD
+[2.1.0-beta.1]: ../../compare/v2.0.0-beta.1...v2.1.0-beta.1
 [1.2.0-beta.6]: ../../compare/v1.2.0-beta.5...v1.2.0-beta.6
 [1.2.0-beta.5]: ../../compare/v1.2.0-beta.4...v1.2.0-beta.5
 [1.2.0-beta.4]: ../../compare/v1.2.0-beta.3...v1.2.0-beta.4

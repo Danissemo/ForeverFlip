@@ -522,7 +522,8 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
 - **Item statistics:** bought, spent, sold, earned, profit, unit-days held, last sale.
 - **Sales to a merchant by hand** (`Merchant.watchBuyback`): the buyback list is compared each time
   it changes; a new entry of an item in stock is booked as a vendor sale at the price paid. Sales of
-  the Sell to vendor button are booked by it and only matched.
+  the Sell to vendor button are booked by it and only matched. Purchases from a merchant are booked
+  as their units reach the bags ([Merchant offers](#merchant-offers)).
 - **Journal:** buy, post, sell, vendor, expired, cancel and return entries, the latest 500. Daily totals of it
   (`Data.daily`, 60 days) feed Analytics, so a busy week is not cut short by the 500-entry limit.
 - **Invoices** (`Mail.record`, `Trade.onInvoice`). Every auction mail is read once, when its money or
@@ -607,6 +608,13 @@ currency) is compared with its auction history:
   the units already held, limited by the merchant's stock and your [budget](#money-limits).
 
 Only items with measured sales and a positive profit are listed, highest total profit first.
+
+A purchase (**Buy N**) and a sale to the merchant (**Sell all**, **Gear I can't use**) are booked only
+once the bags show them (`Merchant.track`, `Merchant.settle`): a purchase books the units that
+arrived (the merchant may refuse a call: no room, sold out), a sale the stacks that left their
+slot. A purchase waits 10 seconds for its units; a sale stack still in its slot after 2 seconds is
+sent again, up to 3 tries. Closing the merchant ends the sales at once, while purchases keep
+waiting for their units.
 
 Every merchant price seen is remembered (`F.db.merchantPrices`) as a material price for crafting.
 
