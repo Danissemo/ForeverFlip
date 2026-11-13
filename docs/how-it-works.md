@@ -455,8 +455,10 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
     The last two are guesses (`T.GUESSES`) that the posting queues never post;
   - **minimum:** 1 silver for items and 1 copper for commodities.
 - **Floor** (`T.floorFor`), the highest of:
-  - the break-even price of the stock: the price that returns the average unit cost after the cut
-    (`Market.breakEven`);
+  - the break-even price of the stock plus the selling margin (`sellMinReturn`, 5%): the price
+    that returns the real unit cost × 1.05 after the cut (`Market.breakEven`). The real cost is the
+    price paid plus the deposits lost on expired and cancelled posts and the cancel fees
+    (`Data.addCost`), so reposts never hide a loss;
   - the rule's `min`;
   - `minPricePercent` × the usual price.
 - **Posting queues** (`postFirst`):

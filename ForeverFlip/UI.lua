@@ -4138,16 +4138,40 @@ function UI.createJournal(p)
         F.Trade.settle(1, false)
     end)
     UI.unknownNo:SetPoint("LEFT", UI.unknownYes, "RIGHT", 6, 0)
-    UI.journalLines = text(p, "GameFontHighlightSmall")
-    UI.journalLines:SetSpacing(4)
+    -- Every purchase and what became of it: what it cost, what its posts lost, what it sold for.
+    UI.journalList = CreateFrame("Frame", nil, p)
+    UI.lotTable = table_(UI.journalList, {
+        { "Name" },
+        { "Sold", 54 },
+        { "Buy each", 74 },
+        { "Cost", 76 },
+        { "Lost", 60 },
+        { "Sold for", 80 },
+        { "Profit", 80 },
+    }, 12, function() end)
     UI.placeJournalLines(false)
 end
 
 function UI.placeJournalLines(ask)
     local y = ask and JOURNAL_BELOW_ASK or JOURNAL_TOP
-    UI.journalLines:ClearAllPoints()
-    UI.journalLines:SetPoint("TOPLEFT", UI.journalPage, "TOPLEFT", 10, y)
-    UI.journalLines:SetPoint("TOPRIGHT", UI.journalPage, "TOPRIGHT", -10, y)
+    UI.journalList:ClearAllPoints()
+    UI.journalList:SetPoint("TOPLEFT", UI.journalPage, "TOPLEFT", 0, y)
+    UI.journalList:SetPoint("BOTTOMRIGHT", UI.journalPage, "BOTTOMRIGHT", 0, 0)
+end
+
+-- One purchase lot as the table shows it: profit only once every unit is sold (else what came
+-- back so far), the money its sold units brought each.
+function UI.lotRow(lot)
+    local soldEach = lot.sold > 0 and math.floor(lot.received / lot.sold + 0.5) or nil
+    local closed = lot.left <= 0
+    local profit = closed and (lot.received - lot.cost - (lot.lost or 0)) or nil
+    return {
+        sold = string.format("%d/%d", lot.sold, lot.qty),
+        each = math.floor(lot.cost / math.max(lot.qty, 1) + 0.5),
+        soldEach = soldEach,
+        profit = profit,
+        closed = closed,
+    }
 end
 
 function UI.refreshJournal()
@@ -4180,27 +4204,52 @@ function UI.refreshJournal()
         UI.unknownNo:Hide()
     end
     UI.placeJournalLines(u ~= nil)
-    local lines = {}
-    local kinds = {
-        buy = "bought",
-        sell = "sold",
-        vendor = "sold to vendor",
-        expired = "came back unsold",
-        fail = "purchase failed",
-    }
-    for i = #c.journal, math.max(1, #c.journal - 16), -1 do
-        local e = c.journal[i]
-        lines[#lines + 1] = string.format(
-            "%s  %s  %d x %s  %s%s",
-            date("%d.%m %H:%M", e.at),
-            L(kinds[e.kind] or e.kind),
-            e.qty or 0,
-            e.name or "?",
-            U.money(e.amount or 0),
-            e.profit and ("  (" .. L("profit") .. " " .. U.money(e.profit) .. ")") or ""
-        )
+    local lots = {}
+    for _, lot in ipairs(F.Data.lots(c)) do
+        lots[#lots + 1] = lot
     end
-    UI.journalLines:SetText(#lines > 0 and table.concat(lines, "\n") or L("No trades yet."))
+    table.sort(lots, function(a, b)
+        return (a.at or 0) > (b.at or 0)
+    end)
+    lots = UI.lotTable.sort(lots, function(lot, column)
+        local row = UI.lotRow(lot)
+        return ({ lot.name or "", lot.sold, row.each, lot.cost, lot.lost or 0, lot.received, row.profit })[column]
+    end)
+    local shown = UI.lotTable.window(lots)
+    for i, r in ipairs(UI.lotTable.rows) do
+        local lot = shown[i]
+        if lot then
+            local row = UI.lotRow(lot)
+            local item = U.parseKey(lot.key or "")
+            r.key = lot.key
+            r.icon:SetTexture(icon(item and item.id))
+            r.name:SetText(date("%d.%m ", lot.at or 0) .. (lot.name or nameOf(lot.key or "")))
+            r.cols[1]:SetText(row.sold)
+            r.cols[2]:SetText(U.money(row.each))
+            r.cols[3]:SetText(U.money(lot.cost))
+            r.cols[4]:SetText((lot.lost or 0) > 0 and ("|cffff9933" .. U.money(lot.lost) .. "|r") or "-")
+            r.cols[5]:SetText(
+                lot.sold > 0 and (U.money(lot.received) .. (row.soldEach and lot.sold > 1 and "" or "")) or "-"
+            )
+            if row.profit then
+                r.cols[6]:SetText(UI.signed(row.profit))
+            else
+                r.cols[6]:SetText("|cff999999" .. string.format(L("%d in stock"), lot.left) .. "|r")
+            end
+            r.selected:Hide()
+            r:Show()
+        else
+            r.key = nil
+            r:Hide()
+        end
+    end
+    local empty = UI.lotTable.empty
+    if #lots == 0 then
+        empty:SetText(L("No trades yet."))
+        empty:Show()
+    else
+        empty:Hide()
+    end
 end
 
 -- /ff dump: how the auction house window is built, frame by frame: name, type, size, anchors,
@@ -4915,6 +4964,13 @@ function UI.createGeneralSettings(p)
         { "vendorMinProfit", "Vendor deal", "money", 1, "Minimum profit of a vendor deal" },
         { "minProfit", "Resale", "money", 1, "Minimum profit of a resale" },
         { "minROI", "Resale return, %", "percent", 1, "Minimum resale return, %" },
+        {
+            "sellMinReturn",
+            "Selling, % over cost",
+            "percent",
+            1,
+            "Least a sale of your stock brings over its real cost (price paid plus deposits lost on reposts), %: posts never go below it",
+        },
         { "spendShare", "One deal, % of money", "percent", 2, "Money one deal may use, %" },
         { "itemShare", "One item, % of money", "percent", 2, "Money one item may hold (stock and new resale), %" },
         { "alertMinProfit", "Sound notice from", "money", 1, "Smallest profit with a sound notice" },
@@ -5915,7 +5971,12 @@ local function tooltipLines(tooltip)
             tipLine(
                 tooltip,
                 "  " .. L("You hold"),
-                string.format(L("%d, paid %s each"), position.qty, U.money(math.floor(position.cost / position.qty))),
+                string.format(L("%d, paid %s each"), position.qty, U.money(math.floor(position.cost / position.qty)))
+                    .. (
+                        (position.lost or 0) > 0
+                            and (" " .. string.format(L("(%s lost on reposts)"), U.money(position.lost)))
+                        or ""
+                    ),
                 0.5,
                 0.8,
                 1

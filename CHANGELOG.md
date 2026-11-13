@@ -6,6 +6,18 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Journal and profit is a table of purchases.** Each purchase is a row: when, what, units sold of
+  units bought, the price paid each and in all, what its posts lost (deposits of expired and
+  cancelled posts and cancel fees), what its sold units brought after the cut, and the profit
+  once all of it is sold (else how many are still in stock). Sales take the oldest purchase first.
+  Earlier trades are filled in from the journal.
+- **Selling keeps a minimum profit over the real cost.** Deposits lost on reposts and cancel fees
+  join the stock's cost, and no post goes below that cost plus **Selling, % over cost** (Settings,
+  5% by default). The floor holds for Post, Post all, Post next bought and Undercuts. The tooltip's
+  "You hold" shows what reposts lost.
+
 ### Fixed
 
 - **A part of the scan was read as a smaller house** (185 980 of 283 783 auctions stopped for a

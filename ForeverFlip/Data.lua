@@ -15,6 +15,7 @@ D.DEFAULTS = {
     vendorMinProfit = 10, -- copper per vendor deal
     minProfit = 100, -- copper per resale deal
     minROI = 0.2, -- resale return on the money spent
+    sellMinReturn = 0.05, -- the least a sale of own stock brings over its real cost (price, lost deposits)
     spendShare = 0.8, -- share of the money on hand one deal may use
     duration = 3, -- 1 = 2 h, 2 = 8 h, 3 = 24 h, 0 = automatic from the item's sales
     -- Nothing runs on its own for a new player: automatic scans, the sniper and automatic deal
@@ -192,6 +193,105 @@ function D.itemStats(char, key, name)
     return s
 end
 
+-- Purchase lots: every purchase with what became of it, first in, first out. char.lots = {
+-- { id, key, name, at, qty, cost, mode, left, sold, received, lost, soldAt } }: cost = what the
+-- purchase cost, received = the money its sold units brought after the cut, lost = deposits of
+-- posts that expired or were cancelled and the game's cancel fees, booked on the lot whose units
+-- were on sale. The last D.LOTS lots are kept.
+D.LOTS = 300
+function D.lots(char)
+    if type(char.lots) ~= "table" then
+        char.lots = {}
+        char.lotSeq = 0
+        local open = {}
+        for _, e in ipairs(char.journal or {}) do
+            if e.kind == "buy" and e.key and (e.qty or 0) > 0 then
+                char.lotSeq = char.lotSeq + 1
+                local lot = {
+                    id = char.lotSeq,
+                    key = e.key,
+                    name = e.name,
+                    at = e.at,
+                    qty = e.qty,
+                    cost = e.amount or 0,
+                    left = e.qty,
+                    sold = 0,
+                    received = 0,
+                    lost = 0,
+                }
+                char.lots[#char.lots + 1] = lot
+                open[e.key] = open[e.key] or {}
+                table.insert(open[e.key], lot)
+            elseif (e.kind == "sell" or e.kind == "vendor") and e.key and open[e.key] then
+                local left = e.qty or 0
+                for _, lot in ipairs(open[e.key]) do
+                    if left <= 0 then
+                        break
+                    end
+                    local take = math.min(left, lot.left)
+                    if take > 0 then
+                        lot.left, lot.sold = lot.left - take, lot.sold + take
+                        lot.received = lot.received + math.floor((e.amount or 0) * take / math.max(e.qty, 1) + 0.5)
+                        lot.soldAt = e.at
+                        left = left - take
+                    end
+                end
+            elseif e.kind == "expired" and e.key and open[e.key] and (e.amount or 0) > 0 then
+                for _, lot in ipairs(open[e.key]) do
+                    if lot.left > 0 then
+                        lot.lost = lot.lost + e.amount
+                        break
+                    end
+                end
+            end
+        end
+        while #char.lots > D.LOTS do
+            table.remove(char.lots, 1)
+        end
+    end
+    return char.lots
+end
+
+local function openLots(char, key)
+    local out = {}
+    for _, lot in ipairs(D.lots(char)) do
+        if lot.key == key and (lot.left or 0) > 0 then
+            out[#out + 1] = lot
+        end
+    end
+    return out
+end
+
+-- A cost of holding the item that is not its price: a deposit lost on an expired or cancelled post,
+-- a cancel fee. It joins the stock's cost, so the floor and the next sale's profit count it; with no
+-- stock left it is booked straight into the item's profit.
+function D.addCost(char, key, amount, at)
+    if not key or type(amount) ~= "number" or amount ~= amount or amount <= 0 then
+        return
+    end
+    local p = char.positions[key]
+    local s = D.itemStats(char, key, p and p.name)
+    s.lost = (s.lost or 0) + amount
+    if p and p.qty > 0 then
+        p.cost, p.lost = p.cost + amount, (p.lost or 0) + amount
+    else
+        s.profit = s.profit - amount
+    end
+    local lots = openLots(char, key)
+    local lot = lots[1]
+    if not lot then
+        for i = #D.lots(char), 1, -1 do
+            if char.lots[i].key == key then
+                lot = char.lots[i]
+                break
+            end
+        end
+    end
+    if lot then
+        lot.lost = (lot.lost or 0) + amount
+    end
+end
+
 -- Positions: what was bought and not yet sold, with its cost (average price).
 function D.addPosition(char, key, name, qty, cost, mode, exit, at)
     local p = char.positions[key]
@@ -202,6 +302,24 @@ function D.addPosition(char, key, name, qty, cost, mode, exit, at)
     if at then
         local s = D.itemStats(char, key, name)
         s.bought, s.spent = s.bought + qty, s.spent + cost
+        local lots = D.lots(char)
+        char.lotSeq = (char.lotSeq or 0) + 1
+        lots[#lots + 1] = {
+            id = char.lotSeq,
+            key = key,
+            name = name,
+            at = at,
+            qty = qty,
+            cost = cost,
+            mode = mode,
+            left = qty,
+            sold = 0,
+            received = 0,
+            lost = 0,
+        }
+        while #lots > D.LOTS do
+            table.remove(lots, 1)
+        end
     end
     -- Stock held for resale stays for resale when a vendor deal of the same item adds cheap units:
     -- else the vendor sale would sell the dearer resale units at a loss too.
@@ -217,6 +335,18 @@ end
 function D.sale(char, key, name, qty, amount, at)
     local since = char.positions[key] and char.positions[key].since
     local cost = D.takePosition(char, key, qty)
+    -- The oldest lots of the item sold first; the money is shared by units.
+    local left = qty
+    for _, lot in ipairs(openLots(char, key)) do
+        if left <= 0 then
+            break
+        end
+        local take = math.min(left, lot.left)
+        lot.left, lot.sold = lot.left - take, lot.sold + take
+        lot.received = lot.received + math.floor(amount * take / math.max(qty, 1) + 0.5)
+        lot.soldAt = at
+        left = left - take
+    end
     local s = D.itemStats(char, key, name)
     s.sold, s.earned, s.profit = s.sold + qty, s.earned + amount, s.profit + amount - cost
     if since and at then

@@ -698,7 +698,11 @@ end
 function T.floorFor(item)
     local s = F.db.settings
     local position = char().positions[item.key]
-    local floor = position and position.qty > 0 and M.breakEven(position.cost / position.qty, 1, item.kind) or nil
+    -- The stock's real cost per unit (its price plus the deposits and cancel fees its posts lost,
+    -- Data.addCost) and the least margin a sale must bring over it (Settings, 5% by default).
+    local margin = 1 + math.max(0, tonumber(s.sellMinReturn) or 0.05)
+    local floor = position and position.qty > 0 and M.breakEven(position.cost / position.qty * margin, 1, item.kind)
+        or nil
     local rule = T.rule(item.key)
     if rule and rule.min then
         floor = math.max(floor or 0, rule.min)
@@ -1003,6 +1007,7 @@ function T.post(item, qty, price, duration)
         ids = {},
         open = qty,
         auctions = item.kind == "commodity" and 1 or qty,
+        deposit = T.depositFor(item.key, qty, duration),
     }
     T.ownedDue = clock() + 3
     F.Engine.changed()
@@ -1333,13 +1338,33 @@ function T.onFailedPost(name, count)
             l.cancelled, left = l.cancelled - n, left - n
         end
     end
+    -- An expired post loses its deposit: it joins the stock's real cost (a cancel was booked when
+    -- it was made). A post not made by ForeverFlip: its deposit estimated for a 24-hour post.
+    local lost, key = 0, nil
     for _, l in ipairs(c.listings) do
         if left > 0 and string.lower(l.name or "") == lower and (l.open or 0) > 0 then
             local n = math.min(left, l.open)
             l.open, left = l.open - n, left - n
+            key = l.key
+            if l.deposit and (l.qty or 0) > 0 then
+                lost = lost + math.floor(l.deposit * n / l.qty + 0.5)
+            end
         end
     end
-    F.Data.log(c, { at = clock(), kind = "expired", name = name, qty = count, amount = 0 })
+    if left > 0 and left < count + 1 then
+        for k, p in pairs(c.positions) do
+            if not key and string.lower(p.name or "") == lower then
+                key = k
+            end
+        end
+        if key and left > 0 then
+            lost = lost + (T.depositFor(key, left, 3) or 0)
+        end
+    end
+    if key and lost > 0 then
+        F.Data.addCost(c, key, lost, clock())
+    end
+    F.Data.log(c, { at = clock(), kind = "expired", key = key, name = name, qty = count, amount = lost })
     F.Engine.changed()
 end
 
@@ -1697,10 +1722,13 @@ function T.cancelAuction(a)
     if not T.wayFree() then
         return false
     end
+    local okFee, fee = pcall(F.AH.cancelCost, a.auctionID)
+    fee = okFee and U.finite(fee) and fee or 0
     if not pcall(F.AH.cancel, a.auctionID) then
         return false
     end
     local c = char()
+    local lost
     for _, l in ipairs(c.listings) do
         for _, id in ipairs(l.ids) do
             if id == a.auctionID then
@@ -1708,8 +1736,17 @@ function T.cancelAuction(a)
                 l.open = l.open - n
                 -- The "Auction cancelled" mail comes later: it must not take units off again.
                 l.cancelled = (l.cancelled or 0) + n
+                if l.deposit and (l.qty or 0) > 0 then
+                    lost = math.floor(l.deposit * (a.qty or 1) / l.qty + 0.5)
+                end
             end
         end
+    end
+    -- A cancel loses the post's deposit and the game's fee: both join the stock's real cost.
+    -- A post not made by ForeverFlip: its deposit estimated for an 8-hour post.
+    if a.key then
+        lost = lost or T.depositFor(a.key, a.qty or 1, 2) or 0
+        F.Data.addCost(c, a.key, lost + fee, clock())
     end
     T.cancelled[a.auctionID] = clock()
     T.ownedDue = clock() + 2

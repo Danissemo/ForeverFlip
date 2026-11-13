@@ -222,7 +222,7 @@ class TradeTests(unittest.TestCase):
         local item=ForeverFlip.AH.bagItems()[1];assert(item.key=='i:30')
         assert(ForeverFlip.Trade.checkPrice('i:30'));answer()
         local price,floor,cheapest=ForeverFlip.Trade.suggest(item)
-        assert(cheapest==30000 and price==29900 and floor==21100)
+        assert(cheapest==30000 and price==29900 and floor==ForeverFlip.Market.breakEven(20000*1.05,1,'item'))
         local ok,why=ForeverFlip.Trade.post(item,1,29900,3);assert(ok and why=='post_sent')
         assert(lastCall('PostItem')[6]==29900)
         assert(#c.listings==0,'booked when the game creates the auction');fire('AUCTION_HOUSE_AUCTION_CREATED',777)
@@ -486,7 +486,8 @@ class FeatureTests(unittest.TestCase):
         run(SETUP + '''local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
         ForeverFlip.Data.addPosition(c,'i:30','Linen Bag',1,40000,'flip',29900,now-60)
         putBag(0,1,30,1);local T=ForeverFlip.Trade;T.postNext();answer();T.postNext()
-        assert(lastCall('PostItem')[6]==ForeverFlip.Market.breakEven(40000,1,'item'))''')
+        -- The floor: the real cost plus the selling margin of Settings (5%).
+        assert(lastCall('PostItem')[6]==ForeverFlip.Market.breakEven(40000*1.05,1,'item'))''')
 
     def test_unsold_stock_lowers_the_sales_estimate(self):
         run(SETUP + '''local c=ForeverFlip.Data.char(ForeverFlip.db,ForeverFlip.Engine.owner())
