@@ -49,7 +49,7 @@ class CraftingReviewTests(unittest.TestCase):
         local key=F.AH.keyFor(70);assert(key=='g:70:heavy copper broadsword',key)
         local usual=F.Market.usual(F.Data.market(F.db,F.Engine.scope()).history[key]);assert(usual,'scanned')
         local p=F.Crafting.profits()[1]
-        assert(p.route=='auction' and p.value==F.Market.net(usual,1)-F.Market.deposit(F.AH.clientVendorPrice(70),1),
+        assert(p.route=='auction' and p.value==F.Market.net(usual,1)-F.Market.postDeposit(70,'gear',1),
           tostring(p.route)..' '..tostring(p.value))
         local keys=table.concat(F.Crafting.keys(),',')
         assert(keys:find(key,1,true),'Check all on Crafting searches the product: '..keys)''')

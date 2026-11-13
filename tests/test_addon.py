@@ -328,7 +328,8 @@ class ToolsTests(unittest.TestCase):
         local h={flow={hours=24,sold={30,30,30,30},pairs=4,at=now,market=7800}}
         local ctx={kind='gear',vendor=800,budget=1000000,history=h,market=7800,now=now,settings={minProfit=100,minROI=0.2}}
         local d=M.evaluate(rows,ctx);assert(d and d.qty==3 and d.exit==7700)
-        assert(d.profit==M.net(7700,3)-2799-3*120,d.profit)
+        -- three gear posts, one deposit each, for the duration posts go for (24 h: 4 x 15% of 800)
+        assert(d.profit==M.net(7700,3)-2799-3*M.deposit(800,1,3),d.profit)
         ctx.held=29;local d2,why=M.evaluate(rows,ctx);assert(not d2 and why=='enough_stock',why)''')
 
     def test_one_item_cannot_take_more_than_its_share_of_money(self):

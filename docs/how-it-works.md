@@ -221,7 +221,11 @@ Try every prefix of the cheapest listings, up to 40 auctions. For a prefix that 
        is open, else after a minute);
      - items: the deposit per unit learned from their last post (`CalculateItemDeposit`), kept apart
        for neutral houses;
-     - otherwise: the estimate `max(1 silver, 15% of the vendor price × units)`.
+     - otherwise: the estimate `max(1 silver, 15% of the vendor price × units × 1, 2 or 4)` per
+       auction, for the shortest, middle or longest duration.
+   - Every deposit (deal advice, the sniper, merchant offers, crafting, bids, posts, cancels and the
+     anti-undercut plan) comes from one function, `Market.postDeposit`, for the duration posts go
+     for now. A cancel of a post ForeverFlip did not make counts it as an 8-hour post.
 3. **Demand.** The sales estimate at the exit price, multiplied by the item's
    [trust factor](#accounting).
    - With no scan pair yet, the item is still collecting data and gets no resale.

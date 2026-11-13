@@ -38,7 +38,7 @@ function B.value(key, id, history)
         if s.known and s.perDay >= 0.5 then
             local item = U.parseKey(key)
             local net = F.Market.net(U.stepDown(market, item and item.kind), 1)
-                - F.Market.deposit(F.AH.clientVendorPrice(id), 1)
+                - F.Market.unitDeposit(id, item and item.kind or F.AH.kindOf(id))
             value = math.max(value, net)
         end
     end

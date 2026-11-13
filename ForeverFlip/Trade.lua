@@ -1122,18 +1122,13 @@ function T.expectedHours(key, qty, price)
 end
 
 -- The deposit of posting `qty` units of `key` for duration `d` (1 to 3).
+-- One auction for a commodity stack, one per item otherwise (M.postDeposit).
 function T.depositFor(key, qty, d)
     local item = U.parseKey(key)
     if not item then
         return nil
     end
-    local fn = F.AH.depositFn(item.id, item.kind, d)
-    if fn then
-        return fn(qty)
-    end
-    local base = M.deposit(F.AH.clientVendorPrice(item.id), qty) -- at least 1 silver
-    local raw = math.floor((F.AH.clientVendorPrice(item.id) or 0) * 0.15 * qty) * ({ 1, 2, 4 })[d]
-    return math.max(base, raw)
+    return M.postDeposit(item.id, item.kind, qty, d)
 end
 
 -- Expected deposits lost per sale for each duration: { [d] = copper }, and the choice.
@@ -1307,6 +1302,22 @@ function T.onAuctionCreated(auctionID)
 end
 
 -- Cancels -------------------------------------------------------------------------------------------
+-- A post ForeverFlip did not make is taken as an 8-hour one when its cancel books the deposit.
+local CANCEL_DURATION = 2
+
+-- The deposit the post of auction `a` paid for `qty` of its units, from the listing that made it
+-- (T.post); nil when no listing of the player's holds the auction.
+local function listedDeposit(c, a, qty)
+    for _, l in ipairs(type(c.listings) == "table" and c.listings or {}) do
+        for _, id in ipairs(l.ids or {}) do
+            if id == a.auctionID and l.deposit and (l.qty or 0) > 0 then
+                return math.floor(l.deposit * qty / l.qty + 0.5)
+            end
+        end
+    end
+    return nil
+end
+
 -- Cancelling loses the deposit (and maybe more: GetCancelCost); the item comes back by mail. The loss
 -- is booked once the cancel is seen done: the next own-auction list asked for after it no longer
 -- shows the auction (T.onOwned), or its "Auction cancelled" mail comes (T.onFailedPost). A cancel the
@@ -2203,7 +2214,7 @@ function T.cancelAuction(a)
     local c = char()
     local qty = a.qty or 1
     local rec = { at = clock(), scope = F.Engine.scope(), key = a.key, name = a.name, qty = qty, listed = 0 }
-    local lost
+    local lost = listedDeposit(c, a, qty)
     for _, l in ipairs(c.listings) do
         for _, id in ipairs(l.ids) do
             if id == a.auctionID then
@@ -2212,9 +2223,6 @@ function T.cancelAuction(a)
                 -- The "Auction cancelled" mail comes later: it must not take units off again.
                 l.cancelled = (l.cancelled or 0) + n
                 rec.listed, rec.name = rec.listed + n, rec.name or l.name
-                if l.deposit and (l.qty or 0) > 0 then
-                    lost = math.floor(l.deposit * qty / l.qty + 0.5)
-                end
             end
         end
     end
@@ -2226,7 +2234,7 @@ function T.cancelAuction(a)
     -- A post not made by ForeverFlip: its deposit estimated for an 8-hour post.
     if a.key then
         rec.estimated = lost == nil
-        rec.lost = (lost or T.depositFor(a.key, qty, 2) or 0) + fee
+        rec.lost = (lost or T.depositFor(a.key, qty, CANCEL_DURATION) or 0) + fee
     end
     cancelsOf(c)[a.auctionID] = rec
     T.cancelled[a.auctionID] = clock()
@@ -2428,12 +2436,12 @@ function T.fightPlan(a)
     local rivalQty = rows[1] and rows[1].qty or 1
     local new = T.undercut(cheapest, item.kind)
     local floor = T.floorFor({ key = a.key, kind = item.kind })
-    local vendorPrice = F.AH.clientVendorPrice(item.id)
-    local function depositFor(units)
-        local per = M.deposit(vendorPrice, item.kind == "commodity" and units or 1)
-        return item.kind == "commodity" and per or per * units
+    -- A post of `units` at `at` pays the deposit the post itself books (T.depositFor, for the
+    -- duration T.post would pick); cancelling gives up the deposit the cancel books (T.cancel).
+    local function depositFor(units, at)
+        return T.depositFor(a.key, units, T.durationFor(a.key, units, at)) or 0
     end
-    local deposit = depositFor(qty)
+    local deposit = listedDeposit(char(), a, qty) or T.depositFor(a.key, qty, CANCEL_DURATION) or 0
     local okCost, extra = pcall(F.AH.cancelCost, a.auctionID)
     local fee = okCost and U.finite(extra) and extra or 0
     local cancel = deposit + fee -- what cancelling gives up, for the page: the deposit and the fee
@@ -2491,7 +2499,7 @@ function T.fightPlan(a)
         add({ id = "undercut", blocked = "floor" })
     else
         local hours = T.DURATION_HOURS[T.durationFor(a.key, qty, new)] or 24
-        local newDeposit = depositFor(qty)
+        local newDeposit = depositFor(qty, new)
         if known then
             local d2 = M.demandAt(h, new)
             d2 = (d2.pairs or 0) > 0 and d2 or d
@@ -2515,7 +2523,7 @@ function T.fightPlan(a)
     if ahead > 0 and ahead <= T.BUYOUT_UNITS and buyCost <= budget then
         if known then
             local mine = soldUnderFire(d, ownAhead, qty, left, c, rivalQty)
-            local resell = depositFor(ahead)
+            local resell = depositFor(ahead, price)
             local theirs = soldUnderFire(d, ownAhead + qty, ahead, 24, c, rivalQty)
             add({
                 id = "buyout",
@@ -2557,7 +2565,7 @@ function T.fightPlan(a)
                 local lot = qty + units
                 local d3 = M.demandAt(h, target)
                 d3 = (d3.pairs or 0) > 0 and d3 or { sold = 0, hours = d.hours }
-                local all = depositFor(lot)
+                local all = depositFor(lot, target)
                 local ownTarget = ownBelow(target)
                 local sold = soldUnderFire(d3, ownTarget, lot, 24, c, rivalQty)
                 add({

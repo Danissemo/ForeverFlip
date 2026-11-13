@@ -992,12 +992,9 @@ function M.advice(id, key, h, post)
     local price = post or (h and M.usual(h))
     price = U.finite(price) and U.stepDown(price, item.kind) or 0
     if price > 0 then
-        local depositFn = F.AH.depositFn(id, item.kind, F.Trade.durationFor and F.Trade.durationFor() or 3)
         -- Commodities are posted as a stack and pay one deposit for it: per unit it is the deposit
         -- of a stack of M.STACK, divided. Other items pay a deposit each.
-        local units = item.kind == "commodity" and M.STACK or 1
-        local stack = depositFn and depositFn(units) or M.deposit(F.AH.clientVendorPrice(id), units)
-        local one = stack / units
+        local one = M.unitDeposit(id, item.kind)
         -- Sale rates are kept by the name of the mail or invoice: for gear the full name with its
         -- ending, which the key carries ("of Healing"); the item's own name lacks the ending.
         local name = item.kind == "gear" and item.name ~= "" and item.name or U.itemInfo(id)
@@ -1049,17 +1046,49 @@ function M.advice(id, key, h, post)
     return out.best and out or nil
 end
 
-function M.deposit(vendor, units)
-    return math.max(100, math.floor((vendor or 0) * 0.15 * (units or 1)))
+-- Every deposit ForeverFlip counts comes from here, so advice, deals, the sniper, merchant offers,
+-- crafting, bids, posts, cancels and the anti-undercut plan agree. The game's own deposit is used
+-- when known (F.AH.depositFn); else it is estimated from the vendor price: 15% of it per unit for
+-- the shortest duration, twice that for the middle one and four times for the longest, and at
+-- least 1 silver per auction. A commodity stack is one auction and pays one deposit; other items
+-- are one auction each.
+M.DEPOSIT_TIMES = { 1, 2, 4 }
+
+-- The duration posts go for now (1 to 3): the setting, or Auto's choice for an unknown item.
+function M.duration()
+    return F.Trade and F.Trade.durationFor and F.Trade.durationFor() or 3
+end
+
+-- Estimated deposit of one auction of `units` units of an item the vendor buys at `vendor`, posted
+-- for duration `d` (default: the shortest).
+function M.deposit(vendor, units, d)
+    local times = M.DEPOSIT_TIMES[d or 1] or 1
+    return math.max(100, math.floor((vendor or 0) * 0.15 * (units or 1)) * times)
 end
 
 -- Deposits a resale of `qty` units puts at risk: one auction for a commodity stack, one per item.
--- `deposit` (optional) is the game's deposit for a stack of n units (see F.AH.depositFn).
-function M.depositRisk(kind, vendor, qty, deposit)
+-- `deposit` (optional) is the game's deposit for a stack of n units (see F.AH.depositFn); the
+-- estimate is for duration `d` (default: the duration posts go for now).
+function M.depositRisk(kind, vendor, qty, deposit, d)
+    d = d or M.duration()
     if kind == "commodity" then
-        return deposit and deposit(qty) or M.deposit(vendor, qty)
+        return deposit and deposit(qty) or M.deposit(vendor, qty, d)
     end
-    return qty * (deposit and deposit(1) or M.deposit(vendor, 1))
+    return qty * (deposit and deposit(1) or M.deposit(vendor, 1, d))
+end
+
+-- The deposit of posting `qty` units of item `id` (kind "commodity", "gear" or "item") for
+-- duration `d` (default: the duration posts go for now).
+function M.postDeposit(id, kind, qty, d)
+    d = d or M.duration()
+    return M.depositRisk(kind, F.AH.clientVendorPrice(id), qty or 1, F.AH.depositFn(id, kind, d), d)
+end
+
+-- The deposit per unit of a resale: a commodity goes as a stack of M.STACK (one deposit shared by
+-- its units), other items one a post.
+function M.unitDeposit(id, kind, d)
+    local units = kind == "commodity" and M.STACK or 1
+    return M.postDeposit(id, kind, units, d) / units
 end
 
 -- Money left after selling `qty` units at `price` each on the auction house.
@@ -1195,7 +1224,13 @@ function M.evaluate(rows, ctx)
             exit = math.min(exit, U.stepDown(market, kind))
         end
         local profit = exit > r.unit
-                and M.net(exit, qty) - cost - M.depositRisk(kind, ctx.depositVendor or ctx.vendor, qty, ctx.deposit)
+                and M.net(exit, qty) - cost - M.depositRisk(
+                    kind,
+                    ctx.depositVendor or ctx.vendor,
+                    qty,
+                    ctx.deposit,
+                    ctx.duration
+                )
             or 0
         if profit > 0 then
             local d = M.demandAt(ctx.history, exit)

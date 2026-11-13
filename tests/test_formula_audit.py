@@ -24,7 +24,7 @@ class UndercutDepositTests(unittest.TestCase):
     def test_cancelling_does_not_lose_the_old_deposit_twice(self):
         run(AntiUndercutTests.PLAN + '''local plan = T.fightPlans()[1]
         local vendor = F.AH.vendorPrice(30, true)
-        local fee = plan.cancel - F.Market.deposit(F.AH.clientVendorPrice(30), 1)
+        local fee = plan.cancel - F.Trade.depositFor(F.AH.keyFor(30), 1, 2) -- what the cancel books
         assert(plan.vendor.ev == vendor - fee, plan.vendor.ev .. ' vs ' .. (vendor - fee))''')
 
 

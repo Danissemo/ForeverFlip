@@ -34,7 +34,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `lastPosted` | table | `lastPosted[key]` = the last unit price the player posted the item at. |
 | `rules` | table | `rules[key]` = posting rule `{ min, normal, max, keep }` (all optional; money in copper). |
 | `fights` | table | Per-item undercut/repost observations used by selling advice. |
-| `toVendor` | table | Items marked by selling advice for a later merchant sale. |
+| `toVendor` | table | `toVendor[key]` = time an item was marked by the anti-undercut plan for a merchant sale. A mark counts for 3 days and is cleared when the item is sold or posted. |
 | `shopping` | table | `shopping[key]` = shopping list entry `{ max, qty, name }`. |
 | `blocked` | table | `blocked[key]` = name of an ignored item. |
 | `merchantPrices` | table | `merchantPrices[itemID]` = price per unit a merchant asked. |

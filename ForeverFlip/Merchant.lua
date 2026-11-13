@@ -62,8 +62,9 @@ function V.offers(now)
                 local reference = U.finite(low) and math.min(market, low) or market
                 local exit = U.below(reference, item.kind)
                 local unit = price / quantity
-                local deposit = M.deposit(F.AH.clientVendorPrice(id), item.kind == "commodity" and quantity or 1)
-                local each = M.net(exit, 1) - unit - deposit / (item.kind == "commodity" and quantity or 1)
+                -- The deposit of posting what one purchase brings, per unit (M.postDeposit).
+                local deposit = M.postDeposit(id, item.kind, quantity) / quantity
+                local each = M.net(exit, 1) - unit - deposit
                 local d = M.saleability(h, exit, now)
                 -- As a resale on the auction house: the sales times the item's trust factor, and
                 -- at most one day of them held, the stock already held included. Offered without

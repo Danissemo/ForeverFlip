@@ -57,6 +57,12 @@ All notable changes are listed here. The format follows
   - Merchant: Gear I can't use no longer prints a sale before anything sold (the chat tells what
     really sold at the end), both gear buttons wait while a merchant sale goes, and Stop ends a
     merchant sale through the sale itself, settling stacks queued to be sent again.
+  - Deposits: one model for every estimate (`Market.postDeposit`). Advice, deals, the sniper,
+    merchant offers, crafting, bids, posts, cancels and the anti-undercut plan all count the game's
+    deposit when known, else 15% of the vendor price for the duration posts go for, at least
+    1 silver per auction, with one deposit per commodity stack. Cheap commodity resales are sniped
+    and offered at merchants again, and the anti-undercut plan's cancel and repost cost what the
+    cancel and the post really book.
 
 ### Changed
 

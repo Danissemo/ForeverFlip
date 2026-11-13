@@ -134,8 +134,7 @@ Sniper pagination also waits for manual work and pending trades. Merely renderin
 longer starts price requests for bag contents; explicit checks and posting queues do that work.
 
 Scan recovery preserves its cursor between frames. Analytics builds bounded top-50 heaps along
-with its incremental rows, and sorts only those small heaps at completion. Own-unit totals are
-indexed by the immutable own-auction snapshot; a new server snapshot replaces the index.
+with its incremental rows, and sorts only those small heaps at completion.
 
 No search runs while a purchase or a full scan is in progress, also while the scan waits for its
 answer (`F.Scan.blocking`): queries sent meanwhile kept the answer from coming in game. Browse and key queries of the sniper
