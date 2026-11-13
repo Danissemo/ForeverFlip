@@ -1634,7 +1634,7 @@ function UI.createDeals(p)
     local bar = footer(p, 92, "GameFontHighlightSmall")
     -- Selected deal details can be longer than the footer. Use the shared scrolling
     -- text block so every line remains reachable.
-    UI.dealBox = UI.scrollText(bar, 5, 6)
+    UI.dealBox = UI.scrollText(bar, 4, 6)
     UI.dealText = UI.dealBox.text
     UI.cancelButton = button(bar, "Cancel", 96, function()
         F.Trade.cancel()
