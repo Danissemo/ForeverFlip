@@ -2329,7 +2329,8 @@ function T.fightCount()
     for _, plan in ipairs(T.fightPlans()) do
         local waited = T.waiting and T.waiting[plan.auction.auctionID] == plan.cheapest
         if
-            not waited
+            plan.verdict ~= "wait"
+            and not waited
             and not (job and job.auctionID == plan.auction.auctionID)
             and plan[plan.verdict]
             and not plan[plan.verdict].blocked
@@ -2453,7 +2454,7 @@ function T.fightNext()
     end
     for _, plan in ipairs(T.fightPlans()) do
         local waited = T.waiting and T.waiting[plan.auction.auctionID] == plan.cheapest
-        if not waited and plan[plan.verdict] and not plan[plan.verdict].blocked then
+        if plan.verdict ~= "wait" and not waited and plan[plan.verdict] and not plan[plan.verdict].blocked then
             local ok, why = T.fight(plan)
             return ok, why or (ok and (plan.verdict == "wait" and "fight_wait" or "cancelled") or "post_busy")
         end

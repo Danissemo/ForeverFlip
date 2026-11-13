@@ -753,7 +753,7 @@ end
 -- A block of text lines that scrolls like the tables: the same scrollbar on the right, the mouse
 -- wheel, one line per step. Lines do not wrap (each says one thing, short); hovering shows the
 -- whole block. box.set(lines) replaces them and keeps the place when the text stays alike.
-function UI.scrollText(parent, rows, top, bottom)
+function UI.scrollText(parent, rows, top, bottom, height)
     local LINE = 14
     local box = { offset = 0, lines = {}, rows = rows, shown = "" }
     -- One text line per row: a single string that does not wrap shows only its first line in game.
@@ -792,7 +792,7 @@ function UI.scrollText(parent, rows, top, bottom)
     local function wheel(_, delta)
         scrollTo(box.offset - (delta or 0))
     end
-    local scrollHeight = math.max(ARROW_H * 2 + TRACK_GAP * 2, rows * LINE - (bottom or 0))
+    local scrollHeight = height or math.max(ARROW_H * 2 + TRACK_GAP * 2, rows * LINE - (bottom or 0))
     box.bar = UI.scrollBar(parent, anchor, scrollHeight, scrollTo, wheel)
     if parent.EnableMouseWheel then
         parent:EnableMouseWheel(true)
@@ -4405,9 +4405,57 @@ function UI.createJournal(p)
     )
     -- Use the same standard footer block as Deals/Selling: one separator line, the addon font
     -- and the existing scrollbar, without inventing a second visual style for history.
-    UI.journalHistoryFrame = footer(p, 54, "GameFontHighlightSmall")
+    UI.journalHistoryFrame = footer(p, 104, "GameFontHighlightSmall")
     UI.journalHistoryFrame.text:Hide()
-    UI.journalHistory = UI.scrollText(UI.journalHistoryFrame, 3, 6)
+    UI.journalHistory = UI.scrollText(UI.journalHistoryFrame, 3, 6, 26, 72)
+    UI.journalResolve = {}
+    local lastResolve
+    local function resolve(state)
+        local pick = UI.journalSelected
+        if not pick then
+            return
+        end
+        local c = F.Data.char(F.db, F.Engine.owner())
+        local lot
+        for _, candidate in ipairs(F.Data.lots(c)) do
+            if candidate.id == pick.id and candidate.key == pick.key then
+                lot = candidate
+                break
+            end
+        end
+        if not lot then
+            return
+        end
+        if state == "vendor" then
+            local item = U.parseKey(lot.key)
+            local price = item and F.AH.clientVendorPrice(item.id)
+            if not price or lot.left <= 0 then
+                return
+            end
+            F.Trade.onVendorSale(lot.key, lot.left, price)
+        end
+        lot.reconciled = state
+        F.Engine.changed()
+        UI.refreshJournal()
+    end
+    for _, spec in ipairs({
+        { "Vendor sold", "vendor" },
+        { "Still held", "held" },
+        { "Sold outside addon", "external" },
+    }) do
+        local b = button(UI.journalHistoryFrame, spec[1], 130, function()
+            resolve(spec[2])
+        end)
+        b:SetPoint(
+            lastResolve and "LEFT" or "BOTTOMLEFT",
+            lastResolve or UI.journalHistoryFrame,
+            lastResolve and "RIGHT" or "BOTTOMLEFT",
+            lastResolve and 4 or 6,
+            lastResolve and 0 or 4
+        )
+        UI.journalResolve[spec[2]] = b
+        lastResolve = b
+    end
     UI.placeJournalLines(false)
 end
 
@@ -4415,7 +4463,7 @@ function UI.placeJournalLines(ask)
     local y = ask and JOURNAL_BELOW_ASK or JOURNAL_TOP
     UI.journalList:ClearAllPoints()
     UI.journalList:SetPoint("TOPLEFT", UI.journalPage, "TOPLEFT", 0, y)
-    UI.journalList:SetPoint("BOTTOMRIGHT", UI.journalPage, "BOTTOMRIGHT", 0, 56)
+    UI.journalList:SetPoint("BOTTOMRIGHT", UI.journalPage, "BOTTOMRIGHT", 0, 106)
 end
 
 -- Each line is one observed movement, with the purchase's original intent kept on the buy.
@@ -4433,6 +4481,7 @@ function UI.lotHistory(lot)
         expired = "Expired",
         ["return"] = "Returned",
         loss = "Holding loss",
+        vendor = "Vendor sale",
     }
     for _, e in ipairs(lot.events or {}) do
         local label = L(labels[e.kind] or "Purchase")
@@ -4459,6 +4508,12 @@ function UI.lotHistory(lot)
             detail = detail .. " · " .. L("loss already recorded")
         end
         lines[#lines + 1] = detail
+    end
+    if lot.reconciled then
+        local label = lot.reconciled == "vendor" and "Vendor sold"
+            or lot.reconciled == "held" and "Still held"
+            or "Sold outside addon"
+        lines[#lines + 1] = L(label)
     end
     return lines
 end
@@ -4547,6 +4602,9 @@ function UI.refreshJournal()
         selected and UI.lotHistory(selected) or {},
         selected and (selected.key .. ":" .. selected.id) or ""
     )
+    for _, b in pairs(UI.journalResolve or {}) do
+        b:SetEnabled(selected ~= nil)
+    end
     table.sort(lots, function(a, b)
         return (a.at or 0) > (b.at or 0)
     end)
@@ -4578,6 +4636,11 @@ function UI.refreshJournal()
             )
             if row.profit then
                 r.cols[6]:SetText((approximate and (lot.lost or 0) > 0 and "~" or "") .. UI.signed(row.profit))
+            elseif lot.reconciled then
+                local label = lot.reconciled == "vendor" and "Vendor sold"
+                    or lot.reconciled == "held" and "Still held"
+                    or "Sold outside addon"
+                r.cols[6]:SetText("|cff66ccff" .. L(label) .. "|r")
             elseif lot.mode == "vendor" and (held[lot.key] or 0) < (pending[lot.key] or 0) then
                 r.cols[6]:SetText("|cffff9933" .. L("Unconfirmed") .. "|r")
             else
