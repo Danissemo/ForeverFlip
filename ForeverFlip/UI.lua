@@ -4334,9 +4334,19 @@ function UI.createJournal(p)
         { "Sold", 86 }, -- "4878/5148" fits
         { "Buy each", 70 },
         { "Cost", 76 },
-        { "Lost", 64 },
+        {
+            "Lost",
+            64,
+            nil,
+            "Lost deposits and cancellation fees. ~ includes estimates or charges without a surviving journal entry.",
+        },
         { "Sold for", 80 },
-        { "Profit", 96 }, -- "4878 in stock" fits
+        {
+            "Profit",
+            96,
+            nil,
+            "Unconfirmed: some vendor stock is absent from bags, but no sale was recorded. It may be elsewhere; no revenue is invented.",
+        },
     }, 16, function() end)
     UI.placeJournalLines(false)
 end
@@ -4404,7 +4414,15 @@ function UI.refreshJournal()
     UI.placeJournalLines(u ~= nil)
     -- The view chosen under Journal and profit: all purchases, or those of one way of dealing.
     local view = UI.journalFilter or "all"
-    local lots = {}
+    local lots, held, pending = {}, {}, {}
+    for _, item in ipairs(F.AH.merchantItems()) do
+        held[item.key] = (held[item.key] or 0) + item.count
+    end
+    for _, lot in ipairs(F.Data.lots(c)) do
+        if lot.mode == "vendor" then
+            pending[lot.key] = (pending[lot.key] or 0) + lot.left
+        end
+    end
     for _, lot in ipairs(F.Data.lots(c)) do
         if view == "all" or UI.lotKind(lot) == view then
             lots[#lots + 1] = lot
@@ -4429,12 +4447,19 @@ function UI.refreshJournal()
             r.cols[1]:SetText(row.sold)
             r.cols[2]:SetText(U.money(row.each))
             r.cols[3]:SetText(U.money(lot.cost))
-            r.cols[4]:SetText((lot.lost or 0) > 0 and ("|cffff9933" .. U.money(lot.lost) .. "|r") or "-")
+            local evidence = F.Data.lossEvidence(c, lot.key)
+            local approximate = evidence.estimated > 0 or evidence.unattributed > 0
+            r.cols[4]:SetText(
+                (lot.lost or 0) > 0 and ("|cffff9933" .. (approximate and "~" or "") .. U.money(lot.lost) .. "|r")
+                    or "-"
+            )
             r.cols[5]:SetText(
                 lot.sold > 0 and (U.money(lot.received) .. (row.soldEach and lot.sold > 1 and "" or "")) or "-"
             )
             if row.profit then
-                r.cols[6]:SetText(UI.signed(row.profit))
+                r.cols[6]:SetText((approximate and (lot.lost or 0) > 0 and "~" or "") .. UI.signed(row.profit))
+            elseif lot.mode == "vendor" and (held[lot.key] or 0) < (pending[lot.key] or 0) then
+                r.cols[6]:SetText("|cffff9933" .. L("Unconfirmed") .. "|r")
             else
                 r.cols[6]:SetText("|cff999999" .. string.format(L("%d in stock"), lot.left) .. "|r")
             end

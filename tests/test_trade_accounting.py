@@ -153,6 +153,28 @@ class AccountingTests(unittest.TestCase):
             '''
         )
 
+    def test_full_identical_buyback_uses_bags_and_money(self):
+        self.check('''F.Data.addPosition(c,'i:30','Linen Bag',3,1500,'vendor',nil,now)
+        putBag(0,1,30,3,'Linen Bag');MerchantFrame:Show()
+        GetNumBuybackItems=function() return 12 end
+        GetBuybackItemLink=function() return link(30,'Linen Bag') end
+        GetBuybackItemInfo=function() return 'Linen Bag',nil,2000,1 end
+        local cash=10000;GetMoney=function() return cash end
+        F.Merchant.watchBuyback(true)
+        putBag(0,1,30,1,'Linen Bag');cash=cash+4000
+        F.Merchant.watchBuyback(false)
+        assert(c.stats['i:30'].sold==2 and c.stats['i:30'].earned==4000,'two invisible buyback entries')
+        F.Merchant.watchBuyback(false);assert(c.stats['i:30'].sold==2,'only once')''')
+
+    def test_missing_bags_without_payment_are_not_vendor_sales(self):
+        self.check('''F.Data.addPosition(c,'i:30','Linen Bag',1,500,'vendor',nil,now)
+        putBag(0,1,30,1,'Linen Bag');MerchantFrame:Show()
+        GetNumBuybackItems=function() return 12 end
+        GetBuybackItemLink=function() return link(30,'Linen Bag') end
+        GetBuybackItemInfo=function() return 'Linen Bag',nil,2000,1 end
+        F.Merchant.watchBuyback(true);bags[0][1]=nil;F.Merchant.watchBuyback(false)
+        assert(c.positions['i:30'].qty==1,'moving stock is not selling it')''')
+
 
 if __name__ == '__main__':
     unittest.main()

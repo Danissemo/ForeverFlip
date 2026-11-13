@@ -201,35 +201,64 @@ local function buybackEntries()
     return list
 end
 
--- MERCHANT_SHOW: the list as it is; MERCHANT_UPDATE: the new entries are sales.
+-- A full buyback window can hide repeated identical sales. Bag decreases together with
+-- exactly matching payment provide independent evidence; neither one alone is a sale.
+local function bagSnapshot()
+    local counts = {}
+    for _, item in ipairs(F.AH.merchantItems()) do
+        counts[item.key] = (counts[item.key] or 0) + item.count
+    end
+    return counts
+end
+
+-- MERCHANT_SHOW establishes the baseline; only later changes are booked.
 function V.watchBuyback(first)
-    local list = buybackEntries()
+    local list, bags, money = buybackEntries(), bagSnapshot(), GetMoney and GetMoney()
     if first or not V.buyback then
-        V.buyback, V.expected = list, {}
+        V.buyback, V.expected, V.bags, V.money = list, {}, bags, money
         return 0
     end
-    local before = {}
+    local before, sales, prices = {}, {}, {}
     for _, e in ipairs(V.buyback) do
         before[e.sig] = (before[e.sig] or 0) + 1
     end
-    local booked = 0
+    local visibleMoney = 0
     for _, e in ipairs(list) do
+        local key = F.AH.keyFor(e.id, e.link)
+        if key then
+            prices[key] = { id = e.id, each = math.floor(e.price / e.qty) }
+        end
         if (before[e.sig] or 0) > 0 then
             before[e.sig] = before[e.sig] - 1
-        else
-            local qty = e.qty
-            local expected = V.expected[e.id] or 0
-            if expected > 0 then
-                local n = math.min(expected, qty)
-                V.expected[e.id], qty = expected - n, qty - n
+        elseif key then
+            sales[key] = (sales[key] or 0) + e.qty
+            visibleMoney = visibleMoney + e.price
+        end
+    end
+    if #list >= 12 and V.bags and money and V.money then
+        local missing, total = {}, 0
+        for key, p in pairs(prices) do
+            local n = (V.bags[key] or 0) - (bags[key] or 0) - (sales[key] or 0)
+            if n > 0 and p.each > 0 then
+                missing[key], total = n, total + n * p.each
             end
-            local key = qty > 0 and F.AH.keyFor(e.id, e.link)
-            if key and F.Trade.onVendorSale(key, qty, math.floor(e.price / e.qty)) then
-                booked = booked + 1
+        end
+        if total > 0 and money - V.money == visibleMoney + total then
+            for key, n in pairs(missing) do
+                sales[key] = (sales[key] or 0) + n
             end
         end
     end
-    V.buyback = list
+    local booked = 0
+    for key, qty in pairs(sales) do
+        local p = prices[key]
+        local n = math.min(V.expected[p.id] or 0, qty)
+        V.expected[p.id], qty = (V.expected[p.id] or 0) - n, qty - n
+        if qty > 0 and F.Trade.onVendorSale(key, qty, p.each) then
+            booked = booked + 1
+        end
+    end
+    V.buyback, V.bags, V.money = list, bags, money
     return booked
 end
 

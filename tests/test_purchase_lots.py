@@ -180,6 +180,46 @@ class PurchaseLotTests(unittest.TestCase):
         assert(F.Data.recount(c, function() return 0 end))
         assert(#c.lots == 2 and UI.lotKind(c.lots[1]) == 'flip' and UI.lotKind(c.lots[2]) == 'bid')''')
 
+    def test_old_bid_log_recovers_exact_purchase_only(self):
+        run(LOTS + '''F.Data.addPosition(c,'i:30','Linen Bag',1,1900,'other',nil,now)
+        F.Data.addPosition(c,'i:30','Linen Bag',1,2000,'other',nil,now+3600)
+        c.bidLog={{outcome='won',key='i:30',qty=1,amount=1900,ended=now}}
+        local lots=F.Data.lots(c)
+        assert(lots[1].bid and not lots[2].bid,'historical bid must use amount, units and time')''')
+
+    def test_loss_is_shared_by_affected_units_across_lots(self):
+        run(LOTS + '''F.Data.addPosition(c,'i:30','Linen Bag',1,100,'flip',nil,now-7200)
+        F.Data.addPosition(c,'i:30','Linen Bag',3,600,'flip',nil,now)
+        F.Data.addCost(c,'i:30',300,now,3)
+        assert(c.lots[1].lost==100 and c.lots[2].lost==200,'only three returned units lost this deposit')''')
+
+    def test_loss_evidence_separates_estimates_and_missing_events(self):
+        run(LOTS + '''c.stats['i:30']={lost=500}
+        c.journal={{kind='expired',key='i:30',amount=100},
+            {kind='expired',key='i:30',amount=200,estimated=true}}
+        local e=F.Data.lossEvidence(c,'i:30')
+        assert(e.recorded==100 and e.estimated==200 and e.unattributed==200)''')
+
+    def test_absent_vendor_stock_has_unknown_outcome(self):
+        run(LOTS + '''F.Data.addPosition(c,'i:30','Linen Bag',1,100,'vendor',nil,now)
+        UI.show('journal:vendor');UI.refreshJournal()
+        assert(UI.lotTable.rows[1].cols[6]:GetText():find('Unconfirmed'), 'absence is not proof of a sale')''')
+
+    def test_estimated_losses_mark_the_profit_as_estimated(self):
+        run(LOTS + '''F.Data.addPosition(c,'i:30','Linen Bag',1,100,'flip',nil,now)
+        F.Data.addCost(c,'i:30',100,now,1)
+        F.Data.log(c,{kind='expired',key='i:30',qty=1,amount=100,estimated=true,at=now})
+        F.Data.sale(c,'i:30','Linen Bag',1,500,now)
+        UI.show('journal');UI.refreshJournal()
+        local r=UI.lotTable.rows[1]
+        assert(r.cols[4]:GetText():find('~') and r.cols[6]:GetText():find('~'))''')
+
+    def test_ambiguous_old_bid_matches_stay_unclassified(self):
+        run(LOTS + '''c.lotsJoined=1
+        c.lots={{key='i:30',at=now,qty=1,cost=1900},{key='i:30',at=now,qty=1,cost=1900}}
+        c.bidLog={{outcome='won',key='i:30',qty=1,amount=1900,ended=now}}
+        F.Data.lots(c);assert(not c.lots[1].bid and not c.lots[2].bid)''')
+
 
 if __name__ == '__main__':
     unittest.main()

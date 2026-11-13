@@ -308,6 +308,21 @@ function D.lots(char)
     elseif char.lotsJoined ~= 1 then
         joinSaved(char)
     end
+    -- Older bid wins predate the purchase's bid flag. Require a unique exact match;
+    -- the item alone cannot distinguish a bid from a later buyout.
+    for _, b in ipairs(char.bidLog or {}) do
+        if b.outcome == "won" and b.ended then
+            local match, n = nil, 0
+            for _, lot in ipairs(char.lots) do
+                if lot.key == b.key and lot.qty == b.qty and lot.cost == b.amount and lot.at == b.ended then
+                    match, n = lot, n + 1
+                end
+            end
+            if n == 1 then
+                match.bid = true
+            end
+        end
+    end
     return char.lots
 end
 
@@ -324,7 +339,7 @@ end
 -- A cost of holding the item that is not its price: a deposit lost on an expired or cancelled post,
 -- a cancel fee. It joins the stock's cost, so the floor and the next sale's profit count it; with no
 -- stock left it is booked straight into the item's profit.
-function D.addCost(char, key, amount, at)
+function D.addCost(char, key, amount, at, qty)
     if not key or type(amount) ~= "number" or amount ~= amount or amount <= 0 then
         return
     end
@@ -337,18 +352,46 @@ function D.addCost(char, key, amount, at)
         s.profit = s.profit - amount
     end
     local lots = openLots(char, key)
-    local lot = lots[1]
-    if not lot then
+    if #lots > 0 then
+        local units = 0
+        for _, lot in ipairs(lots) do
+            units = units + lot.left
+        end
+        units = math.min(units, math.max(1, qty or lots[1].left))
+        local left, allocated = units, 0
+        for _, lot in ipairs(lots) do
+            local n = math.min(left, lot.left)
+            if n > 0 then
+                left = left - n
+                local share = left == 0 and amount - allocated or math.floor(amount * n / units)
+                lot.lost = (lot.lost or 0) + share
+                allocated = allocated + share
+            end
+        end
+    else
         for i = #D.lots(char), 1, -1 do
-            if char.lots[i].key == key then
-                lot = char.lots[i]
+            local lot = char.lots[i]
+            if lot.key == key then
+                lot.lost = (lot.lost or 0) + amount
                 break
             end
         end
     end
-    if lot then
-        lot.lost = (lot.lost or 0) + amount
+end
+
+-- Journal losses can be exact recorded charges, reconstructed estimates, or an older
+-- total whose source event has aged out. Keep that distinction visible to the user.
+function D.lossEvidence(char, key)
+    local out = { recorded = 0, estimated = 0, unattributed = 0 }
+    for _, e in ipairs(char.journal or {}) do
+        if e.key == key and FAILED_KINDS[e.kind] then
+            local field = e.estimated and "estimated" or "recorded"
+            out[field] = out[field] + (e.amount or 0)
+        end
     end
+    local total = char.stats and char.stats[key] and char.stats[key].lost or 0
+    out.unattributed = math.max(0, total - out.recorded - out.estimated)
+    return out
 end
 
 -- Recount ------------------------------------------------------------------------------------------
@@ -465,7 +508,7 @@ function D.recount(char, deposit)
             local cost = D.sale(char, e.key, e.name, e.qty or 0, e.amount or 0, e.at)
             e.profit = (e.amount or 0) - cost
         elseif FAILED_KINDS[e.kind] and e.key and (e.amount or 0) > 0 then
-            D.addCost(char, e.key, e.amount, e.at)
+            D.addCost(char, e.key, e.amount, e.at, e.qty)
         end
     end
     -- Items the journal never mentions (stock from before it) keep what they had.

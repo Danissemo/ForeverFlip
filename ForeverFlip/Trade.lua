@@ -1380,7 +1380,7 @@ function T.onFailedPost(name, count)
         end
     end
     if key and lost > 0 then
-        F.Data.addCost(c, key, lost, clock())
+        F.Data.addCost(c, key, lost, clock(), count)
     end
     F.Data.log(c, { at = clock(), kind = "expired", key = key, name = name, qty = count, amount = lost })
     F.Engine.changed()
@@ -1802,7 +1802,7 @@ function T.cancelAuction(a)
     -- A post not made by ForeverFlip: its deposit estimated for an 8-hour post.
     if a.key then
         lost = lost or T.depositFor(a.key, a.qty or 1, 2) or 0
-        F.Data.addCost(c, a.key, lost + fee, clock())
+        F.Data.addCost(c, a.key, lost + fee, clock(), a.qty)
         -- Logged, so a recount of the journal (F.Data.recount) keeps it.
         F.Data.log(c, {
             at = clock(),
