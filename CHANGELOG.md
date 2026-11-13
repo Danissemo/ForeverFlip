@@ -54,6 +54,9 @@ All notable changes are listed here. The format follows
   - Speed: break-even is computed in a few steps, the sniper judges rows within a time budget, browse
     keys are learned once per row, raw scan lines are read once and joined in slices, and bid
     candidates, Sure values and Undercuts plans are no longer recomputed needlessly.
+  - Merchant: Gear I can't use no longer prints a sale before anything sold (the chat tells what
+    really sold at the end), both gear buttons wait while a merchant sale goes, and Stop ends a
+    merchant sale through the sale itself, settling stacks queued to be sent again.
 
 ### Changed
 

@@ -3130,6 +3130,27 @@ function T.sellUnusableGear()
     return startVendorJob(T.unusableGearList, true)
 end
 
+-- Stop (Deals.stopAll): nothing more is sent; the stacks already sent are booked by the next
+-- steps. A stack queued to be sent again after a try is settled here: gone from its slot it was
+-- sold (its answer came late), otherwise the merchant watch stops expecting it.
+function T.stopVendor()
+    local job = T.vendorJob
+    if not job then
+        return
+    end
+    for _, v in ipairs(job.queue) do
+        if v.expected and not slotHolds(v) then
+            bookVendorSale(job, v)
+        elseif v.expected then
+            F.Merchant.cancelExpectedSale(v.id, v.count)
+        end
+    end
+    job.queue = {}
+    if #job.sent == 0 then
+        finishVendorJob(job)
+    end
+end
+
 -- True while a vendor sale is under way (Sell all and Gear I can't use wait).
 function T.sellingToVendor()
     return T.vendorJob ~= nil

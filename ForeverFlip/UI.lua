@@ -6646,13 +6646,9 @@ local function sellAll()
     UI.merchant(true)
 end
 
+-- Gear goes the same paced way: the chat says what really sold once the sale ends (Trade).
 local function sellGear()
-    local stacks, money = F.Trade.sellUnusableGear()
-    if stacks > 0 then
-        print(
-            "ForeverFlip: " .. string.format(L("sold %d pieces of gear you cannot use for %s"), stacks, U.money(money))
-        )
-    end
+    F.Trade.sellUnusableGear()
     UI.merchant(true)
 end
 
@@ -6871,11 +6867,15 @@ function UI.merchant(open)
     end
     local gearText = #gear > 0 and string.format(L("Gear I can't use (%d): %s"), #gear, U.money(gearTotal))
         or L("Sell gear I can't use")
-    UI.gearButton:SetText(gearText)
+    -- One merchant sale at a time: while one goes, both gear buttons wait for it.
+    local selling = F.Trade.sellingToVendor and F.Trade.sellingToVendor()
+    UI.gearButton:SetText(selling and L("Selling...") or gearText)
+    UI.gearButton:SetEnabled(not selling)
     UI.merchantView.sellGear:SetText(
-        #gear > 0 and string.format(L("Gear I can't use (%d)"), #gear) or L("No unusable gear")
+        selling and L("Selling...")
+            or (#gear > 0 and string.format(L("Gear I can't use (%d)"), #gear) or L("No unusable gear"))
     )
-    UI.merchantView.sellGear:SetEnabled(#gear > 0)
+    UI.merchantView.sellGear:SetEnabled(#gear > 0 and not selling)
     if #gear > 0 and not UI.merchantView:IsShown() then
         UI.gearButton:Show()
     else
@@ -6920,7 +6920,6 @@ function UI.merchant(open)
     else
         view.sellNote:SetText("")
     end
-    local selling = F.Trade.sellingToVendor and F.Trade.sellingToVendor()
     view.sellAll:SetText(
         selling and L("Selling...")
             or (#list > 0 and string.format(L("Sell all (%d): %s"), #list, U.money(total)) or L("Sell all"))

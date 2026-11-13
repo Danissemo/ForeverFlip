@@ -1160,8 +1160,8 @@ function D.stopAll()
     -- The own-auction checks still to send were only in that queue (the sent ones were answered by
     -- D.clear): My auctions must not wait for them as "checking" until the house is closed.
     F.Trade.checkingOwned = nil
-    if F.Trade.vendorJob then
-        F.Trade.vendorJob.queue = {}
+    if F.Trade.stopVendor then
+        F.Trade.stopVendor()
     end
     -- Its frame step would send the check of its next deal at once.
     if F.Trade.runStop then
