@@ -175,6 +175,50 @@ class AccountingTests(unittest.TestCase):
         F.Merchant.watchBuyback(true);bags[0][1]=nil;F.Merchant.watchBuyback(false)
         assert(c.positions['i:30'].qty==1,'moving stock is not selling it')''')
 
+    def test_new_sale_keeps_its_own_price_when_old_buyback_price_differs(self):
+        self.check('''F.Data.addPosition(c,'i:30','Linen Bag',1,100,'vendor',nil,now)
+        local bb={{1000}};GetNumBuybackItems=function() return #bb end
+        GetBuybackItemLink=function() return link(30,'Linen Bag') end
+        GetBuybackItemInfo=function(i) return 'Linen Bag',nil,bb[i][1],1 end
+        F.Merchant.watchBuyback(true);table.insert(bb,1,{500});F.Merchant.watchBuyback(false)
+        assert(c.stats['i:30'].earned==500,'older price must not replace current payment')''')
+
+    def test_expired_unknown_listing_is_explicitly_an_estimate(self):
+        self.check('''F.Data.addPosition(c,'i:30','Linen Bag',1,100,'flip',nil,now)
+        T.onFailedPost('Linen Bag',1)
+        assert(c.journal[#c.journal].estimated,'no original deposit was recorded')''')
+
+    def test_cancel_return_does_not_charge_a_second_deposit_on_recount(self):
+        self.check('''F.Data.addPosition(c,'i:30','Linen Bag',1,100,'flip',nil,now)
+        F.Data.log(c,{kind='buy',key='i:30',name='Linen Bag',qty=1,amount=100,at=now})
+        F.Data.addCost(c,'i:30',100,now,1)
+        F.Data.log(c,{kind='cancel',key='i:30',name='Linen Bag',qty=1,amount=100,at=now})
+        c.listings={{key='i:30',name='Linen Bag',cancelled=1,open=0,qty=1,deposit=100}}
+        T.onFailedPost('Linen Bag',1)
+        assert(F.Data.recount(c,function() return 999 end))
+        assert(c.stats['i:30'].lost==100,'the cancellation already charged the deposit')''')
+
+    def test_hidden_vendor_sale_survives_delayed_bags(self):
+        self.check('''F.Data.addPosition(c,'i:30','Linen Bag',2,100,'vendor',nil,now)
+        putBag(0,1,30,2,'Linen Bag');MerchantFrame:Show()
+        GetNumBuybackItems=function() return 12 end
+        GetBuybackItemLink=function() return link(30,'Linen Bag') end
+        GetBuybackItemInfo=function() return 'Linen Bag',nil,2000,1 end
+        F.Merchant.watchBuyback(true);money=money+2000;fire('MERCHANT_UPDATE')
+        putBag(0,1,30,1,'Linen Bag');fire('BAG_UPDATE_DELAYED')
+        assert(c.stats['i:30'].sold==1 and c.stats['i:30'].earned==2000)
+        fire('MERCHANT_UPDATE');assert(c.stats['i:30'].sold==1)''')
+
+    def test_hidden_vendor_sale_survives_delayed_money(self):
+        self.check('''F.Data.addPosition(c,'i:30','Linen Bag',2,100,'vendor',nil,now)
+        putBag(0,1,30,2,'Linen Bag');MerchantFrame:Show()
+        GetNumBuybackItems=function() return 12 end
+        GetBuybackItemLink=function() return link(30,'Linen Bag') end
+        GetBuybackItemInfo=function() return 'Linen Bag',nil,2000,1 end
+        F.Merchant.watchBuyback(true);putBag(0,1,30,1,'Linen Bag');fire('BAG_UPDATE_DELAYED')
+        money=money+2000;fire('PLAYER_MONEY')
+        assert(c.stats['i:30'].sold==1 and c.stats['i:30'].earned==2000)''')
+
 
 if __name__ == '__main__':
     unittest.main()

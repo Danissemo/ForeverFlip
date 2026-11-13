@@ -1356,9 +1356,10 @@ function T.onFailedPost(name, count)
             l.cancelled, left = l.cancelled - n, left - n
         end
     end
+    local cancelled = count - left
     -- An expired post loses its deposit: it joins the stock's real cost (a cancel was booked when
     -- it was made). A post not made by ForeverFlip: its deposit estimated for a 24-hour post.
-    local lost, key = 0, nil
+    local lost, key, estimated = 0, nil, false
     for _, l in ipairs(c.listings) do
         if left > 0 and string.lower(l.name or "") == lower and (l.open or 0) > 0 then
             local n = math.min(left, l.open)
@@ -1366,6 +1367,9 @@ function T.onFailedPost(name, count)
             key = l.key
             if l.deposit and (l.qty or 0) > 0 then
                 lost = lost + math.floor(l.deposit * n / l.qty + 0.5)
+            else
+                estimated = true
+                lost = lost + (T.depositFor(key, n, 3) or 0)
             end
         end
     end
@@ -1376,13 +1380,24 @@ function T.onFailedPost(name, count)
             end
         end
         if key and left > 0 then
+            estimated = true
             lost = lost + (T.depositFor(key, left, 3) or 0)
         end
     end
     if key and lost > 0 then
-        F.Data.addCost(c, key, lost, clock(), count)
+        F.Data.addCost(c, key, lost, clock(), count - cancelled)
     end
-    F.Data.log(c, { at = clock(), kind = "expired", key = key, name = name, qty = count, amount = lost })
+    F.Data.log(c, {
+        at = clock(),
+        kind = "expired",
+        key = key,
+        name = name,
+        qty = count,
+        lossQty = count - cancelled,
+        amount = lost,
+        estimated = estimated,
+        accounted = left == 0 and lost == 0 and not estimated,
+    })
     F.Engine.changed()
 end
 
@@ -1801,6 +1816,7 @@ function T.cancelAuction(a)
     -- A cancel loses the post's deposit and the game's fee: both join the stock's real cost.
     -- A post not made by ForeverFlip: its deposit estimated for an 8-hour post.
     if a.key then
+        local estimated = lost == nil
         lost = lost or T.depositFor(a.key, a.qty or 1, 2) or 0
         F.Data.addCost(c, a.key, lost + fee, clock(), a.qty)
         -- Logged, so a recount of the journal (F.Data.recount) keeps it.
@@ -1811,6 +1827,7 @@ function T.cancelAuction(a)
             name = a.name or displayName(a.key),
             qty = a.qty or 1,
             amount = lost + fee,
+            estimated = estimated,
         })
     end
     T.cancelled[a.auctionID] = clock()

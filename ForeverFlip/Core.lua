@@ -291,6 +291,9 @@ function E.handle(event, ...)
         if event == "PLAYER_MONEY" then
             F.Trade.onMoney()
             F.Scan.onMoney()
+            if MerchantFrame and MerchantFrame:IsShown() then
+                F.Merchant.watchBuyback(false)
+            end
         end
         F.Analytics.recordGold()
         if event == "PLAYER_ENTERING_WORLD" then
@@ -329,6 +332,7 @@ function E.handle(event, ...)
         -- Items sold to a merchant leave the bags a moment after the click: the merchant lists
         -- are built again once the bags settled, not on the next click.
         if MerchantFrame and MerchantFrame:IsShown() and F.UI and F.UI.merchant then
+            F.Merchant.watchBuyback(false)
             F.UI.merchant(true)
         end
     elseif

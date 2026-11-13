@@ -321,7 +321,7 @@ function D.lots(char)
                     end
                 end
             elseif FAILED_KINDS[e.kind] and e.key and open[e.key] and (e.amount or 0) > 0 then
-                shareLoss(open[e.key], e.amount, e.qty)
+                shareLoss(open[e.key], e.amount, e.lossQty or e.qty)
             end
         end
         while #char.lots > D.LOTS do
@@ -449,7 +449,7 @@ function D.recount(char, deposit)
     for _, e in ipairs(journal) do
         if FAILED_KINDS[e.kind] then
             local key = e.key or (e.name and keyOf[string.lower(e.name)])
-            if key and (e.amount or 0) <= 0 then
+            if key and (e.amount or 0) <= 0 and not e.accounted then
                 local d = deposit(key, e.qty or 1)
                 if d == nil then
                     return false
@@ -517,7 +517,7 @@ function D.recount(char, deposit)
             local cost = D.sale(char, e.key, e.name, e.qty or 0, e.amount or 0, e.at)
             e.profit = (e.amount or 0) - cost
         elseif FAILED_KINDS[e.kind] and e.key and (e.amount or 0) > 0 then
-            D.addCost(char, e.key, e.amount, e.at, e.qty)
+            D.addCost(char, e.key, e.amount, e.at, e.lossQty or e.qty)
         end
     end
     -- Items the journal never mentions (stock from before it) keep what they had.

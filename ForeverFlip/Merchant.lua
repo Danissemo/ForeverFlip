@@ -214,11 +214,13 @@ end
 -- MERCHANT_SHOW establishes the baseline; only later changes are booked.
 function V.watchBuyback(first)
     local list, bags, money = buybackEntries(), bagSnapshot(), GetMoney and GetMoney()
+    local now = F.Engine.clock()
     if first or not V.buyback then
-        V.buyback, V.expected, V.bags, V.money = list, {}, bags, money
+        V.buyback, V.expected = list, {}
+        V.bags, V.money, V.baselineAt, V.knownQty, V.knownMoney = bags, money, now, {}, 0
         return 0
     end
-    local before, sales, prices = {}, {}, {}
+    local before, sales, prices, visibleQty = {}, {}, {}, {}
     for _, e in ipairs(V.buyback) do
         before[e.sig] = (before[e.sig] or 0) + 1
     end
@@ -226,39 +228,67 @@ function V.watchBuyback(first)
     for _, e in ipairs(list) do
         local key = F.AH.keyFor(e.id, e.link)
         if key then
-            prices[key] = { id = e.id, each = math.floor(e.price / e.qty) }
+            local each = math.floor(e.price / e.qty)
+            if prices[key] and prices[key].each ~= each then
+                prices[key].ambiguous = true -- durability can change a gear item's vendor price
+            else
+                prices[key] = prices[key] or { id = e.id, each = each }
+            end
         end
         if (before[e.sig] or 0) > 0 then
             before[e.sig] = before[e.sig] - 1
         elseif key then
-            sales[key] = (sales[key] or 0) + e.qty
+            sales[#sales + 1] = { key = key, id = e.id, qty = e.qty, each = math.floor(e.price / e.qty) }
+            visibleQty[key] = (visibleQty[key] or 0) + e.qty
             visibleMoney = visibleMoney + e.price
         end
     end
-    if #list >= 12 and V.bags and money and V.money then
+    V.knownQty = V.knownQty or {}
+    V.knownMoney = (V.knownMoney or 0) + visibleMoney
+    for key, n in pairs(visibleQty) do
+        V.knownQty[key] = (V.knownQty[key] or 0) + n
+    end
+    if #list >= 12 and V.bags and money and V.money and now - (V.baselineAt or now) <= 5 then
         local missing, total = {}, 0
         for key, p in pairs(prices) do
-            local n = (V.bags[key] or 0) - (bags[key] or 0) - (sales[key] or 0)
-            if n > 0 and p.each > 0 then
+            local n = (V.bags[key] or 0) - (bags[key] or 0) - (V.knownQty[key] or 0)
+            if n > 0 and p.each > 0 and not p.ambiguous then
                 missing[key], total = n, total + n * p.each
             end
         end
-        if total > 0 and money - V.money == visibleMoney + total then
+        if total > 0 and money - V.money == V.knownMoney + total then
             for key, n in pairs(missing) do
-                sales[key] = (sales[key] or 0) + n
+                local p = prices[key]
+                sales[#sales + 1] = { key = key, id = p.id, qty = n, each = p.each }
+                V.knownQty[key] = (V.knownQty[key] or 0) + n
             end
+            V.knownMoney = V.knownMoney + total
         end
     end
+    local settled = money and V.money and money - V.money == V.knownMoney
+    for key, n in pairs(V.knownQty) do
+        if (V.bags[key] or 0) - (bags[key] or 0) ~= n then
+            settled = false
+        end
+    end
+    -- A bag decrease with delayed payment must retain its original baseline too.
+    for key in pairs(prices) do
+        if (V.bags[key] or 0) - (bags[key] or 0) > (V.knownQty[key] or 0) then
+            settled = false
+        end
+    end
+    if settled or now - (V.baselineAt or now) > 5 then
+        V.bags, V.money, V.baselineAt, V.knownQty, V.knownMoney = bags, money, now, {}, 0
+    end
     local booked = 0
-    for key, qty in pairs(sales) do
-        local p = prices[key]
-        local n = math.min(V.expected[p.id] or 0, qty)
-        V.expected[p.id], qty = (V.expected[p.id] or 0) - n, qty - n
-        if qty > 0 and F.Trade.onVendorSale(key, qty, p.each) then
+    for _, e in ipairs(sales) do
+        local n = math.min(V.expected[e.id] or 0, e.qty)
+        V.expected[e.id], e.qty = (V.expected[e.id] or 0) - n, e.qty - n
+        if e.qty > 0 and F.Trade.onVendorSale(e.key, e.qty, e.each) then
             booked = booked + 1
         end
     end
-    V.buyback, V.bags, V.money = list, bags, money
+    V.buyback = list
     return booked
 end
 
