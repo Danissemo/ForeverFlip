@@ -60,7 +60,8 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    they went on meanwhile, the answer did not come in game.
 2. **Reading.** Rows are read in portions under a time budget per frame. Bid-only auctions and your
    own auctions are skipped. Rows whose item is not in the game cache are deferred, kept per item in
-   scan order; the item data is requested at most 40 items per second (`AH.lua`). An item's rows
+   scan order; the item data is requested up to 100 items every 0.1 seconds while fewer than 400 are
+   unanswered (`AH.lua`, `A.ITEM_BATCH`, `A.ITEM_IN_FLIGHT`): the pace follows how fast the game answers. An item's rows
    are read again only once its data has arrived, so a list where most rows wait (210 000 rows of
    a few hundred commodities) is not read again row by row. The wait ends 30 seconds after the last
    item came in (`S.RECOVER`), 5 minutes at most (`S.RECOVER_MAX`); rows still waiting then are
@@ -713,7 +714,7 @@ crafts.
   - one full scan per 15 minutes;
   - one exact search at a time with pacing, at most 100 per minute;
   - browse queries only when nothing else waits and the game's throttle is ready;
-  - item data at 40 per second;
+  - item data: at most 400 requests unanswered at a time, up to 100 every 0.1 seconds;
   - mail actions every 0.4 seconds.
 - **Errors are isolated.** Event and frame handlers run under `xpcall`. An error is reported once
   per distinct message and saved (latest 20), and never repeats every frame.

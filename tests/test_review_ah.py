@@ -159,6 +159,7 @@ class ItemQueueTests(unittest.TestCase):
     def test_item_data_requests_go_out_in_order_up_to_the_cap(self):
         run(BASE + '''local A = F.AH
         requestedItems = {}
+        A.ITEM_QUEUE = 4000
         for id = 500001, 504100 do A.requestItem(id) end
         local t = now
         for _ = 1, 1100 do t = t + 0.2; A.pump(t) end

@@ -304,6 +304,7 @@ function E.handle(event, ...)
         -- the scan waits for (its vendor price) changes the window at once; the names of other
         -- items show at the next one-second refresh.
         local id, ok = ...
+        F.AH.itemArrived(id) -- frees a place for the next item data request
         local last = F.Scan.last
         local waited = ok and last and last.waitVendor and last.waitVendor[id]
         if ok then

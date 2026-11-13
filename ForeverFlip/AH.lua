@@ -164,11 +164,34 @@ function A.unusableGear(id)
     return false
 end
 
--- Item data requests, paced at 40 per second. The queue is read from a head index: taking the
--- first of up to 4000 entries off the list moved all the others each time.
+-- Item data requests. At a fixed 40 a second the 16 000 items of a busy house took seven minutes
+-- to load after a full scan. Now up to A.ITEM_BATCH go every 0.1 seconds while fewer than
+-- A.ITEM_IN_FLIGHT are unanswered: each ITEM_DATA_LOAD_RESULT (A.itemArrived) frees a place, so
+-- the pace follows how fast the game answers. A request unanswered for 5 seconds frees its place
+-- and may be sent again. The queue is read from a head index: taking the first of many entries off
+-- the list moved all the others each time.
+A.ITEM_BATCH = 100
+A.ITEM_IN_FLIGHT = 400
+A.ITEM_QUEUE = 20000
 local queue, head, tail, queued, nextPump, sentAt = {}, 1, 0, {}, 0, {}
+local inFlight = 0
+function A.itemArrived(id)
+    if sentAt[id] then
+        sentAt[id] = nil
+        inFlight = math.max(0, inFlight - 1)
+    end
+end
+-- Requests unanswered for 5 seconds no longer hold a place (only looked for when all are taken).
+local function dropLost(now)
+    for id, at in pairs(sentAt) do
+        if now - at >= 5 then
+            sentAt[id] = nil
+            inFlight = math.max(0, inFlight - 1)
+        end
+    end
+end
 function A.requestItem(id)
-    if queued[id] or tail - head + 1 >= 4000 then
+    if queued[id] or tail - head + 1 >= A.ITEM_QUEUE then
         return
     end
     local t = GetTime and GetTime() or 0
@@ -187,14 +210,23 @@ function A.pump(now)
         return
     end
     nextPump = now + 0.1
-    for _ = 1, 4 do
+    if inFlight >= A.ITEM_IN_FLIGHT then
+        dropLost(now)
+    end
+    for _ = 1, A.ITEM_BATCH do
         if head > tail then
             head, tail = 1, 0
+            return
+        end
+        if inFlight >= A.ITEM_IN_FLIGHT then
             return
         end
         local id = queue[head]
         queue[head], head = nil, head + 1
         queued[id] = nil
+        if not sentAt[id] then
+            inFlight = inFlight + 1
+        end
         sentAt[id] = now
         if C_Item and C_Item.RequestLoadItemDataByID then
             pcall(C_Item.RequestLoadItemDataByID, id)

@@ -58,5 +58,23 @@ class RecoveryTests(unittest.TestCase):
         assert(S.listedUnits('c:41') == nil, 'the unread item is not known as unlisted')''')
 
 
+class ItemRequestTests(unittest.TestCase):
+    """Item data requests follow the game's answers: a batch every 0.1 s while places are free."""
+
+    def test_requests_go_in_batches_up_to_the_unanswered_limit(self):
+        run(SETUP + '''local A = ForeverFlip.AH
+        local asked = {}
+        C_Item.IsItemDataCachedByID = function() return false end
+        C_Item.RequestLoadItemDataByID = function(id) asked[#asked + 1] = id end
+        A.ITEM_BATCH, A.ITEM_IN_FLIGHT = 100, 250
+        for id = 5001, 6000 do A.requestItem(id) end
+        A.pump(now); assert(#asked == 100, 'one batch: ' .. #asked)
+        A.pump(now + 0.1); A.pump(now + 0.2)
+        assert(#asked == 250, 'no more than the unanswered limit: ' .. #asked)
+        for i = 1, 50 do A.itemArrived(asked[i]) end
+        A.pump(now + 0.3); assert(#asked == 300, 'each answer frees a place: ' .. #asked)
+        A.pump(now + 6); assert(#asked == 400, 'unanswered for 5 s, the places are free again: ' .. #asked)''')
+
+
 if __name__ == "__main__":
     unittest.main()
