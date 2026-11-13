@@ -63,6 +63,8 @@ All notable changes are listed here. The format follows
     1 silver per auction, with one deposit per commodity stack. Cheap commodity resales are sniped
     and offered at merchants again, and the anti-undercut plan's cancel and repost cost what the
     cancel and the post really book.
+  - Merchant purchases are booked as their units reach the bags: units a merchant refused (no
+    room, sold out) no longer enter stock or the journal.
 
 ### Changed
 

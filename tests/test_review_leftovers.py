@@ -2,6 +2,7 @@
 
 import unittest
 
+from test_addon import SETUP
 from test_review_trade_b import GEAR, SLOW, run
 
 
@@ -50,6 +51,35 @@ class StopVendorTests(unittest.TestCase):
         D.stopAll()
         assert(not T.vendorJob and cancelled == 1, 'the merchant watch stops expecting it')
         assert(c.positions['c:71'], 'still in stock')''')
+
+
+MERCHANT = SETUP + '''local F = ForeverFlip
+local c = F.Data.char(F.db, F.Engine.owner())
+addItem(70, 'Weighted Throwing Axe', 50, 'item'); merchantItems = { { id = 70, price = 270 } }
+local offer = { index = 1, key = 'i:70', link = link(70), unit = 270, qty = 3, exit = 900 }
+'''
+
+
+class MerchantPurchaseTests(unittest.TestCase):
+    """V14-b: a merchant purchase is booked as its units reach the bags, never what was refused."""
+
+    def test_a_refused_purchase_books_nothing(self):
+        run(MERCHANT + '''merchantRefuses = true
+        assert(F.Merchant.buy(offer), 'the calls were sent')
+        assert(not c.positions['i:70'], 'nothing came: nothing booked')
+        now = now + F.Merchant.BUY_WAIT + 1; fire('BAG_UPDATE_DELAYED')
+        assert(#F.Merchant.waiting == 0 and not c.positions['i:70'], 'given up after the wait')''')
+
+    def test_units_that_come_late_are_booked_when_the_bags_settle(self):
+        run(MERCHANT + '''merchantRefuses = true
+        F.Merchant.buy(offer)
+        merchantReceived[70] = 2 -- two of the three reach the bags a moment later
+        fire('BAG_UPDATE_DELAYED')
+        assert(c.positions['i:70'].qty == 2 and c.positions['i:70'].cost == 540, 'only what came')
+        local e = c.journal[#c.journal]
+        assert(e.kind == 'buy' and e.qty == 2 and e.amount == 540 and e.merchant)
+        fire('BAG_UPDATE_DELAYED')
+        assert(c.positions['i:70'].qty == 2, 'booked once')''')
 
 
 if __name__ == "__main__":

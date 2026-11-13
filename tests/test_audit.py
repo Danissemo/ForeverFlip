@@ -239,7 +239,7 @@ class PostFeedbackTests(unittest.TestCase):
 
 class MerchantTests(unittest.TestCase):
     def test_items_that_do_not_stack_are_bought_one_call_each_and_only_what_fits(self):
-        run(BASE + '''addItem(70, 'Weighted Throwing Axe', 50, 'item')
+        run(BASE + '''addItem(70, 'Weighted Throwing Axe', 50, 'item'); merchantItems = { { id = 70, price = 270 } }
         local offer = { index = 1, key = 'i:70', link = link(70), unit = 270, qty = 9, exit = 900 }
         freeBagSlots = 5
         local ok, bought = F.Merchant.buy(offer)

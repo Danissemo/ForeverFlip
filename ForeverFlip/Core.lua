@@ -364,6 +364,7 @@ function E.handle(event, ...)
         F.Merchant.watchBuyback(false)
         F.Merchant.learnBuyback()
     elseif event == "BAG_UPDATE_DELAYED" then
+        F.Merchant.settle() -- merchant purchases are booked as their units arrive
         -- Items sold to a merchant leave the bags a moment after the click: the merchant lists
         -- are built again once the bags settled, not on the next click.
         if MerchantFrame and MerchantFrame:IsShown() and F.UI and F.UI.merchant then
@@ -388,6 +389,8 @@ function E.handle(event, ...)
         if event == "MERCHANT_SHOW" then
             F.Merchant.watchBuyback(true)
             F.Merchant.learnBuyback()
+        else
+            F.Merchant.settle()
         end
         if F.UI and F.UI.merchant then
             F.UI.merchant(event == "MERCHANT_SHOW")

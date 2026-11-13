@@ -115,6 +115,36 @@ local function stackOf(index, link)
     return math.max(1, stack)
 end
 
+V.waiting = {} -- merchant purchases sent and not all their units seen in the bags yet
+V.BUY_WAIT = 10
+
+-- Units of the item in the bags.
+local function itemCount(id)
+    local count = C_Item and C_Item.GetItemCount or GetItemCount
+    local ok, n = pcall(count or function() end, id)
+    return ok and U.finite(n) and n or 0
+end
+
+-- `n` units of a merchant purchase reached the bags: stock for resale, and the journal entry.
+local function bookPurchase(w, n)
+    local c = F.Data.char(F.db, F.Engine.owner())
+    local cost = math.ceil(w.unit * n)
+    F.Data.addPosition(c, w.key, w.name, n, cost, "flip", w.exit, F.Engine.clock())
+    F.Data.log(c, {
+        at = F.Engine.clock(),
+        kind = "buy",
+        key = w.key,
+        name = w.name,
+        qty = n,
+        amount = cost,
+        -- Without it a recount took the mode of the item's lot: a lot started by an own-use
+        -- purchase up to 15 minutes before turned this resale into own use.
+        mode = "flip",
+        merchant = true, -- bought from a merchant: no auction house lot was taken (Scan.ownBought)
+    })
+    F.Engine.changed()
+end
+
 -- Buys the offer in calls of at most one stack each: one call for more than a stack ends in
 -- "Internal Bag Error", and items that do not stack need a bag slot each. Never more than the
 -- free slots of the general bags hold. Returns true and the units bought, or false and a reason.
@@ -131,29 +161,50 @@ function V.buy(offer)
     if cost > F.Engine.wallet() then
         return false, "no_money"
     end
+    local id = tonumber(offer.link and offer.link:match("item:(%d+)"))
+    if not id then
+        return false
+    end
+    -- Booked as the units reach the bags (V.settle): the merchant may refuse a call (no room after
+    -- all, the stock sold out, no money), and a purchase booked at the click stayed in stock.
+    V.waiting[#V.waiting + 1] = {
+        id = id,
+        key = offer.key,
+        name = U.linkName(offer.link) or offer.name or offer.key,
+        unit = offer.unit,
+        exit = offer.exit,
+        qty = qty,
+        booked = 0,
+        before = itemCount(id),
+        at = F.Engine.clock(),
+    }
     local left = qty
     while left > 0 do
         local n = math.min(left, stack)
         BuyMerchantItem(offer.index, n)
         left = left - n
     end
-    local c = F.Data.char(F.db, F.Engine.owner())
-    local name = U.linkName(offer.link) or offer.name or offer.key
-    F.Data.addPosition(c, offer.key, name, qty, cost, "flip", offer.exit, F.Engine.clock())
-    F.Data.log(c, {
-        at = F.Engine.clock(),
-        kind = "buy",
-        key = offer.key,
-        name = name,
-        qty = qty,
-        amount = cost,
-        -- Without it a recount took the mode of the item's lot: a lot started by an own-use
-        -- purchase up to 15 minutes before turned this resale into own use.
-        mode = "flip",
-        merchant = true, -- bought from a merchant: no auction house lot was taken (Scan.ownBought)
-    })
-    F.Engine.changed()
+    V.settle()
     return true, qty
+end
+
+-- Books the units of merchant purchases that reached the bags since (BAG_UPDATE_DELAYED, merchant
+-- closed, the next purchase). A purchase waits V.BUY_WAIT seconds for its units; what never came
+-- was refused and is not booked.
+function V.settle()
+    local now, keep = F.Engine.clock(), {}
+    for _, w in ipairs(V.waiting) do
+        local arrived = math.min(w.qty, math.max(0, itemCount(w.id) - w.before))
+        local n = arrived - w.booked
+        if n > 0 then
+            w.booked = arrived
+            bookPurchase(w, n)
+        end
+        if w.booked < w.qty and now - w.at < V.BUY_WAIT then
+            keep[#keep + 1] = w
+        end
+    end
+    V.waiting = keep
 end
 
 -- What merchants really pay ---------------------------------------------------------------------------

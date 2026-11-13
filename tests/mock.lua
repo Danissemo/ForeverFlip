@@ -599,6 +599,9 @@ end
 -- Merchant -----------------------------------------------------------------------------------------
 merchantItems = {} -- { id, price, quantity, available, extended }
 merchantBought = {}
+-- Units of merchant purchases that reached the bags, by item; merchantRefuses: the merchant takes
+-- no call (no room, sold out).
+merchantReceived, merchantRefuses = {}, false
 function GetMerchantNumItems()
     return #merchantItems
 end
@@ -621,6 +624,21 @@ function GetMerchantItemLink(i)
 end
 function BuyMerchantItem(i, qty)
     merchantBought[#merchantBought + 1] = { i, qty }
+    local m = merchantItems[i]
+    if m and not merchantRefuses then
+        merchantReceived[m.id] = (merchantReceived[m.id] or 0) + qty
+    end
+end
+function GetItemCount(id)
+    local n = merchantReceived[id] or 0
+    for _, bag in pairs(bags) do
+        for _, v in pairs(bag) do
+            if v.itemID == id then
+                n = n + (v.stackCount or 1)
+            end
+        end
+    end
+    return n
 end
 
 -- Browse and key queries (fast sniper) --------------------------------------------------------------
