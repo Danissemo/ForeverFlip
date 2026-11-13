@@ -1095,6 +1095,7 @@ A.DEPOSIT_RETRY = 60
 -- Forgets the deposits asked for this session (tests, or a patch that changed them).
 function A.resetDeposits()
     depositRates = {}
+    F.Market.resetUnitDeposits()
 end
 -- The deposits per unit learned for an item, by duration: deposits[id][duration], and a neutral
 -- house's in deposits[id].neutral[duration].

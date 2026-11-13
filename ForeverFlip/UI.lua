@@ -6869,11 +6869,13 @@ function UI.merchant(open)
         or L("Sell gear I can't use")
     -- One merchant sale at a time: while one goes, both gear buttons wait for it.
     local selling = F.Trade.sellingToVendor and F.Trade.sellingToVendor()
-    UI.gearButton:SetText(selling and L("Selling...") or gearText)
+    local function busy(text)
+        return selling and L("Selling...") or text
+    end
+    UI.gearButton:SetText(busy(gearText))
     UI.gearButton:SetEnabled(not selling)
     UI.merchantView.sellGear:SetText(
-        selling and L("Selling...")
-            or (#gear > 0 and string.format(L("Gear I can't use (%d)"), #gear) or L("No unusable gear"))
+        busy(#gear > 0 and string.format(L("Gear I can't use (%d)"), #gear) or L("No unusable gear"))
     )
     UI.merchantView.sellGear:SetEnabled(#gear > 0 and not selling)
     if #gear > 0 and not UI.merchantView:IsShown() then
@@ -6921,8 +6923,7 @@ function UI.merchant(open)
         view.sellNote:SetText("")
     end
     view.sellAll:SetText(
-        selling and L("Selling...")
-            or (#list > 0 and string.format(L("Sell all (%d): %s"), #list, U.money(total)) or L("Sell all"))
+        busy(#list > 0 and string.format(L("Sell all (%d): %s"), #list, U.money(total)) or L("Sell all"))
     )
     view.sellAll:SetEnabled(#list > 0 and not selling)
     local offers = F.Merchant.offers()

@@ -992,8 +992,6 @@ function M.advice(id, key, h, post)
     local price = post or (h and M.usual(h))
     price = U.finite(price) and U.stepDown(price, item.kind) or 0
     if price > 0 then
-        -- Commodities are posted as a stack and pay one deposit for it: per unit it is the deposit
-        -- of a stack of M.STACK, divided. Other items pay a deposit each.
         local one = M.unitDeposit(id, item.kind)
         -- Sale rates are kept by the name of the mail or invoice: for gear the full name with its
         -- ending, which the key carries ("of Healing"); the item's own name lacks the ending.
@@ -1022,8 +1020,7 @@ function M.advice(id, key, h, post)
                     local watched = U.finite(s.quiet) and s.quiet or U.finite(s.hours) and s.hours or 24
                     perDay = M.UNSEEN_SALES / math.max(1, watched / 24)
                 end
-                local d = F.Trade.durationFor and F.Trade.durationFor() or 3
-                local hours = (F.Trade.DURATION_HOURS and F.Trade.DURATION_HOURS[d]) or 24
+                local hours = (F.Trade.DURATION_HOURS and F.Trade.DURATION_HOURS[M.duration()]) or 24
                 success = 1 - math.exp(-perDay * hours / 24)
                 out.perDay = s.perDay
             end
@@ -1077,18 +1074,40 @@ function M.depositRisk(kind, vendor, qty, deposit, d)
     return qty * (deposit and deposit(1) or M.deposit(vendor, 1, d))
 end
 
--- The deposit of posting `qty` units of item `id` (kind "commodity", "gear" or "item") for
--- duration `d` (default: the duration posts go for now).
+-- The deposit of posting `qty` units of item `id` (kind "commodity", "gear" or "item", default:
+-- the auction house's) for duration `d` (default: the duration posts go for now).
 function M.postDeposit(id, kind, qty, d)
     d = d or M.duration()
+    kind = kind or F.AH.kindOf(id)
     return M.depositRisk(kind, F.AH.clientVendorPrice(id), qty or 1, F.AH.depositFn(id, kind, d), d)
 end
 
 -- The deposit per unit of a resale: a commodity goes as a stack of M.STACK (one deposit shared by
--- its units), other items one a post.
+-- its units), other items one a post. The sniper asks for it at every browse row: kept per item and
+-- duration for a minute (M.resetUnitDeposits when the game's deposits are read again).
+local unitDeposits, unitDepositsAt = {}, nil
+function M.resetUnitDeposits()
+    unitDeposits, unitDepositsAt = {}, nil
+end
 function M.unitDeposit(id, kind, d)
-    local units = kind == "commodity" and M.STACK or 1
-    return M.postDeposit(id, kind, units, d) / units
+    d = d or M.duration()
+    local minute = math.floor(F.Engine.clock() / 60)
+    if minute ~= unitDepositsAt then
+        unitDeposits, unitDepositsAt = {}, minute
+    end
+    local byId = unitDeposits[d]
+    if not byId then
+        byId = {}
+        unitDeposits[d] = byId
+    end
+    local v = byId[id]
+    if not v then
+        kind = kind or F.AH.kindOf(id)
+        local units = kind == "commodity" and M.STACK or 1
+        v = M.postDeposit(id, kind, units, d) / units
+        byId[id] = v
+    end
+    return v
 end
 
 -- Money left after selling `qty` units at `price` each on the auction house.

@@ -62,9 +62,7 @@ function V.offers(now)
                 local reference = U.finite(low) and math.min(market, low) or market
                 local exit = U.below(reference, item.kind)
                 local unit = price / quantity
-                -- The deposit of posting what one purchase brings, per unit (M.postDeposit).
-                local deposit = M.postDeposit(id, item.kind, quantity) / quantity
-                local each = M.net(exit, 1) - unit - deposit
+                local each = M.net(exit, 1) - unit - M.unitDeposit(id, item.kind)
                 local d = M.saleability(h, exit, now)
                 -- As a resale on the auction house: the sales times the item's trust factor, and
                 -- at most one day of them held, the stock already held included. Offered without
@@ -107,9 +105,8 @@ end
 
 -- Buys the suggested quantity of one offer (a click) and books it as stock for resale.
 -- The units of one stack of the item (1 for items that do not stack).
-local function stackOf(index, link)
+local function stackOf(index, id)
     local max = tonumber(GetMerchantItemMaxStack and GetMerchantItemMaxStack(index))
-    local id = link and tonumber(link:match("item:(%d+)"))
     local itemStack = id and tonumber((select(8, U.itemInfo(id))))
     local stack = max and itemStack and math.min(max, itemStack) or max or itemStack or math.huge
     return math.max(1, stack)
@@ -117,13 +114,6 @@ end
 
 V.waiting = {} -- merchant purchases sent and not all their units seen in the bags yet
 V.BUY_WAIT = 10
-
--- Units of the item in the bags.
-local function itemCount(id)
-    local count = C_Item and C_Item.GetItemCount or GetItemCount
-    local ok, n = pcall(count or function() end, id)
-    return ok and U.finite(n) and n or 0
-end
 
 -- `n` units of a merchant purchase reached the bags: stock for resale, and the journal entry.
 local function bookPurchase(w, n)
@@ -152,7 +142,11 @@ function V.buy(offer)
     if not offer or not BuyMerchantItem then
         return false
     end
-    local stack = stackOf(offer.index, offer.link)
+    local id = tonumber(offer.link and offer.link:match("item:(%d+)"))
+    if not id then
+        return false
+    end
+    local stack = stackOf(offer.index, id)
     local qty = math.min(offer.qty, F.AH.freeBagSlots() * stack)
     if qty < 1 then
         return false, "bags_full"
@@ -160,10 +154,6 @@ function V.buy(offer)
     local cost = math.ceil(offer.unit * qty)
     if cost > F.Engine.wallet() then
         return false, "no_money"
-    end
-    local id = tonumber(offer.link and offer.link:match("item:(%d+)"))
-    if not id then
-        return false
     end
     -- Booked as the units reach the bags (V.settle): the merchant may refuse a call (no room after
     -- all, the stock sold out, no money), and a purchase booked at the click stayed in stock.
@@ -175,7 +165,7 @@ function V.buy(offer)
         exit = offer.exit,
         qty = qty,
         booked = 0,
-        before = itemCount(id),
+        before = F.Crafting.have(id, true),
         at = F.Engine.clock(),
     }
     local left = qty
@@ -192,9 +182,12 @@ end
 -- closed, the next purchase). A purchase waits V.BUY_WAIT seconds for its units; what never came
 -- was refused and is not booked.
 function V.settle()
+    if #V.waiting == 0 then
+        return -- every bag change in the game asks
+    end
     local now, keep = F.Engine.clock(), {}
     for _, w in ipairs(V.waiting) do
-        local arrived = math.min(w.qty, math.max(0, itemCount(w.id) - w.before))
+        local arrived = math.min(w.qty, math.max(0, F.Crafting.have(w.id, true) - w.before))
         local n = arrived - w.booked
         if n > 0 then
             w.booked = arrived

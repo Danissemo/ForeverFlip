@@ -150,7 +150,7 @@ function C.profits(now)
             if price then
                 local s = F.Market.saleability(h, price, now)
                 perDay = s.known and s.perDay or nil
-                auction = F.Market.net(price, r.n) - F.Market.postDeposit(r.out, F.AH.kindOf(r.out), r.n)
+                auction = F.Market.net(price, r.n) - F.Market.postDeposit(r.out, nil, r.n)
             end
             local vendorValue = vendor and vendor * r.n or nil
             if auction and (not vendorValue or auction > vendorValue) then
@@ -173,13 +173,14 @@ function C.profits(now)
     return out
 end
 
--- Units of an item the player already has, in the bags and the bank (the bank as last seen).
-function C.have(id)
+-- Units of an item the player already has, in the bags and the bank (the bank as last seen);
+-- `bagsOnly`: in the bags.
+function C.have(id, bagsOnly)
     local count = C_Item and C_Item.GetItemCount or GetItemCount
     if not count then
         return 0
     end
-    local ok, n = pcall(count, id, true)
+    local ok, n = pcall(count, id, not bagsOnly)
     return ok and U.finite(n) and n or 0
 end
 

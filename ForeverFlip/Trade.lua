@@ -1305,17 +1305,18 @@ end
 -- A post ForeverFlip did not make is taken as an 8-hour one when its cancel books the deposit.
 local CANCEL_DURATION = 2
 
--- The deposit the post of auction `a` paid for `qty` of its units, from the listing that made it
--- (T.post); nil when no listing of the player's holds the auction.
-local function listedDeposit(c, a, qty)
+-- The deposit a cancel of `qty` units of auction `a` gives up: the share of what its post paid,
+-- from the listing that made it (T.post), and true when it is estimated instead (no listing of the
+-- player's holds the auction). T.cancelAuction books it, T.fightPlan weighs it.
+local function cancelDeposit(c, a, qty)
     for _, l in ipairs(type(c.listings) == "table" and c.listings or {}) do
         for _, id in ipairs(l.ids or {}) do
             if id == a.auctionID and l.deposit and (l.qty or 0) > 0 then
-                return math.floor(l.deposit * qty / l.qty + 0.5)
+                return math.floor(l.deposit * qty / l.qty + 0.5), false
             end
         end
     end
-    return nil
+    return T.depositFor(a.key, qty, CANCEL_DURATION) or 0, true
 end
 
 -- Cancelling loses the deposit (and maybe more: GetCancelCost); the item comes back by mail. The loss
@@ -2214,7 +2215,6 @@ function T.cancelAuction(a)
     local c = char()
     local qty = a.qty or 1
     local rec = { at = clock(), scope = F.Engine.scope(), key = a.key, name = a.name, qty = qty, listed = 0 }
-    local lost = listedDeposit(c, a, qty)
     for _, l in ipairs(c.listings) do
         for _, id in ipairs(l.ids) do
             if id == a.auctionID then
@@ -2233,8 +2233,8 @@ function T.cancelAuction(a)
     -- A cancel loses the post's deposit and the game's fee: both join the stock's real cost.
     -- A post not made by ForeverFlip: its deposit estimated for an 8-hour post.
     if a.key then
-        rec.estimated = lost == nil
-        rec.lost = (lost or T.depositFor(a.key, qty, CANCEL_DURATION) or 0) + fee
+        local lost, estimated = cancelDeposit(c, a, qty)
+        rec.lost, rec.estimated = lost + fee, estimated
     end
     cancelsOf(c)[a.auctionID] = rec
     T.cancelled[a.auctionID] = clock()
@@ -2438,10 +2438,10 @@ function T.fightPlan(a)
     local floor = T.floorFor({ key = a.key, kind = item.kind })
     -- A post of `units` at `at` pays the deposit the post itself books (T.depositFor, for the
     -- duration T.post would pick); cancelling gives up the deposit the cancel books (T.cancel).
-    local function depositFor(units, at)
-        return T.depositFor(a.key, units, T.durationFor(a.key, units, at)) or 0
+    local function depositFor(units, at, d)
+        return T.depositFor(a.key, units, d or T.durationFor(a.key, units, at)) or 0
     end
-    local deposit = listedDeposit(char(), a, qty) or T.depositFor(a.key, qty, CANCEL_DURATION) or 0
+    local deposit = cancelDeposit(char(), a, qty)
     local okCost, extra = pcall(F.AH.cancelCost, a.auctionID)
     local fee = okCost and U.finite(extra) and extra or 0
     local cancel = deposit + fee -- what cancelling gives up, for the page: the deposit and the fee
@@ -2498,8 +2498,9 @@ function T.fightPlan(a)
     if floor and new < floor then
         add({ id = "undercut", blocked = "floor" })
     else
-        local hours = T.DURATION_HOURS[T.durationFor(a.key, qty, new)] or 24
-        local newDeposit = depositFor(qty, new)
+        local dNew = T.durationFor(a.key, qty, new)
+        local hours = T.DURATION_HOURS[dNew] or 24
+        local newDeposit = depositFor(qty, new, dNew)
         if known then
             local d2 = M.demandAt(h, new)
             d2 = (d2.pairs or 0) > 0 and d2 or d
@@ -3037,6 +3038,20 @@ local function finishVendorJob(job)
     F.Engine.changed()
 end
 
+-- Nothing more of the sale is sent. A stack queued to be sent again after a try may have gone
+-- meanwhile (the answer to its try came late): booked as sold; else the merchant watch stops
+-- expecting it.
+local function dropQueue(job)
+    for _, v in ipairs(job.queue) do
+        if v.expected and not slotHolds(v) then
+            bookVendorSale(job, v)
+        elseif v.expected then
+            F.Merchant.cancelExpectedSale(v.id, v.count)
+        end
+    end
+    job.queue = {}
+end
+
 -- One step of a vendor sale (every frame, from T.step): sent stacks that left their slot are
 -- booked, stuck ones are sent again, and the next batch goes once the gap has passed.
 function T.stepVendor()
@@ -3053,15 +3068,8 @@ function T.stepVendor()
                 F.Merchant.cancelExpectedSale(v.id, v.count)
             end
         end
-        -- A stack queued to be sent again may have gone meanwhile: the answer to its try came late.
-        for _, v in ipairs(job.queue) do
-            if v.expected and not slotHolds(v) then
-                bookVendorSale(job, v)
-            elseif v.expected then
-                F.Merchant.cancelExpectedSale(v.id, v.count)
-            end
-        end
-        job.sent, job.queue = {}, {}
+        dropQueue(job)
+        job.sent = {}
         finishVendorJob(job)
         return
     end
@@ -3138,22 +3146,13 @@ function T.sellUnusableGear()
     return startVendorJob(T.unusableGearList, true)
 end
 
--- Stop (Deals.stopAll): nothing more is sent; the stacks already sent are booked by the next
--- steps. A stack queued to be sent again after a try is settled here: gone from its slot it was
--- sold (its answer came late), otherwise the merchant watch stops expecting it.
+-- Stop (Deals.stopAll): nothing more is sent; the stacks already sent are booked by the next steps.
 function T.stopVendor()
     local job = T.vendorJob
     if not job then
         return
     end
-    for _, v in ipairs(job.queue) do
-        if v.expected and not slotHolds(v) then
-            bookVendorSale(job, v)
-        elseif v.expected then
-            F.Merchant.cancelExpectedSale(v.id, v.count)
-        end
-    end
-    job.queue = {}
+    dropQueue(job)
     if #job.sent == 0 then
         finishVendorJob(job)
     end

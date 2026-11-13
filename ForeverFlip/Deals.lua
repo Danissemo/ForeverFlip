@@ -100,6 +100,7 @@ function D.evaluate(g, vendor, history, now)
     end
     local room, held = itemRoom(g.key)
     local cap, unsold = D.resaleCap(g.market, history)
+    local duration = F.Market.duration()
     local deal, reason = F.Market.evaluate(g.rows, {
         kind = g.kind,
         vendor = vendor,
@@ -109,8 +110,8 @@ function D.evaluate(g, vendor, history, now)
         trust = D.trust(g.key, now),
         budget = D.budget(),
         vendorBudget = F.Engine.wallet(),
-        deposit = F.AH.depositFn(g.id, g.kind, F.Market.duration()),
-        duration = F.Market.duration(),
+        deposit = F.AH.depositFn(g.id, g.kind, duration),
+        duration = duration,
         history = history,
         market = cap,
         noResale = unsold,
