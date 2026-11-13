@@ -414,6 +414,11 @@ function D.pending(key)
             return true
         end
     end
+    -- Keep a dropped/timed-out background check visible as pending until its bounded retry
+    -- runs; callers must distinguish it from a key that has never been checked.
+    if D.backgroundRetry and (not key or D.backgroundRetry.key == key) then
+        return true
+    end
     return false
 end
 

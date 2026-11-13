@@ -9,6 +9,35 @@ local U = F.Util
 local C = {}
 F.Crafting = C
 
+-- Returns the professions the character has learned.  The classic API exposes these through
+-- GetProfessions/GetProfessionInfo; keep this separate from recipe learning because the latter
+-- only knows about the profession window that is currently open.
+function C.professions()
+    if not GetProfessions or not GetProfessionInfo then
+        return {}
+    end
+    local ok, p1, p2, p3, p4, p5, p6 = pcall(GetProfessions)
+    if not ok then
+        return {}
+    end
+    local out, seen = {}, {}
+    local ids = { p1, p2, p3, p4, p5, p6 }
+    for _, id in ipairs(ids) do
+        if id and not seen[id] then
+            local got, name, _, rank, maxRank = pcall(GetProfessionInfo, id)
+            if got and type(name) == "string" and name ~= "" then
+                out[#out + 1] = {
+                    name = name,
+                    rank = U.finite(rank) and rank or nil,
+                    maxRank = U.finite(maxRank) and maxRank or nil,
+                }
+                seen[id] = true
+            end
+        end
+    end
+    return out
+end
+
 local function recipes()
     local c = F.Data.char(F.db, F.Engine.owner())
     c.recipes = type(c.recipes) == "table" and c.recipes or {}

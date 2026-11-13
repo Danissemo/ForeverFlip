@@ -1822,7 +1822,7 @@ function T.stepChecks()
 end
 
 -- Status of one own auction: "sold", "alone" (nobody else sells it), "cheapest", "undercut" (with
--- the cheaper price), "no_answer" or nil (not checked).
+-- the cheaper price), "no_answer", "pending", or nil (not checked).
 function T.ownedStatus(a)
     if a.sold then
         return "sold"
@@ -1838,6 +1838,9 @@ function T.ownedStatus(a)
     if not check or clock() - check.at > 600 then
         if a.key and T.alone(a.key) then
             return "alone"
+        end
+        if a.key and (T.checkingOwned and T.checkingOwned[a.key] or F.Deals.pending(a.key)) then
+            return "pending"
         end
         if a.key and T.noAnswer[a.key] and clock() - T.noAnswer[a.key] <= 600 then
             return "no_answer"

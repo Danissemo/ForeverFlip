@@ -184,7 +184,8 @@ class SureTests(unittest.TestCase):
         local d = { mode = 'flip', key = 'i:30', exit = 1000, qty = 2 }
         F.Data.market(F.db, F.Engine.scope()).history['i:30'] = history(20, 24)
         local line = UI.sureSentence(d, now)
-        assert(line and line:find('chance real buyers take 2'), tostring(line))''')
+        assert(line and line:find('chance real buyers take 2'), tostring(line))
+        assert(select(2, line:gsub('%%', '')) == 3, 'Sure percentage is shown once')''')
 
 
 

@@ -57,6 +57,13 @@ class CraftingTests(unittest.TestCase):
         assert(UI.craftTable.rows[1].recipe and UI.craftTable.rows[1].name:GetText()=='Bolt of Linen Cloth')
         UI.craftTable.rows[1]:Click();assert(UI.craftShop:IsEnabled())''')
 
+    def test_learned_professions_button_shows_known_ranks(self):
+        run(CRAFT + '''GetProfessions=function() return 171,164 end
+        GetProfessionInfo=function(id) if id==171 then return 'Alchemy',nil,225,300 end return 'Tailoring',nil,150,225 end
+        local UI=F.UI;UI.show('crafting');UI.craftProfButton:Click()
+        assert(UI.craftProfText:IsShown());local t=UI.craftProfText:GetText()
+        assert(t:find('Alchemy') and t:find('225/300') and t:find('Tailoring') and t:find('150/225'),t)''')
+
 
 DE = SETUP + '''local F=ForeverFlip
 local DE=F.Disenchant

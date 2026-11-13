@@ -1293,7 +1293,9 @@ UI.GROUPS = {
     },
     {
         label = "Shopping list",
-        pages = { { "shop", "My list" }, { "deals:shop", "Deals from the list" }, { "mybids", "My bids" } },
+        -- Saved intent and the live deals it produces share one view. Keep the old
+        -- deals:shop id as a compatibility alias in UI.show, but hide duplicate navigation.
+        pages = { { "shop", "My list" }, { "mybids", "My bids" } },
     },
     { label = "Crafting", pages = { { "crafting", "Crafting" } } },
     {
@@ -1421,6 +1423,9 @@ function UI.layoutTabs(group, id)
 end
 
 function UI.show(id)
+    if id == "deals:shop" then
+        id = "shop"
+    end
     local page, filter = id:match("^(%a+):?(%a*)$")
     if not page or not UI.pages[page] then
         page, filter, id = "deals", "all", "deals:all"
@@ -1627,9 +1632,10 @@ function UI.createDeals(p)
     UI.pageText:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 8, -20)
 
     local bar = footer(p, 92, "GameFontHighlightSmall")
-    UI.dealText = bar.text
-    UI.dealText:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 28)
-    UI.dealText:SetJustifyV("TOP")
+    -- Selected deal details can be longer than the footer. Use the shared scrolling
+    -- text block so every line remains reachable.
+    UI.dealBox = UI.scrollText(bar, 5, 6)
+    UI.dealText = UI.dealBox.text
     UI.cancelButton = button(bar, "Cancel", 96, function()
         F.Trade.cancel()
     end)
@@ -1860,10 +1866,9 @@ function UI.sureSentence(d, now)
     end
     local line = string.format(
         L(
-            "|cffffd100Sure|r %s: %d%% chance real buyers take %d at this price in %d h (%d bought at 95%% of it or more in %.1f h watched; %d%% real buyers)."
+            "|cffffd100Sure|r %s: chance real buyers take %d at this price in %d h (%d bought at 95%% of it or more in %.1f h watched; %d%% real buyers)."
         ),
         UI.sureText(sure),
-        math.floor(parts.p * 100 + 0.5),
         d.qty,
         math.floor(parts.selling + 0.5),
         math.floor(parts.units + 0.5),
@@ -2192,9 +2197,9 @@ function UI.refreshDeals()
     local op = F.Trade.op
     if d then
         local lines = UI.dealDetail(d, estimates[d.key] or saleEstimate(d, history, now), history[d.key], now)
-        UI.dealText:SetText(table.concat(lines, "\n"))
+        UI.dealBox.set(lines, d.key)
     else
-        UI.dealText:SetText(L("Select a deal. Its price is checked on the auction house before you can buy."))
+        UI.dealBox.set({ L("Select a deal. Its price is checked on the auction house before you can buy.") }, "")
     end
     UI.checkButton:SetEnabled(d ~= nil and not F.Deals.pending(d.key) and not F.Trade.busy() and not F.Scan.blocking())
     UI.ignoreButton:SetEnabled(d ~= nil)
@@ -2232,6 +2237,7 @@ function UI.createShop(p)
             { "Up to", 90 },
             { "Qty", 50 },
             { "Cheapest today", 100 },
+            { "Source/status", 120, "LEFT" },
             { "Status", 110, "LEFT" },
         },
         SHOP_ROWS,
@@ -2309,7 +2315,7 @@ function UI.refreshShop()
         e.state = e.blocked and 3 or (d and d.mode == "shop") and 1 or 2
     end
     rows = UI.shopTable.sort(rows, function(e, column)
-        return ({ e.name or e.key, e.max, e.qty, e.cheap, e.state })[column]
+        return ({ e.name or e.key, e.max, e.qty, e.cheap, e.state, e.state })[column]
     end)
     for i, r in ipairs(UI.shopTable.rows) do
         local e = rows[i]
@@ -2324,7 +2330,8 @@ function UI.refreshShop()
             r.cols[1]:SetText(e.max and U.money(e.max) or "-")
             r.cols[2]:SetText(e.qty or (e.blocked and "" or L("any")))
             r.cols[3]:SetText(today and today.min and U.money(today.min) or "-")
-            r.cols[4]:SetText(
+            r.cols[4]:SetText(e.blocked and L("ignored") or L("shopping list"))
+            r.cols[5]:SetText(
                 e.blocked and "|cff999999" .. L("ignored") .. "|r"
                     or d and d.mode == "shop" and "|cff40ff40" .. L("for sale now") .. "|r"
                     or L("watching")
@@ -3741,6 +3748,8 @@ function UI.refreshAuctions()
                 r.cols[4]:SetText("|cff40ff40" .. L("only yours") .. "|r")
             elseif status == "no_answer" then
                 r.cols[4]:SetText("|cffffd100" .. L("no answer") .. "|r")
+            elseif status == "pending" then
+                r.cols[4]:SetText("|cffffd100" .. L("checking...") .. "|r")
             else
                 r.cols[4]:SetText("|cff999999" .. L("not checked") .. "|r")
             end
@@ -4228,6 +4237,16 @@ function UI.createCrafting(p)
     )
     local bar = footer(p, 72)
     UI.craftText = bar.text
+    UI.craftProfText = text(bar, "GameFontHighlightSmall")
+    UI.craftProfText:SetPoint("TOPLEFT", bar, "TOPLEFT", 8, -6)
+    UI.craftProfText:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -8, -6)
+    UI.craftProfText:SetSpacing(2)
+    UI.craftProfText:Hide()
+    UI.craftProfButton = button(bar, "Learned professions", 150, function()
+        UI.craftProfOpen = not UI.craftProfOpen
+        UI.refreshCrafting()
+    end)
+    UI.craftProfButton:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
     UI.craftShop = button(bar, "Shop materials", 150, function()
         local r = UI.craftSelected
         if r then
@@ -4283,6 +4302,27 @@ function UI.refreshCrafting()
         empty:Hide()
     end
     local s = UI.craftSelected
+    if UI.craftProfOpen then
+        local professions = F.Crafting.professions()
+        local lines = { L("Learned professions") }
+        for _, profession in ipairs(professions) do
+            local rank = profession.rank
+                    and profession.maxRank
+                    and string.format("%d/%d", profession.rank, profession.maxRank)
+                or profession.rank and tostring(profession.rank)
+                or L("rank unknown")
+            lines[#lines + 1] = profession.name .. "  " .. rank
+        end
+        if #professions == 0 then
+            lines[#lines + 1] = L("No learned professions found. Open a profession window to refresh it.")
+        end
+        UI.craftText:Hide()
+        UI.craftProfText:SetText(table.concat(lines, "\n"))
+        UI.craftProfText:Show()
+    else
+        UI.craftProfText:Hide()
+        UI.craftText:Show()
+    end
     if s and s.missing then
         UI.craftText:SetText(
             L("A material of this recipe has no price yet: it needs a full scan or a merchant that sells it.")

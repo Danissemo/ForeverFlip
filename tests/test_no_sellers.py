@@ -60,6 +60,12 @@ class NoSellerTests(unittest.TestCase):
         run(NONE + '''T.checkPrice('c:10');run(1.1);assert(F.Deals.search);run(11)
         assert(T.noAnswer['c:10'] and not T.noSellers('c:10'),'the scan saw cloth listed')''')
 
+    def test_my_auction_reports_pending_owned_check(self):
+        run(NONE + '''local a={auctionID=1,id=10,key='c:10',qty=1,price=1000}
+        T.owned={a};F.Scan.last=nil;T.prices['c:10']={at=now-1000,rows={}}
+        T.checkingOwned={['c:10']=true}
+        assert(T.ownedStatus(a)=='pending','an in-flight owned check is explicit')''')
+
     def test_aux_price_is_preferred_over_a_guess(self):
         run(NONE + '''AuxForeverAPI={IsReady=function() return true end,GetUsualPrice=function(id) return id==70 and 54321 or nil end}
         T.checkPrice('i:70');run(1.1);answer()

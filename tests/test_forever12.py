@@ -372,6 +372,7 @@ class OtherTests(unittest.TestCase):
         assert(shown == 4 and current.selected:IsShown(), 'the pages open under Deals, the open one marked')
         UI.show('deals:shop')
         assert(UI.categories[2].group.label == 'Shopping list' and UI.categories[2].selected:IsShown(), 'list deals sit with the list')
+        assert(UI.section == 'shop' and #UI.categories[2].subs == 2, 'shopping list and live deals share one panel')
         for _, b in ipairs(UI.groupTabs[deals.group]) do assert(not b:IsShown(), 'no tabs above the page') end
         UI.show('stats'); UI.categories[1].scripts.OnClick(UI.categories[1])
         assert(UI.section == 'bids', 'a group opens the page it showed last')
