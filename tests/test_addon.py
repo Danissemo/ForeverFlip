@@ -231,7 +231,7 @@ class TradeTests(unittest.TestCase):
         fire('OWNED_AUCTIONS_UPDATED')
         local e=c.journal[#c.journal];assert(e.kind=='sell' and e.amount==29900-1495 and e.profit==29900-1495-20000)
         assert(not c.positions['i:30'])
-        fire('OWNED_AUCTIONS_UPDATED');assert(#c.journal==1,'booked once')''')
+        fire('OWNED_AUCTIONS_UPDATED');assert(#c.journal==2 and c.journal[1].kind=='post' and c.journal[2].kind=='sell','booked once')''')
 
     def test_post_asks_for_confirmation_when_the_game_does(self):
         run(SETUP + '''putBag(0,1,30,1);postNeedsConfirm=true

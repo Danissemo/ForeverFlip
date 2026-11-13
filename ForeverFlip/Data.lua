@@ -169,6 +169,7 @@ function D.daily(char)
 end
 
 function D.log(char, entry)
+    D.logLotEvent(char, entry)
     D.daily(char)
     char.journal[#char.journal + 1] = entry
     addDay(char, entry)
@@ -203,6 +204,87 @@ local FAILED_KINDS = { expired = true, ["return"] = true, cancel = true }
 -- posts that expired or were cancelled and the game's cancel fees, booked on the lot whose units
 -- were on sale. The last D.LOTS lots are kept.
 D.LOTS = 300
+-- Durable movements belong to a purchase, not to the rolling 500-entry activity journal.
+-- Keep the purchase origin when trimming movements; mark any missing history explicitly.
+D.LOT_EVENTS = 300
+local pendingEvents = setmetatable({}, { __mode = "k" })
+local function appendEvent(lot, event)
+    lot.events = lot.events or {}
+    lot.events[#lot.events + 1] = event
+    while #lot.events > D.LOT_EVENTS do
+        table.remove(lot.events, lot.events[1].kind == "buy" and 2 or 1)
+        lot.historyIncomplete = true
+    end
+    return event
+end
+
+local function movement(lot, e, qty, amount)
+    return appendEvent(lot, {
+        at = e.at,
+        kind = e.kind,
+        qty = qty,
+        amount = amount,
+        mode = e.mode,
+        bid = e.bid,
+        source = e.source,
+        estimated = e.estimated,
+        deposit = e.deposit,
+        accounted = e.accounted,
+    })
+end
+
+local function remember(char, kind, key, refs, at)
+    local p = pendingEvents[char] or {}
+    pendingEvents[char] = p
+    p[kind] = { key = key, refs = refs, at = at }
+end
+
+-- Accounting records exact FIFO allocations first; the journal supplies the observed exit kind.
+-- Calling this never books revenue, stock or costs a second time.
+function D.logLotEvent(char, e)
+    if not e.key then
+        return
+    end
+    local category = e.kind == "buy" and "buy"
+        or (e.kind == "sell" or e.kind == "vendor") and "sale"
+        or (e.kind == "cancel" or e.kind == "expired" or e.kind == "return") and "loss"
+    local pending = pendingEvents[char]
+    local p = category and pending and pending[category]
+    if p and p.key == e.key and (not p.at or not e.at or math.abs(p.at - e.at) <= 2) then
+        e.lots = {}
+        for _, ref in ipairs(p.refs) do
+            local event = ref.event
+            event.kind, event.estimated, event.accounted = e.kind, e.estimated, e.accounted
+            event.source = e.source or event.source
+            e.lots[#e.lots + 1] = { id = ref.lot.id, qty = event.qty, amount = event.amount }
+        end
+        pending[category] = nil
+        return
+    end
+    -- Non-financial movements (listing, returned items) use the same FIFO ownership convention.
+    if e.kind ~= "post" and e.kind ~= "cancel" and e.kind ~= "expired" and e.kind ~= "return" then
+        return
+    end
+    local left, allocated = e.lossQty or e.qty or 0, 0
+    local total = left
+    e.lots = {}
+    for _, lot in ipairs(D.lots(char)) do
+        if lot.key == e.key and left > 0 then
+            local n = math.min(left, lot.left or 0)
+            if n > 0 then
+                left = left - n
+                local amount = left == 0 and (e.amount or 0) - allocated
+                    or math.floor((e.amount or 0) * n / math.max(total, 1))
+                allocated = allocated + amount
+                local event = movement(lot, e, n, amount)
+                if e.deposit then
+                    event.deposit = math.floor(e.deposit * n / math.max(total, 1))
+                end
+                e.lots[#e.lots + 1] = { id = lot.id, qty = n, amount = amount }
+            end
+        end
+    end
+end
 -- Purchases of one item within D.LOT_MERGE seconds of the item's last lot join that lot: one
 -- position bought in several clicks (or bought back from the player's own posts) is one row.
 D.LOT_MERGE = 15 * 60
@@ -212,6 +294,10 @@ local function joinLot(into, lot)
     into.received, into.lost = (into.received or 0) + (lot.received or 0), (into.lost or 0) + (lot.lost or 0)
     into.soldAt = math.max(into.soldAt or 0, lot.soldAt or 0) > 0 and math.max(into.soldAt or 0, lot.soldAt or 0) or nil
     into.mode = into.mode or lot.mode
+    for _, e in ipairs(lot.events or {}) do
+        appendEvent(into, e)
+    end
+    into.historyIncomplete = into.historyIncomplete or lot.historyIncomplete
 end
 
 local function lotKind(mode, bid)
@@ -248,7 +334,7 @@ local function joinSaved(char)
     char.lots, char.lotsJoined = out, 1
 end
 
-local function shareLoss(lots, amount, qty)
+local function shareLoss(lots, amount, qty, at, refs)
     local units, first = 0, nil
     for _, lot in ipairs(lots) do
         if (lot.left or 0) > 0 then
@@ -260,6 +346,9 @@ local function shareLoss(lots, amount, qty)
         local last = lots[#lots]
         if last then
             last.lost = (last.lost or 0) + amount
+            if refs then
+                refs[#refs + 1] = { lot = last, event = movement(last, { kind = "loss", at = at }, qty or 0, amount) }
+            end
         end
         return
     end
@@ -272,6 +361,9 @@ local function shareLoss(lots, amount, qty)
             local share = left == 0 and amount - allocated or math.floor(amount * n / units)
             lot.lost = (lot.lost or 0) + share
             allocated = allocated + share
+            if refs then
+                refs[#refs + 1] = { lot = lot, event = movement(lot, { kind = "loss", at = at }, n, share) }
+            end
         end
     end
 end
@@ -333,6 +425,13 @@ function D.lots(char)
     end
     -- Older bid wins predate the purchase's bid flag. Require a unique exact match;
     -- the item alone cannot distinguish a bid from a later buyout.
+    for _, lot in ipairs(char.lots) do
+        if type(lot.events) ~= "table" then
+            -- Surviving totals are authoritative; the global journal may have lost the origin
+            -- and cannot safely attribute sales to these old lots.
+            lot.events, lot.historyIncomplete = {}, true
+        end
+    end
     for _, b in ipairs(char.bidLog or {}) do
         if b.outcome == "won" and b.ended then
             local match, n = nil, 0
@@ -374,18 +473,20 @@ function D.addCost(char, key, amount, at, qty)
     else
         s.profit = s.profit - amount
     end
-    local lots = openLots(char, key)
+    local lots, refs = openLots(char, key), {}
     if #lots > 0 then
-        shareLoss(lots, amount, qty)
+        shareLoss(lots, amount, qty, at, refs)
     else
         for i = #D.lots(char), 1, -1 do
             local lot = char.lots[i]
             if lot.key == key then
                 lot.lost = (lot.lost or 0) + amount
+                refs[#refs + 1] = { lot = lot, event = movement(lot, { kind = "loss", at = at }, qty or 0, amount) }
                 break
             end
         end
     end
+    remember(char, "loss", key, refs, at)
 end
 
 -- Journal losses can be exact recorded charges, reconstructed estimates, or an older
@@ -541,7 +642,7 @@ function D.recount(char, deposit)
 end
 
 -- Positions: what was bought and not yet sold, with its cost (average price).
-function D.addPosition(char, key, name, qty, cost, mode, exit, at, bid)
+function D.addPosition(char, key, name, qty, cost, mode, exit, at, bid, source)
     local p = char.positions[key]
     if not p then
         p = { qty = 0, cost = 0, name = name, since = at }
@@ -557,7 +658,7 @@ function D.addPosition(char, key, name, qty, cost, mode, exit, at, bid)
             into.mode = into.mode or mode
         else
             char.lotSeq = (char.lotSeq or 0) + 1
-            lots[#lots + 1] = {
+            into = {
                 id = char.lotSeq,
                 key = key,
                 name = name,
@@ -570,8 +671,17 @@ function D.addPosition(char, key, name, qty, cost, mode, exit, at, bid)
                 sold = 0,
                 received = 0,
                 lost = 0,
+                events = {},
             }
+            lots[#lots + 1] = into
         end
+        local event = movement(
+            into,
+            { at = at, kind = "buy", mode = mode, bid = bid, source = source or (bid and "bid" or "buyout") },
+            qty,
+            cost
+        )
+        remember(char, "buy", key, { { lot = into, event = event } }, at)
         while #lots > D.LOTS do
             table.remove(lots, 1)
         end
@@ -591,17 +701,21 @@ function D.sale(char, key, name, qty, amount, at)
     local since = char.positions[key] and char.positions[key].since
     local cost = D.takePosition(char, key, qty)
     -- The oldest lots of the item sold first; the money is shared by units.
-    local left = qty
+    local left, allocated, refs = qty, 0, {}
     for _, lot in ipairs(openLots(char, key)) do
         if left <= 0 then
             break
         end
         local take = math.min(left, lot.left)
         lot.left, lot.sold = lot.left - take, lot.sold + take
-        lot.received = lot.received + math.floor(amount * take / math.max(qty, 1) + 0.5)
+        local share = left == take and amount - allocated or math.floor(amount * take / math.max(qty, 1))
+        allocated = allocated + share
+        lot.received = lot.received + share
         lot.soldAt = at
         left = left - take
+        refs[#refs + 1] = { lot = lot, event = movement(lot, { kind = "sell", at = at }, take, share) }
     end
+    remember(char, "sale", key, refs, at)
     local s = D.itemStats(char, key, name)
     s.sold, s.earned, s.profit = s.sold + qty, s.earned + amount, s.profit + amount - cost
     if since and at then

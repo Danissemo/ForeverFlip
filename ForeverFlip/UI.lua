@@ -3425,9 +3425,6 @@ function UI.createUndercuts(p)
             for _, plan in ipairs(F.Trade.fightPlans()) do
                 if plan.auction.auctionID == UI.fightSelected then
                     F.Trade.fight(plan, id)
-                    if id == "buyout" or id == "raise" then
-                        UI.show("deals:shop")
-                    end
                 end
             end
             UI.refresh()
@@ -3641,14 +3638,11 @@ end
 
 function UI.refreshUndercuts()
     local plans = F.Trade.fightPlans()
-    local act, selected = 0, nil
+    local act, selected = F.Trade.fightCount(), nil
     for i, r in ipairs(UI.undercutTable.rows) do
         local plan = plans[i]
         if plan then
             local a = plan.auction
-            if plan.verdict == "undercut" or plan.verdict == "vendor" then
-                act = act + 1
-            end
             r.plan, r.key, r.link = plan, a.key, a.link
             r.icon:SetTexture(icon(a.id))
             r.name:SetText(nameOf(a.key or ("i:" .. a.id), a.link))
@@ -3700,10 +3694,20 @@ function UI.refreshUndercuts()
     UI.fightBox.set(lines, selected and selected.auction.auctionID or #plans)
     for id, b in pairs(UI.fightButtons) do
         local o = selected and selected[id]
-        b:SetEnabled(o ~= nil and not o.blocked and F.Trade.wayReady())
+        local job = F.Trade.fightOrderActive()
+        b:SetEnabled(
+            job and id == "buyout" and F.Trade.fightOrderReady()
+                or not job and o ~= nil and not o.blocked and (id == "wait" or F.Trade.wayReady())
+        )
     end
     UI.fightNext:SetText(L("Answer next") .. " (" .. act .. ")")
-    UI.fightNext:SetEnabled(act > 0 and F.Trade.wayReady())
+    UI.fightNext:SetEnabled(
+        act > 0
+            and (
+                F.Trade.fightOrderActive() and F.Trade.fightOrderReady()
+                or not F.Trade.fightOrderActive() and F.Trade.wayReady()
+            )
+    )
 end
 
 function UI.refreshAuctions()
@@ -4329,25 +4333,40 @@ function UI.createJournal(p)
     UI.unknownNo:SetPoint("LEFT", UI.unknownYes, "RIGHT", 6, 0)
     -- Every purchase and what became of it: what it cost, what its posts lost, what it sold for.
     UI.journalList = CreateFrame("Frame", nil, p)
-    UI.lotTable = table_(UI.journalList, {
-        { "Name" },
-        { "Sold", 86 }, -- "4878/5148" fits
-        { "Buy each", 70 },
-        { "Cost", 76 },
+    UI.lotTable = table_(
+        UI.journalList,
         {
-            "Lost",
-            64,
-            nil,
-            "Lost deposits and cancellation fees. ~ includes estimates or charges without a surviving journal entry.",
+            { "Name" },
+            { "Sold", 86 }, -- "4878/5148" fits
+            { "Buy each", 70 },
+            { "Cost", 76 },
+            {
+                "Lost",
+                64,
+                nil,
+                "Lost deposits and cancellation fees. ~ includes estimates or charges without a surviving journal entry.",
+            },
+            { "Sold for", 80 },
+            {
+                "Profit",
+                96,
+                nil,
+                "Unconfirmed: some vendor stock is absent from bags, but no sale was recorded. It may be elsewhere; no revenue is invented.",
+            },
         },
-        { "Sold for", 80 },
-        {
-            "Profit",
-            96,
-            nil,
-            "Unconfirmed: some vendor stock is absent from bags, but no sale was recorded. It may be elsewhere; no revenue is invented.",
-        },
-    }, 16, function() end)
+        12,
+        function(r)
+            if r.lotID and r.key then
+                UI.journalSelected = { id = r.lotID, key = r.key }
+                UI.refreshJournal()
+            end
+        end
+    )
+    UI.journalHistoryFrame = CreateFrame("Frame", nil, p)
+    UI.journalHistoryFrame:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 0, 0)
+    UI.journalHistoryFrame:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 0)
+    UI.journalHistoryFrame:SetHeight(54)
+    UI.journalHistory = UI.scrollText(UI.journalHistoryFrame, 3)
     UI.placeJournalLines(false)
 end
 
@@ -4355,7 +4374,52 @@ function UI.placeJournalLines(ask)
     local y = ask and JOURNAL_BELOW_ASK or JOURNAL_TOP
     UI.journalList:ClearAllPoints()
     UI.journalList:SetPoint("TOPLEFT", UI.journalPage, "TOPLEFT", 0, y)
-    UI.journalList:SetPoint("BOTTOMRIGHT", UI.journalPage, "BOTTOMRIGHT", 0, 0)
+    UI.journalList:SetPoint("BOTTOMRIGHT", UI.journalPage, "BOTTOMRIGHT", 0, 56)
+end
+
+-- Each line is one observed movement, with the purchase's original intent kept on the buy.
+-- Old aggregate totals are never presented as invented historical transactions.
+function UI.lotHistory(lot)
+    local lines = { lot.name or nameOf(lot.key or "") }
+    if lot.historyIncomplete then
+        lines[#lines + 1] = L("History incomplete: older movements were not retained; totals may include them.")
+    end
+    local labels = {
+        sell = "Auction sale",
+        vendor = "Vendor sale",
+        post = "Listed",
+        cancel = "Cancelled",
+        expired = "Expired",
+        ["return"] = "Returned",
+        loss = "Holding loss",
+    }
+    for _, e in ipairs(lot.events or {}) do
+        local label = L(labels[e.kind] or "Purchase")
+        if e.kind == "buy" then
+            label = L(e.source == "buyer_invoice" and "Purchase confirmed by mail" or e.bid and "Bid won" or "Buyout")
+                .. " · "
+                .. L(
+                    e.mode == "vendor" and "intended for vendor"
+                        or e.mode == "flip" and "intended for resale"
+                        or "purchase intent unknown"
+                )
+        end
+        local detail = string.format(
+            "%s · %s · %d × · %s%s",
+            e.at and date("%d.%m %H:%M", e.at) or "?",
+            label,
+            e.qty or 0,
+            e.estimated and "~" or "",
+            U.money(e.amount or 0)
+        )
+        if e.kind == "post" and e.deposit then
+            detail = detail .. " · " .. string.format(L("deposit %s (held)"), U.money(e.deposit))
+        elseif e.kind == "return" and e.accounted then
+            detail = detail .. " · " .. L("loss already recorded")
+        end
+        lines[#lines + 1] = detail
+    end
+    return lines
 end
 
 -- One purchase lot as the table shows it: profit only once every unit is sold (else what came
@@ -4428,6 +4492,20 @@ function UI.refreshJournal()
             lots[#lots + 1] = lot
         end
     end
+    local selected
+    for _, lot in ipairs(lots) do
+        local pick = UI.journalSelected
+        if pick and lot.id == pick.id and lot.key == pick.key then
+            selected = lot
+        end
+    end
+    if not selected then
+        UI.journalSelected = nil
+    end
+    UI.journalHistory.set(
+        selected and UI.lotHistory(selected) or {},
+        selected and (selected.key .. ":" .. selected.id) or ""
+    )
     table.sort(lots, function(a, b)
         return (a.at or 0) > (b.at or 0)
     end)
@@ -4442,6 +4520,7 @@ function UI.refreshJournal()
             local row = UI.lotRow(lot)
             local item = U.parseKey(lot.key or "")
             r.key = lot.key
+            r.lotID = lot.id
             r.icon:SetTexture(icon(item and item.id))
             r.name:SetText(date("%d.%m ", lot.at or 0) .. (lot.name or nameOf(lot.key or "")))
             r.cols[1]:SetText(row.sold)
@@ -4463,10 +4542,11 @@ function UI.refreshJournal()
             else
                 r.cols[6]:SetText("|cff999999" .. string.format(L("%d in stock"), lot.left) .. "|r")
             end
-            r.selected:Hide()
+            r.selected:SetShown(selected == lot)
             r:Show()
         else
             r.key = nil
+            r.lotID = nil
             r:Hide()
         end
     end

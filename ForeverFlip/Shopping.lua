@@ -55,13 +55,17 @@ end
 
 -- Units of the item were bought: a buy-out entry counts them down.
 function S.bought(key, qty)
-    local e = F.db and list()[key]
+    local e = S.orders[key] or F.db and list()[key]
     if not e or not e.resell or not e.qty then
         return
     end
     e.qty = e.qty - (qty or 1)
     if e.qty <= 0 then
-        S.remove(key)
+        if S.orders[key] == e then
+            S.orders[key] = nil
+        else
+            S.remove(key)
+        end
     end
 end
 
@@ -73,8 +77,20 @@ function S.remove(key)
     F.Engine.changed()
 end
 
+-- Session-only purchase intents from Selling/Undercuts never overwrite saved shopping rules.
+S.orders = {}
+function S.orderEntry(key)
+    return S.orders[key]
+end
+function S.order(key, max, qty, name, resell)
+    if not U.parseKey(key) or not U.finite(max) or max <= 0 or not U.finite(qty) or qty < 1 then
+        return false
+    end
+    S.orders[key] = { max = math.floor(max), qty = math.floor(qty), name = name, resell = resell, origin = "undercuts" }
+    return true
+end
 function S.entry(key)
-    return F.db and list()[key]
+    return S.orders[key] or F.db and list()[key]
 end
 
 function S.maxPrice(key)

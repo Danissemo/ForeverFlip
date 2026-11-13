@@ -474,6 +474,13 @@ end)
 function E.keyBuyNext()
     E.input()
     local T, UI = F.Trade, F.UI
+    if UI and UI.section == "deals" and UI.filter == "vendor" then
+        local ok, why = T.runClick()
+        if not ok then
+            E.notify(why)
+        end
+        return
+    end
     if T.op and T.op.state == "quoted" then
         if UI then
             UI.selected = T.op.key -- the confirmed purchase is the one on screen

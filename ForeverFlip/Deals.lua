@@ -119,7 +119,11 @@ function D.evaluate(g, vendor, history, now)
     if not deal and F.Shopping.entry(g.key) then
         deal = F.Shopping.evaluate(g.rows, g.key, D.budget())
     end
-    if g.kind == "gear" and F.Disenchant.active() then
+    local ordered = F.Shopping.orderEntry and F.Shopping.orderEntry(g.key)
+    if ordered then
+        deal, reason = F.Shopping.evaluate(g.rows, g.key, D.budget()), nil
+    end
+    if not ordered and g.kind == "gear" and F.Disenchant.active() then
         local de = F.Disenchant.evaluate(g.rows, g.id, D.budget())
         if de and (not deal or de.profit > deal.profit) then
             deal, reason = de, nil
@@ -496,7 +500,23 @@ end
 
 local function batchHeld(r)
     local batch = D.batch
-    return priority(r) > 0 and batch and batch.keySet and batch.keySet[r.key] and D.batchPaused()
+    local owned = F.Trade.checkingOwned
+    return priority(r) > 0
+        and not (owned and owned[r.key])
+        and batch
+        and batch.keySet
+        and batch.keySet[r.key]
+        and D.batchPaused()
+end
+
+-- A batch from another page stays queued while Selling is open. Its paused head
+-- must not hold this page's own checks behind it; retain FIFO among runnable work.
+local function nextRequest()
+    for i, r in ipairs(D.requests) do
+        if not batchHeld(r) then
+            return r, i
+        end
+    end
 end
 
 local nextGearKey -- below: the next version of a gear search
@@ -1278,8 +1298,8 @@ function D.step()
             s = nil
         end
     end
-    local first = D.requests[1]
-    if s and s.waitKey and first and priority(first) < priority(s) then
+    local first = nextRequest()
+    if s and s.waitKey and first and (priority(first) < priority(s) or batchHeld(s)) then
         parkSearch()
         s = nil
     end
@@ -1318,16 +1338,16 @@ function D.step()
     if D.search or F.Trade.busy() or not F.AH.isOpen() then
         return
     end
-    local r = D.requests[1]
+    local r, index = nextRequest()
     if F.Scan.blocking() and not (r and priority(r) == 0) then
         return
     end
     if r then
         if precise() >= r.readyAt then
-            table.remove(D.requests, 1)
+            table.remove(D.requests, index)
             D.queued[r.key] = nil
             if not startRequest(r) then
-                table.insert(D.requests, 1, r)
+                table.insert(D.requests, index, r)
                 D.queued[r.key] = r
             end
             retryChanged()

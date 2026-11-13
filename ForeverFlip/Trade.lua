@@ -103,11 +103,16 @@ function T.buy(key)
     if not T.canBuy(deal) then
         return false, "verify_first"
     end
-    F.Deals.fitWallet(deal)
-    if deal.cost > F.Engine.wallet() then
+    if deal.kind == "commodity" then
+        F.Deals.fitWallet(deal)
+    end
+    -- Item buckets may contain many auctions; this click buys only the first auction.
+    local lot = deal.lots and deal.lots[1]
+    local cost = deal.kind == "commodity" and deal.cost or lot and lot.unit or deal.cost
+    if cost > F.Engine.wallet() then
         return false, "no_money"
     end
-    if T.overLimit(deal.cost) then
+    if T.overLimit(cost) then
         return false, "spend_limit"
     end
     if not T.wayFree() then
@@ -221,21 +226,66 @@ end
 -- the same item is bought without a new search. Check all and the sniper rest meanwhile, so
 -- nothing else takes the way to the server. A deal that can no longer be bought is skipped.
 -- T.run = { key = deal being bought, skipped = { [key] = true }, bought = lots, clicked = time }
--- `first`: only the first deal is wanted.
+-- Score exactly the purchase a click can send. A commodity buys a quantity, while an item
+-- result's qty counts separate auctions and only its first auction can be bought per click.
+local function runPurchase(d)
+    if not d or d.mode ~= "vendor" or not U.finite(d.exit) or type(d.lots) ~= "table" then
+        return nil
+    end
+    local budget = F.Engine.wallet()
+    local limit = tonumber(F.db.settings.spendLimit) or 0
+    if limit > 0 then
+        budget = math.min(budget, limit * 10000 - (F.Engine.spent or 0))
+    end
+    local qty, cost, used = 0, 0, {}
+    for _, lot in ipairs(d.lots) do
+        if not U.finite(lot.unit) or lot.unit <= 0 or lot.unit >= d.exit then
+            break
+        end
+        local take
+        if d.kind == "commodity" then
+            take = math.min(lot.qty or 1, math.floor((budget - cost) / lot.unit))
+        else
+            take = lot.auctionID and lot.unit <= budget and 1 or 0
+        end
+        if take < 1 then
+            break
+        end
+        qty, cost = qty + take, cost + take * lot.unit
+        used[#used + 1] = { unit = lot.unit, qty = take, auctionID = lot.auctionID }
+        if d.kind ~= "commodity" then
+            break
+        end
+    end
+    if qty < 1 then
+        return nil
+    end
+    return { qty = qty, cost = cost, profit = qty * d.exit - cost, lots = used }
+end
+
+-- `first`: only the highest profit purchase is wanted. Verification and table order do not
+-- change the money earned by a click; exact ties use the key so selection stays stable.
 function T.runTargets(first)
-    local out = {}
-    local wallet = F.Engine.wallet()
+    local scored = {}
     for _, d in ipairs(F.Deals.list) do
-        if
-            d.mode == "vendor"
-            and d.cost <= wallet
-            and not T.overLimit(d.cost)
-            and not (T.run and T.run.skipped[d.key])
-        then
-            out[#out + 1] = d
-            if first then
-                break
+        if not (T.run and T.run.skipped[d.key]) then
+            local purchase = runPurchase(d)
+            if purchase then
+                scored[#scored + 1] = { deal = d, profit = purchase.profit }
             end
+        end
+    end
+    table.sort(scored, function(a, b)
+        if a.profit ~= b.profit then
+            return a.profit > b.profit
+        end
+        return a.deal.key < b.deal.key
+    end)
+    local out = {}
+    for _, score in ipairs(scored) do
+        out[#out + 1] = score.deal
+        if first then
+            break
         end
     end
     return out
@@ -275,32 +325,33 @@ function T.runStep()
     if T.busy() then
         return
     end
-    local d = run.key and F.Deals.get(run.key)
-    if d and d.mode ~= "vendor" then
-        d = nil
-    end
-    F.Deals.fitWallet(d)
-    if d and (d.cost > F.Engine.wallet() or T.overLimit(d.cost)) then
-        run.skipped[d.key], d = true, nil
-    end
+    -- Wallet changes, a completed purchase and live checks can all change the best next click.
+    local d = T.runTargets(true)[1]
     if not d then
-        run.key, run.checks = nil, 0
-        local next = T.runTargets(true)[1]
-        if not next then
-            T.run = nil
-            F.Engine.notify(run.bought > 0 and "run_done" or "no_deal")
-            F.Engine.changed()
-            return
-        end
-        run.key, d = next.key, next
+        T.run = nil
+        F.Engine.notify(run.bought > 0 and "run_done" or "no_deal")
+        F.Engine.changed()
+        return
+    end
+    if run.key ~= d.key then
+        run.key, run.checks = d.key, 0
         if F.UI then
-            F.UI.selected = next.key
+            F.UI.selected = d.key
         end
     end
     -- Checked and still fresh (and, for an item, its search is the last one): ready, even when the
     -- way to the server is busy for a moment. Only a stale check is sent again.
     local fresh = T.canBuy(d) and lotReady(d)
-    if fresh or F.Deals.pending(d.key) then
+    if F.Deals.pending(d.key) then
+        -- A Check all request is background priority and rests during a run. Promote this
+        -- existing request to a manual check; merely waiting for it would hold it forever.
+        local foreground = F.Deals.foreground()
+        if not foreground or foreground.key ~= d.key then
+            F.Deals.verify(d.key)
+        end
+        return
+    end
+    if fresh then
         return
     end
     -- Not checked lately, or another item was searched since: read the lot again. A deal that
@@ -326,9 +377,22 @@ function T.runClick()
             return false, "no_deal"
         end
     end
+    T.runStep()
+    if not T.run then
+        return false, "no_deal"
+    end
     local d = T.run.key and F.Deals.get(T.run.key)
     if not d or not T.readyToBuy(d) then
         return false, "run_checking"
+    end
+    if d.kind == "commodity" then
+        local purchase = runPurchase(d)
+        if not purchase then
+            return false, "no_deal"
+        end
+        d.qty, d.cost, d.profit, d.lots = purchase.qty, purchase.cost, purchase.profit, purchase.lots
+        d.maxUnit = d.lots[#d.lots].unit
+        d.roi = d.profit / d.cost
     end
     local ok, why = T.buy(d.key)
     if ok then
@@ -381,7 +445,7 @@ local function bought(op)
     local c = char()
     local name = displayName(op.key, op.link)
     awaitInvoice(c, name, op.qty)
-    F.Data.addPosition(c, op.key, name, op.qty, op.cost, op.mode, op.exit, clock())
+    F.Data.addPosition(c, op.key, name, op.qty, op.cost, op.mode, op.exit, clock(), nil, "addon")
     F.Data.log(
         c,
         { at = clock(), kind = "buy", key = op.key, name = name, qty = op.qty, amount = op.cost, mode = op.mode }
@@ -571,7 +635,7 @@ function T.settle(index, wasBought)
     if wasBought then
         F.Engine.spent = (F.Engine.spent or 0) + u.cost
         awaitInvoice(c, u.name, u.qty)
-        F.Data.addPosition(c, u.key, u.name, u.qty, u.cost, u.mode, u.exit, clock())
+        F.Data.addPosition(c, u.key, u.name, u.qty, u.cost, u.mode, u.exit, clock(), nil, "unknown_settled")
         F.Data.log(
             c,
             { at = clock(), kind = "buy", key = u.key, name = u.name, qty = u.qty, amount = u.cost, mode = u.mode }
@@ -1069,6 +1133,15 @@ function T.onAuctionCreated(auctionID)
     if #l.ids == 0 then
         local c = char()
         c.listings[#c.listings + 1] = l
+        F.Data.log(c, {
+            at = l.at,
+            kind = "post",
+            key = l.key,
+            name = l.name,
+            qty = l.qty,
+            amount = l.price * l.qty,
+            deposit = l.deposit,
+        })
         F.Engine.notify("posted")
     end
     l.ids[#l.ids + 1] = auctionID
@@ -1311,7 +1384,7 @@ function T.onBuyerInvoice(inv, link)
         return
     end
     local amount = math.floor(inv.bid * count / math.max(1, inv.count or 1) + 0.5)
-    F.Data.addPosition(c, key, inv.item, count, amount, "other", nil, clock())
+    F.Data.addPosition(c, key, inv.item, count, amount, "other", nil, clock(), nil, "buyer_invoice")
     F.Data.log(c, { at = clock(), kind = "buy", key = key, name = inv.item, qty = count, amount = amount })
     F.Engine.notify("bought_elsewhere")
     F.Engine.changed()
@@ -2235,15 +2308,80 @@ function T.fightPlans()
     return out
 end
 
--- Auctions where the advice is to act (undercut or vendor: a click cancels them).
+-- A pending direct buyout stays in this tab until all requested units are purchased.
+function T.fightOrderActive()
+    local job = T.fightOrder
+    if job and not F.Shopping.orderEntry(job.key) then
+        T.waiting = T.waiting or {}
+        T.waiting[job.auctionID] = job.cheapest
+        T.fightOrder = nil
+        job = nil
+    end
+    return job
+end
+
 function T.fightCount()
-    local n = 0
+    local job = T.fightOrderActive()
+    local n = job and 1 or 0
     for _, plan in ipairs(T.fightPlans()) do
-        if plan.verdict == "undercut" or plan.verdict == "vendor" then
+        local waited = T.waiting and T.waiting[plan.auction.auctionID] == plan.cheapest
+        if
+            not waited
+            and not (job and job.auctionID == plan.auction.auctionID)
+            and plan[plan.verdict]
+            and not plan[plan.verdict].blocked
+        then
             n = n + 1
         end
     end
     return n
+end
+
+function T.fightOrderReady()
+    local job = T.fightOrderActive()
+    if not job then
+        return false
+    end
+    if T.op and T.op.key == job.key and T.op.state == "quoted" then
+        return true
+    end
+    return T.readyToBuy(F.Deals.get(job.key))
+end
+
+function T.fightOrderClick()
+    local job = T.fightOrderActive()
+    if not job then
+        return false, "nothing_to_fight"
+    end
+    if T.op and T.op.key == job.key and T.op.state == "quoted" then
+        return T.confirm(), "confirm"
+    end
+    if not T.fightOrderReady() then
+        if not T.busy() and not F.Deals.pending(job.key) then
+            F.Deals.verify(job.key)
+        end
+        return false, "run_checking"
+    end
+    return T.buy(job.key)
+end
+
+local function startFightOrder(plan, target, units)
+    local item = U.parseKey(plan.key)
+    if
+        not F.Shopping.order(
+            plan.key,
+            U.below(target, item and item.kind),
+            units,
+            U.linkName(plan.auction.link),
+            target
+        )
+    then
+        return false
+    end
+    T.fightOrder = { key = plan.key, auctionID = plan.auction.auctionID, cheapest = plan.cheapest }
+    F.Deals.verify(plan.key)
+    F.Engine.changed()
+    return true, "run_checking"
 end
 
 local function remember(key)
@@ -2278,28 +2416,21 @@ function T.fight(plan, id)
         return true
     end
     if id == "buyout" then
-        local item = U.parseKey(plan.key)
-        local max = U.below(plan.auction.price or 0, item and item.kind)
-        if not F.Shopping.add(plan.key, max, o.units, U.linkName(plan.auction.link), plan.auction.price) then
-            return false
+        local job = T.fightOrderActive()
+        if job and job.key == plan.key then
+            return T.fightOrderClick()
         end
-        F.Deals.verify(plan.key)
-        return true
+        if T.busy() then
+            return false, "buy_busy"
+        end
+        return startFightOrder(plan, plan.auction.price or 0, o.units)
     end
     if id == "raise" then
-        -- The lots below the target go on the shopping list, then yours is cancelled: once they are
-        -- bought, the cheapest other seller is the wall and posting again lands just below it.
-        local item = U.parseKey(plan.key)
-        local max = U.below(o.target, item and item.kind)
-        if not F.Shopping.add(plan.key, max, o.units, U.linkName(plan.auction.link), o.target) then
-            return false
-        end
         if not T.cancelAuction(plan.auction) then
-            return false
+            return false, "post_busy"
         end
         remember(plan.key)
-        F.Deals.verify(plan.key)
-        return true
+        return startFightOrder(plan, o.target, o.units)
     end
     if not T.cancelAuction(plan.auction) then
         return false
@@ -2312,13 +2443,16 @@ function T.fight(plan, id)
     return true
 end
 
--- One click: the next auction where acting pays (undercut or vendor) is answered.
+-- One click: the next actionable auction plan is answered, including buyout, raise and vendor.
 function T.fightNext()
+    if T.fightOrderActive() then
+        return T.fightOrderClick()
+    end
     for _, plan in ipairs(T.fightPlans()) do
         local waited = T.waiting and T.waiting[plan.auction.auctionID] == plan.cheapest
-        if not waited and (plan.verdict == "undercut" or plan.verdict == "vendor") then
-            local ok = T.fight(plan)
-            return ok, ok and "cancelled" or "post_busy"
+        if not waited and plan[plan.verdict] and not plan[plan.verdict].blocked then
+            local ok, why = T.fight(plan)
+            return ok, why or (ok and (plan.verdict == "wait" and "fight_wait" or "cancelled") or "post_busy")
         end
     end
     return false, "nothing_to_fight"
