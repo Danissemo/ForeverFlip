@@ -3765,15 +3765,15 @@ function UI.createAnalytics(p)
     local top = CreateFrame("Frame", nil, p)
     top:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
     top:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, 0)
-    top:SetHeight(176)
+    top:SetHeight(196)
     -- One big line first (did I earn?), then plain-word lines, then what to do now.
-    UI.resultsHead = text(top, "GameFontNormalLarge")
+    UI.resultsHead = text(top, "GameFontNormal")
     UI.resultsHead:SetPoint("TOPLEFT", top, "TOPLEFT", 10, -8)
-    UI.resultsHead:SetWidth(330)
+    UI.resultsHead:SetWidth(320)
     UI.resultsHead:SetJustifyH("LEFT")
     UI.resultsText = text(top, "GameFontHighlightSmall")
     UI.resultsText:SetPoint("TOPLEFT", UI.resultsHead, "BOTTOMLEFT", 0, -6)
-    UI.resultsText:SetWidth(330)
+    UI.resultsText:SetWidth(320)
     UI.resultsText:SetSpacing(3)
     UI.periodButtons = {}
     for i, n in ipairs({ 7, 30 }) do
@@ -3803,11 +3803,11 @@ function UI.createAnalytics(p)
     views:SetHeight(26)
     UI.viewButtons = {}
     for i, v in ipairs(MARKET_VIEWS) do
-        local b = button(views, v[2], 116, function()
+        local b = button(views, v[2], 100, function()
             UI.marketView = v[1]
             UI.refresh()
         end)
-        b:SetPoint("LEFT", views, "LEFT", 6 + (i - 1) * 120, 0)
+        b:SetPoint("LEFT", views, "LEFT", 6 + (i - 1) * 104, 0)
         UI.viewButtons[v[1]] = b
     end
     local list = CreateFrame("Frame", nil, p)
@@ -3822,7 +3822,7 @@ function UI.createAnalytics(p)
             { "Change", 60 },
             { "Sells a day", 74 },
         },
-        9,
+        8,
         function(row)
             if row.key then
                 F.Deals.verify(row.key)
@@ -3916,9 +3916,7 @@ function UI.refreshAnalytics()
     lines[#lines + 1] = "|cffffd100" .. L("What to do:") .. "|r " .. tip
     UI.resultsText:SetText(table.concat(lines, "\n"))
     -- Chart.
-    UI.chartTitle:SetText(
-        string.format(L("Profit per day, last %d days (green: earned, red: lost; today on the right)"), days)
-    )
+    UI.chartTitle:SetText(string.format(L("Profit a day, last %d days (today on the right)"), days))
     local maxAbs = 1
     for _, d in ipairs(r.days) do
         maxAbs = math.max(maxAbs, math.abs(d.profit))
