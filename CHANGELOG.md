@@ -6,8 +6,20 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Purchases of one item close together are one lot.** Buys of the same item within 15 minutes
+  of its last lot (one position bought in several clicks, or bought back from your own posts) join
+  that lot in the journal table; lots saved before are joined once.
+- **Analytics overview layout.** The results on the left with Earned most, Lost most and What to
+  do as labels beside their text; the chart's title and the 7/30 days buttons on one row, the
+  chart under them over the full height (its zero line splits gains and losses), a rule above the
+  tabs.
+
 ### Fixed
 
+- **The journal table's scroll bar jumped back to the top.** The rows were windowed twice; the
+  table also shows 16 rows now, filling its block.
 - **Checks of auctions only you sell stalled.** WoW Forever never answers a search of an item no
   other player sells: each such check waited out its time, forgot the item's versions (the next
   check browsed again) and was sent once more at the end. A search with no answer of an item the

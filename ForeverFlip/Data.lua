@@ -199,6 +199,41 @@ end
 -- posts that expired or were cancelled and the game's cancel fees, booked on the lot whose units
 -- were on sale. The last D.LOTS lots are kept.
 D.LOTS = 300
+-- Purchases of one item within D.LOT_MERGE seconds of the item's last lot join that lot: one
+-- position bought in several clicks (or bought back from the player's own posts) is one row.
+D.LOT_MERGE = 15 * 60
+local function joinLot(into, lot)
+    into.qty, into.cost = (into.qty or 0) + (lot.qty or 0), (into.cost or 0) + (lot.cost or 0)
+    into.left, into.sold = (into.left or 0) + (lot.left or 0), (into.sold or 0) + (lot.sold or 0)
+    into.received, into.lost = (into.received or 0) + (lot.received or 0), (into.lost or 0) + (lot.lost or 0)
+    into.soldAt = math.max(into.soldAt or 0, lot.soldAt or 0) > 0 and math.max(into.soldAt or 0, lot.soldAt or 0) or nil
+    into.mode = into.mode or lot.mode
+end
+
+-- The item's last lot, if a purchase at `at` joins it.
+local function lotToJoin(lots, key, at)
+    for i = #lots, 1, -1 do
+        local lot = lots[i]
+        if lot.key == key then
+            return at and lot.at and at - lot.at <= D.LOT_MERGE and at >= lot.at and lot or nil
+        end
+    end
+end
+
+-- Lots booked before purchases were joined: each item's lots bought close together become one.
+local function joinSaved(char)
+    local out = {}
+    for _, lot in ipairs(char.lots) do
+        local into = lotToJoin(out, lot.key, lot.at)
+        if into then
+            joinLot(into, lot)
+        else
+            out[#out + 1] = lot
+        end
+    end
+    char.lots, char.lotsJoined = out, 1
+end
+
 function D.lots(char)
     if type(char.lots) ~= "table" then
         char.lots = {}
@@ -206,22 +241,27 @@ function D.lots(char)
         local open = {}
         for _, e in ipairs(char.journal or {}) do
             if e.kind == "buy" and e.key and (e.qty or 0) > 0 then
-                char.lotSeq = char.lotSeq + 1
-                local lot = {
-                    id = char.lotSeq,
-                    key = e.key,
-                    name = e.name,
-                    at = e.at,
-                    qty = e.qty,
-                    cost = e.amount or 0,
-                    left = e.qty,
-                    sold = 0,
-                    received = 0,
-                    lost = 0,
-                }
-                char.lots[#char.lots + 1] = lot
-                open[e.key] = open[e.key] or {}
-                table.insert(open[e.key], lot)
+                local lot = lotToJoin(char.lots, e.key, e.at)
+                if lot then
+                    lot.qty, lot.cost, lot.left = lot.qty + e.qty, lot.cost + (e.amount or 0), lot.left + e.qty
+                else
+                    char.lotSeq = char.lotSeq + 1
+                    lot = {
+                        id = char.lotSeq,
+                        key = e.key,
+                        name = e.name,
+                        at = e.at,
+                        qty = e.qty,
+                        cost = e.amount or 0,
+                        left = e.qty,
+                        sold = 0,
+                        received = 0,
+                        lost = 0,
+                    }
+                    char.lots[#char.lots + 1] = lot
+                    open[e.key] = open[e.key] or {}
+                    table.insert(open[e.key], lot)
+                end
             elseif (e.kind == "sell" or e.kind == "vendor") and e.key and open[e.key] then
                 local left = e.qty or 0
                 for _, lot in ipairs(open[e.key]) do
@@ -248,6 +288,9 @@ function D.lots(char)
         while #char.lots > D.LOTS do
             table.remove(char.lots, 1)
         end
+        char.lotsJoined = 1
+    elseif char.lotsJoined ~= 1 then
+        joinSaved(char)
     end
     return char.lots
 end
@@ -303,20 +346,26 @@ function D.addPosition(char, key, name, qty, cost, mode, exit, at)
         local s = D.itemStats(char, key, name)
         s.bought, s.spent = s.bought + qty, s.spent + cost
         local lots = D.lots(char)
-        char.lotSeq = (char.lotSeq or 0) + 1
-        lots[#lots + 1] = {
-            id = char.lotSeq,
-            key = key,
-            name = name,
-            at = at,
-            qty = qty,
-            cost = cost,
-            mode = mode,
-            left = qty,
-            sold = 0,
-            received = 0,
-            lost = 0,
-        }
+        local into = lotToJoin(lots, key, at)
+        if into then
+            into.qty, into.cost, into.left = into.qty + qty, into.cost + cost, into.left + qty
+            into.mode = into.mode or mode
+        else
+            char.lotSeq = (char.lotSeq or 0) + 1
+            lots[#lots + 1] = {
+                id = char.lotSeq,
+                key = key,
+                name = name,
+                at = at,
+                qty = qty,
+                cost = cost,
+                mode = mode,
+                left = qty,
+                sold = 0,
+                received = 0,
+                lost = 0,
+            }
+        end
         while #lots > D.LOTS do
             table.remove(lots, 1)
         end

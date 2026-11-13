@@ -10,7 +10,7 @@ local c = F.Data.char(F.db, F.Engine.owner())
 
 class PurchaseLotTests(unittest.TestCase):
     def test_sales_take_the_oldest_lot_first(self):
-        run(LOTS + '''F.Data.addPosition(c, 'c:10', 'Linen Cloth', 2, 200, 'flip', 150, now - 100)
+        run(LOTS + '''F.Data.addPosition(c, 'c:10', 'Linen Cloth', 2, 200, 'flip', 150, now - 3600) -- an hour apart: two lots
         F.Data.addPosition(c, 'c:10', 'Linen Cloth', 3, 450, 'flip', 150, now)
         F.Data.sale(c, 'c:10', 'Linen Cloth', 3, 600, now)
         local a, b = c.lots[1], c.lots[2]
@@ -57,6 +57,22 @@ class PurchaseLotTests(unittest.TestCase):
         local r = UI.lotTable.rows[1]
         assert(r:IsShown() and r.cols[1]:GetText() == '0/1', r.cols[1]:GetText())
         assert(r.cols[6]:GetText():find('1 in stock'), r.cols[6]:GetText())''')
+
+
+    def test_purchases_close_together_are_one_lot(self):
+        run(LOTS + '''for i = 1, 6 do F.Data.addPosition(c, 'c:10', 'Linen Cloth', 104, 21657, 'flip', 300, now + i) end
+        F.Data.addPosition(c, 'c:10', 'Linen Cloth', 2, 100, 'flip', 300, now + 3 * 3600)
+        assert(#c.lots == 2 and c.lots[1].qty == 624 and c.lots[1].cost == 6 * 21657 and c.lots[1].left == 624)''')
+
+    def test_saved_lots_bought_close_together_are_joined(self):
+        run(LOTS + '''c.lotsJoined = nil
+        c.lots = {
+            { id = 1, key = 'c:10', at = now, qty = 4, cost = 400, left = 0, sold = 4, received = 600, lost = 10 },
+            { id = 2, key = 'c:10', at = now + 9, qty = 4, cost = 400, left = 4, sold = 0, received = 0, lost = 0 },
+            { id = 3, key = 'c:10', at = now + 7200, qty = 1, cost = 100, left = 1, sold = 0, received = 0, lost = 0 },
+        }
+        local lots = F.Data.lots(c)
+        assert(#lots == 2 and lots[1].qty == 8 and lots[1].left == 4 and lots[1].received == 600 and lots[1].lost == 10)''')
 
 
 if __name__ == '__main__':

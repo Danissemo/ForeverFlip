@@ -3766,36 +3766,66 @@ function UI.createAnalytics(p)
     top:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
     top:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, 0)
     top:SetHeight(196)
-    -- One big line first (did I earn?), then plain-word lines, then what to do now.
+    -- Left: the headline (did I earn?), the plain-word lines, a rule, then the items that earned
+    -- and lost most and what to do, each label with its text indented beside it. Right: the
+    -- chart's title with the period buttons, the chart under them. A rule above the tabs.
+    local LEFT_W = 320
     UI.resultsHead = text(top, "GameFontNormal")
     UI.resultsHead:SetPoint("TOPLEFT", top, "TOPLEFT", 10, -8)
-    UI.resultsHead:SetWidth(320)
+    UI.resultsHead:SetWidth(LEFT_W)
     UI.resultsHead:SetJustifyH("LEFT")
     UI.resultsText = text(top, "GameFontHighlightSmall")
     UI.resultsText:SetPoint("TOPLEFT", UI.resultsHead, "BOTTOMLEFT", 0, -6)
-    UI.resultsText:SetWidth(320)
+    UI.resultsText:SetWidth(LEFT_W)
+    UI.resultsText:SetJustifyH("LEFT")
     UI.resultsText:SetSpacing(3)
+    local rule = top:CreateTexture(nil, "ARTWORK")
+    rule:SetColorTexture(1, 0.82, 0, 0.25)
+    rule:SetHeight(1)
+    rule:SetPoint("TOPLEFT", UI.resultsText, "BOTTOMLEFT", 0, -5)
+    rule:SetWidth(LEFT_W)
+    UI.resultsPairs = {}
+    local above = rule
+    for _, id in ipairs({ "best", "worst", "todo" }) do
+        local label = text(top, "GameFontHighlightSmall")
+        label:SetPoint("TOPLEFT", above, "BOTTOMLEFT", 0, id == "best" and -5 or -3)
+        label:SetJustifyH("LEFT")
+        local value = text(top, "GameFontHighlightSmall")
+        value:SetPoint("TOPLEFT", label, "TOPRIGHT", 4, 0)
+        value:SetPoint("RIGHT", top, "LEFT", 10 + LEFT_W, 0)
+        value:SetJustifyH("LEFT")
+        value:SetSpacing(2)
+        UI.resultsPairs[id] = { label = label, value = value }
+        above = value
+    end
     UI.periodButtons = {}
     for i, n in ipairs({ 7, 30 }) do
-        local b = button(top, n == 7 and "7 days" or "30 days", 70, function()
+        local b = button(top, n == 7 and "7 days" or "30 days", 64, function()
             UI.analyticsDays = n
             UI.refresh()
         end)
-        b:SetPoint("TOPRIGHT", top, "TOPRIGHT", -8 - (2 - i) * 74, -6)
+        b:SetPoint("TOPRIGHT", top, "TOPRIGHT", -8 - (2 - i) * 68, -6)
         UI.periodButtons[n] = b
     end
-    -- Profit per day: bars above (profit) or below (loss) a zero line.
+    -- Profit per day: bars above (profit) or below (loss) a zero line placed so the bars use the
+    -- whole height (UI.refreshAnalytics).
     local chart = CreateFrame("Frame", nil, top)
-    chart:SetPoint("TOPRIGHT", top, "TOPRIGHT", -8, -34)
-    chart:SetSize(300, 120)
+    chart:SetPoint("TOPLEFT", top, "TOPLEFT", 20 + LEFT_W, -34)
+    chart:SetPoint("BOTTOMRIGHT", top, "BOTTOMRIGHT", -8, 8)
     local zero = chart:CreateTexture(nil, "ARTWORK")
     zero:SetColorTexture(1, 1, 1, 0.25)
     zero:SetHeight(1)
-    zero:SetPoint("LEFT", chart, "LEFT", 0, 10)
-    zero:SetPoint("RIGHT", chart, "RIGHT", 0, 10)
-    UI.chart, UI.bars = chart, {}
+    UI.chart, UI.bars, UI.chartZero = chart, {}, zero
     UI.chartTitle = text(top, "GameFontNormalSmall")
-    UI.chartTitle:SetPoint("BOTTOMLEFT", chart, "TOPLEFT", 0, 2)
+    UI.chartTitle:SetPoint("TOPLEFT", top, "TOPLEFT", 20 + LEFT_W, -12)
+    UI.chartTitle:SetPoint("RIGHT", UI.periodButtons[7], "LEFT", -6, 0)
+    UI.chartTitle:SetJustifyH("LEFT")
+    UI.chartTitle:SetWordWrap(false)
+    local tabsRule = top:CreateTexture(nil, "ARTWORK")
+    tabsRule:SetColorTexture(1, 0.82, 0, 0.25)
+    tabsRule:SetHeight(1)
+    tabsRule:SetPoint("BOTTOMLEFT", top, "BOTTOMLEFT", 6, 0)
+    tabsRule:SetPoint("BOTTOMRIGHT", top, "BOTTOMRIGHT", -6, 0)
 
     local views = CreateFrame("Frame", nil, p)
     views:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, 0)
@@ -3893,12 +3923,6 @@ function UI.refreshAnalytics()
         end
         return table.concat(out, ", ")
     end
-    if #r.best > 0 then
-        lines[#lines + 1] = "|cff40ff40" .. L("Earned most:") .. "|r " .. names(r.best)
-    end
-    if #r.worst > 0 then
-        lines[#lines + 1] = "|cffff6060" .. L("Lost most:") .. "|r " .. names(r.worst)
-    end
     -- What to do now: the one thing that matters most.
     local tip
     if r.stale > 0 then
@@ -3913,31 +3937,50 @@ function UI.refreshAnalytics()
     else
         tip = L("All good: keep buying deals with a green Sure and post them from Selling, My items.")
     end
-    lines[#lines + 1] = "|cffffd100" .. L("What to do:") .. "|r " .. tip
     UI.resultsText:SetText(table.concat(lines, "\n"))
-    -- Chart.
-    UI.chartTitle:SetText(string.format(L("Profit a day, last %d days (today on the right)"), days))
-    local maxAbs = 1
-    for _, d in ipairs(r.days) do
-        maxAbs = math.max(maxAbs, math.abs(d.profit))
+    local pairsText = {
+        best = { "|cff40ff40" .. L("Earned most:") .. "|r", #r.best > 0 and names(r.best) or "-" },
+        worst = { "|cffff6060" .. L("Lost most:") .. "|r", #r.worst > 0 and names(r.worst) or "-" },
+        todo = { "|cffffd100" .. L("What to do:") .. "|r", tip },
+    }
+    for id, pair in pairs(UI.resultsPairs) do
+        pair.label:SetText(pairsText[id][1])
+        pair.value:SetText(pairsText[id][2])
     end
-    local width = math.floor(300 / #r.days)
+    -- Chart.
+    UI.chartTitle:SetText(string.format(L("Profit a day, last %d days"), days))
+    -- The zero line sits where the gains and losses of the period split the height, so the bars
+    -- use all of it.
+    local up, down = 0, 0
+    for _, d in ipairs(r.days) do
+        up, down = math.max(up, d.profit), math.max(down, -d.profit)
+    end
+    local height = (UI.chart.GetHeight and UI.chart:GetHeight() or 0)
+    height = height > 20 and height or 140
+    local range = math.max(1, up + down)
+    local zeroY = math.floor(height * down / range + 0.5)
+    UI.chartZero:ClearAllPoints()
+    UI.chartZero:SetPoint("BOTTOMLEFT", UI.chart, "BOTTOMLEFT", 0, zeroY)
+    UI.chartZero:SetPoint("BOTTOMRIGHT", UI.chart, "BOTTOMRIGHT", 0, zeroY)
+    local chartWidth = (UI.chart.GetWidth and UI.chart:GetWidth() or 0)
+    chartWidth = chartWidth > 20 and chartWidth or 300
+    local width = math.floor(chartWidth / #r.days)
     for i, d in ipairs(r.days) do
         local bar = UI.bars[i]
         if not bar then
             bar = UI.chart:CreateTexture(nil, "ARTWORK")
             UI.bars[i] = bar
         end
-        local h = math.max(1, math.floor(math.abs(d.profit) / maxAbs * 50))
+        local h = math.max(1, math.floor(math.abs(d.profit) / range * height))
         bar:ClearAllPoints()
         bar:SetWidth(math.max(2, width - 2))
         bar:SetHeight(h)
         if d.profit >= 0 then
             bar:SetColorTexture(0.25, 0.85, 0.35, 0.9)
-            bar:SetPoint("BOTTOMLEFT", UI.chart, "LEFT", (i - 1) * width, 10)
+            bar:SetPoint("BOTTOMLEFT", UI.chart, "BOTTOMLEFT", (i - 1) * width, zeroY)
         else
             bar:SetColorTexture(0.9, 0.3, 0.3, 0.9)
-            bar:SetPoint("TOPLEFT", UI.chart, "LEFT", (i - 1) * width, 10)
+            bar:SetPoint("TOPLEFT", UI.chart, "BOTTOMLEFT", (i - 1) * width, zeroY)
         end
         bar:Show()
     end
@@ -4148,7 +4191,7 @@ function UI.createJournal(p)
         { "Lost", 60 },
         { "Sold for", 80 },
         { "Profit", 80 },
-    }, 12, function() end)
+    }, 16, function() end)
     UI.placeJournalLines(false)
 end
 
@@ -4215,9 +4258,9 @@ function UI.refreshJournal()
         local row = UI.lotRow(lot)
         return ({ lot.name or "", lot.sold, row.each, lot.cost, lot.lost or 0, lot.received, row.profit })[column]
     end)
-    local shown = UI.lotTable.window(lots)
+    -- lots is already the part the rows show (sort windows it): windowing it again reset the scroll.
     for i, r in ipairs(UI.lotTable.rows) do
-        local lot = shown[i]
+        local lot = lots[i]
         if lot then
             local row = UI.lotRow(lot)
             local item = U.parseKey(lot.key or "")
