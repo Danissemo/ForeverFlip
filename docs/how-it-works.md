@@ -51,8 +51,9 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    the call itself. WoW Forever does not always send `REPLICATE_ITEM_LIST_UPDATE`, so the job also
    polls the number of replicated auctions once a second. The scan counts as arrived when that
    number has changed and has stopped growing. Since launch the answer can take minutes, so the
-   job waits up to 5 minutes (`S.ANSWER_WAIT`), showing the seconds; with no answer it gives up,
-   and the next attempt waits 15 minutes and 20 seconds from that call (`S.COOLDOWN`): the server
+   job waits up to 10 minutes (`S.ANSWER_WAIT`), showing the seconds; with no answer it gives up,
+   and the next attempt waits 15 minutes and 20 seconds from that call (`S.COOLDOWN`), 5 minutes more
+   for each call left unanswered in a row, up to 30 minutes (`S.window`; an answer resets it): the server
    counts its 15 minutes from every call, answered or not, so an earlier retry starts them again
    (seen in game: three unanswered calls in a row, each sooner than 15 minutes after the one
    before). Searches and the sniper wait for the answer: when

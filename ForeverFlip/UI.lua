@@ -41,7 +41,7 @@ local MESSAGES = {
     bags_full = "The bags are full.",
     scan_done = "Full scan processed.",
     scan_empty = "The auction house returned an empty scan. Try again later.",
-    scan_timeout = "The server sent no full scan in 5 minutes (the list stayed empty; another addon or another character of the account may have used the 15-minute window). Next try 15 minutes after this one: an earlier call would start the server's wait again.",
+    scan_timeout = "The server sent no full scan in 10 minutes (it is busy, or another addon or character of the account used the 15-minute window). The next try waits 5 minutes longer for each call left unanswered: an earlier call would start the server's wait again.",
     scan_unsettled = "The full scan list kept changing for 5 minutes and was not read. Next try 15 minutes after this one.",
     scan_partial = "The server sent only a part of the full scan list and stopped. A part is not used (its missing lots would read as bought): the deals and sales of the last complete scan stay. Next try 15 minutes after this one.",
     scan_dropped = "The server threw the full scan request away (too many requests). Next try in 10 seconds.",
@@ -720,25 +720,34 @@ end
 -- whole block. box.set(lines) replaces them and keeps the place when the text stays alike.
 function UI.scrollText(parent, rows, top, bottom)
     local LINE = 14
-    local box = { offset = 0, lines = {}, rows = rows }
-    box.text = text(parent, "GameFontHighlightSmall")
-    box.text:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -(top or 6))
-    box.text:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -(8 + SCROLL_WIDTH), -(top or 6))
-    box.text:SetJustifyH("LEFT")
-    if box.text.SetJustifyV then
-        box.text:SetJustifyV("TOP")
+    local box = { offset = 0, lines = {}, rows = rows, shown = "" }
+    -- One text line per row: a single string that does not wrap shows only its first line in game.
+    box.rowTexts = {}
+    for i = 1, rows do
+        local t = text(parent, "GameFontHighlightSmall")
+        t:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -(top or 6) - (i - 1) * LINE)
+        t:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -(8 + SCROLL_WIDTH), -(top or 6) - (i - 1) * LINE)
+        t:SetJustifyH("LEFT")
+        t:SetWordWrap(false)
+        box.rowTexts[i] = t
     end
-    box.text:SetWordWrap(false)
-    box.text:SetSpacing(2)
+    -- What the rows show now, as one text (the tests and the hover read it).
+    box.text = {
+        GetText = function()
+            return box.shown
+        end,
+    }
     local anchor = CreateFrame("Frame", nil, parent)
     anchor:SetSize(1, 1)
     anchor:SetPoint("BOTTOMRIGHT", parent, "TOPRIGHT", -(SCROLL_WIDTH + 4), -(top or 6))
     local function render()
         local shown = {}
-        for i = box.offset + 1, math.min(#box.lines, box.offset + rows) do
-            shown[#shown + 1] = box.lines[i]
+        for i = 1, rows do
+            local line = box.lines[box.offset + i]
+            box.rowTexts[i]:SetText(line or "")
+            shown[#shown + 1] = line
         end
-        box.text:SetText(table.concat(shown, "\n"))
+        box.shown = table.concat(shown, "\n")
         box.bar.update(box.offset, #box.lines, rows)
     end
     local function scrollTo(offset)

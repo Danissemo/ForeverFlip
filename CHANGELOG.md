@@ -6,6 +6,15 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Full scans stopped for hours.** The server answered ever more slowly (2, then 4, then over
+  5 minutes); the scan gave up at 5 minutes and called again while the server still worked on the
+  last call, and in game no scan came for seven hours. It now waits up to 10 minutes, and each call
+  left unanswered in a row adds 5 minutes before the next (up to 30); an answer resets it.
+- **Undercuts text showed one line.** A text that does not wrap shows only its first line in game;
+  each row of the block now has its own line, so the block is filled.
+
 ## [2.0.0-beta.1] - 2026-11-12
 
 ### Added

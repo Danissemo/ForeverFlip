@@ -99,7 +99,9 @@ class ScrollTextTests(unittest.TestCase):
         UI.fightBox.bar.forward:Click()
         local shown = UI.fightText:GetText()
         assert(shown:find('line 8') and shown:sub(1, 6) == 'line 2', shown)
-        assert(UI.fightBox.full():find('line 12'), 'the whole text stays readable')''')
+        assert(UI.fightBox.full():find('line 12'), 'the whole text stays readable')
+        assert(UI.fightBox.rowTexts[1]:GetText() == 'line 2' and UI.fightBox.rowTexts[7]:GetText() == 'line 8',
+            'one line on each row: the block is filled')''')
 
 
 class UndercutsHoldTests(unittest.TestCase):

@@ -17,14 +17,19 @@ S.ROWS = 40 -- cheapest auctions kept per item
 S.RECOVER = 30 -- seconds to wait for item data of rows the game had not loaded
 S.DAYS = 14 -- daily records kept per item (price, cheapest, units listed and sold)
 -- Seconds to wait for the server's answer to a full scan. Since WoW Forever launched the answer
--- can take minutes (ForeverForge waits 2, auxForever 0.8.2 waits 10), but a call refused by the
--- 15-minute account limit (another addon used the window) is never answered. 5 minutes, then the
--- next try once 15 minutes passed since that call (S.COOLDOWN), never sooner.
-S.ANSWER_WAIT = 300
+-- can take minutes (ForeverForge waits 2, auxForever 0.8.2 waits 10), and it grows when the server
+-- is busy: in game 2, then 4, then over 5 minutes in a row, and the scan given up at 5 minutes was
+-- followed by seven hours of calls left unanswered. 10 minutes, then the next try once the window
+-- counted from that call passed (S.cooldown), never sooner.
+S.ANSWER_WAIT = 600
+-- After each call left unanswered in a row the next waits 5 more minutes (up to 30 in all), so a
+-- slow or busy server is not called again while its own wait runs; an answer resets it.
+S.MISS_STEP = 300
+S.MISS_MAX = 1800
 -- Only complete lists are read. A list still growing at the end of the wait gets more time, up to
 -- S.GROW_WAIT from the call; a part left at the end is not used at all (scan_partial): its missing
 -- lots read as bought, and its items as gone from the house.
-S.GROW_WAIT = 600
+S.GROW_WAIT = 900
 
 local function clock()
     return F.Engine.clock()
@@ -44,8 +49,13 @@ local function budget(ms, fallback)
     end
 end
 
+function S.window()
+    local misses = math.max(0, tonumber(F.db.scanMisses) or 0)
+    return math.min(S.MISS_MAX, S.COOLDOWN + misses * S.MISS_STEP)
+end
+
 function S.cooldown()
-    return math.max(0, S.COOLDOWN - (clock() - (F.db.lastScan or 0)))
+    return math.max(0, S.window() - (clock() - (F.db.lastScan or 0)))
 end
 
 function S.busy()
@@ -81,6 +91,12 @@ local function settle(outcome, count)
         S.log(outcome, count)
     end
     F.db.scanPending = nil
+    -- Calls left unanswered in a row lengthen the wait before the next (S.window).
+    if outcome == "no answer" then
+        F.db.scanMisses = (tonumber(F.db.scanMisses) or 0) + 1
+    elseif outcome == "read" or outcome == "empty list" then
+        F.db.scanMisses = nil
+    end
 end
 
 local function remember(j)

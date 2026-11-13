@@ -433,7 +433,17 @@ class ScanAnswerTests(unittest.TestCase):
         run(ForeverFlip.Scan.ANSWER_WAIT-120+2)
         assert(not ForeverFlip.Scan.busy() and ForeverFlip.Engine.message=='scan_timeout')
         -- A sooner retry starts the server's 15 minutes again: the next try waits for the window.
-        local cd=ForeverFlip.Scan.cooldown();assert(cd>=ForeverFlip.Scan.COOLDOWN-ForeverFlip.Scan.ANSWER_WAIT-5 and cd<=ForeverFlip.Scan.COOLDOWN-ForeverFlip.Scan.ANSWER_WAIT,cd)''')
+        -- One call left unanswered: the window is 5 minutes longer (S.MISS_STEP).
+        local S=ForeverFlip.Scan;local window=S.COOLDOWN+S.MISS_STEP
+        local cd=S.cooldown();assert(cd>=window-S.ANSWER_WAIT-5 and cd<=window-S.ANSWER_WAIT,cd)
+        assert(ForeverFlip.db.scanMisses==1)''')
+
+    def test_an_answer_ends_the_longer_wait(self):
+        run(SETUP + '''local S=ForeverFlip.Scan;ForeverFlip.db.scanMisses=2
+        assert(S.window()==S.COOLDOWN+2*S.MISS_STEP)
+        ForeverFlip.db.scanMisses=10;assert(S.window()==S.MISS_MAX,'never more than 30 minutes')
+        ForeverFlip.db.scanMisses=1;ForeverFlip.db.lastScan=0;fullScan()
+        assert(ForeverFlip.db.scanMisses==nil and S.window()==S.COOLDOWN)''')
 
     def test_a_full_scan_of_another_addon_is_read_too(self):
         run(SETUP + '''C_AuctionHouse.ReplicateItems();fire('REPLICATE_ITEM_LIST_UPDATE')
