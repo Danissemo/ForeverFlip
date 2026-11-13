@@ -1632,8 +1632,9 @@ end
 
 -- True when a recent full scan saw no more units of the item than the player has listed: nobody
 -- else sells it. WoW Forever does not answer a search for an item without lots of other players.
-function T.alone(key)
-    local units = F.Scan.listedUnits(key)
+-- `maxAge` (optional): how old the full scan may be (20 minutes by default).
+function T.alone(key, maxAge)
+    local units = F.Scan.listedUnits(key, maxAge)
     if units == nil then
         return false
     end

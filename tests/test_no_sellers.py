@@ -48,7 +48,7 @@ class NoSellerTests(unittest.TestCase):
         assert(UI.sellPrice:GetText()~='')''')
 
     def test_no_answer_counts_as_no_sellers(self):
-        run(NONE + '''now=now+1300 -- the scan is too old to tell
+        run(NONE + '''now=now+7300 -- the scan is too old to tell (over D.ALONE_AGE)
         assert(not F.Scan.notListed('i:70') and T.suggest(item())==nil)
         T.checkPrice('i:70');run(1.1);assert(F.Deals.search);run(11)
         assert(T.noAnswer['i:70'] and not T.prices['i:70'])

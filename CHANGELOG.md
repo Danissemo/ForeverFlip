@@ -6,6 +6,14 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Checks of auctions only you sell stalled.** WoW Forever never answers a search of an item no
+  other player sells: each such check waited out its time, forgot the item's versions (the next
+  check browsed again) and was sent once more at the end. A search with no answer of an item the
+  last full scan (up to 2 hours old) saw no other seller of is now answered as "only yours" at
+  once, without a retry, and keeps its versions.
+
 ### Added
 
 - **Journal and profit is a table of purchases.** Each purchase is a row: when, what, units sold of

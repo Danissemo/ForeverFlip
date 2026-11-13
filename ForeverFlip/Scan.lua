@@ -752,9 +752,15 @@ end
 
 -- Units of an item in a recent full scan (up to 20 minutes old) of this auction house; nil when
 -- there is no such scan.
-function S.listedUnits(key)
+-- `maxAge` (optional): how old the scan may be, 20 minutes by default.
+function S.listedUnits(key, maxAge)
     local last = S.last
-    if not last or not last.listed or last.scope ~= F.Engine.scope() or F.Engine.clock() - (last.at or 0) > 1200 then
+    if
+        not last
+        or not last.listed
+        or last.scope ~= F.Engine.scope()
+        or F.Engine.clock() - (last.at or 0) > (maxAge or 1200)
+    then
         return nil
     end
     return last.listed[key] or 0

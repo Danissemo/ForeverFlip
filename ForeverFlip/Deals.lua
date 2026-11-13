@@ -639,9 +639,18 @@ local function finishSearch(rows, complete)
     F.Engine.changed()
 end
 
+-- WoW Forever never answers a search of an item no other player sells. A search with no answer
+-- of an item the last full scan (up to D.ALONE_AGE old) saw no other seller of is that case:
+-- answered as "nobody else sells it", its item-key versions kept. Before, each such check waited
+-- for nothing, forgot the versions (the next check browsed again) and was sent a second time.
+D.ALONE_AGE = 2 * 3600
 local function timeoutSearch(s)
     if s.phase == "browse" then
         F.AH.foreignAt = clock() -- its late browse reply must not certify the next item
+    end
+    if F.Trade.alone(s.key, D.ALONE_AGE) then
+        finishSearch({}, true)
+        return
     end
     if s.cached then
         F.AH.forgetKeys(s.item.id)
@@ -1255,7 +1264,9 @@ function D.step()
     end
     s = D.search
     if s and not s.waitKey and now - s.at > (s.fast and D.FAST_WAIT or D.ANSWER_WAIT) then
-        if s.item.kind == "item" and not s.phase and F.AH.canSearchGear() and not s.byNameTried then
+        -- Nobody else sells it (the last scan): no retry by name, it is answered as such.
+        local alone = F.Trade.alone(s.key, D.ALONE_AGE)
+        if not alone and s.item.kind == "item" and not s.phase and F.AH.canSearchGear() and not s.byNameTried then
             -- No answer to the plain search: tried again at once by name (a browse lists the
             -- item's exact keys, then each is searched), as gear is. Remembered for next time.
             D.byName[s.item.id] = true
