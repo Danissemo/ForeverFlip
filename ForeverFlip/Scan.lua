@@ -14,7 +14,8 @@ F.Scan = S
 -- exactly 15:00 after the last one was not answered while 15:02 was. Hence 15 minutes and 20 seconds.
 S.COOLDOWN = 920
 S.ROWS = 40 -- cheapest auctions kept per item
-S.RECOVER = 30 -- seconds to wait for item data of rows the game had not loaded
+S.RECOVER = 30 -- seconds without any item's data arriving before the rows still waiting are given up
+S.RECOVER_MAX = 300 -- the longest the deferred rows are waited for, however slowly the data arrives
 S.DAYS = 14 -- daily records kept per item (price, cheapest, units listed and sold)
 -- Seconds to wait for the server's answer to a full scan. Since WoW Forever launched the answer
 -- can take minutes (ForeverForge waits 2, auxForever 0.8.2 waits 10), and it grows when the server
@@ -423,9 +424,58 @@ function S.onReplicate()
 end
 
 -- Row i of the list (F.AH.replicateRow); nil when it cannot be read.
+local waitingRows, recover
 local function readRow(i)
     local ok, r = pcall(F.AH.replicateRow, i)
     return ok and r or nil
+end
+
+-- Rows waiting for item data are kept per item, in scan order (j.waitBy[id], j.waitIds): an
+-- item's rows are read again only once its data has arrived, and only from the first row still
+-- waiting. Reading every waiting row again on each pass cost a full pass over the API for
+-- 210 000 rows of 150 items (most rows are commodities), took 30 seconds or more a pass in a busy
+-- city and reached the end of the wait with most of the list unread.
+local function defer(j, i, id)
+    j.deferred[#j.deferred + 1] = i
+    if not id then
+        return
+    end
+    j.waitBy = j.waitBy or {}
+    j.waitIds = j.waitIds or {}
+    local list = j.waitBy[id]
+    if not list then
+        list = { pos = 1 }
+        j.waitBy[id] = list
+        j.waitIds[#j.waitIds + 1] = id
+    end
+    list[#list + 1] = i
+    j.waitLeft = (j.waitLeft or 0) + 1
+end
+
+-- The rows still waiting, in scan order of their items (for the unread pass).
+waitingRows = function(j)
+    local out = {}
+    for _, id in ipairs(j.waitIds or {}) do
+        local list = j.waitBy[id]
+        for p = list and list.pos or 1, list and #list or 0 do
+            out[#out + 1] = list[p]
+        end
+    end
+    return out
+end
+
+-- True when the game holds the item's data (else it is asked for, paced by F.AH.requestItem).
+local function dataLoaded(id)
+    local cached = C_Item and C_Item.IsItemDataCachedByID
+    if not cached then
+        return true -- no way to tell: its first waiting row is read again to see
+    end
+    local ok, yes = pcall(cached, id)
+    if ok and not yes then
+        F.AH.requestItem(id)
+        return false
+    end
+    return true
 end
 
 -- One row of the list as read (readRow; nil when it could not be read); false when it has to wait
@@ -936,6 +986,61 @@ local function reprice()
 end
 
 -- Called every frame while a scan runs.
+-- One frame of the recovery: the items whose data arrived have their waiting rows read, in scan
+-- order, under the frame's budget. Returns true once no row waits. Each item that gets all its
+-- rows read moves the end of the wait on (S.RECOVER after it, at most S.RECOVER_MAX in all).
+recover = function(j, now)
+    if not j.waitIds then
+        -- A job that kept only the list of rows (made before the rows were kept per item): they
+        -- are grouped once.
+        local rows = j.deferred
+        j.deferred, j.waitLeft = {}, 0
+        for _, i in ipairs(rows) do
+            local r = readRow(i)
+            if r and r.id then
+                defer(j, i, r.id)
+            else
+                j.skipped = j.skipped + 1
+            end
+        end
+        j.waitIds = j.waitIds or {}
+    end
+    local ids = j.waitIds
+    local done = budget(4, 200)
+    local n = #ids
+    for _ = 1, n do
+        j.waitCursor = (j.waitCursor or 0) % n + 1
+        local id = ids[j.waitCursor]
+        local list = j.waitBy[id]
+        if list and list.pos <= #list and dataLoaded(id) then
+            local held = {}
+            while list.pos <= #list do
+                if not ingest(j, readRow(list[list.pos]), held) then
+                    break -- this row still waits; the item's later rows wait behind it
+                end
+                list.pos = list.pos + 1
+                j.waitLeft = j.waitLeft - 1
+                if done() then
+                    break
+                end
+            end
+            if list.pos > #list then
+                j.waitBy[id] = nil
+                j.recoverUntil = math.min(j.recoverCap or math.huge, now + S.RECOVER)
+            end
+            F.Engine.changed()
+        end
+        if (j.waitLeft or 0) <= 0 then
+            j.deferred = {}
+            return true
+        end
+        if done() then
+            return false
+        end
+    end
+    return (j.waitLeft or 0) <= 0
+end
+
 function S.step()
     local last = S.last
     if last and clock() - (last.at or 0) > 300 then
@@ -999,36 +1104,21 @@ function S.step()
                 r = readRow(i)
             end
             if not ingest(j, r, j.held) then
-                j.deferred[#j.deferred + 1] = i
+                defer(j, i, r and r.id)
             end
             if done() then
                 return
             end
         end
-        j.state, j.recoverUntil = "recovering", now + S.RECOVER
+        j.state, j.recoverUntil, j.recoverCap = "recovering", now + S.RECOVER, now + S.RECOVER_MAX
         return
     end
     if j.state == "recovering" then
-        -- Keep the cursor across frames. Recopying the tail and starting again at row one both
-        -- cost O(n) per frame and starved loaded rows behind a long uncached prefix.
-        j.recoverLeft = j.recoverLeft or {}
-        j.recoverIndex = j.recoverIndex or 1
-        j.recoverHeld = j.recoverHeld or {}
-        local done = budget(4, 200)
-        while j.recoverIndex <= #j.deferred do
-            local i = j.deferred[j.recoverIndex]
-            j.recoverIndex = j.recoverIndex + 1
-            if not ingest(j, readRow(i), j.recoverHeld) then
-                j.recoverLeft[#j.recoverLeft + 1] = i
-            end
-            if done() then
-                return
-            end
-        end
-        j.deferred, j.recoverLeft, j.recoverIndex, j.recoverHeld = j.recoverLeft, nil, nil, nil
-        if #j.deferred == 0 then
+        if recover(j, now) then
             beginFinish(j, now)
-        elseif now >= j.recoverUntil then
+        elseif now >= j.recoverUntil or now >= (j.recoverCap or j.recoverUntil) then
+            -- Nothing arrived for S.RECOVER seconds (or S.RECOVER_MAX passed): the rest is unread.
+            j.deferred = waitingRows(j)
             j.skipped = j.skipped + #j.deferred
             j.state, j.unreadIndex, j.unread = "unread", 1, {}
         end
@@ -1302,7 +1392,7 @@ function S.progress()
     elseif j.state == "reading" then
         return "scan_reading", j.index, j.total
     elseif j.state == "recovering" or j.state == "unread" then
-        return "scan_recovering", j.total - #j.deferred, j.total
+        return "scan_recovering", j.total - (j.waitLeft or #j.deferred), j.total
     end
     return "scan_finishing", j.cursor - 1, #j.order
 end

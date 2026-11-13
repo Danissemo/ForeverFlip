@@ -59,9 +59,12 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    before). Searches and the sniper wait for the answer: when
    they went on meanwhile, the answer did not come in game.
 2. **Reading.** Rows are read in portions under a time budget per frame. Bid-only auctions and your
-   own auctions are skipped. Rows whose item is not in the game cache are deferred; the item data is
-   requested at most 40 items per second (`AH.lua`), and the deferred rows are retried for up to
-   30 seconds (`S.RECOVER`).
+   own auctions are skipped. Rows whose item is not in the game cache are deferred, kept per item in
+   scan order; the item data is requested at most 40 items per second (`AH.lua`). An item's rows
+   are read again only once its data has arrived, so a list where most rows wait (210 000 rows of
+   a few hundred commodities) is not read again row by row. The wait ends 30 seconds after the last
+   item came in (`S.RECOVER`), 5 minutes at most (`S.RECOVER_MAX`); rows still waiting then are
+   left unread, and their items are not counted as unlisted or sold.
 3. **Grouping.** Rows are grouped per item key. For each item ForeverFlip keeps:
    - the **40 cheapest auctions** (`S.ROWS`);
    - a **price histogram** of every listed unit;

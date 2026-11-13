@@ -6,6 +6,15 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Full scan lost most of a busy house.** When the game had not loaded the data of the items with
+  the most lots, their rows (210 000 of 242 000 in game) were read again row by row on every pass;
+  one pass took longer than the 30-second wait, so rows whose data arrived meanwhile were given up.
+  The scan then knew 1 588 items instead of 1 732, and resale found 2 deals. Waiting rows are now
+  kept per item and read again only once its data has arrived; the count moves at once, and the
+  wait runs on 30 seconds after the last item came in (5 minutes at most).
+
 ### Documentation
 
 - Tester checklist checked against the interface of 2.1: page and button names as the game shows
