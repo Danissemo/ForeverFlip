@@ -44,6 +44,16 @@ class DepositModelTests(unittest.TestCase):
         assert(limit and limit > 40, 'a 40c unit is worth sniping: ' .. tostring(limit))''')
 
 
+    def test_a_cheap_commodity_is_offered_at_a_merchant(self):
+        # V15-a: a merchant's 20c commodity that sells for 80c; 1 silver a unit left no profit.
+        run(BASE + '''addItem(45, 'Cheap Thread', 3, 'commodity')
+        local h = F.Data.market(F.db, F.Engine.scope()).history
+        h['c:45'] = { scan = { at = now, market = 80 },
+            flow = { hours = 20, sold = { 48, 48, 48, 48 }, pairs = 3, at = now, market = 80 } }
+        merchantItems = { { id = 45, price = 20 } }
+        local o = F.Merchant.offers(now)[1]
+        assert(o and o.key == 'c:45', 'offered')''')
+
 class AutoDurationTests(unittest.TestCase):
     """Auto: estimates use the duration the item's own post would go for (Trade.durationFor)."""
 

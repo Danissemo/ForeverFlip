@@ -6,6 +6,14 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Documentation
+
+- Tester checklist checked against the interface of 2.1: page and button names as the game shows
+  them (Скупити все для торговця, На складі, Мій список), the full-scan wait of 10 minutes,
+  merchant buttons shown only with something to sell. Seven new cards cover what 2.0 and 2.1 added
+  without one: the Sure column, Buy all to vendor, My bids, Undercuts and Answer next, Post next
+  bought, sending a scan in game and decimal settings; 69 checks in all.
+
 ## [2.1.0-beta.1] - 2026-11-13
 
 A full code review (160 findings) and its fixes. Deposits are estimated one way everywhere, and
