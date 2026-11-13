@@ -214,12 +214,22 @@ local function joinLot(into, lot)
     into.mode = into.mode or lot.mode
 end
 
--- The item's last lot, if a purchase at `at` joins it.
-local function lotToJoin(lots, key, at)
+local function lotKind(mode, bid)
+    return bid and "bid" or mode == "vendor" and "vendor" or "flip"
+end
+
+-- Only purchases of the same kind join the item's last lot.
+local function lotToJoin(lots, key, at, mode, bid)
     for i = #lots, 1, -1 do
         local lot = lots[i]
         if lot.key == key then
-            return at and lot.at and at - lot.at <= D.LOT_MERGE and at >= lot.at and lot or nil
+            return at
+                    and lot.at
+                    and at - lot.at <= D.LOT_MERGE
+                    and at >= lot.at
+                    and lotKind(lot.mode, lot.bid) == lotKind(mode, bid)
+                    and lot
+                or nil
         end
     end
 end
@@ -228,7 +238,7 @@ end
 local function joinSaved(char)
     local out = {}
     for _, lot in ipairs(char.lots) do
-        local into = lotToJoin(out, lot.key, lot.at)
+        local into = lotToJoin(out, lot.key, lot.at, lot.mode, lot.bid)
         if into then
             joinLot(into, lot)
         else
@@ -245,7 +255,7 @@ function D.lots(char)
         local open = {}
         for _, e in ipairs(char.journal or {}) do
             if e.kind == "buy" and e.key and (e.qty or 0) > 0 then
-                local lot = lotToJoin(char.lots, e.key, e.at)
+                local lot = lotToJoin(char.lots, e.key, e.at, e.mode, e.bid)
                 if lot then
                     lot.qty, lot.cost, lot.left = lot.qty + e.qty, lot.cost + (e.amount or 0), lot.left + e.qty
                 else
@@ -257,6 +267,8 @@ function D.lots(char)
                         at = e.at,
                         qty = e.qty,
                         cost = e.amount or 0,
+                        mode = e.mode,
+                        bid = e.bid,
                         left = e.qty,
                         sold = 0,
                         received = 0,
@@ -415,22 +427,39 @@ function D.recount(char, deposit)
             traded[e.key] = true
         end
     end
-    for _, lot in ipairs(char.lots or {}) do
-        modes[lot.key] = lot.mode or modes[lot.key]
+    -- Recover metadata from the matching purchase, never from another lot of the same item.
+    local oldLots = char.lots or {}
+    for _, e in ipairs(journal) do
+        if e.kind == "vendor" and e.key then
+            modes[e.key] = "vendor"
+        end
+    end
+    local function purchaseLot(e)
+        for i = #oldLots, 1, -1 do
+            local lot = oldLots[i]
+            if lot.key == e.key and e.at and lot.at and e.at >= lot.at and e.at - lot.at <= D.LOT_MERGE then
+                return lot
+            end
+        end
     end
     char.stats, char.positions, char.lots, char.lotSeq, char.lotsJoined = {}, {}, {}, 0, 1
     for _, e in ipairs(journal) do
         if e.kind == "buy" and e.key then
-            local p = old[e.key]
+            local p, lot = old[e.key], purchaseLot(e)
+            local bid = e.bid
+            if bid == nil and e.mode == nil and lot then
+                bid = lot.bid
+            end
             D.addPosition(
                 char,
                 e.key,
                 e.name,
                 e.qty or 0,
                 e.amount or 0,
-                p and p.mode or modes[e.key],
+                e.mode or lot and lot.mode or p and p.mode or modes[e.key],
                 p and p.exit,
-                e.at
+                e.at,
+                bid
             )
         elseif (e.kind == "sell" or e.kind == "vendor") and e.key then
             local cost = D.sale(char, e.key, e.name, e.qty or 0, e.amount or 0, e.at)
@@ -460,7 +489,7 @@ function D.recount(char, deposit)
 end
 
 -- Positions: what was bought and not yet sold, with its cost (average price).
-function D.addPosition(char, key, name, qty, cost, mode, exit, at)
+function D.addPosition(char, key, name, qty, cost, mode, exit, at, bid)
     local p = char.positions[key]
     if not p then
         p = { qty = 0, cost = 0, name = name, since = at }
@@ -470,7 +499,7 @@ function D.addPosition(char, key, name, qty, cost, mode, exit, at)
         local s = D.itemStats(char, key, name)
         s.bought, s.spent = s.bought + qty, s.spent + cost
         local lots = D.lots(char)
-        local into = lotToJoin(lots, key, at)
+        local into = lotToJoin(lots, key, at, mode, bid)
         if into then
             into.qty, into.cost, into.left = into.qty + qty, into.cost + cost, into.left + qty
             into.mode = into.mode or mode
@@ -484,6 +513,7 @@ function D.addPosition(char, key, name, qty, cost, mode, exit, at)
                 qty = qty,
                 cost = cost,
                 mode = mode,
+                bid = bid,
                 left = qty,
                 sold = 0,
                 received = 0,

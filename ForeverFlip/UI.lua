@@ -196,6 +196,41 @@ local function styleEntry(row, sub)
     end
 end
 
+-- A third-level entry: that of One-Handed Axes under One-Handed (a thin line at the left, no art
+-- of its own, the row highlight of the results list), as in the Buy tab.
+local function styleTertiary(row)
+    row.normal:SetAlpha(0)
+    row.lines = row:CreateTexture(nil, "BACKGROUND")
+    place(
+        row.lines,
+        "auctionhouse-nav-button-tertiary-filterline",
+        "auctionhouse-nav-button-secondary",
+        5,
+        11,
+        "LEFT",
+        18,
+        3
+    )
+    for _, t in ipairs({ row.selected, row.highlight }) do
+        t:ClearAllPoints()
+        t:SetSize(116, 18)
+        t:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, -2)
+        t:SetBlendMode("ADD")
+    end
+    row.selected:SetAtlas(
+        atlasExists("auctionhouse-ui-row-select") and "auctionhouse-ui-row-select"
+            or "auctionhouse-nav-button-secondary-select"
+    )
+    row.highlight:SetAtlas(
+        atlasExists("auctionhouse-ui-row-highlight") and "auctionhouse-ui-row-highlight"
+            or "auctionhouse-nav-button-select"
+    )
+    row.label:SetFontObject(GameFontHighlightSmall)
+    row.label:ClearAllPoints()
+    row.label:SetPoint("LEFT", row, "LEFT", 26, 0)
+    row.label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+end
+
 local function category(parent, label, onClick, sub)
     -- Built from the art itself: the game's filter-button template carries clear buttons and
     -- arrows of its own on WoW Forever.
@@ -1166,6 +1201,17 @@ function UI.create()
                 sub.id, sub.isSub = entry[1], true
                 sub:Hide()
                 c.subs[#c.subs + 1] = sub
+                -- A page with views of its own (entry.kids) opens them under its entry.
+                sub.kids = {}
+                for _, kid in ipairs(entry.kids or {}) do
+                    local k = category(left, kid[2], function()
+                        UI.show(kid[1])
+                    end, true)
+                    styleTertiary(k)
+                    k.id = kid[1]
+                    k:Hide()
+                    sub.kids[#sub.kids + 1] = k
+                end
             end
         end
     end
@@ -1256,7 +1302,20 @@ UI.GROUPS = {
     },
     {
         label = "Analytics",
-        pages = { { "analytics", "Overview" }, { "stats", "By item" }, { "journal", "Journal and profit" } },
+        pages = {
+            { "analytics", "Overview" },
+            { "stats", "By item" },
+            {
+                "journal",
+                "Journal and profit",
+                kids = {
+                    { "journal:all", "All" },
+                    { "journal:flip", "Resale" },
+                    { "journal:vendor", "To vendor" },
+                    { "journal:bid", "Bids" },
+                },
+            },
+        },
     },
     {
         label = "Settings",
@@ -1274,6 +1333,11 @@ function UI.groupOf(id)
         for _, entry in ipairs(group.pages) do
             if entry[1] == id then
                 return group
+            end
+            for _, kid in ipairs(entry.kids or {}) do
+                if kid[1] == id then
+                    return group
+                end
             end
         end
     end
@@ -1297,14 +1361,34 @@ function UI.layoutMenu(group, id)
                 sub:ClearAllPoints()
                 sub:SetPoint("TOPLEFT", left, "TOPLEFT", NAV_X, y)
                 y = y - NAV_STEP
-                if sub.id == id then
+                local open = sub.id == id or id:sub(1, #sub.id + 1) == sub.id .. ":"
+                if open then
                     sub.selected:Show()
                 else
                     sub.selected:Hide()
                 end
                 sub:Show()
+                for i, k in ipairs(sub.kids or {}) do
+                    if open then
+                        k:ClearAllPoints()
+                        k:SetPoint("TOPLEFT", left, "TOPLEFT", NAV_X, y)
+                        y = y - NAV_STEP
+                        -- The page itself (no view chosen) is its first view.
+                        if k.id == id or (i == 1 and id == sub.id) then
+                            k.selected:Show()
+                        else
+                            k.selected:Hide()
+                        end
+                        k:Show()
+                    else
+                        k:Hide()
+                    end
+                end
             else
                 sub:Hide()
+                for _, k in ipairs(sub.kids or {}) do
+                    k:Hide()
+                end
             end
         end
     end
@@ -1347,6 +1431,12 @@ function UI.show(id)
     end
     if page == "settings" then
         UI.setSettingsFrame(filter ~= "" and filter or "general")
+    end
+    if page == "journal" then
+        UI.journalFilter = filter ~= "" and filter or "all"
+        if UI.lotTable then
+            UI.lotTable.offset = 0
+        end
     end
     if page == "deals" then
         UI.filter = filter ~= "" and filter or "all"
@@ -2709,7 +2799,9 @@ function UI.createSell(p)
     UI.ruleToggle:SetPoint("RIGHT", UI.sellHide, "LEFT", -4, 0)
 
     local bar = footer(p, 108, "GameFontHighlightSmall")
-    UI.sellText = bar.text
+    bar.text:Hide()
+    UI.sellBox = UI.scrollText(bar, 3)
+    UI.sellText = UI.sellBox.text
     local priceLabel = text(bar, "GameFontNormal")
     priceLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 36)
     priceLabel:SetText(L("Price each"))
@@ -3071,12 +3163,12 @@ function UI.refreshSell()
         empty:Hide()
     end
     if hiddenView then
-        UI.sellText:SetText(
+        UI.sellBox.set({
             UI.sellSelected and L("Return to sale puts the item back in the list and in Post all.")
                 or L(
                     "Hidden items are not shown for sale and Post all and Post next bought skip them. Select one to return it."
-                )
-        )
+                ),
+        }, "hidden")
         UI.postButton:Disable()
         UI.sellCheck:Disable()
         UI.ruleSave:Disable()
@@ -3091,7 +3183,7 @@ function UI.refreshSell()
     UI.ruleSave:SetEnabled(UI.sellSelected ~= nil)
     local item = UI.sellSelected
     if not item then
-        UI.sellText:SetText(L("Select an item. Its current listings are read to suggest a price."))
+        UI.sellBox.set({ L("Select an item. Its current listings are read to suggest a price.") }, "empty")
         UI.postButton:Disable()
         UI.refreshPostNext()
         UI.sellCheck:Disable()
@@ -3203,16 +3295,25 @@ function UI.refreshSell()
         )
     end
     if floor then
+        if quote and quote.best == "vendor" and quote.vendor and (quote.marketNet or quote.net) then
+            lines[#lines + 1] = string.format(
+                L("Vendor pays %s each; auction at current market prices brings %s."),
+                U.money(quote.vendor),
+                U.money(quote.marketNet or quote.net)
+            )
+        end
         lines[#lines + 1] = string.format(
-            L("Break-even after the %d%% cut: %s each."),
+            L("Minimum after the %d%% cut, margin and rules: %s each."),
             math.floor(F.Market.CUT * 100 + 0.5),
             U.money(floor)
         )
         if price and price < floor then
-            lines[#lines + 1] = "|cffff6060" .. L("The market is below your cost: wait or sell at a loss.") .. "|r"
+            lines[#lines + 1] = "|cffff6060"
+                .. L("The market is below your minimum: wait, change the rule, or choose another sale route.")
+                .. "|r"
         end
     end
-    UI.sellText:SetText(table.concat(lines, "\n"))
+    UI.sellBox.set(lines, item.key)
     UI.postButton:SetEnabled(UI.sellPrice:GetText() ~= "" and F.Trade.wayReady())
     UI.refreshPostNext()
     UI.postButton:SetText(F.Trade.pendingPost and L("Confirm post") or L("Post"))
@@ -4262,6 +4363,15 @@ function UI.lotRow(lot)
     }
 end
 
+-- The way a purchase was dealt: "bid" (won with a bid), "vendor" (bought for a merchant) or "flip"
+-- (bought for resale; also purchases made elsewhere).
+function UI.lotKind(lot)
+    if lot.bid then
+        return "bid"
+    end
+    return lot.mode == "vendor" and "vendor" or "flip"
+end
+
 function UI.refreshJournal()
     local s = F.Trade.summary(7)
     UI.journalSummary:SetText(
@@ -4292,9 +4402,13 @@ function UI.refreshJournal()
         UI.unknownNo:Hide()
     end
     UI.placeJournalLines(u ~= nil)
+    -- The view chosen under Journal and profit: all purchases, or those of one way of dealing.
+    local view = UI.journalFilter or "all"
     local lots = {}
     for _, lot in ipairs(F.Data.lots(c)) do
-        lots[#lots + 1] = lot
+        if view == "all" or UI.lotKind(lot) == view then
+            lots[#lots + 1] = lot
+        end
     end
     table.sort(lots, function(a, b)
         return (a.at or 0) > (b.at or 0)
@@ -6107,6 +6221,9 @@ local function tooltipLines(tooltip)
             tipLine(tooltip, "  " .. UI.netLabel(advice), U.money(advice.net))
             if advice.profit then
                 tipLine(tooltip, "  " .. L("Profit each"), UI.signed(advice.profit))
+            end
+            if advice.belowFloor and advice.marketNet then
+                tipLine(tooltip, "  " .. L("Auction at market price, after fees"), U.money(advice.marketNet))
             end
         end
         if advice.vendor then

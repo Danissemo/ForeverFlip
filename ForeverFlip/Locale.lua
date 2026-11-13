@@ -5,6 +5,10 @@ local T = {}
 F.Locale = T
 
 T.uk = {
+    ["Vendor pays %s each; auction at current market prices brings %s."] = "Торговець платить %s за штуку; аукціон за ринковою ціною приносить %s.",
+    ["Minimum after the %d%% cut, margin and rules: %s each."] = "Мінімум із комісією %d%%, прибутком і правилами: %s за штуку.",
+    ["The market is below your minimum: wait, change the rule, or choose another sale route."] = "Ринок нижче вашого мінімуму: зачекайте, змініть правило або виберіть інший спосіб продажу.",
+    ["Auction at market price, after fees"] = "Аукціон за ринковою ціною, після комісій",
     ["Keep my full scans for the ForeverFlip Sync helper (community data)"] = "Зберігати мої повні скани для помічника ForeverFlip Sync (дані спільноти)",
     ["Community data: %d scans, updated %s."] = "Дані спільноти: сканів %d, оновлено %s.",
     ["Community data: none. Run the ForeverFlip Sync helper to get it."] = "Даних спільноти немає. Запустіть помічник ForeverFlip Sync, щоб їх отримати.",

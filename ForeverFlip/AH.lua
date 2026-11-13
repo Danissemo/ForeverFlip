@@ -891,7 +891,12 @@ function A.bagItems()
     return out
 end
 
-function A.readBags()
+-- Merchant sales must not depend on the auction house's posting validation/cache.
+function A.merchantItems()
+    return A.readBags(true)
+end
+
+function A.readBags(merchant)
     local out = {}
     if not C_Container or not ItemLocation then
         return out
@@ -899,12 +904,12 @@ function A.readBags()
     for _, bag in ipairs(bagList()) do
         for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
             local info = C_Container.GetContainerItemInfo(bag, slot)
-            if info and info.itemID and not info.isBound then
+            if info and info.itemID and (merchant or not info.isBound) then
                 local loc = ItemLocation:CreateFromBagAndSlot(bag, slot)
                 ---@diagnostic disable-next-line: param-type-mismatch
-                local valid = not AH.IsSellItemValid or AH.IsSellItemValid(loc, false)
+                local valid = merchant or not AH.IsSellItemValid or AH.IsSellItemValid(loc, false)
                 local sellable = F.db and F.db.sellable
-                if valid and sellable then
+                if not merchant and valid and sellable then
                     sellable[info.itemID] = true
                 elseif not valid and ((sellable and sellable[info.itemID]) or F.Scan.busy()) then
                     valid = true -- the game says no to everything while a full scan is awaited
@@ -927,6 +932,8 @@ function A.readBags()
                         count = info.stackCount or 1,
                         key = key,
                         kind = kind,
+                        locked = info.isLocked,
+                        bound = info.isBound,
                     }
                 end
             end

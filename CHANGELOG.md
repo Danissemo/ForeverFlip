@@ -6,8 +6,22 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Best sale advice compares vendor proceeds with observed auction prices, before raising a post
+  to the player's minimum. The tooltip shows those market proceeds separately from the protected
+  posting suggestion. Merchant candidates no longer depend on auction-house sellability and
+  consistently respect hidden, kept and locked items.
+- Selling explanations use the existing three-line scroll area above the price controls, keeping
+  long warnings readable without overlapping inputs.
+- Journal filters preserve purchase kind through merging and reconstruction; won bids mark the
+  correct lot, and vendor, resale and bid purchases of the same item remain separate.
+
 ### Changed
 
+- **Journal and profit has views of its own: All, Resale, To vendor, Bids.** A third menu level
+  under the entry, in the auction house's own look for it (One-Handed Axes under One-Handed), shows
+  the purchases of one way of dealing. Purchases won with a bid are marked so.
 - **Vendor deals use all the money in the bags.** A merchant pays at once, so a vendor deal is no
   longer held to the share kept for resales (spendShare). When the money no longer covers a deal
   (other purchases since the scan), it shrinks to the units the money buys, cheapest first,

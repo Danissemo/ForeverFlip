@@ -382,7 +382,10 @@ local function bought(op)
     local name = displayName(op.key, op.link)
     awaitInvoice(c, name, op.qty)
     F.Data.addPosition(c, op.key, name, op.qty, op.cost, op.mode, op.exit, clock())
-    F.Data.log(c, { at = clock(), kind = "buy", key = op.key, name = name, qty = op.qty, amount = op.cost })
+    F.Data.log(
+        c,
+        { at = clock(), kind = "buy", key = op.key, name = name, qty = op.qty, amount = op.cost, mode = op.mode }
+    )
     T.op = nil
     F.Engine.notify("bought")
     F.Shopping.bought(op.key, op.qty)
@@ -569,7 +572,10 @@ function T.settle(index, wasBought)
         F.Engine.spent = (F.Engine.spent or 0) + u.cost
         awaitInvoice(c, u.name, u.qty)
         F.Data.addPosition(c, u.key, u.name, u.qty, u.cost, u.mode, u.exit, clock())
-        F.Data.log(c, { at = clock(), kind = "buy", key = u.key, name = u.name, qty = u.qty, amount = u.cost })
+        F.Data.log(
+            c,
+            { at = clock(), kind = "buy", key = u.key, name = u.name, qty = u.qty, amount = u.cost, mode = u.mode }
+        )
     end
     F.Engine.changed()
 end
@@ -854,6 +860,15 @@ function T.quote(key, id)
         q.post = advice.post or q.post
         q.vendor, q.vendorHow, q.disenchant = advice.vendor, advice.vendorHow, advice.disenchant
         q.best, q.value = advice.best, advice.value
+    end
+    -- A floor protects the player's posting price; it is not evidence that buyers
+    -- pay that much. Choose the exit using the market price before that uplift.
+    if q.belowFloor and not q.guess then
+        local market = M.advice(id, key, h, q.market)
+        if market then
+            q.marketPost, q.marketNet = market.post, market.auction
+            q.best, q.value = market.best, market.value
+        end
     end
     if q.net and q.cost then
         q.profit = q.net - q.cost
@@ -2397,26 +2412,21 @@ end
 -- dearest first.
 function T.vendorSellList()
     local c = char()
-    local out, seen = {}, {}
-    for _, v in ipairs(T.vendorItems()) do
-        seen[v.bag .. ":" .. v.slot] = true
-        local item = U.parseKey(v.key)
-        v.id = item and item.id
-        v.price = (item and F.AH.vendorPrice(item.id, true) or 0) * v.count
-        out[#out + 1] = v
-    end
-    for _, b in ipairs(F.AH.bagItems()) do
+    local out = {}
+    for _, b in ipairs(F.AH.merchantItems()) do
         local p = c.positions[b.key]
         local rule = T.rule(b.key)
+        local price = F.AH.vendorPrice(b.id, true)
+        local vendorStock = p and p.qty > 0 and p.mode == "vendor"
+        local eligible = vendorStock and price and price * p.qty >= p.cost
+            or not vendorStock and (T.bestWay(b.key, b.id) == "vendor" or (F.db.toVendor and F.db.toVendor[b.key]))
         if
-            not seen[b.bag .. ":" .. b.slot]
-            and not T.hidden(b.key)
+            not T.hidden(b.key)
             and not (rule and rule.keep)
-            and not (p and p.qty > 0 and p.mode == "vendor")
             and not b.locked
-            and (T.bestWay(b.key, b.id) == "vendor" or (F.db.toVendor and F.db.toVendor[b.key]))
+            and (not b.bound or vendorStock)
+            and eligible
         then
-            local price = F.AH.vendorPrice(b.id, true)
             if price and price > 0 then
                 out[#out + 1] = {
                     bag = b.bag,

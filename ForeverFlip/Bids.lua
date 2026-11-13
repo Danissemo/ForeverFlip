@@ -274,8 +274,17 @@ function B.won(name, fromInvoice)
     end
     local vendor = F.AH.vendorPrice((U.parseKey(b.key) or {}).id or 0)
     local mode = vendor and b.value and vendor * b.qty >= b.value and "vendor" or "flip"
-    F.Data.addPosition(c, b.key, b.name, b.qty, b.amount, mode, nil, F.Engine.clock())
-    F.Data.log(c, { at = F.Engine.clock(), kind = "buy", key = b.key, name = b.name, qty = b.qty, amount = b.amount })
+    F.Data.addPosition(c, b.key, b.name, b.qty, b.amount, mode, nil, F.Engine.clock(), true)
+    F.Data.log(c, {
+        at = F.Engine.clock(),
+        kind = "buy",
+        key = b.key,
+        name = b.name,
+        qty = b.qty,
+        amount = b.amount,
+        bid = true,
+        mode = mode,
+    })
     F.Engine.notify("bid_won")
     F.Engine.changed()
     return true

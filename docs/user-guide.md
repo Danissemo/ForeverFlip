@@ -355,6 +355,12 @@ How the two posting queues work:
 - **Below the floor:** the item is posted at the floor, or skipped with **Keep items in the bags
   when the market is below their floor** (Settings).
 
+The **Best** route compares vendor proceeds with auction proceeds at observed market prices.
+Raising a suggested post to your minimum profit or rule does not prove buyers will pay it.
+When the market is below that minimum, the tooltip shows market proceeds separately. The
+explanation above the posting controls shows three lines; use its scrollbar or mouse wheel to
+read the remaining warnings without covering the price and quantity fields.
+
 The **suggested price** is one legal step below the cheapest other seller, or the **Undercut %**
 from Settings. Gear and plain items are listed in whole silver; commodities may use copper.
 
@@ -522,6 +528,11 @@ If auxForever is installed, its prices fill in materials ForeverFlip has not see
 one craft) on the shopping list, each at its current price.
 
 ## Journal and profit
+
+The third-level menu under **Analytics → Journal and profit** offers **All**, **Resale**,
+**To vendor** and **Bids**. The selected view is remembered. Won bids have their own view even
+when the item can later be sold to a merchant; purchases using different strategies are not
+merged into one purchase lot.
 
 - A summary of the last 7 days: money spent, money received, profit of closed sales, and stock
   bought and not sold yet.

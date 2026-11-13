@@ -106,5 +106,80 @@ class PurchaseLotTests(unittest.TestCase):
         assert(c.positions['i:30'].qty == 2 and c.stats['i:30'].spent == 500)''')
 
 
+    def test_the_journal_has_a_view_per_way_of_dealing(self):
+        run(LOTS + '''F.Data.addPosition(c, 'i:30', 'Linen Bag', 1, 20000, 'flip', 29900, now - 7200)
+        F.Data.addPosition(c, 'c:10', 'Linen Cloth', 5, 100, 'vendor', nil, now - 3600)
+        F.Data.addPosition(c, 'i:31', 'Silk Bag', 1, 500, 'flip', nil, now)
+        c.lots[#c.lots].bid = true
+        local function shown()
+            local n = 0
+            for _, r in ipairs(UI.lotTable.rows) do if r:IsShown() then n = n + 1 end end
+            return n
+        end
+        UI.show('journal'); UI.refresh(); assert(shown() == 3 and UI.journalFilter == 'all')
+        UI.show('journal:flip'); UI.refresh(); assert(shown() == 1, shown())
+        UI.show('journal:vendor'); UI.refresh(); assert(shown() == 1)
+        UI.show('journal:bid'); UI.refresh(); assert(shown() == 1)
+        assert(UI.groupOf('journal:bid').label == 'Analytics')''')
+
+
+    def test_different_purchase_methods_keep_separate_lots(self):
+        run(LOTS + '''F.Data.addPosition(c, 'i:30', 'Linen Bag', 1, 3000, 'flip', nil, now)
+        F.Data.addPosition(c, 'i:30', 'Linen Bag', 1, 1000, 'vendor', nil, now + 1)
+        F.Data.addPosition(c, 'i:30', 'Linen Bag', 1, 500, 'vendor', nil, now + 2, true)
+        assert(#c.lots == 3, 'purchase methods must stay separate')
+        assert(UI.lotKind(c.lots[1]) == 'flip' and UI.lotKind(c.lots[2]) == 'vendor'
+            and UI.lotKind(c.lots[3]) == 'bid')''')
+
+    def test_recount_preserves_each_purchases_own_bid_and_mode(self):
+        run(LOTS + '''c.lots = {
+            {key='i:30', at=now-7200, mode='flip'},
+            {key='i:30', at=now-3600, mode='vendor', bid=true},
+            {key='i:30', at=now, mode='vendor'},
+        }
+        c.journal = {
+            {at=now-7200, kind='buy', key='i:30', qty=1, amount=3000},
+            {at=now-3600, kind='buy', key='i:30', qty=1, amount=500, mode='vendor', bid=true},
+            {at=now, kind='buy', key='i:30', qty=1, amount=1000, mode='vendor'},
+        }
+        assert(F.Data.recount(c, function() return 0 end))
+        assert(UI.lotKind(c.lots[1]) == 'flip', 'resale must not become a bid')
+        assert(UI.lotKind(c.lots[2]) == 'bid')
+        assert(UI.lotKind(c.lots[3]) == 'vendor', 'vendor must not become a bid')''')
+
+    def test_lots_rebuilt_from_journal_keep_purchase_classification(self):
+        run(LOTS + '''c.lots = nil
+        c.journal = {
+            {at=now, kind='buy', key='i:30', qty=1, amount=3000, mode='flip'},
+            {at=now+1, kind='buy', key='i:30', qty=1, amount=500, mode='vendor', bid=true},
+            {at=now+2, kind='buy', key='i:30', qty=1, amount=1000, mode='vendor'},
+        }
+        local lots=F.Data.lots(c)
+        assert(#lots == 3 and UI.lotKind(lots[1]) == 'flip'
+            and UI.lotKind(lots[2]) == 'bid' and UI.lotKind(lots[3]) == 'vendor')''')
+
+    def test_a_won_bid_is_marked_when_another_items_lot_is_last(self):
+        run(LOTS + '''F.Data.addPosition(c, 'i:30', 'Linen Bag', 1, 500, 'vendor', nil, now-10, true)
+        F.Data.addPosition(c, 'c:10', 'Linen Cloth', 1, 50, 'vendor', nil, now-5)
+        c.bids = {[77]={key='i:30',name='Linen Bag',qty=1,amount=500,value=2000,at=now-20}}
+        assert(F.Bids.won('Linen Bag', true))
+        assert(#c.lots == 2 and c.lots[1].qty == 2 and c.lots[1].bid)
+        local e=c.journal[#c.journal]
+        assert(e.bid and e.mode == 'vendor')''')
+
+
+    def test_recount_does_not_confuse_same_second_purchases(self):
+        run(LOTS + '''c.lots = {
+            {key='i:30', at=now, mode='flip'},
+            {key='i:30', at=now, mode='vendor', bid=true},
+        }
+        c.journal = {
+            {at=now, kind='buy', key='i:30', qty=1, amount=3000, mode='flip'},
+            {at=now, kind='buy', key='i:30', qty=1, amount=500, mode='vendor', bid=true},
+        }
+        assert(F.Data.recount(c, function() return 0 end))
+        assert(#c.lots == 2 and UI.lotKind(c.lots[1]) == 'flip' and UI.lotKind(c.lots[2]) == 'bid')''')
+
+
 if __name__ == '__main__':
     unittest.main()
