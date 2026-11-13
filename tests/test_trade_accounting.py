@@ -219,6 +219,31 @@ class AccountingTests(unittest.TestCase):
         money=money+2000;fire('PLAYER_MONEY')
         assert(c.stats['i:30'].sold==1 and c.stats['i:30'].earned==2000)''')
 
+    def test_hidden_sale_all_event_orders_after_idle(self):
+        from itertools import permutations
+        changes={
+            'bags':"putBag(0,1,30,3,'Linen Bag');fire('BAG_UPDATE_DELAYED')",
+            'money':"money=money+4000;fire('PLAYER_MONEY')",
+            'buyback':"fresh=true;fire('MERCHANT_UPDATE')",
+        }
+        for order in permutations(changes):
+            with self.subTest(order=order):
+                self.check('''F.Data.addPosition(c,'i:30','Linen Bag',5,500,'vendor',nil,now)
+                putBag(0,1,30,5,'Linen Bag');MerchantFrame:Show()
+                local fresh=false
+                GetNumBuybackItems=function() return 12 end
+                GetBuybackItemLink=function() return link(30,'Linen Bag') end
+                GetBuybackItemInfo=function(i)
+                    if fresh and i==1 then return 'Linen Bag',nil,4000,2 end
+                    return 'Linen Bag',nil,2000,1
+                end
+                F.Merchant.watchBuyback(true);now=now+6
+                '''+';'.join(changes[k] for k in order)+'''
+                assert(c.stats['i:30'].sold==2 and c.stats['i:30'].earned==4000,
+                    'sold '..c.stats['i:30'].sold..' earned '..c.stats['i:30'].earned)
+                fire('MERCHANT_UPDATE');fire('BAG_UPDATE_DELAYED');fire('PLAYER_MONEY')
+                assert(c.stats['i:30'].sold==2,'no repeat')''')
+
 
 if __name__ == '__main__':
     unittest.main()

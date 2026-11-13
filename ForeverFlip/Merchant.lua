@@ -216,8 +216,8 @@ function V.watchBuyback(first)
     local list, bags, money = buybackEntries(), bagSnapshot(), GetMoney and GetMoney()
     local now = F.Engine.clock()
     if first or not V.buyback then
-        V.buyback, V.expected = list, {}
-        V.bags, V.money, V.baselineAt, V.knownQty, V.knownMoney = bags, money, now, {}, 0
+        V.buyback, V.expected, V.inferred, V.pendingAt = list, {}, {}, nil
+        V.bags, V.money, V.knownQty, V.knownMoney = bags, money, {}, 0
         return 0
     end
     local before, sales, prices, visibleQty = {}, {}, {}, {}
@@ -238,9 +238,18 @@ function V.watchBuyback(first)
         if (before[e.sig] or 0) > 0 then
             before[e.sig] = before[e.sig] - 1
         elseif key then
-            sales[#sales + 1] = { key = key, id = e.id, qty = e.qty, each = math.floor(e.price / e.qty) }
-            visibleQty[key] = (visibleQty[key] or 0) + e.qty
-            visibleMoney = visibleMoney + e.price
+            -- Bags and money may prove the sale before its new buyback row arrives.
+            -- Consume that evidence once when the delayed row becomes visible.
+            local qty, each = e.qty, math.floor(e.price / e.qty)
+            for _, credit in ipairs(V.inferred or {}) do
+                if credit.key == key and credit.each == each and now - credit.at <= 5 then
+                    local n = math.min(qty, credit.qty)
+                    qty, credit.qty = qty - n, credit.qty - n
+                end
+            end
+            sales[#sales + 1] = { key = key, id = e.id, qty = qty, each = each }
+            visibleQty[key] = (visibleQty[key] or 0) + qty
+            visibleMoney = visibleMoney + qty * each
         end
     end
     V.knownQty = V.knownQty or {}
@@ -248,7 +257,7 @@ function V.watchBuyback(first)
     for key, n in pairs(visibleQty) do
         V.knownQty[key] = (V.knownQty[key] or 0) + n
     end
-    if #list >= 12 and V.bags and money and V.money and now - (V.baselineAt or now) <= 5 then
+    if #list >= 12 and V.bags and money and V.money and (not V.pendingAt or now - V.pendingAt <= 5) then
         local missing, total = {}, 0
         for key, p in pairs(prices) do
             local n = (V.bags[key] or 0) - (bags[key] or 0) - (V.knownQty[key] or 0)
@@ -260,6 +269,8 @@ function V.watchBuyback(first)
             for key, n in pairs(missing) do
                 local p = prices[key]
                 sales[#sales + 1] = { key = key, id = p.id, qty = n, each = p.each }
+                V.inferred = V.inferred or {}
+                V.inferred[#V.inferred + 1] = { key = key, each = p.each, qty = n, at = now }
                 V.knownQty[key] = (V.knownQty[key] or 0) + n
             end
             V.knownMoney = V.knownMoney + total
@@ -277,8 +288,12 @@ function V.watchBuyback(first)
             settled = false
         end
     end
-    if settled or now - (V.baselineAt or now) > 5 then
-        V.bags, V.money, V.baselineAt, V.knownQty, V.knownMoney = bags, money, now, {}, 0
+    if not settled then
+        V.pendingAt = V.pendingAt or now
+    end
+    if settled or V.pendingAt and now - V.pendingAt > 5 then
+        V.pendingAt = nil
+        V.bags, V.money, V.knownQty, V.knownMoney = bags, money, {}, 0
     end
     local booked = 0
     for _, e in ipairs(sales) do
@@ -288,6 +303,13 @@ function V.watchBuyback(first)
             booked = booked + 1
         end
     end
+    local credits = {}
+    for _, credit in ipairs(V.inferred or {}) do
+        if credit.qty > 0 and now - credit.at <= 5 then
+            credits[#credits + 1] = credit
+        end
+    end
+    V.inferred = credits
     V.buyback = list
     return booked
 end
