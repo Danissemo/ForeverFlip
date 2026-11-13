@@ -8,6 +8,9 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- **Analytics, By item.** The name column is narrower, the others wider with full names (Bought,
+  Sold, In stock, Profit, Days to sell, Posts sold), and each header explains its column when
+  hovered. Table headers can carry such a tooltip.
 - **Purchases of one item close together are one lot.** Buys of the same item within 15 minutes
   of its last lot (one position bought in several clicks, or bought back from your own posts) join
   that lot in the journal table; lots saved before are joined once.
@@ -18,6 +21,8 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Analytics overview text ran into the tabs.** The left column is wider, Earned most, Lost most
+  and What to do share one label column and wrap under their own text, at most two lines each.
 - **The journal table's scroll bar jumped back to the top.** The rows were windowed twice; the
   table also shows 16 rows now, filling its block.
 - **Checks of auctions only you sell stalled.** WoW Forever never answers a search of an item no

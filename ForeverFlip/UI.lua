@@ -816,8 +816,24 @@ local function table_(parent, columns, rows, onClick, onSort)
     -- Room on the right for the scrollbar.
     header:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4 - SCROLL_WIDTH, -4)
     header:SetHeight(20)
-    local function headerCell(label, width, align, index)
+    -- A column's fourth field (optional) explains it in a tooltip over its header.
+    local function headerCell(label, width, align, index, tip)
         local h = CreateFrame("Button", nil, header, "AuctionHouseTableHeaderStringTemplate")
+        if tip then
+            h:SetScript("OnEnter", function(self)
+                if GameTooltip then
+                    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                    GameTooltip:SetText(L(label), 1, 0.82, 0, 1, true)
+                    GameTooltip:AddLine(L(tip), 1, 1, 1, true)
+                    GameTooltip:Show()
+                end
+            end)
+            h:SetScript("OnLeave", function()
+                if GameTooltip then
+                    GameTooltip:Hide()
+                end
+            end)
+        end
         h:SetHeight(20)
         if width then
             h:SetWidth(width)
@@ -847,12 +863,12 @@ local function table_(parent, columns, rows, onClick, onSort)
     local cells, x = {}, 0
     for i = #columns, 2, -1 do
         local c = columns[i]
-        local h = headerCell(c[1], c[2], c[3], i)
+        local h = headerCell(c[1], c[2], c[3], i, c[4])
         h:SetPoint("TOPRIGHT", header, "TOPRIGHT", -x, 0)
         cells[i] = { x = x, width = c[2], align = c[3] }
         x = x + c[2]
     end
-    local first = headerCell(columns[1][1], nil, "LEFT", 1)
+    local first = headerCell(columns[1][1], nil, "LEFT", 1, columns[1][4])
     first:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
     first:SetPoint("TOPRIGHT", header, "TOPRIGHT", -x, 0)
     -- Scrolling: a list longer than the rows is scrolled with the mouse wheel or the scrollbar on
@@ -3677,14 +3693,35 @@ function UI.createStats(p)
     local list = CreateFrame("Frame", nil, p)
     list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
     list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 60)
+    -- Each header explains its column when hovered.
     UI.statsTable = table_(list, {
-        { "Name" },
-        { "Bought (col)", 52 },
-        { "Sold (col)", 52 },
-        { "Stock (col)", 52 },
-        { "Profit", 90 },
-        { "Days (col)", 52 },
-        { "Sell %", 56 },
+        { "Name", nil, nil, "The item. Click a header to sort by it, click again to reverse." },
+        { "Bought", 66, nil, "Units you bought, all time." },
+        { "Sold", 60, nil, "Units you sold: on the auction house and to merchants." },
+        {
+            "In stock",
+            70,
+            nil,
+            "Units bought and not sold yet: in the bags or on sale. Red: not one sold for 3 days or more.",
+        },
+        {
+            "Profit",
+            104,
+            nil,
+            "What the sold units brought after the auction house cut, minus what they cost (lost deposits included). Red: a loss. Units still in stock do not count yet.",
+        },
+        {
+            "Days to sell",
+            90,
+            nil,
+            "How many days a unit took on average from purchase to sale. Lower is better.",
+        },
+        {
+            "Posts sold",
+            84,
+            nil,
+            "Of your posts of the item, the share that sold; the rest expired or were cancelled (lost deposit). Shown after 3 posts.",
+        },
     }, 16, function() end)
     UI.statsText = footer(p, 56).text
 end
@@ -3769,7 +3806,7 @@ function UI.createAnalytics(p)
     -- Left: the headline (did I earn?), the plain-word lines, a rule, then the items that earned
     -- and lost most and what to do, each label with its text indented beside it. Right: the
     -- chart's title with the period buttons, the chart under them. A rule above the tabs.
-    local LEFT_W = 320
+    local LEFT_W, LABEL_W = 400, 96
     UI.resultsHead = text(top, "GameFontNormal")
     UI.resultsHead:SetPoint("TOPLEFT", top, "TOPLEFT", 10, -8)
     UI.resultsHead:SetWidth(LEFT_W)
@@ -3786,15 +3823,22 @@ function UI.createAnalytics(p)
     rule:SetWidth(LEFT_W)
     UI.resultsPairs = {}
     local above = rule
+    -- The labels share one column; each text starts at the same x and wraps under itself, at most
+    -- two lines (the block must not run into the tabs).
     for _, id in ipairs({ "best", "worst", "todo" }) do
         local label = text(top, "GameFontHighlightSmall")
-        label:SetPoint("TOPLEFT", above, "BOTTOMLEFT", 0, id == "best" and -5 or -3)
+        -- Under the rule, then under the text above (which starts LABEL_W + 4 further right).
+        label:SetPoint("TOPLEFT", above, "BOTTOMLEFT", id == "best" and 0 or -(LABEL_W + 4), id == "best" and -5 or -3)
+        label:SetWidth(LABEL_W)
         label:SetJustifyH("LEFT")
         local value = text(top, "GameFontHighlightSmall")
         value:SetPoint("TOPLEFT", label, "TOPRIGHT", 4, 0)
         value:SetPoint("RIGHT", top, "LEFT", 10 + LEFT_W, 0)
         value:SetJustifyH("LEFT")
         value:SetSpacing(2)
+        if value.SetMaxLines then
+            value:SetMaxLines(2)
+        end
         UI.resultsPairs[id] = { label = label, value = value }
         above = value
     end
@@ -3927,7 +3971,7 @@ function UI.refreshAnalytics()
     local tip
     if r.stale > 0 then
         tip = string.format(
-            L("%s of stock has not sold for 3+ days: answer it on Selling, Undercuts, or sell it to a merchant."),
+            L("%s of stock unsold for 3+ days: repost it (Selling, Undercuts) or sell to a merchant."),
             U.money(r.stale)
         )
     elseif r.sales == 0 and r.buys == 0 then
