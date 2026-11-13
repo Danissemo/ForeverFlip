@@ -130,10 +130,54 @@ function D.char(db, owner)
 end
 
 -- Journal entries: { at, kind = "buy" | "sell" | "vendor" | "fail", key, name, qty, amount, profit }
+-- Daily totals of the journal, kept D.DAILY_DAYS days: the journal keeps only its last 500
+-- entries, and a busy week of Analytics read from it alone came out short.
+D.DAILY_DAYS = 60
+local function addDay(char, e)
+    local day = math.floor((e.at or 0) / 86400)
+    local d = char.daily[day]
+    if not d then
+        d = { spent = 0, buys = 0, earned = 0, profit = 0, cost = 0, sales = 0, wins = 0, vendor = 0, auction = 0 }
+        char.daily[day] = d
+    end
+    if e.kind == "buy" then
+        d.spent, d.buys = d.spent + (e.amount or 0), d.buys + 1
+    elseif e.kind == "sell" or e.kind == "vendor" then
+        local profit = e.profit or 0
+        d.earned, d.profit, d.sales = d.earned + (e.amount or 0), d.profit + profit, d.sales + 1
+        d.cost = d.cost + ((e.amount or 0) - profit)
+        d.wins = d.wins + (profit > 0 and 1 or 0)
+        if e.kind == "vendor" then
+            d.vendor = d.vendor + profit
+        else
+            d.auction = d.auction + profit
+        end
+    end
+end
+
+-- The character's daily totals, built once from the journal when they do not exist yet.
+function D.daily(char)
+    if type(char.daily) ~= "table" then
+        char.daily = {}
+        for _, e in ipairs(char.journal or {}) do
+            addDay(char, e)
+        end
+    end
+    return char.daily
+end
+
 function D.log(char, entry)
+    D.daily(char)
     char.journal[#char.journal + 1] = entry
+    addDay(char, entry)
     while #char.journal > 500 do
         table.remove(char.journal, 1)
+    end
+    local oldest = math.floor((entry.at or 0) / 86400) - D.DAILY_DAYS
+    for day in pairs(char.daily) do
+        if day < oldest then
+            char.daily[day] = nil
+        end
     end
 end
 

@@ -33,24 +33,27 @@ function A.results(days, now)
     for i = 1, days do
         r.days[i] = { day = today - days + i, profit = 0, earned = 0, spent = 0 }
     end
+    -- Totals from the daily records (they outlive the 500-entry journal); the best and worst items
+    -- from the journal, which is all that names them.
+    local daily = F.Data.daily(c)
+    for i, d in ipairs(r.days) do
+        local t = daily[d.day]
+        if t then
+            r.spent, r.buys = r.spent + t.spent, r.buys + t.buys
+            r.earned, r.profit, r.sales = r.earned + t.earned, r.profit + t.profit, r.sales + t.sales
+            r.cost, r.wins = r.cost + t.cost, r.wins + t.wins
+            r.vendor, r.auction = r.vendor + t.vendor, r.auction + t.auction
+            d.profit, d.earned, d.spent = t.profit, t.earned, t.spent
+        end
+        r.days[i] = d
+    end
     local byItem = {}
     for _, e in ipairs(c.journal) do
         local index = math.floor((e.at or 0) / DAY) - (today - days)
         local d = r.days[index]
         if d then
-            if e.kind == "buy" then
-                r.spent, r.buys, d.spent = r.spent + e.amount, r.buys + 1, d.spent + e.amount
-            elseif e.kind == "sell" or e.kind == "vendor" then
+            if e.kind == "sell" or e.kind == "vendor" then
                 local profit = e.profit or 0
-                r.earned, r.profit, r.sales = r.earned + e.amount, r.profit + profit, r.sales + 1
-                r.cost = r.cost + (e.amount - profit)
-                r.wins = r.wins + (profit > 0 and 1 or 0)
-                if e.kind == "vendor" then
-                    r.vendor = r.vendor + profit
-                else
-                    r.auction = r.auction + profit
-                end
-                d.profit, d.earned = d.profit + profit, d.earned + e.amount
                 local item = byItem[e.key]
                 if not item then
                     item = { key = e.key, name = e.name, profit = 0, sales = 0 }

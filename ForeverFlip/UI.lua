@@ -4039,7 +4039,8 @@ function UI.createCrafting(p)
     UI.craftShop = button(bar, "Shop materials", 150, function()
         local r = UI.craftSelected
         if r then
-            local count = math.max(1, math.floor(r.perDay or 1))
+            local made = math.max(1, r.n or 1) -- units one craft makes
+            local count = math.max(1, math.floor((r.perDay or 1) / made))
             local n = F.Crafting.shopMaterials(r.id, count)
             F.Engine.notify(n > 0 and "saved" or "values")
         end

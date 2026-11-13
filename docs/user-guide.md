@@ -80,7 +80,7 @@ A full scan runs in stages, all shown on the progress bar:
 
 1. **Waiting for the auction house to send the full scan.** The server answers in a few seconds to a
    minute. The status line counts the seconds while ForeverFlip waits for the answer (minutes on a
-   busy server). If it does not answer in 5 minutes, ForeverFlip says so and tries again 15 minutes
+   busy server). If it does not answer in 10 minutes, ForeverFlip says so and tries again 15 minutes
    after that call: the server counts its 15 minutes from every call, so an earlier try would only
    push the answer further away.
 2. **Reading auctions.** The scan is read in small portions per frame, so the game keeps running
@@ -674,7 +674,7 @@ a block too:
 | **On sale by you** | Your auctions of the item now, and the lowest price among them. |
 | **Deal now** | The profit of the item's current deal. |
 | **Vendor pays** | What a merchant pays, marked when not yet confirmed at a merchant. |
-| **Auction house, after the cut and N deposits** | One unit's money from the auction house: the usual (or sale) price after the cut, less a deposit for each try. N is the tries your own sale rate of the item suggests, 3 until it is known. Commodities pay the deposit of a stack of 20, per unit. |
+| **Auction house, after the cut and N deposits** | One unit's money from the auction house: the usual (or sale) price after the cut, less the deposits of the posts expected to expire first: (1 − s) / s, s = the chance one post sells (your own share of posts that sold, else from the units sold a day over the post's duration; at most 20). Commodities pay the deposit of a stack of 20, per unit. |
 | **Disenchant** | The materials' value after the cut, for a character who can disenchant. |
 | **Best: …** | Which of these pays the most. |
 

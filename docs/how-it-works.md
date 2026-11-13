@@ -245,12 +245,12 @@ old data.
 | Part | What it is |
 | --- | --- |
 | n | Units seen bought at 95% of the price or more, in h hours of lot-tracked scans (decayed). |
-| real | Real-buyer share: `(sure + lots / 2) / (sure + lots)`. A lot bought in part is a sure purchase; a lot that vanished whole may be another reseller (or a repost) and counts half. |
+| real | Real-buyer share: `(sure + lots / 2) / (sure + lots)`, from the sales at the price only (like n). A lot bought in part is a sure purchase; a lot that vanished whole may be another reseller (or a repost) and counts half. |
 | trust | Own results of the item: stock that did not sell lowers it (`Deals.trust`). |
 | m | Units per purchase at the price (sale log: units / buys, at least 1). Four units bought at once are one buyer. |
 | ahead | Rivals' undercut units that buyers take before yours: c undercuts an hour (`M.undercutRate`) × 48 hours × the item's median lot (`M.medianLot`). A popular item sells through them; a slow one does not. |
 | P | `P(B >= ceil((qty + ahead) / m))`, B the purchases in 48 hours: negative binomial of a `Gamma(n·real·trust/m + 0.1, (h + 24) / 24 days)` rate. A quiet day is assumed until the scans show sales. |
-| sweep | `1 - min(1, sweeps / pairs) / 2`: shelves cleared in one go are speculation. |
+| sweep | `1 - min(1, sweeps / pairs) / 2`: shelves cleared in one go are speculation. Both counts decay with the sales (3-day half-life), so old sweeps fade. A pair is a sweep when its units an hour pass 3 × the median rate of the last 12 pairs (rates, not counts: pairs differ in length). |
 | fresh | `0.5 ^ (max(0, age - 6 h) / 48 h)`: sales data loses half its weight every 2 days after 6 hours. |
 
 `Sure = P × sweep × fresh`. A vendor deal is 100% (a merchant pays at once). Before two full
@@ -509,7 +509,8 @@ holds is removed. Gear is evaluated for every known ending of the item ID.
 - **Sales to a merchant by hand** (`Merchant.watchBuyback`): the buyback list is compared each time
   it changes; a new entry of an item in stock is booked as a vendor sale at the price paid. Sales of
   the Sell to vendor button are booked by it and only matched.
-- **Journal:** buy, sell, vendor, expired and fail entries, the latest 500.
+- **Journal:** buy, sell, vendor, expired and fail entries, the latest 500. Daily totals of it
+  (`Data.daily`, 60 days) feed Analytics, so a busy week is not cut short by the 500-entry limit.
 - **Invoices** (`Mail.record`, `Trade.onInvoice`). Every auction mail is read once, when its money or
   items are taken. That happens through the Take auction mail button, or through the game's
   `TakeInboxMoney`, `AutoLootMailItem` and `TakeInboxItem`, which are hooked. The content is

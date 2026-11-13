@@ -127,14 +127,15 @@ function M.demandAt(h, price)
     then
         return { pairs = 0, perDay = 0 }
     end
-    local want, level = 0.85 * price / f.market, #M.LEVELS
+    local want, level = 0.85 * price / f.market, nil
     for i, x in ipairs(M.LEVELS) do
         if x >= want then
             level = i
             break
         end
     end
-    local sold = f.sold[level] or 0
+    -- Above the highest level nothing was measured: sales below it are not sales at this price.
+    local sold = level and f.sold[level] or 0
     return { pairs = f.pairs or 0, perDay = sold / (f.hours + M.PRIOR_HOURS) * 24, sold = sold, hours = f.hours }
 end
 
@@ -328,9 +329,14 @@ function M.unpackOwners(text)
     return out
 end
 
-local function compatible(prev, i, cur, k)
+local function compatible(prev, i, cur, k, po, co)
     local a, b = 3 * i - 2, 3 * k - 2
-    return prev[a] == cur[b] and cur[b + 1] <= prev[a + 1] and cur[b + 2] <= prev[a + 2]
+    if prev[a] ~= cur[b] or cur[b + 1] > prev[a + 1] or cur[b + 2] > prev[a + 2] then
+        return false
+    end
+    -- Both sellers known and different: not the same lot (one taken down, another posted).
+    local o1, o2 = po and po[i] or 0, co and co[k] or 0
+    return o1 == 0 or o2 == 0 or o1 == o2
 end
 
 -- Units sold between two scans `dt` seconds apart: total and { [price] = units }, then the whole
@@ -346,7 +352,7 @@ function M.trackSales(prev, cur, dt, prevOwners, curOwners)
     local match, used = {}, {}
     local k = 1
     for i = 1, np do
-        if k <= nc and compatible(prev, i, cur, k) then
+        if k <= nc and compatible(prev, i, cur, k, prevOwners, curOwners) then
             match[i], used[k] = k, true
             k = k + 1
         end
@@ -372,7 +378,7 @@ function M.trackSales(prev, cur, dt, prevOwners, curOwners)
         local list = not match[i] and bound and bound <= qty and free[price]
         if list then
             for n, c in ipairs(list) do
-                if compatible(prev, i, cur, c) then
+                if compatible(prev, i, cur, c, prevOwners, curOwners) then
                     match[i] = c
                     table.remove(list, n)
                     break
@@ -557,27 +563,32 @@ function M.recordSales(h, byPrice, dt, now, lots, undercuts)
         end
     end
     local scale = 1
-    s.recent = type(s.recent) == "table" and s.recent or {}
+    local decay = 0.5 ^ (math.max(0, now - (s.at or now)) / M.SALE_HALF_LIFE)
+    s.rates = type(s.rates) == "table" and s.rates or {}
+    s.recent = nil -- counts per pair of the older model: pairs of different lengths are not alike
+    s.sweeps = (s.sweeps or 0) * decay
     if dt > 0 then
-        if #s.recent >= 3 then
+        local hours = dt / 3600
+        local swept = false
+        if #s.rates >= 3 then
             local sorted = {}
-            for i, v in ipairs(s.recent) do
+            for i, v in ipairs(s.rates) do
                 sorted[i] = v
             end
             table.sort(sorted)
             local median = sorted[math.floor((#sorted + 1) / 2)]
-            local ceiling = math.max(5, M.SWEEP * median)
+            local ceiling = math.max(5, M.SWEEP * median * hours)
             if total > ceiling then
-                scale = ceiling / total
-                s.sweeps = (s.sweeps or 0) + 1
+                scale, swept = ceiling / total, true
             end
         end
-        s.recent[#s.recent + 1] = total * scale
-        while #s.recent > 12 do
-            table.remove(s.recent, 1)
+        s.sweeps = s.sweeps + (swept and 1 or 0)
+        s.pairsSeen = (s.pairsSeen or s.pairs or 0) * decay + 1
+        s.rates[#s.rates + 1] = total * scale / math.max(hours, 1 / 60)
+        while #s.rates > 12 do
+            table.remove(s.rates, 1)
         end
     end
-    local decay = 0.5 ^ (math.max(0, now - (s.at or now)) / M.SALE_HALF_LIFE)
     s.sure = (s.sure or 0) * decay
     s.lots = (s.lots or 0) * decay
     s.cuts = (s.cuts or 0) * decay + (dt > 0 and undercuts or 0)
@@ -829,7 +840,10 @@ function M.confidence(h, price, qty, now, trust)
     end
     local floor = 0.95 * price
     local units = qtyAbove(type(s.b) == "table" and s.b or {}, floor)
-    local sure, lots = math.max(0, s.sure or 0), math.max(0, s.lots or 0)
+    -- Sales at the price only, like n: purchases far below it say nothing of buyers at this price.
+    local seen = M.saleEvidence(h, floor)
+    local sure = seen and seen.sure or math.max(0, s.sure or 0)
+    local lots = seen and seen.lots or math.max(0, s.lots or 0)
     local real = (sure + lots) > 0 and (sure + lots / 2) / (sure + lots) or 1
     trust = U.finite(trust) and math.max(0, trust) or 1
     local hours = M.SURE_HOURS
@@ -838,11 +852,11 @@ function M.confidence(h, price, qty, now, trust)
     -- Each rival undercut puts a lot (the item's median lot) ahead of yours: buyers take it first.
     local lot = M.medianLot(h)
     local ahead = c * hours * lot
-    local e = M.saleEvidence(h, floor)
+    local e = seen
     local m = e and e.buys > 0 and math.max(1, e.units / e.buys) or 1
     local tail = F.Trade.saleChances(units * real * trust / m, s.hours or 0, hours, M.SURE_PRIOR, M.SURE_PRIOR_HOURS)
     local p = tail(math.max(1, math.ceil(((qty or 1) + ahead) / m)))
-    local sweep = 1 - math.min(1, (s.sweeps or 0) / math.max(1, s.pairs or 1)) / 2
+    local sweep = 1 - math.min(1, (s.sweeps or 0) / math.max(1, s.pairsSeen or s.pairs or 1)) / 2
     local age = U.finite(now) and U.finite(s.at) and math.max(0, now - s.at) or 0
     local fresh = M.freshness(age)
     return p * sweep * fresh,
@@ -902,6 +916,7 @@ end
 -- and compares it with the vendor price and disenchanting (a character who can).
 -- { best, value, post, vendor, vendorHow, auction, tries, lost, disenchant }; nil when nothing is known.
 M.POSTINGS = 2
+M.MAX_FAILED = 20
 M.STACK = 20
 -- `post` (optional): the price each to post at (F.Trade.quote); without it the usual price.
 function M.advice(id, key, h, post)
@@ -922,18 +937,26 @@ function M.advice(id, key, h, post)
         local one = stack / units
         local name = U.itemInfo(id)
         local rate = name and F.Trade.rate(name)
-        local tries = M.POSTINGS
+        -- s = the chance one post sells: your own share of posts that sold, else from the units
+        -- sold a day over the post's duration (one unit, Poisson). Posts that expire before the
+        -- sale lose their deposit: E[failed] = (1 - s) / s, at most M.MAX_FAILED.
+        local success = 1 / M.POSTINGS
         if rate and rate > 0 then
-            tries = math.ceil(1 / rate)
+            success = rate
         elseif h then
             local s = M.saleability(h, price, F.Engine and F.Engine.clock and F.Engine.clock() or 0)
             if s.known and s.perDay and s.perDay > 0 then
-                tries = math.ceil(1 / s.perDay)
+                local d = F.Trade.durationFor and F.Trade.durationFor() or 3
+                local hours = (F.Trade.DURATION_HOURS and F.Trade.DURATION_HOURS[d]) or 24
+                success = 1 - math.exp(-s.perDay * hours / 24)
                 out.perDay = s.perDay
+            elseif s.known then
+                success = 0
             end
         end
-        out.tries = math.max(1, math.min(5, tries))
-        out.lost = math.floor((out.tries - 1) * one + 0.5)
+        local failed = success > 0 and math.min(M.MAX_FAILED, (1 - success) / success) or M.MAX_FAILED
+        out.tries = 1 + failed
+        out.lost = math.floor(failed * one + 0.5)
         out.post = price
         out.auction = M.net(price, 1) - out.lost
     end
@@ -970,7 +993,9 @@ end
 
 -- Lowest legal listing price that returns `cost` for `qty` units after the cut.
 function M.breakEven(cost, qty, kind)
-    local price = U.stepUp(cost / qty / (1 - M.CUT), kind)
+    -- From the cost itself (a lower bound), up one legal step at a time: the cut is rounded, so the
+    -- price that returns the cost can be below cost / (1 - CUT).
+    local price = math.max(kind == "commodity" and 1 or 100, U.stepUp(cost / qty, kind))
     while M.net(price, qty) < cost do
         price = price + (kind == "commodity" and 1 or 100)
     end

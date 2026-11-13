@@ -775,6 +775,9 @@ function T.suggest(item)
             price, why = U.stepDown(fallback, item.kind), source
         end
     end
+    if price and cap and price > cap then
+        price, why = U.stepDown(cap, item.kind), why == "undercut" and "normal" or why
+    end
     if price and price < (item.kind == "commodity" and 1 or 100) then
         price = item.kind == "commodity" and 1 or 100
     end
@@ -1803,7 +1806,7 @@ end
 -- Chances of the units sold in `t` hours when n units sold in h hours watched (T.saleChances):
 -- the negative binomial of a Gamma(n + 1/2, (h + M.PRIOR_HOURS) / 24) rate. Returns tail(k) =
 -- P(N >= k); a normal approximation beyond T.CHANCE_TERMS units.
-T.CHANCE_TERMS = 2000
+T.CHANCE_TERMS = 20000
 function T.saleChances(sold, hours, t, prior, priorHours)
     local shape = math.max(0, U.finite(sold) and sold or 0) + (U.finite(prior) and prior > 0 and prior or 0.5)
     local exposure = (
@@ -1819,7 +1822,9 @@ function T.saleChances(sold, hours, t, prior, priorHours)
     local mean = shape * (1 - p) / p
     local sd = math.sqrt(mean / p)
     local tails = { [0] = 1 }
-    local term = p ^ shape -- P(N = 0)
+    local log1p = math.log(1 - p)
+    -- log P(N = n), stepped n by n: kept as a log, a term too small for a number is still exact.
+    local logTerm = shape * math.log(p)
     local below, n = 0, 0
     return function(k)
         if k <= 0 then
@@ -1830,8 +1835,8 @@ function T.saleChances(sold, hours, t, prior, priorHours)
             return math.max(0, math.min(1, 1 - 0.5 * (1 + erf(z / math.sqrt(2)))))
         end
         while n < k do
-            below = below + term
-            term = term * (n + shape) / (n + 1) * (1 - p)
+            below = below + math.exp(logTerm)
+            logTerm = logTerm + math.log((n + shape) / (n + 1)) + log1p
             n = n + 1
             tails[n] = math.max(0, math.min(1, 1 - below))
         end
@@ -1902,19 +1907,24 @@ function T.fightPlan(a)
             wall = r.unit
         end
     end
-    -- The player's own lots of the item that buyers reach first.
-    local ownAhead = 0
-    for _, o in ipairs(T.owned or {}) do
-        if
-            o ~= a
-            and not o.sold
-            and o.key == a.key
-            and (o.price or 0) > 0
-            and (o.price < price or (o.price == price and (o.auctionID or 0) < (a.auctionID or 0)))
-        then
-            ownAhead = ownAhead + (o.qty or 1)
+    -- The player's own lots of the item that buyers reach before a lot at `at`: worked out for each
+    -- price an option posts at (an own lot between the new and the old price is behind the new one).
+    local function ownBelow(at)
+        local n = 0
+        for _, o in ipairs(T.owned or {}) do
+            if
+                o ~= a
+                and not o.sold
+                and o.key == a.key
+                and (o.price or 0) > 0
+                and (o.price < at or (o.price == at and (o.auctionID or 0) < (a.auctionID or 0)))
+            then
+                n = n + (o.qty or 1)
+            end
         end
+        return n
     end
+    local ownAhead = ownBelow(price)
     local rivalQty = rows[1] and rows[1].qty or 1
     local new = T.undercut(cheapest, item.kind)
     local floor = T.floorFor({ key = a.key, kind = item.kind })
@@ -1925,7 +1935,8 @@ function T.fightPlan(a)
     end
     local deposit = depositFor(qty)
     local okCost, extra = pcall(F.AH.cancelCost, a.auctionID)
-    local cancel = deposit + (okCost and U.finite(extra) and extra or 0)
+    local fee = okCost and U.finite(extra) and extra or 0
+    local cancel = deposit + fee -- what cancelling gives up, for the page: the deposit and the fee
     local vendor = (F.AH.vendorPrice(item.id, true) or 0)
     -- An unsold unit comes back: worth posting again (the quote), at least a merchant's price.
     local again = 0
@@ -1984,18 +1995,19 @@ function T.fightPlan(a)
         if known then
             local d2 = M.demandAt(h, new)
             d2 = (d2.pairs or 0) > 0 and d2 or d
-            local units = soldUnderFire(d2, ownAhead, qty, hours, c, rivalQty)
+            local ownNew = ownBelow(new)
+            local units = soldUnderFire(d2, ownNew, qty, hours, c, rivalQty)
             local tail = T.saleChances(d2.sold, d2.hours, hours)
             add({
                 id = "undercut",
-                p = tail(ownAhead + qty),
+                p = tail(ownNew + qty),
                 units = units,
                 answered = 1 - math.exp(-c * hours),
-                ev = value(units, qty, new, newDeposit) - newDeposit - cancel,
+                ev = value(units, qty, new, newDeposit) - newDeposit - fee,
                 hours = hours,
             })
         else
-            add({ id = "undercut", ev = M.net(new, qty) - cancel, guess = true, hours = hours })
+            add({ id = "undercut", ev = M.net(new, qty) - fee, guess = true, hours = hours })
         end
     end
     -- Buy out the cheaper units: yours is first again, theirs follow at your price for a day.
@@ -2046,22 +2058,23 @@ function T.fightPlan(a)
                 local d3 = M.demandAt(h, target)
                 d3 = (d3.pairs or 0) > 0 and d3 or { sold = 0, hours = d.hours }
                 local all = depositFor(lot)
-                local sold = soldUnderFire(d3, ownAhead, lot, 24, c, rivalQty)
+                local ownTarget = ownBelow(target)
+                local sold = soldUnderFire(d3, ownTarget, lot, 24, c, rivalQty)
                 add({
                     id = "raise",
                     cost = cost,
                     units = units,
                     target = target,
                     expect = sold,
-                    p = T.saleChances(d3.sold, d3.hours, 24)(ownAhead + lot),
-                    ev = value(sold, lot, target, all) - all - cancel - cost,
+                    p = T.saleChances(d3.sold, d3.hours, 24)(ownTarget + lot),
+                    ev = value(sold, lot, target, all) - all - fee - cost,
                 })
             end
         end
     end
     -- Vendor: cancel now and sell to a merchant.
     if vendor > 0 then
-        add({ id = "vendor", ev = vendor * qty - cancel })
+        add({ id = "vendor", ev = vendor * qty - fee })
     end
     local best
     for _, o in ipairs(plan.options) do

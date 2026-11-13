@@ -97,7 +97,8 @@ class FlowFallbackTests(unittest.TestCase):
         local trading=M.demandAt(h,100,20000)
         assert(trading.perDay==9 and trading.pairs==4 and trading.hours==12)
         local unsupportedTrading=M.demandAt(h,200,20000)
-        assert(unsupportedTrading.perDay==4.5 and unsupportedTrading.pairs==4)
+        -- Above the highest measured level nothing was seen sold at that price.
+        assert(unsupportedTrading.perDay==0 and unsupportedTrading.pairs==4)
         ''')
 
 

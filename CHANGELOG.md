@@ -8,6 +8,32 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Formula audit.** An outside review of every formula found real defects; all that change a
+  decision are fixed:
+  - **Sale chances of a large number** read 100% instead of almost 0: the first term of the
+    negative binomial rounded to zero and every term after it too. Terms are now kept as logs.
+  - **Undercuts counted the deposit already paid twice** against every option that cancels: waiting
+    gets it back with a sale, so cancelling now costs only the game's extra cancel fee. A merchant
+    can now beat waiting when it should.
+  - **A first bid ignored the minimum return** (a bid of 99 for a worth of 100 passed); every bid now
+    keeps both the minimum profit and the minimum return.
+  - **Shop materials bought a day of the product's units in crafts**: a recipe making 5 bought
+    5 times too many.
+  - **Another seller's smaller lot read as a partial purchase**: lots now match only within one
+    known seller.
+  - **Sure rose with purchases at other prices**: the real-buyer share now uses the sales at the
+    price only.
+  - **Sweeps compared counts of pairs of different lengths**, and never faded: a 3-hour pair at the
+    usual rate was cut as a sweep, and old sweeps kept Sure at half for good. Rates per hour are
+    compared, and the counts decay.
+  - **Deposits lost before a sale were capped at four posts**: an item that sells on 5% of posts
+    loses 19 deposits, not 4. Expected expired posts are now (1 − s) / s, up to 20.
+  - **Analytics lost sales past the 500-entry journal**: daily totals (60 days) feed it now.
+  - **A price cap was passed** when nobody had a normal price; the cap now holds. Break-even is the
+    lowest price that returns the cost (it could be one step higher). A price above every measured
+    level no longer borrows sales from below it. Undercuts counts your own lots ahead for each price
+    an option posts at.
+
 - **Full scans stopped for hours.** The server answered ever more slowly (2, then 4, then over
   5 minutes); the scan gave up at 5 minutes and called again while the server still worked on the
   last call, and in game no scan came for seven hours. It now waits up to 10 minutes, and each call

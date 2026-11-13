@@ -86,7 +86,8 @@ function B.finish(j, history)
         if not F.Shopping.blocked(c.key) then
             local value = B.value(c.key, c.id, history)
             local profit = value and value * c.count - c.bid
-            if profit and profit >= minProfit then
+            local most = value and B.maxBid(value * c.count)
+            if profit and profit >= minProfit and most and c.bid <= most then
                 c.value, c.profit = value * c.count, profit
                 out[#out + 1] = c
             end
@@ -155,7 +156,13 @@ function B.read(k)
         local best
         for _, r in ipairs(rows or {}) do
             local profit = unitValue * r.qty - r.bid
-            if profit >= (F.db.settings.minProfit or 100) and (not best or profit > best.profit) then
+            local most = B.maxBid(unitValue * r.qty)
+            if
+                profit >= (F.db.settings.minProfit or 100)
+                and most
+                and r.bid <= most
+                and (not best or profit > best.profit)
+            then
                 best = { auctionID = r.auctionID, bid = r.bid, qty = r.qty, profit = profit, at = F.Engine.clock() }
             end
         end
