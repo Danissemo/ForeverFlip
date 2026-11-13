@@ -360,19 +360,26 @@ class ScanPartsTests(unittest.TestCase):
         while S.busy() do run(1); n = n + 1; assert(n < 900) end
         assert(S.last.total == full, 'waited past 5 minutes for the rest: ' .. S.last.total)''')
 
-    def test_a_house_that_shrank_is_read_after_a_quiet_minute(self):
+    def test_a_list_far_below_the_last_scan_is_never_read(self):
         run(BASE + '''local S = F.Scan
         for i = 1, 60 do addAuction(10, 100 + i, 1) end
         fullScan()
-        local full = S.last.total
+        local before, full = S.last, S.last.total
         now = now + 901; F.db.lastScan = 0
         assert(S.start())
         C_AuctionHouse.GetNumReplicateItems = function() return math.floor(full / 2) + 1 end
-        run(S.SETTLE + 2)
-        assert(S.job and S.job.state == 'waiting', 'smaller than the day: waits a quiet minute first')
         local n = 0
-        while S.busy() do run(1); n = n + 1; assert(n < 900) end
-        assert(S.last.total == math.floor(full / 2) + 1 and not S.last.partial, 'read as the house it is: ' .. tostring(S.last.total) .. ' of ' .. full .. ' ' .. tostring(S.last.partial) .. ' ' .. tostring(F.Engine.message))''')
+        while S.busy() do run(1); n = n + 1; assert(n < 1200) end
+        assert(S.last == before and F.Engine.message == 'scan_partial', 'half of a scan 15 minutes old: a part')''')
+
+    def test_a_house_that_shrank_a_little_or_after_a_break_is_read(self):
+        run(BASE + '''local S = F.Scan
+        S.last = { scope = F.Engine.scope(), total = 100, at = now }
+        assert(not S.isShort(F.Engine.scope(), 90), 'a tenth fewer in 15 minutes: the house')
+        assert(S.isShort(F.Engine.scope(), 70), 'under 75%: a part')
+        S.last.at = now - S.RECENT - 1
+        assert(not S.isShort(F.Engine.scope(), 70), 'after a break the house may have changed more')
+        assert(S.isShort(F.Engine.scope(), 40), 'but not to under half')''')
 
     def test_a_part_of_another_addons_scan_waits_for_the_rest(self):
         run(BASE + '''local S = F.Scan

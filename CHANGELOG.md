@@ -8,6 +8,11 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **A part of the scan was read as a smaller house** (185 980 of 283 783 auctions stopped for a
+  minute and was taken). A list under 75% of the last complete scan of the last 3 hours is a part
+  and is never read; after a longer break, a list under half of the day's largest is. A house that
+  really shrinks does so a little between two scans.
+
 - **Formula audit.** An outside review of every formula found real defects; all that change a
   decision are fixed:
   - **Sale chances of a large number** read 100% instead of almost 0: the first term of the

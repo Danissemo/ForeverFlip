@@ -211,8 +211,14 @@ end
 -- a whole number of the server's 1024-auction parts. In game every part read so far was such a
 -- multiple (36 864, 54 272, 64 512, 88 064, 122 880, 185 344) while complete lists were not
 -- (188 401); a complete list lands on a multiple once in 1024 scans and then is only read as partial.
+-- A house changes little between two scans 15 minutes apart: a list under 75% of the last complete
+-- scan of the last 3 hours is a part (in game 185 980 of 283 783 stopped for a minute and was read
+-- as a smaller house). With no complete scan that recent (after a break the house may have changed
+-- more), a list under half of the largest of the day is.
 S.PART = 1024
 S.SHORT_SHARE = 0.75
+S.RECENT = 3 * 3600
+S.STALE_SHARE = 0.5
 function S.isShort(scope, n)
     if not U.finite(n) or n <= 0 then
         return false
@@ -220,8 +226,19 @@ function S.isShort(scope, n)
     if S.isPart(n) then
         return true
     end
+    local market = F.Data.market(F.db, scope)
+    local last = S.last and S.last.scope == scope and S.last or market.last
+    if
+        type(last) == "table"
+        and not last.partial
+        and U.finite(last.total)
+        and last.total > 0
+        and clock() - (last.at or 0) <= S.RECENT
+    then
+        return n < last.total * S.SHORT_SHARE
+    end
     local ref = S.reference(scope)
-    return ref > 0 and n < ref * S.SHORT_SHARE
+    return ref > 0 and n < ref * S.STALE_SHARE
 end
 
 local function polled(j, now)
@@ -243,13 +260,9 @@ local function polled(j, now)
     if quiet < S.SETTLE then
         return false
     end
-    -- A whole number of the server's parts is never read: the rest is waited for (S.step ends the
-    -- wait). A list only smaller than the day's largest (the house can shrink, by night or after
-    -- many auctions ended) is read once it stayed the same for S.SHORT seconds.
-    if S.isPart(n) then
-        return false
-    end
-    return not S.isShort(j.scope, n) or quiet >= S.SHORT
+    -- A part is never read, however long it stays the same: the rest is waited for (S.step ends
+    -- the wait and drops it). A house that really shrinks does so a little between two scans.
+    return not S.isShort(j.scope, n)
 end
 
 local function beginReading(j, total)
