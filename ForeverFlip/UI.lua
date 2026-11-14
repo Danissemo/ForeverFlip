@@ -1109,6 +1109,19 @@ local function table_(parent, columns, rows, onClick, onSort)
     t.empty:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 10, -20)
     t.empty:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", -10, -20)
     t.empty:SetSpacing(4)
+    -- Two tables share one page (the Deals page swaps its columns for the vendor filter): the one
+    -- not in use hides every region of its own, header, rows, scrollbar and empty text included.
+    t.frame = header
+    function t.show(shown)
+        header:SetShown(shown)
+        for _, r in ipairs(t.rows) do
+            r:SetShown(shown and r.key ~= nil)
+        end
+        if not shown then
+            t.empty:Hide()
+        end
+        t.bar:SetShown(shown)
+    end
     return t
 end
 
@@ -1556,32 +1569,72 @@ function UI.createDeals(p)
     local list = CreateFrame("Frame", nil, p)
     list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
     list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 120)
-    UI.dealTable = table_(
-        list,
-        {
-            { "Name" },
-            { "Qty", 50 },
-            { "Buy at", 80 },
-            { "Sells at", 80 },
-            { "Profit", 80 },
-            { "Est./day", 66 },
-            { "Sure", 50 },
-            { "Status", 92, "LEFT" },
-        },
-        DEAL_ROWS,
-        function(row)
-            UI.selectDeal(row.key)
-        end,
-        function(index)
-            if UI.dealSort == index then
-                UI.dealDescending = not UI.dealDescending
-            else
-                UI.dealSort, UI.dealDescending = index, index == 5 or index == 6 or index == 7
+    -- The columns every deal shares. A vendor deal is sure money and is read on its own figures:
+    -- Qty and Cost are the whole offer on the shelf (an offer too dear to buy is still shown), Buy
+    -- at and Sells at are prices of one unit, and Profit is what the deal brings once it is sold.
+    local DEAL_COLUMNS = {
+        { "Name" },
+        { "Qty", 50 },
+        { "Buy at", 80 },
+        { "Sells at", 80 },
+        { "Profit", 80 },
+        { "Est./day", 66 },
+        { "Sure", 50 },
+        { "Status", 92, "LEFT" },
+    }
+    -- To vendor: the same figures without the resale ones (a vendor deal has no Est./day and no
+    -- Sure, it is paid at once) and with Cost, the money the whole lot asks for.
+    local VENDOR_COLUMNS = {
+        { "Name" },
+        { "Qty", 50 },
+        { "Buy at", 80 },
+        { "Sells at", 80 },
+        { "Cost", 86 },
+        { "Profit", 86 },
+        { "Status", 92, "LEFT" },
+    }
+    -- A column click sorts by that column, a second click on the same one reverses it. Names start A
+    -- to Z; the figures that mean "the bigger the better" start with the largest (Profit, Est./day
+    -- and Sure on the general page; Cost and Profit on the vendor page). Status starts with the
+    -- actionable deals (its own order, see sortValue). The two layouts number their columns
+    -- differently (the vendor page has Cost where the other has Est./day and Sure), so the filter is
+    -- remembered with the index.
+    local BIG_FIRST = { all = { 5, 6, 7 }, vendor = { 5, 6 } }
+    local function onSort(index)
+        if UI.dealSort == index and UI.dealSortView == UI.filter then
+            UI.dealDescending = not UI.dealDescending
+        else
+            UI.dealSort, UI.dealSortView = index, UI.filter
+            UI.dealDescending = false
+            for _, column in ipairs(BIG_FIRST[UI.filter] or BIG_FIRST.all) do
+                if index == column then
+                    UI.dealDescending = true
+                end
             end
-            UI.dealPage = 1
-            UI.refresh()
         end
-    )
+        UI.dealPage = 1
+        UI.refresh()
+    end
+    UI.dealTables = {}
+    UI.dealTable = table_(list, DEAL_COLUMNS, DEAL_ROWS, function(row)
+        UI.selectDeal(row.key)
+    end, onSort)
+    UI.dealTables.all = UI.dealTable
+    UI.vendorTable = table_(list, VENDOR_COLUMNS, DEAL_ROWS, function(row)
+        UI.selectDeal(row.key)
+    end, onSort)
+    UI.dealTables.vendor = UI.vendorTable
+    -- Which table is on screen for the chosen filter.
+    function UI.dealView()
+        return UI.filter == "vendor" and UI.vendorTable or UI.dealTable
+    end
+    -- Moving between the tables: the one in view shows, the other hides.
+    function UI.showDealTable()
+        for _, t in pairs(UI.dealTables) do
+            t.show(t == UI.dealView())
+        end
+    end
+    UI.showDealTable()
     -- Header tooltips: what Sells at and Est./day are made of. `values` (optional) gives the numbers
     -- of a body written as a format, read when the tooltip opens (the cut depends on the house).
     local function headerTip(header, title, body, values)
@@ -1621,6 +1674,17 @@ function UI.createDeals(p)
         UI.dealTable.headers[7],
         "Sure",
         "How sure the deal is to pay back at its Sells at price: the chance that real buyers take its units at that price within 2 days, while your lot is the cheapest.\n\nFrom the sales seen at 95% of the price or more. Few sales give a low number even when they came fast (four sales in one hour are no promise). A whole lot that vanished counts half (often another reseller, not a buyer); shelves cleared in one go, a rival who undercuts often, stock of the item that did not sell and old sales data lower it.\n\nGreen 70% and more, yellow 40%, red below. Vendor deals: 100% (a merchant pays at once)."
+    )
+    -- The vendor page has its own headers (Cost in place of Est./day and Sure).
+    headerTip(
+        UI.vendorTable.headers[5],
+        "Cost",
+        "The money the whole offer asks for: Qty times Buy at, every lot on the shelf below the vendor price added up. A vendor deal is sure money, so an offer is listed even when the purse cannot pay for all of it; the Status column says so, and Buy then takes the part the money covers."
+    )
+    headerTip(
+        UI.vendorTable.headers[6],
+        "Profit",
+        "What the whole offer brings once a merchant has bought it: Sells at times Qty, less Cost. No auction house cut and no deposit are counted (a merchant pays at once)."
     )
     -- The deals scroll like every table (the scrollbar on the right); the line below counts them.
     UI.pageText = text(p, "GameFontHighlightSmall")
@@ -1759,6 +1823,11 @@ end
 local function dealStatus(d)
     local now = F.Engine.clock()
     F.Deals.fitWallet(d)
+    -- A vendor deal is listed as the whole offer even when no part of it fits the purse: the status
+    -- says what the click does (Buy then takes the part the money covers, as many units as it buys).
+    if d.mode == "vendor" and d.short then
+        return "|cffff6060" .. L("cannot afford it yet") .. "|r"
+    end
     if d.cost > F.Engine.wallet() then
         return "|cffff6060" .. L("not enough money") .. "|r"
     end
@@ -1888,11 +1957,19 @@ function UI.sureSentence(d, now)
 end
 
 local MODE_LABELS = { vendor = "vendor", shop = "shopping list", disenchant = "disenchant", bid = "bid" }
+-- The cheap column's word: a vendor deal carries its warning there, so the warning is seen in the
+-- list itself rather than only in the selected deal's lines.
+local function modeText(d)
+    if d.mode == "vendor" and d.refused then
+        return L("vendor, refuses")
+    end
+    return L(MODE_LABELS[d.mode] or d.mode)
+end
 -- Est./day: grey when the data is old, orange when no lot was seen bought in part at the price
 -- (only whole lots that vanished, confirmed by the next scan: the weaker evidence).
 local function estimateText(d, estimate, h)
     if d.mode ~= "flip" then
-        return L(MODE_LABELS[d.mode] or d.mode)
+        return modeText(d)
     elseif not estimate.known then
         return "-"
     end
@@ -1998,24 +2075,46 @@ function UI.dealDetail(d, estimate, h, now)
     local roi = d.cost > 0 and math.floor(d.profit / d.cost * 100 + 0.5) or 0
     local each = math.floor(d.cost / math.max(1, d.qty) + 0.5)
     if d.mode == "vendor" then
+        local offer = d.offer or d
         local lines = {
             string.format(
                 L("%s %d x %s = %s  ·  %s %s each  ·  %s %s (%d%%), no risk"),
-                gold("Buy"),
-                d.qty,
-                U.money(each),
-                U.money(d.cost),
+                gold("Offer"),
+                offer.qty or 0,
+                U.money(math.floor((offer.cost or 0) / math.max(1, offer.qty or 1) + 0.5)),
+                U.money(offer.cost or 0),
                 gold("Merchant pays"),
                 U.money(d.exit),
                 gold("Profit"),
-                UI.signed(d.profit),
-                roi
+                UI.signed(offer.profit or d.profit),
+                offer.cost and offer.cost > 0 and math.floor((offer.profit or 0) / offer.cost * 100 + 0.5) or 0
             ),
         }
+        -- What this click buys, when it is not the whole offer (the money in the bags, or a limit).
+        if d.short then
+            lines[#lines + 1] = string.format(
+                L(
+                    "The money in the bags cannot buy any of it yet: %s is needed. The offer stays listed; press Check price later."
+                ),
+                U.money(offer.cost or 0)
+            )
+        elseif (offer.qty or 0) > (d.qty or 0) then
+            lines[#lines + 1] = string.format(
+                L("%s buys the %d units the money covers now (of %d on the shelf): %s. The rest needs %s more."),
+                gold("Buy"),
+                d.qty or 0,
+                offer.qty or 0,
+                U.money(d.cost or 0),
+                U.money(math.max(0, (offer.cost or 0) - (d.cost or 0)))
+            )
+        end
         if d.vendorHow ~= "seen" then
             lines[#lines + 1] = L(
                 "The vendor price is from the game's item data, not yet confirmed at a merchant (it is, after one sale)."
             )
+        end
+        if d.refused then
+            lines[#lines + 1] = L("A merchant has refused this item before: check that it can be sold before buying.")
         end
         if d.kind ~= "commodity" then
             lines[#lines + 1] = L("Items are bought one auction per click; the next lot is checked ahead.")
@@ -2073,16 +2172,24 @@ function UI.refreshDeals()
     local list = F.Deals.visible(UI.filter)
     local now = F.Engine.clock()
     local history = F.Data.market(F.db, F.Engine.scope()).history
+    -- The vendor filter has its own columns (Cost instead of Est./day and Sure), so the page uses
+    -- one table at a time and the sort and window work on that one.
+    UI.showDealTable()
+    local view = UI.dealView()
+    local vendor = view == UI.vendorTable
     local estimates, sures = {}, {}
     -- Sure is costly (a confidence model per deal): every deal needs it only to sort by it; else
     -- the rows in view ask for theirs below (and the selected deal's details for its own).
-    local bySure = UI.dealSort == 7
+    local bySure = not vendor and UI.dealSort == 7
     for _, d in ipairs(list) do
         estimates[d.key] = saleEstimate(d, history, now)
         if bySure then
             sures[d.key] = F.Deals.sure(d, now)
         end
     end
+    -- The figures the two layouts share. The general page keeps the columns it always had (Status,
+    -- the last one, falls through to the state ranking below); the vendor page has one column fewer
+    -- and its fifth is the collection cost, its sixth the whole offer's profit.
     local function sortValue(d)
         local field = UI.dealSort
         if field == 1 then
@@ -2095,10 +2202,10 @@ function UI.refreshDeals()
         elseif field == 4 then
             return unitExit(d)
         elseif field == 5 then
-            return d.profit
+            return vendor and (d.offer and d.offer.cost or d.cost) or d.profit
         elseif field == 6 then
-            return estimates[d.key].perDay
-        elseif field == 7 then
+            return vendor and (d.offer and d.offer.profit or d.profit) or estimates[d.key].perDay
+        elseif field == 7 and not vendor then
             return sures[d.key]
         end
         if F.Deals.search and F.Deals.search.key == d.key then
@@ -2118,7 +2225,7 @@ function UI.refreshDeals()
     end
     table.sort(list, function(a, b)
         local av, bv = values[a.key], values[b.key]
-        if (UI.dealSort == 6 or UI.dealSort == 7) and (av == nil) ~= (bv == nil) then
+        if (not vendor and (UI.dealSort == 6 or UI.dealSort == 7)) and (av == nil) ~= (bv == nil) then
             return av ~= nil
         end
         if av == bv then
@@ -2129,24 +2236,36 @@ function UI.refreshDeals()
         end
         return av < bv
     end)
-    UI.dealTable.setSort(UI.dealSort, UI.dealDescending)
+    view.setSort(UI.dealSort, UI.dealDescending)
     if UI.dealPage == 1 then
-        UI.dealTable.offset, UI.dealPage = 0, nil -- a new filter or sort starts at the top
+        view.offset, UI.dealPage = 0, nil -- a new filter or sort starts at the top
     end
-    local shown = UI.dealTable.window(list)
-    for i, r in ipairs(UI.dealTable.rows) do
+    local shown = view.window(list)
+    for i, r in ipairs(view.rows) do
         local d = shown[i]
         if d then
             r.key, r.link = d.key, d.link
             r.icon:SetTexture(icon(d.id))
             r.name:SetText(nameOf(d.key, d.link))
-            r.cols[1]:SetText(d.qty)
-            r.cols[2]:SetText(U.money(unitCost(d)))
-            r.cols[3]:SetText(sellsAtText(d, history))
-            r.cols[4]:SetText(U.money(d.profit))
-            r.cols[5]:SetText(estimateText(d, estimates[d.key], history[d.key]))
-            r.cols[6]:SetText(UI.sureText(F.Deals.sure(d, now)))
-            r.cols[7]:SetText(dealStatus(d))
+            if vendor then
+                -- The whole offer on the shelf, its price a unit, and the money it asks for: a deal
+                -- too dear for the purse is still read here (the money of the click is in Cost).
+                local o = d.offer or d
+                r.cols[1]:SetText(o.qty or 0)
+                r.cols[2]:SetText(U.money(unitCost(d)))
+                r.cols[3]:SetText(sellsAtText(d, history))
+                r.cols[4]:SetText(U.money(o.cost or 0))
+                r.cols[5]:SetText(U.money(o.profit or d.profit))
+                r.cols[6]:SetText(dealStatus(d))
+            else
+                r.cols[1]:SetText(d.qty)
+                r.cols[2]:SetText(U.money(unitCost(d)))
+                r.cols[3]:SetText(sellsAtText(d, history))
+                r.cols[4]:SetText(U.money(d.profit))
+                r.cols[5]:SetText(estimateText(d, estimates[d.key], history[d.key]))
+                r.cols[6]:SetText(UI.sureText(F.Deals.sure(d, now)))
+                r.cols[7]:SetText(dealStatus(d))
+            end
             if d.key == UI.selected then
                 r.selected:Show()
             else
@@ -2158,9 +2277,12 @@ function UI.refreshDeals()
             r:Hide()
         end
     end
+    -- The totals: the vendor page counts the whole offers on the shelf (what is on offer, not only
+    -- what the purse covers), every other page the deals as its rows buy them.
     local cost, profit = 0, 0
     for _, d in ipairs(list) do
-        cost, profit = cost + d.cost, profit + d.profit
+        local o = vendor and (d.offer or d) or d
+        cost, profit = cost + (o.cost or 0), profit + (o.profit or 0)
     end
     UI.pageText:SetText(
         string.format(L("Deals: %d"), #list)
@@ -2170,7 +2292,7 @@ function UI.refreshDeals()
                 or ""
             )
     )
-    local empty = UI.dealTable.empty
+    local empty = view.empty
     if #list == 0 then
         if F.Scan.busy() then
             empty:SetText(L("The full scan is being processed. Deals appear when it ends."))
@@ -3054,6 +3176,18 @@ function UI.statusTargets()
         end
     elseif UI.section == "crafting" then
         keys = F.Crafting.keys()
+    elseif UI.section == "journal" then
+        -- The journal lists purchases and what became of them, per item: checking them reads the
+        -- current price of every item the page shows (the cheapest lots), so the figures behind the
+        -- rows are as fresh as the deals'. The view (all, resale, to vendor, bids) chooses which
+        -- items; a check is a price, not a deal, so `verifyDeals` stays false.
+        local seen = {}
+        for _, lot in ipairs(UI.journalLots()) do
+            if lot.key and not seen[lot.key] then
+                seen[lot.key] = true
+                keys[#keys + 1] = lot.key
+            end
+        end
     else
         return nil, keys, false
     end
@@ -3667,7 +3801,7 @@ function UI.refreshUndercuts()
             a.price,
             plan.cheapest,
             plan.ahead,
-            ADVICE_RANK[plan.verdict],
+            ADVICE_RANK[plan.ordering and "buyout" or plan.verdict],
         })[column]
     end)
     for i, r in ipairs(UI.undercutTable.rows) do
@@ -3682,7 +3816,12 @@ function UI.refreshUndercuts()
             r.cols[3]:SetText(U.money(plan.cheapest))
             r.cols[4]:SetText(plan.ahead)
             local v = OPTION[plan.verdict]
-            r.cols[5]:SetText(v[1] .. L(v[2]) .. "|r" .. (plan.war and " |cffff6060!|r" or ""))
+            -- A running buy-out is not an advice any more: the decision is taken and the cheaper
+            -- units are being bought. The row stays so the button can carry it on.
+            r.cols[5]:SetText(
+                plan.ordering and ("|cff66ccff" .. L("buy out running") .. "|r")
+                    or (v[1] .. L(v[2]) .. "|r" .. (plan.war and " |cffff6060!|r" or ""))
+            )
             if plan == selected then
                 r.selected:Show()
             else
@@ -3713,6 +3852,25 @@ function UI.refreshUndercuts()
                 lines[#lines + 1] = line
             end
         end
+        -- Why Answer next has nothing to do when the advice is "wait": the button is not blocked,
+        -- there is simply no action it would take (waiting is the action). Said in words, since a
+        -- count of 0 next to a list of undercuts otherwise reads as a broken button.
+        if selected.ordering then
+            lines[#lines + 1] = "|cff66ccff"
+                .. string.format(
+                    L(
+                        "A buy out of this auction is running: %d cheaper units are on the shopping list. Press buy out again for the next one; the row leaves this list once it is done."
+                    ),
+                    (selected.buyout and selected.buyout.units) or 0
+                )
+                .. "|r"
+        elseif selected.verdict == "wait" then
+            lines[#lines + 1] = "|cff999999"
+                .. L(
+                    "Answer next leaves this one alone: keeping it is what pays most, and it takes only the auctions whose advice is an action (undercut, buy out, raise, a merchant). The buttons above work whichever is advised, if you prefer another way out."
+                )
+                .. "|r"
+        end
     elseif #plans > 0 then
         lines[1] = string.format(L("|cffffd100Undercut:|r %d of your auctions  ·  acting pays on %d"), #plans, act)
         lines[2] = L("Click a row: every way out is priced (wait, undercut, buy out, raise, a merchant),")
@@ -3722,14 +3880,17 @@ function UI.refreshUndercuts()
         lines[2] = L("from the measured sales (wait, undercut, buy out, raise, a merchant), and you choose.")
     end
     UI.fightBox.set(lines, selected and selected.auction.auctionID or #plans)
-    -- While a buy-out runs, only its own item's "buy out" goes on (the click acts on the selection).
+    -- Every offered way out stays clickable, whatever is advised (the advice is a recommendation, not
+    -- a lock). One buy-out runs at a time, so while a job runs only its own item's "buy out" goes on:
+    -- a click acts on the selection, and another item's would replace the order that is running.
     local job = F.Trade.fightOrderActive()
     for id, b in pairs(UI.fightButtons) do
         local o = selected and selected[id]
-        b:SetEnabled(
-            job and id == "buyout" and selected ~= nil and selected.key == job.key and F.Trade.fightOrderReady()
-                or not job and o ~= nil and not o.blocked and (id == "wait" or F.Trade.wayReady())
-        )
+        local offers = o ~= nil and not o.blocked and (id == "wait" or F.Trade.wayReady())
+        if job and id == "buyout" then
+            offers = selected ~= nil and selected.key == job.key and F.Trade.fightOrderReady()
+        end
+        b:SetEnabled(offers or false)
     end
     UI.fightNext:SetText(L("Answer next") .. " (" .. act .. ")")
     UI.fightNext:SetEnabled(
@@ -4266,16 +4427,24 @@ function UI.createCrafting(p)
     )
     local bar = footer(p, 72)
     UI.craftText = bar.text
-    UI.craftProfText = text(bar, "GameFontHighlightSmall")
-    UI.craftProfText:SetPoint("TOPLEFT", bar, "TOPLEFT", 8, -6)
-    UI.craftProfText:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -8, -6)
-    UI.craftProfText:SetSpacing(2)
-    UI.craftProfText:Hide()
+    -- The professions are a list as long as the character has professions: a plain font string ran
+    -- off the bottom of the window. The scrolling block reaches every line (the box height is its 4
+    -- rows; a wheel or the bar shows the rest), and its own text is hidden.
+    UI.craftProfText = UI.scrollText(bar, 4, 20, 0, 40)
     UI.craftProfButton = button(bar, "Learned professions", 150, function()
         UI.craftProfOpen = not UI.craftProfOpen
         UI.refreshCrafting()
     end)
     UI.craftProfButton:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 6, 4)
+    -- Recipes the character has not learned cannot be crafted: this leaves them out of the table.
+    -- The label carries the count, so the player sees what is hidden before turning it off.
+    UI.craftHideButton = button(bar, "Learned recipes only", 160, function()
+        F.db.settings.hideUnlearned = not F.db.settings.hideUnlearned
+        UI.craftSelected = nil
+        F.Engine.changed()
+        UI.refresh()
+    end)
+    UI.craftHideButton:SetPoint("LEFT", UI.craftProfButton, "RIGHT", 4, 0)
     UI.craftShop = button(bar, "Shop materials", 150, function()
         local r = UI.craftSelected
         if r then
@@ -4297,7 +4466,12 @@ function UI.refreshCrafting()
         if e then
             r.recipe, r.key = e, nil
             r.icon:SetTexture(icon(e.out))
-            r.name:SetText(e.name or ("#" .. e.id))
+            -- A recipe not learned is greyed with a mark: with the setting off it is still listed,
+            -- and the player must be able to tell it apart from one that can be crafted.
+            local name = e.name or ("#" .. e.id)
+            r.name:SetText(
+                e.learned == false and ("|cff999999" .. name .. "|r |cff999999" .. L("(not learned)") .. "|r") or name
+            )
             r.cols[1]:SetText(e.cost and U.money(e.cost) or "?")
             r.cols[2]:SetText(e.value and U.money(e.value) or "?")
             if e.profit then
@@ -4321,15 +4495,25 @@ function UI.refreshCrafting()
     end
     local empty = UI.craftTable.empty
     if #rows == 0 then
+        local hiddenAll = #F.Crafting.profits(true) > 0
         empty:SetText(
-            L(
-                "Open each of your profession windows once: ForeverFlip reads the recipes and prices them here with the auction prices of the materials and the product."
-            )
+            hiddenAll
+                    and L(
+                        "Every saved recipe is one this character has not learned. Press Learned recipes only to see them."
+                    )
+                or L(
+                    "Open each of your profession windows once: ForeverFlip reads the recipes and prices them here with the auction prices of the materials and the product."
+                )
         )
         empty:Show()
     else
         empty:Hide()
     end
+    local unlearned = F.Crafting.unlearnedCount()
+    UI.craftHideButton:SetText(
+        (F.db.settings.hideUnlearned and L("Learned recipes only") or L("All recipes"))
+            .. (unlearned > 0 and string.format(" (%d)", unlearned) or "")
+    )
     local s = UI.craftSelected
     if UI.craftProfOpen then
         local professions = F.Crafting.professions()
@@ -4346,10 +4530,9 @@ function UI.refreshCrafting()
             lines[#lines + 1] = L("No learned professions found. Open a profession window to refresh it.")
         end
         UI.craftText:Hide()
-        UI.craftProfText:SetText(table.concat(lines, "\n"))
-        UI.craftProfText:Show()
+        UI.craftProfText.set(lines, "professions")
     else
-        UI.craftProfText:Hide()
+        UI.craftProfText.set({}, "")
         UI.craftText:Show()
     end
     if s and s.missing then
@@ -4581,6 +4764,20 @@ function UI.lotKind(lot)
     return lot.mode == "vendor" and "vendor" or "flip"
 end
 
+-- The purchases the Journal page lists, for the view chosen under it (all, resale, to vendor,
+-- bids). Shared with the Check all of that page, so both read the same rows.
+function UI.journalLots()
+    local view = UI.journalFilter or "all"
+    local out = {}
+    local c = F.Data.char(F.db, F.Engine.owner())
+    for _, lot in ipairs(F.Data.lots(c)) do
+        if view == "all" or UI.lotKind(lot) == view then
+            out[#out + 1] = lot
+        end
+    end
+    return out
+end
+
 function UI.refreshJournal()
     local s = F.Trade.summary(7)
     UI.journalSummary:SetText(
@@ -4612,7 +4809,6 @@ function UI.refreshJournal()
     end
     UI.placeJournalLines(u ~= nil)
     -- The view chosen under Journal and profit: all purchases, or those of one way of dealing.
-    local view = UI.journalFilter or "all"
     local lots, held, pending = {}, {}, {}
     for _, item in ipairs(F.AH.merchantItems()) do
         held[item.key] = (held[item.key] or 0) + item.count
@@ -4624,11 +4820,7 @@ function UI.refreshJournal()
             pending[lot.key] = (pending[lot.key] or 0) + lot.left
         end
     end
-    for _, lot in ipairs(F.Data.lots(c)) do
-        if view == "all" or UI.lotKind(lot) == view then
-            lots[#lots + 1] = lot
-        end
-    end
+    lots = UI.journalLots()
     local selected
     for _, lot in ipairs(lots) do
         local pick = UI.journalSelected
@@ -6245,7 +6437,8 @@ function UI.attach()
             call(PanelTemplates_DeselectTab, t)
         end
         call(PanelTemplates_SelectTab, b)
-        call(AuctionHouseFrame.SetTitle, AuctionHouseFrame, "ForeverFlip: " .. UI.houseName())
+        -- The house is named in the bottom bar (UI.houseName), not twice: the title stays the addon.
+        call(AuctionHouseFrame.SetTitle, AuctionHouseFrame, "ForeverFlip")
         UI.frame:Show()
     end)
     if hooksecurefunc and AuctionHouseFrame.SetDisplayMode then
@@ -6948,6 +7141,9 @@ function UI.merchant(open)
     for _, v in ipairs(list) do
         total = total + v.price
     end
+    -- Items a merchant does not buy, though the item data prices them: said on the page, since
+    -- they drop out of the list without a word otherwise.
+    local refused = F.Trade.refusedInBags()
     local view = UI.merchantView
     if #list > 0 and not view:IsShown() then
         UI.merchantButton:SetText(string.format(L("Sell to vendor (%d): %s"), #list, U.money(total)))
@@ -6981,6 +7177,10 @@ function UI.merchant(open)
         )
     else
         view.sellNote:SetText("")
+    end
+    if refused > 0 then
+        local note = string.format(L("%d item(s) here are not bought by merchants and are left out."), refused)
+        view.sellNote:SetText(view.sellNote:GetText() ~= "" and (view.sellNote:GetText() .. " " .. note) or note)
     end
     view.sellAll:SetText(
         busy(#list > 0 and string.format(L("Sell all (%d): %s"), #list, U.money(total)) or L("Sell all"))

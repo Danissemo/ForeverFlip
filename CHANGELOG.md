@@ -4,26 +4,58 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+
 ## [Unreleased]
+
+### Added
+
+- **The Crafting page can hide recipes you have not learned.** The game lists every recipe of a
+  profession, learned or not, so recipes you cannot craft yet stood in the profit table with a
+  profit you could not take. A button above the footer switches between **Learned recipes only**
+  and **All recipes**, the count says how many are hidden, and an unlearned recipe shown in the
+  full list is greyed with `(not learned)`. Off by default.
+- **Check all works on the Journal pages.** It reads the current price of every item the page
+  shows (Resale, To vendor and Bids read their own purchases), so the figures behind the rows can
+  be brought up to date without leaving the page.
 
 ### Fixed
 
-- **"ForeverFlip has been blocked from an action only available to the Blizzard UI" for new
-  players.** The deal marks in the game's Buy tab (on by default) called the list's own Lua
-  methods and wrote a field into its rows twice a second; a purchase in the Buy tab could then run
-  on values the addon had touched, and the game blamed ForeverFlip. The marks now read the rows
-  only through the widget API and keep their textures apart; switched off, the rows are not read.
-- **What the game blocks is recorded.** When the game blocks an action and names ForeverFlip, the
-  chat says which function, and `/ff diag` lists it with what the addon was doing (the last 10).
-  The diag line is translated, says so when nothing was blocked, and no longer turns the marks off
-  every half second when the setting is off.
-- **The Buy tab marks find their rows through the game's own method.** The rows are listed with
-  `ScrollBox:GetFrames()`: a ScrollBox is a frame of the client, not a Lua table, so a field read
-  with `rawget` (as the first version did) returns nothing and no row was ever marked. Each row's
-  price is asked for once per refresh instead of twice.
-- **Disenchanting is detected by the documented call.** `C_SpellBook.IsSpellKnown` is asked first,
-  and the bare `IsPlayerSpell`/`IsSpellKnown` the client installs as deprecated fallbacks only when
-  it has no `C_SpellBook` (the same for counting items: `C_Item.GetItemCount` first).
+- **A vendor deal on an item merchants do not buy.** Item data gives a sell price for some items a
+  merchant refuses — a rogue's poisons are the ones seen — so they were listed under **To vendor**
+  as certain profit and could not be sold. There is no client call that says a merchant will refuse
+  an item before the sale, so the refusal is learned: a stack the merchant does not take (three
+  tries over ten seconds) is remembered for the session, and from then on the item is left off
+  **Sell to vendor**, its old deals leave the list, and a new deal carries the mark `vendor,
+  refuses` in the Mode column and says so in its lines. The Merchant tab adds a line when items in
+  the bags are left out for this reason, so their absence is explained rather than silent. An item
+  the game itself flags as having no value (`hasNoValue` in the container info) is left out at once.
+- **The auction house is no longer named twice.** The game's title bar read "ForeverFlip: Alliance
+  AH" while the addon's own bottom bar already names the open house; the title is just ForeverFlip.
+- **The learned professions list no longer runs off the window.** It was one text under the
+  Crafting table: with more than a few professions the last lines were past the bottom edge and
+  could not be reached. It scrolls now, like the other text blocks, and the whole list is readable.
+- **A vendor offer is listed whatever it costs.** A **To vendor** row was only listed if the money
+  in the bags paid for all of it, so an offer worth more than the purse simply vanished. Vendor
+  deals are paid at once and carry no risk, so the offer is now shown in full — Qty and Cost are
+  the whole lot on the shelf — and Buy takes the part the money covers, the Status column saying
+  `cannot afford it yet` while it covers none. The offered units were also thrown away when the
+  purse could not pay, so the deal could not come back when the money did; it does now.
+- **The To vendor table shows what it is about.** Its columns are Name, Qty, Buy at, Sells at,
+  Cost, Profit and Status: Cost is the money the whole lot asks for (Qty × Buy at), which was not
+  shown anywhere, and Est./day and Sure are gone (a merchant pays at once, so there is nothing to
+  wait for and nothing to estimate).
+- **A purchase sold before its own mail arrived was counted twice.** Buying, selling, reading the
+  sale's mail and only then looting the purchase's own mail (the sale's invoice is the one that
+  arrives first) booked the purchase a second time: an extra row in the journal, a stock figure
+  with units that were never paid for, and a purchase lot left open for good. The sale now settles
+  the waiting purchase, so the later mail is matched rather than booked.
+- **A "wait" advice is no longer a dead end.** When keeping an auction paid best, **Answer next**
+  showed `(0)` and stayed grey — it counted only auctions whose advice is an action. The other way
+  out buttons did work, but a list of undercuts beside a disabled button reads as broken. The panel
+  now says in words why Answer next leaves that one alone.
+- **A running buy out is marked instead of holding the page.** While a buy out from **Answer next**
+  runs, its row says `buy out running` in the Advice column and is no longer counted as an undercut
+  to answer, so a finished decision stops standing in the list as if it were still open.
 
 ### Development
 
@@ -35,6 +67,7 @@ All notable changes are listed here. The format follows
 - **The Lua diagnostics see the game.** `undefined-global` is on again: the names the game's
   interface gives the addon live in `references/wow-forever-globals.lua`, so a misspelt call is
   reported and a wrong one is not.
+
 
 ## [2.1.0-beta.2] - 2026-11-13
 

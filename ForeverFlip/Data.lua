@@ -46,6 +46,7 @@ D.DEFAULTS = {
     spendLimit = 0, -- gold one auction house visit may spend on deals (0 = no limit)
     leaveLots = 0, -- cheap lots (or commodity units) of a deal left for other buyers
     autoVerify = false, -- check found deals in the background (the best ones first)
+    hideUnlearned = false, -- Crafting: leave out recipes the character has not learned
 }
 
 function D.open(saved)

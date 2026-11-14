@@ -127,7 +127,11 @@ the 150 items most often near a deal, one per second.
 - **All:** every deal, best first.
 - **To vendor:** lots priced below what a vendor pays. You buy them and sell them to any merchant.
   Profit is certain as long as the lot is still there and the vendor price is confirmed (a yellow
-  `*` marks a vendor price not yet seen at a merchant, see [Settings](#settings), Safety).
+  `*` marks a vendor price not yet seen at a merchant, see [Settings](#settings), Safety). Item data
+  prices some items a merchant refuses (a rogue's poisons): the game has no call that says so before
+  the sale, so the refusal is learned from a stack the merchant does not take. From then on the item
+  is left off **Sell to vendor** and its deals, and a new deal is marked `vendor, refuses` with the
+  reason in its lines.
 - **Resale:** lots priced well below the next seller, for items that are measured to sell at the
   resale price. You buy them and post them again on the auction house.
 - **Deals from the list** (under Shopping list): lots at or below the price on your [shopping list](#shopping-list-and-ignored-items).
@@ -730,8 +734,9 @@ on the Merchant tab:
 - **Sell to vendor (N): total** (top of the Merchant tab) sells, in one click, everything a merchant
   pays the most for: every bag item whose **Best** on Selling → My items is **Vendor**, and the
   stock bought as vendor deals (never at a loss; those sales are booked in the journal). Left out:
-  **Hidden** items, items with a **keep** rule, items without an auction price yet, and stock bought
-  for resale (it goes to the auction house).
+  **Hidden** items, items with a **keep** rule, items without an auction price yet, stock bought
+  for resale (it goes to the auction house), and items a merchant has been seen to refuse (a
+  rogue's poisons) — the tab says how many were left out for that reason.
 - **Gear I can't use (N): total** (below it) sells the equipment in your bags your class can never
   wear or wield (a druid's axes, a mage's mail): bound pieces, which never go on the list above, and
   unbound ones the auction house would not pay more for. Cloaks, rings, necks, trinkets and off-hand

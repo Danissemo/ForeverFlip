@@ -88,5 +88,36 @@ class InvoiceTests(unittest.TestCase):
         for i = n + 1, #c.journal do assert(c.journal[i].kind ~= 'buy', 'booked as a purchase') end''')
 
 
+    def test_a_buyer_invoice_after_the_sale_is_no_second_purchase(self):
+        # Bought, sold; the sale's mail read before the purchase's own mail (the seller invoice is
+        # the one that arrives first). That mail must not book the purchase a second time: it used
+        # to add stock that was never paid for, a lot that stayed open for good and a duplicate row.
+        run(MAIL + '''F.Trade.awaitBuyerInvoice('Linen Bag', 1)
+        F.Data.addPosition(c,'i:30','Linen Bag',1,20000,'flip',29900,now-3600)
+        F.Data.log(c,{at=now-3600,kind='buy',key='i:30',name='Linen Bag',qty=1,amount=20000,mode='flip'})
+        assert(c.awaitMail['linen bag'].n == 1, 'the purchase waits for its mail')
+        inbox={{sender='Auction House',subject='Auction successful: Linen Bag',money=28500,
+          invoice={kind='seller',item='Linen Bag',bid=30000,cut=1500,count=1}}}
+        fire('MAIL_SHOW');F.Mail.record(1)
+        assert(not c.positions['i:30'] and c.awaitMail['linen bag'].n == 0, 'the sale settles the purchase')
+        local n = #c.journal
+        F.Trade.onBuyerInvoice({item='Linen Bag',count=1,bid=20000}, link(30,'Linen Bag'))
+        assert(not c.positions['i:30'], 'no stock from an already sold purchase')
+        assert(#c.journal == n, 'no second purchase row')
+        local lots = F.Data.lots(c)
+        assert(#lots == 1 and lots[1].left == 0, 'one lot, fully sold')''')
+
+    def test_a_purchase_still_waiting_is_matched_not_booked_again(self):
+        # The other side of the same rule: a purchase whose sale has not happened yet, still waiting
+        # for its own mail, is matched by that mail — not booked a second time.
+        run(MAIL + '''F.Trade.awaitBuyerInvoice('Linen Bag', 1)
+        F.Data.addPosition(c,'i:30','Linen Bag',1,20000,'flip',29900,now-3600)
+        F.Data.log(c,{at=now-3600,kind='buy',key='i:30',name='Linen Bag',qty=1,amount=20000,mode='flip'})
+        local n = #c.journal
+        F.Trade.onBuyerInvoice({item='Linen Bag',count=1,bid=20000}, link(30,'Linen Bag'))
+        assert(#c.journal == n, 'its own mail books nothing: the purchase already was')
+        assert(c.positions['i:30'].qty == 1, 'stock unchanged')''')
+
+
 if __name__ == '__main__':
     unittest.main()

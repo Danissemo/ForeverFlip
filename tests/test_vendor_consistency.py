@@ -80,3 +80,45 @@ class VendorConsistencyTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class VendorOfferTests(unittest.TestCase):
+    """A vendor offer is sure money: it is listed whatever the purse holds, and bought in part."""
+
+    OFFER = '''local F=ForeverFlip
+addItem(11,'Cheap Cloth',90000,'commodity')
+for i=1,3 do addAuction(11,9000,5) end
+fullScan()
+local d=F.Deals.get('c:11')
+'''
+
+    def test_an_offer_too_dear_for_the_purse_is_still_listed(self):
+        run(self.OFFER + '''money=1000
+        F.UI.show('deals:vendor')
+        F.Deals.fitWallet(d)
+        assert(d.short and d.qty==0 and d.offer.qty==15 and d.offer.cost==135000, 'the whole offer stays')
+        F.UI.refresh()
+        local r=F.UI.vendorTable.rows[1]
+        assert(r and r:IsShown() and r.cols[1]:GetText()=='15', 'the whole offer is in the row')
+        assert(r.cols[6]:GetText():find('afford it yet',1,true), r.cols[6]:GetText())
+        assert(not F.UI.buyButton:IsEnabled(), 'nothing to buy yet')''')
+
+    def test_the_click_buys_the_part_the_money_covers(self):
+        run(self.OFFER + '''money=50000
+        F.Deals.fitWallet(d)
+        assert(d.offer.qty==15 and d.qty==5 and d.cost==45000 and not d.short)''')
+
+    def test_the_deal_grows_back_when_the_money_does(self):
+        run(self.OFFER + '''money=1000; F.Deals.fitWallet(d)
+        assert(d.short)
+        money=1000000; F.Deals.fitWallet(d)
+        assert(not d.short and d.qty==15 and d.cost==135000, 'the whole offer again')''')
+
+    def test_a_short_offer_is_not_bought_by_the_run_or_buy_next(self):
+        run(self.OFFER + '''money=1000; F.Deals.fitWallet(d)
+        assert(#F.Trade.runTargets()==0, 'Buy all to vendor skips it')
+        assert(F.Deals.best()==nil, 'Buy next skips it')''')
+
+
+if __name__ == '__main__':
+    unittest.main()

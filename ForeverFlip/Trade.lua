@@ -70,6 +70,7 @@ end
 -- The button is actionable only once the query/quote connection is available.
 function T.readyToBuy(deal)
     return T.canBuy(deal)
+        and not (deal.mode == "vendor" and deal.short)
         and not T.postingNow()
         and not F.Deals.pending(deal.key)
         and not F.Deals.searching()
@@ -107,8 +108,20 @@ function T.buy(key)
     if not T.canBuy(deal) then
         return false, "verify_first"
     end
-    if deal.kind == "commodity" then
+    if deal.mode == "vendor" then
         F.Deals.fitWallet(deal)
+        -- A vendor offer is listed whole even when the purse covers none of it: the click says so
+        -- rather than asking the auction house for nothing. The spending limit is named first: it
+        -- is the reason the purse is empty while the bags still hold the money.
+        if deal.qty < 1 then
+            if
+                F.Engine.wallet() >= (deal.offer and deal.offer.cost or 0)
+                or F.Engine.wallet() >= (deal.lots and deal.lots[1] and deal.lots[1].unit or math.huge)
+            then
+                return false, "spend_limit"
+            end
+            return false, "no_money"
+        end
     end
     -- Item buckets may contain many auctions; this click buys only the first auction.
     local lot = deal.lots and deal.lots[1]
@@ -238,6 +251,10 @@ end
 -- result's qty counts separate auctions and only its first auction can be bought per click.
 local function runPurchase(d)
     if not d or d.mode ~= "vendor" or not U.finite(d.exit) or type(d.lots) ~= "table" then
+        return nil
+    end
+    -- A vendor offer the purse covers none of is on the page (listed whole) but not bought.
+    if d.short then
         return nil
     end
     local budget = F.Engine.wallet()
@@ -452,16 +469,30 @@ end
 T.MAIL_DAYS = 31
 
 -- Purchases ForeverFlip booked whose buyer invoice is still to come by mail (T.onBuyerInvoice
--- must not book them again): name (lower case) -> { n = units, at = time of the last purchase }.
+-- must not book them again): name (lower case) -> { n = units, settled = units already accounted
+-- for elsewhere, at = time of the last purchase }.
 local function awaitInvoice(c, name, qty)
     c.awaitMail = type(c.awaitMail) == "table" and c.awaitMail or {}
     local k = string.lower(name or "")
     local w = c.awaitMail[k]
     if type(w) ~= "table" or clock() - (w.at or 0) > T.MAIL_DAYS * 86400 then
-        w = { n = 0 }
+        w = { n = 0, settled = 0 }
     end
     w.n, w.at = w.n + qty, clock()
     c.awaitMail[k] = w
+end
+
+-- The units a seller invoice settles are no longer to be booked by their buyer invoice: the sale is
+-- proof the purchase went through, so booking its mail again would add stock that was never paid for
+-- (in game: bought, sold, the sale's mail read, then the buyer's mail — the item was counted twice
+-- and its lot stayed open for good). They are counted as settled; takeAwaited takes them first.
+-- Drained here as well as in T.onBuyerInvoice, because the seller's mail is the one that comes first.
+local function settleAwaited(c, name, qty)
+    local w = type(c.awaitMail) == "table" and c.awaitMail[string.lower(name or "")]
+    if type(w) == "table" and (w.n or 0) > 0 then
+        local n = math.min(qty or 0, w.n)
+        w.n, w.settled = w.n - n, (w.settled or 0) + n
+    end
 end
 
 function T.awaitBuyerInvoice(name, qty)
@@ -469,10 +500,14 @@ function T.awaitBuyerInvoice(name, qty)
 end
 
 -- The units of a buyer invoice that belong to purchases awaiting it; returns the units left.
+-- Units already accounted for elsewhere (settled: their sale was booked) are consumed first, so the
+-- mail of a purchase that has been sold is matched rather than booked a second time.
 local function takeAwaited(c, name, count)
     local w = type(c.awaitMail) == "table" and c.awaitMail[string.lower(name or "")]
-    if type(w) == "table" and (w.n or 0) > 0 and clock() - (w.at or 0) <= T.MAIL_DAYS * 86400 then
-        local n = math.min(count, w.n)
+    if type(w) == "table" and clock() - (w.at or 0) <= T.MAIL_DAYS * 86400 then
+        local done = math.min(count, w.settled or 0)
+        w.settled, count = (w.settled or 0) - done, count - done
+        local n = math.min(count, w.n or 0)
         w.n, count = w.n - n, count - n
     end
     return count
@@ -1589,6 +1624,10 @@ function bookInvoice(c, item, count, net, at)
     local r = rateOf(inv.item)
     r.sold = r.sold + inv.count
     local name = string.lower(inv.item)
+    -- The purchase behind these units is booked: its buyer invoice is no longer expected. Done
+    -- before the early return below, which is the path taken when the owned-auction list has
+    -- already booked the sale.
+    settleAwaited(c, name, inv.count)
     -- Units already booked from the owned-auction list (T.onOwned) are only matched here.
     local count = inv.count
     for _, l in ipairs(c.listings) do
@@ -2606,13 +2645,19 @@ function T.fightPlan(a)
     return plan
 end
 
--- Plans of every undercut auction: those where acting pays most first.
+-- Plans of every undercut auction: those where acting pays most first. An auction whose buy-out is
+-- running is marked (plan.ordering) rather than dropped: it is no longer an undercut to answer, but
+-- the row must stay so its own "buy out" can carry the order on (buying the next unit). The mark
+-- goes for good once the order ends: T.fightOrderActive clears the job, or T.fightOrderDone says
+-- the buy-out was carried out and the position is no longer that undercut.
 local ORDER = { undercut = 1, raise = 2, buyout = 3, vendor = 4, wait = 5 }
 function T.fightPlans()
     local out = {}
+    local job = T.fightOrderActive()
     for _, a in ipairs(T.owned or {}) do
         local plan = not cancelSent(a.auctionID) and T.fightPlan(a)
         if plan then
+            plan.ordering = job ~= nil and job.auctionID == a.auctionID
             out[#out + 1] = plan
         end
     end
@@ -2641,7 +2686,9 @@ function T.fightOrderActive()
 end
 
 -- Auctions worth answering (Answer next). `plans`: T.fightPlans() when the caller has them already
--- (each plan prices every option: building them twice per page refresh doubled its cost).
+-- (each plan prices every option: building them twice per page refresh doubled its cost). An auction
+-- whose buy-out runs is not counted: its decision is taken, and Answer next carries that order on
+-- itself (the job counts as the one answerable thing).
 function T.fightCount(plans)
     local job = T.fightOrderActive()
     local n = job and 1 or 0
@@ -2650,6 +2697,7 @@ function T.fightCount(plans)
         if
             plan.verdict ~= "wait"
             and not waited
+            and not plan.ordering
             and not (job and job.auctionID == plan.auction.auctionID)
             and plan[plan.verdict]
             and not plan[plan.verdict].blocked
@@ -2774,7 +2822,13 @@ function T.fightNext()
     end
     for _, plan in ipairs(T.fightPlans()) do
         local waited = T.waiting and T.waiting[plan.auction.auctionID] == plan.cheapest
-        if plan.verdict ~= "wait" and not waited and plan[plan.verdict] and not plan[plan.verdict].blocked then
+        if
+            plan.verdict ~= "wait"
+            and not waited
+            and not plan.ordering -- its buy-out already runs: not another undercut to answer
+            and plan[plan.verdict]
+            and not plan[plan.verdict].blocked
+        then
             local ok, why = T.fight(plan)
             return ok, why or (ok and (plan.verdict == "wait" and "fight_wait" or "cancelled") or "post_busy")
         end
@@ -2903,7 +2957,16 @@ function T.vendorSellList()
     for _, b in ipairs(items) do
         local rule = T.rule(b.key)
         local price = F.AH.vendorPrice(b.id, true)
-        if price and price > 0 and not T.hidden(b.key) and not (rule and rule.keep) and not b.locked then
+        -- The item data prices some items a merchant refuses (poisons): left off the list rather
+        -- than offered and refused.
+        if
+            price
+            and price > 0
+            and F.AH.accepts(b)
+            and not T.hidden(b.key)
+            and not (rule and rule.keep)
+            and not b.locked
+        then
             local p = c.positions[b.key]
             local eligible
             if stock[b] then
@@ -2931,6 +2994,18 @@ function T.vendorSellList()
         return a.key < b.key
     end)
     return out
+end
+
+-- How many stacks in the bags a merchant has proved it does not buy. Shown on the Merchant tab, so
+-- their absence from the list is explained.
+function T.refusedInBags()
+    local n = 0
+    for _, b in ipairs(F.AH.merchantItems()) do
+        if F.AH.refusedByMerchant(b) then
+            n = n + 1
+        end
+    end
+    return n
 end
 
 -- Equipment in the bags the class can never use (AH.unusableGear), to sell to a merchant: bound
@@ -3034,10 +3109,11 @@ local function finishVendorJob(job)
         print("ForeverFlip: " .. string.format(F.Locale.text(text), job.sold, U.money(job.money)))
     end
     if job.failed > 0 then
-        print(
-            "ForeverFlip: "
-                .. string.format(F.Locale.text("%d stacks did not sell: the merchant did not take them"), job.failed)
-        )
+        local text = "%d stacks did not sell: the merchant did not take them"
+        if job.refused then
+            text = "%d stacks did not sell: the merchant does not buy them, so they are no vendor deals"
+        end
+        print("ForeverFlip: " .. string.format(F.Locale.text(text), job.failed))
     end
     F.Engine.changed()
 end
@@ -3081,6 +3157,11 @@ local function sendStack(job, v)
             F.Merchant.cancelExpectedSale(v.id, v.count)
             if not closing then
                 job.failed = job.failed + 1
+                -- Three tries over a stack the merchant never took: it does not buy the item. Its
+                -- deals go with it, so it is not bought again for a merchant that refuses it.
+                F.AH.noteRefused(v.id)
+                job.refused = job.refused or {}
+                job.refused[v.id] = true
             end
         end,
     })

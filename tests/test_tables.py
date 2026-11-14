@@ -13,14 +13,18 @@ local a={key='c:20',id=20,kind='commodity',link=link(20):gsub('1eff00','ffff00')
 local b={key='c:30',id=30,kind='commodity',link=link(30):gsub('1eff00','000000'),mode='vendor',qty=2,cost=100,profit=50,maxUnit=50,exit=75,verified=now-100}
 D.list={z,a,b};UI.refreshDeals()
 local function click(label)
+    -- Both layouts exist at once (the vendor filter has its own table): click the header of the
+    -- table in view, the one the page is showing.
+    local header = UI.dealView().frame
     for _,w in ipairs(widgets) do
-        if w.template=='AuctionHouseTableHeaderStringTemplate' and w:GetText()==label then w:Click();return end
+        if w.template=='AuctionHouseTableHeaderStringTemplate' and w.parent==header and w:GetText()==label then w:Click();return end
     end
     error('missing deal header '..label)
 end
 local function keys()
+    local t = UI.dealView()
     local out={}
-    for _,r in ipairs(UI.dealTable.rows) do if r:IsShown() then out[#out+1]=r.key end end
+    for _,r in ipairs(t.rows) do if r:IsShown() then out[#out+1]=r.key end end
     return table.concat(out,',')
 end
 '''
@@ -81,13 +85,17 @@ class TableTests(unittest.TestCase):
 
     def test_inactive_headers_have_no_native_handler_or_visible_sort_arrow(self):
         runtime().execute(DEALS + '''
-        local dealHeader
+        -- Two tables share the Deals page (the vendor filter has its own columns). Only the one in
+        -- view sorts: a click on any other table's header leaves every arrow where it was.
+        local dealHeader = UI.dealView().frame
+        local before = {}
         for _,w in ipairs(widgets) do
-            if w.template=='AuctionHouseTableHeaderStringTemplate' and w:GetText()=='Buy at' then dealHeader=w.parent end
+            if w.template=='AuctionHouseTableHeaderStringTemplate' then before[w] = w.Arrow:IsShown() end
         end
         for _,w in ipairs(widgets) do
             if w.template=='AuctionHouseTableHeaderStringTemplate' and w.parent~=dealHeader then
-                w:Click();assert(not w.Arrow:IsShown())
+                w:Click()
+                assert(w.Arrow:IsShown()==before[w], 'another table must not sort')
             end
         end
         local active=0

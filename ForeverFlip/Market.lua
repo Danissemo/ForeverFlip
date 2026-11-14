@@ -1159,9 +1159,12 @@ function M.evaluate(rows, ctx)
     local best, reason = nil, "no_gap"
 
     if U.finite(ctx.vendor) and ctx.vendor > 0 then
-        -- A vendor deal is sure money (a merchant pays at once): it may use all the money in the
-        -- bags (ctx.vendorBudget), not only the share kept for resales.
-        local budget = ctx.vendorBudget or budget
+        -- A vendor deal is sure money (a merchant pays at once). The offer is what the shelf holds
+        -- below the vendor price; `qty` and `cost` are the part the bags can pay for now
+        -- (ctx.vendorBudget, else the ordinary budget of ctx.budget), and `offer` is every unit: a
+        -- lot too dear for the purse is still worth seeing, so the table shows the whole offer with
+        -- the money it needs (F.Deals.fitWallet splits it against the wallet on every refresh).
+        local money = ctx.vendorBudget or budget
         local qty, cost, used = 0, 0, {}
         -- Setting leaveLots: the priciest units below the vendor price stay listed for others.
         local cheap, leave = 0, math.max(0, math.floor(s.leaveLots or 0))
@@ -1172,23 +1175,35 @@ function M.evaluate(rows, ctx)
             cheap = cheap + r.qty
         end
         local allowed = cheap - leave
+        local offerQty, offerCost, offerLots = 0, 0, {}
         for _, r in ipairs(rows) do
-            if r.unit >= ctx.vendor or qty >= allowed then
+            if r.unit >= ctx.vendor or offerQty >= allowed then
                 break
             end
-            local take = math.min(r.qty, allowed - qty)
-            if kind == "commodity" then
-                take = math.min(take, math.floor((budget - cost) / r.unit))
-            elseif cost + r.unit * take > budget then
-                take = math.floor((budget - cost) / r.unit)
+            local take = math.min(r.qty, allowed - offerQty)
+            offerQty, offerCost = offerQty + take, offerCost + take * r.unit
+            offerLots[#offerLots + 1] = { unit = r.unit, qty = take, auctionID = r.auctionID }
+            -- What the money covers, cheapest lots first, for the part that can be bought now.
+            -- A commodity takes part of a lot; an item row is a bucket of identical auctions and
+            -- takes as many whole ones as the money buys.
+            local fits = take
+            if U.finite(money) then
+                fits = math.max(0, math.min(take, math.floor((money - cost) / r.unit)))
             end
-            if take < 1 then
-                reason = "budget"
-                break
+            if fits >= 1 then
+                qty, cost = qty + fits, cost + fits * r.unit
+                used[#used + 1] = { unit = r.unit, qty = fits, auctionID = r.auctionID }
             end
-            qty, cost = qty + take, cost + take * r.unit
-            used[#used + 1] = { unit = r.unit, qty = take, auctionID = r.auctionID }
         end
+        -- The offer as found: it is what the row shows, and the lots the affordable part is taken
+        -- from (Fit to wallet re-splits it whenever the purse changes).
+        local offer = {
+            qty = offerQty,
+            cost = offerCost,
+            profit = offerQty * ctx.vendor - offerCost,
+            roi = offerCost > 0 and (offerQty * ctx.vendor - offerCost) / offerCost or 0,
+            lots = offerLots,
+        }
         local profit = qty * ctx.vendor - cost
         if qty > 0 and profit >= (s.vendorMinProfit or 10) then
             best = {
@@ -1200,8 +1215,26 @@ function M.evaluate(rows, ctx)
                 roi = profit / cost,
                 maxUnit = used[#used].unit,
                 lots = used,
+                offer = offer,
+            }
+        elseif offerQty > 0 and offer.profit >= (s.vendorMinProfit or 10) then
+            -- Nothing fits the purse, but the offer is real: it is listed with no money of its own
+            -- (qty 0), so the player sees the deal and the money it needs. `short` marks it.
+            best = {
+                mode = "vendor",
+                qty = 0,
+                cost = 0,
+                exit = ctx.vendor,
+                profit = offer.profit,
+                roi = offer.roi,
+                maxUnit = offerCost > 0 and math.floor(offerCost / math.max(1, offerQty) + 0.5) or nil,
+                lots = {},
+                offer = offer,
+                short = true,
             }
         elseif qty > 0 then
+            reason = "small"
+        elseif offerQty > 0 then
             reason = "small"
         end
     end

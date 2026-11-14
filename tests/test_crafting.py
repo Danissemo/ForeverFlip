@@ -61,8 +61,87 @@ class CraftingTests(unittest.TestCase):
         run(CRAFT + '''GetProfessions=function() return 171,164 end
         GetProfessionInfo=function(id) if id==171 then return 'Alchemy',nil,225,300 end return 'Tailoring',nil,150,225 end
         local UI=F.UI;UI.show('crafting');UI.craftProfButton:Click()
-        assert(UI.craftProfText:IsShown());local t=UI.craftProfText:GetText()
+        local t=UI.craftProfText.full()
         assert(t:find('Alchemy') and t:find('225/300') and t:find('Tailoring') and t:find('150/225'),t)''')
+
+    def test_every_profession_line_is_reachable(self):
+        run(CRAFT + '''GetProfessions=function() return 171,164,333,185,129,356 end
+        GetProfessionInfo=function(id) return 'P'..id,nil,100,225 end
+        local UI=F.UI;UI.show('crafting');UI.craftProfButton:Click()
+        local box=UI.craftProfText
+        assert(#box.lines==7,'one heading and six professions: '..#box.lines)
+        box.bar.forward:Click()
+        assert(box.rowTexts[1]:GetText()==box.lines[2],'the list scrolls, no line runs off the window')''')
+
+
+UNLEARNED = SETUP + '''local F=ForeverFlip
+addItem(50,'Bolt of Linen Cloth',100,'commodity')
+addItem(2840,'Copper Bar',100,'commodity')
+for i=1,3 do addAuction(50,900,5);addAuction(2840,900,5) end
+C_TradeSkillUI={
+  GetAllRecipeIDs=function() return {2963,2657} end,
+  GetRecipeSchematic=function(id) if id==2963 then return {name='Bolt of Linen Cloth',outputItemID=50,quantityMin=1,
+    reagentSlotSchematics={{quantityRequired=2,reagents={{itemID=10}}}}} end
+    return {name='Smelt Copper',outputItemID=2840,quantityMin=1,
+      reagentSlotSchematics={{quantityRequired=1,reagents={{itemID=11}}}}} end,
+  GetRecipeInfo=function(id) return {recipeID=id,learned=(id==2963)} end,
+}
+fullScan()
+'''
+
+
+class UnlearnedRecipeTests(unittest.TestCase):
+    def test_the_flag_is_read_from_the_game(self):
+        run(UNLEARNED + '''fire('TRADE_SKILL_SHOW')
+        local c=F.Data.char(F.db,F.Engine.owner())
+        assert(c.recipes[2963].learned==true and c.recipes[2657].learned==false)''')
+
+    def test_both_are_profitable_so_only_the_flag_separates_them(self):
+        run(UNLEARNED + '''fire('TRADE_SKILL_SHOW')
+        assert(#F.Crafting.profits()==2,'off by default: both recipes are listed')''')
+
+    def test_the_setting_leaves_the_unlearned_recipe_out(self):
+        run(UNLEARNED + '''fire('TRADE_SKILL_SHOW');F.db.settings.hideUnlearned=true
+        local p=F.Crafting.profits()
+        assert(#p==1 and p[1].name=='Bolt of Linen Cloth',#p)''')
+
+    def test_the_button_toggles_it_and_shows_the_count(self):
+        run(UNLEARNED + '''fire('TRADE_SKILL_SHOW');local UI=F.UI;UI.show('crafting')
+        local function listed(id)
+          for _,r in ipairs(UI.craftTable.rows) do
+            if type(r.recipe)=='table' and r.recipe.id==id then return true end
+          end
+          return false
+        end
+        assert(UI.craftHideButton:GetText()=='All recipes (1)',UI.craftHideButton:GetText())
+        assert(listed(2657),'off by default: the unlearned recipe is listed')
+        UI.craftHideButton:Click()
+        assert(F.db.settings.hideUnlearned==true)
+        assert(not listed(2657),'the unlearned row is gone')
+        assert(listed(2963),'the learned one stays')
+        assert(UI.craftHideButton:GetText()=='Learned recipes only (1)',UI.craftHideButton:GetText())
+        UI.craftHideButton:Click()
+        assert(listed(2657) and UI.craftHideButton:GetText()=='All recipes (1)')''')
+
+    def test_a_recipe_saved_before_the_flag_counts_as_learned(self):
+        run(UNLEARNED + '''fire('TRADE_SKILL_SHOW');F.db.settings.hideUnlearned=true
+        local c=F.Data.char(F.db,F.Engine.owner());c.recipes[2657].learned=nil
+        assert(#F.Crafting.profits()==2,'only a known "no" hides a recipe')''')
+
+    def test_an_unlearned_recipe_is_marked_when_it_is_listed(self):
+        run(UNLEARNED + '''fire('TRADE_SKILL_SHOW');local UI=F.UI;UI.show('crafting')
+        local marked
+        for _,r in ipairs(UI.craftTable.rows) do
+          if type(r.recipe)=='table' and r.recipe.id==2657 then marked=r.name:GetText() end
+        end
+        assert(marked and marked:find('(not learned)',1,true),marked)''')
+
+    def test_hiding_everything_says_so(self):
+        run(UNLEARNED + '''fire('TRADE_SKILL_SHOW');F.db.settings.hideUnlearned=true
+        local c=F.Data.char(F.db,F.Engine.owner());c.recipes[2963].learned=false
+        local UI=F.UI;UI.show('crafting')
+        assert(UI.craftTable.empty:IsShown())
+        assert(UI.craftTable.empty:GetText():find('has not learned',1,true),UI.craftTable.empty:GetText())''')
 
 
 DE = SETUP + '''local F=ForeverFlip

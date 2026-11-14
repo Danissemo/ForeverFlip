@@ -54,5 +54,46 @@ class JournalNavigationTests(unittest.TestCase):
         end''')
 
 
+class JournalCheckAllTests(unittest.TestCase):
+    BUY = SETUP + '''local F, UI = ForeverFlip, ForeverFlip.UI
+local c = F.Data.char(F.db, F.Engine.owner())
+F.Data.addPosition(c, 'c:10', 'Linen Cloth', 10, 600, 'flip', 150, now)
+F.Data.log(c, { at = now, kind = 'buy', key = 'c:10', name = 'Linen Cloth', qty = 10, amount = 600, mode = 'flip' })
+'''
+
+    def test_check_all_reads_the_items_the_page_lists(self):
+        run(self.BUY + '''UI.show('journal:all')
+        local scope, keys, verify = UI.statusTargets()
+        assert(scope == 'journal' and #keys == 1 and keys[1] == 'c:10', scope .. ' ' .. #keys)
+        assert(not verify, 'a journal check is a price, not a deal')
+        UI.checkStatuses(); assert(F.Deals.busy(), 'the page starts its own check')''')
+
+    def test_the_check_leaves_a_live_price_behind(self):
+        run(self.BUY + '''UI.show('journal:all')
+        UI.checkStatuses()
+        for _ = 1, 40 do if F.Deals.search then answer() end run(0.2) end
+        UI.refresh()
+        assert(not F.Deals.busy() and F.Trade.freshCheapest('c:10') == 60, tostring(F.Trade.freshCheapest('c:10')))''')
+
+    def test_every_view_is_checked_only_for_the_items_it_shows(self):
+        run(self.BUY + '''local c = F.Data.char(F.db, F.Engine.owner())
+        F.Data.addPosition(c, 'c:30', 'Linen Bag', 1, 2000, 'vendor', 2200, now)
+        F.Data.log(c, { at = now, kind = 'buy', key = 'c:30', name = 'Linen Bag', qty = 1, amount = 2000, mode = 'vendor' })
+        UI.show('journal:flip')
+        local _, flip = UI.statusTargets()
+        assert(#flip == 1 and flip[1] == 'c:10', 'resale view: ' .. #flip)
+        UI.show('journal:vendor')
+        local _, vendor = UI.statusTargets()
+        assert(#vendor == 1 and vendor[1] == 'c:30', 'to vendor view: ' .. #vendor)''')
+
+    def test_an_item_shown_by_several_purchases_is_checked_once(self):
+        run(self.BUY + '''local c = F.Data.char(F.db, F.Engine.owner())
+        F.Data.addPosition(c, 'c:10', 'Linen Cloth', 5, 300, 'flip', 150, now)
+        F.Data.log(c, { at = now, kind = 'buy', key = 'c:10', name = 'Linen Cloth', qty = 5, amount = 300, mode = 'flip' })
+        UI.show('journal:all')
+        local _, keys = UI.statusTargets()
+        assert(#keys == 1, 'one key per item, not per purchase: ' .. #keys)''')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1016,6 +1016,40 @@ function A.bagReport()
     return out
 end
 
+-- Items a merchant took back, as { id = true }. Selling is the only way to learn them: item data
+-- gives a sell price for consumables such as poisons that can be made but not sold, so a merchant
+-- deal on those looked as sure as any. Kept for the session; one sale is proof.
+A.refused = {}
+
+-- Whether the client may know that a merchant will not buy the item: it was proved refused, or the
+-- bag entry carries the game's own "hasNoValue" flag. False: nothing says so.
+function A.refusedByMerchant(info)
+    local id = info and (info.id or info.itemID)
+    if (id and A.refused[id]) or (info and info.hasNoValue) then
+        return true
+    end
+    return false
+end
+
+-- Whether a merchant may take this bag item: the sell price says what the item is worth where it
+-- can be sold (a poison's price is what one costs), not that a merchant buys it. So an item is left
+-- out only on evidence: proved refused, or flagged by the game. Selling it teaches the first.
+function A.accepts(item)
+    return not A.refusedByMerchant(item)
+end
+
+-- A merchant was sent one and the slot still holds it: it does not buy the item. Its deals go and it
+-- is not offered again this session.
+function A.noteRefused(id)
+    if not id or A.refused[id] then
+        return
+    end
+    A.refused[id] = true
+    if F.Deals and F.Deals.refused then
+        F.Deals.refused(id)
+    end
+end
+
 -- The bags are read once per frame: a page refresh asks for them several times (counts, queues,
 -- rows). Each caller gets its own copies, since callers change the entries.
 local bagFrame, bagCache
@@ -1078,6 +1112,8 @@ function A.readBags(merchant)
                         kind = kind,
                         locked = info.isLocked,
                         bound = info.isBound,
+                        -- The game's own flag: the item has no value (a merchant would not buy it).
+                        hasNoValue = info.hasNoValue,
                     }
                 end
             end

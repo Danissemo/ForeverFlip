@@ -445,6 +445,9 @@ function putBag(bag, slot, id, count, name)
     bags[bag][slot] = { itemID = id, stackCount = count or 1, hyperlink = link(id, name) }
 end
 soldToVendor = {}
+-- Item IDs a merchant does not buy: UseContainerItem leaves them in their slot, as the client does
+-- for an item its merchant refuses (the poison).
+merchantWontBuy = {}
 C_Container = {
     GetContainerNumSlots = function(bag)
         return bags[bag] and 16 or 0
@@ -453,7 +456,11 @@ C_Container = {
         return bags[bag] and bags[bag][slot]
     end,
     UseContainerItem = function(bag, slot)
-        soldToVendor[#soldToVendor + 1] = bags[bag][slot]
+        local item = bags[bag] and bags[bag][slot]
+        if item and merchantWontBuy[item.itemID] then
+            return
+        end
+        soldToVendor[#soldToVendor + 1] = item
         bags[bag][slot] = nil
     end,
 }

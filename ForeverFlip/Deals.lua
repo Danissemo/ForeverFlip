@@ -138,10 +138,29 @@ function D.evaluate(g, vendor, history, now)
         deal.market, deal.vendor = g.market, vendor
         if deal.mode == "vendor" then
             deal.vendorHow = select(2, F.AH.vendorPrice(g.id))
+            -- A merchant has refused the item before (a poison's item data is priced by what it
+            -- costs, not by what a merchant pays): shown with that warning, not hidden.
+            deal.refused = F.AH.refusedByMerchant({ itemID = g.id })
         end
         deal.found = now or clock()
     end
     return deal, reason
+end
+
+-- A merchant was sent the item and kept nothing: its vendor deals leave the list at once (the
+-- price is real, the sale is not). Sent by AH.noteRefused the first time an item is proved.
+function D.refused(id)
+    local dropped = false
+    for i = #D.list, 1, -1 do
+        local d = D.list[i]
+        if d.mode == "vendor" and d.id == id then
+            table.remove(D.list, i)
+            dropped = true
+        end
+    end
+    if dropped then
+        F.Engine.changed()
+    end
 end
 
 -- How sure a deal is to pay back at its Sells at price (0 to 1, Market.confidence), and the parts
@@ -377,47 +396,51 @@ local function spendable()
     return budget
 end
 
--- A vendor deal the money no longer covers (other purchases since the scan) shrinks to the units
--- the money buys, cheapest lots first: the merchant pays for each unit at once, so there is nothing
--- to wait for. An item row is a bucket of identical auctions bought one by one: a part of it fits
--- too. The deal as found is kept (d.full) and every fit starts from it, so the deal grows back when
--- the money does. Other deals are left as they are. Returns the deal, its fields the fitted view.
+-- A vendor deal is listed as the whole offer (d.offer: every unit on the shelf below the vendor
+-- price, its cost and its lots); what can be bought now is the part the money covers, cheapest lots
+-- first. The merchant pays for each unit at once, so there is nothing to wait for; an item row is a
+-- bucket of identical auctions bought one by one and a part of it fits too. The buyable part lives
+-- in d.qty, d.cost and d.lots (the money a click spends); d.offer.qty and d.offer.cost are what the
+-- row shows, so an offer too dear for the purse is still read in full. d.short says none of it fits.
+-- Every split starts from the offer's lots, so the deal grows back when the money does.
 function D.fitWallet(d)
     if not d or d.mode ~= "vendor" then
         return d
     end
-    local budget, full = spendable(), d.full
-    if full then
-        if d.fitBudget == budget then
-            return d
-        end
-        d.qty, d.cost, d.lots, d.maxUnit = full.qty, full.cost, full.lots, full.maxUnit
-        d.profit, d.roi = full.profit, full.roi
-        d.full, d.fitBudget = nil, nil
+    local offer = d.offer
+    if type(offer) ~= "table" then
+        -- A deal found before the offer was kept (an entry of an older list): the deal is the offer.
+        offer = { qty = d.qty or 0, cost = d.cost or 0, profit = d.profit, roi = d.roi, lots = d.lots }
+        d.offer = offer
     end
-    if (d.cost or 0) <= budget or type(d.lots) ~= "table" or not U.finite(d.exit) then
+    local lots = offer.lots or d.lots
+    if type(lots) ~= "table" or not U.finite(d.exit) then
         return d
     end
+    local budget, budgetSpent = spendable(), d.fitBudget
+    if budgetSpent == budget then
+        return d
+    end
+    -- Money left for this deal: everything when the offer costs no more than the purse
+    -- (the offer itself stays the whole one on the shelf). The spending limit is in `spendable`.
+    local user = budget >= (offer.cost or 0) and math.huge or budget
     local qty, cost, used = 0, 0, {}
-    for _, l in ipairs(d.lots) do
+    for _, l in ipairs(lots) do
         local unit = l.unit or 0
-        local take = unit > 0 and math.min(l.qty or 1, math.floor((budget - cost) / unit)) or 0
+        local take = unit > 0 and math.min(l.qty or 1, math.floor((user - cost) / unit)) or 0
         if take < 1 then
             break
         end
         qty, cost = qty + take, cost + take * unit
         used[#used + 1] = { unit = unit, qty = take, auctionID = l.auctionID }
     end
-    if qty < 1 then
-        return d
-    end
-    full = full or {}
-    full.qty, full.cost, full.lots, full.maxUnit = d.qty, d.cost, d.lots, d.maxUnit
-    full.profit, full.roi = d.profit, d.roi
-    d.full, d.fitBudget = full, budget
-    d.qty, d.cost, d.lots, d.maxUnit = qty, cost, used, used[#used].unit
+    d.fitBudget = budget
+    d.qty, d.cost, d.lots = qty, cost, used
+    -- maxUnit is the priciest unit of the affordable part: a deal that pays for the lots it buys.
+    d.maxUnit = used[#used] and used[#used].unit or nil
     d.profit = qty * d.exit - cost
     d.roi = cost > 0 and d.profit / cost or 0
+    d.short = qty < 1
     return d
 end
 
@@ -426,7 +449,8 @@ function D.best()
     local wallet = F.Engine.wallet()
     for _, d in ipairs(D.list) do
         D.fitWallet(d)
-        if d.cost <= wallet and not F.Trade.overLimit(d.cost) then
+        -- A vendor offer the purse covers none of sits on the page but buys nothing: skip it.
+        if d.cost <= wallet and not d.short and not F.Trade.overLimit(d.cost) then
             return d
         end
     end

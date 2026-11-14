@@ -8,11 +8,25 @@ Last updated: 14 November 2026.
 
 ## Being done now
 
-Nothing: the working tree is clean and pushed, and the changes listed in the changelog under
-`[Unreleased]` are finished and checked but not released.
+Nothing: the changes of 14 November (the six reported items) are finished and checked but not
+committed. The changelog under `[Unreleased]` lists them.
 
 ## Waiting
 
+- **The in-game checks of the batch of 14 November.** Everything below was proved by the test suite
+  and the simulated client, not in the game. Worth a look: **To vendor** with a purse too small for a
+  lot (the whole offer listed, Buy taking the part the money covers), the new **Cost** column, the
+  Crafting page's **Learned recipes only** toggle, the learned professions list scrolling instead of
+  running off the window, **Check all** on **Journal and profit**, and a **wait** advice leaving the
+  other way out buttons usable.
+- **The journal, still.** One defect was found and fixed (a purchase sold before its own mail arrived
+  was booked twice, leaving phantom stock and a lot open for good). A review of the accounting found
+  no other reproducible fault, but the player's report — "sometimes you can't see what happened
+  recently with an item" — was not narrowed to a case; ask for a concrete item and sequence when it
+  comes up again.
+- **The poison check in game.** A merchant that refuses an item (a rogue's poisons are the ones
+  seen) can only be known by selling one: confirm that a stack refused by the merchant drops out of
+  **Sell to vendor** and of **Deals → To vendor**, and that a new deal shows `vendor, refuses`.
 - **Release the unreleased fixes.** The Buy tab marks no longer touch the game's rows, blocked
   actions are recorded and `/ff diag` lists them, and disenchanting uses the documented calls. These
   need a version in `ForeverFlip.toc` and `ForeverFlip/Util.lua` (`2.1.0-beta.3` or `2.1.0`), a
