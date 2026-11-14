@@ -8,17 +8,18 @@ Last updated: 14 November 2026.
 
 ## Being done now
 
-Nothing: the changes of 14 November (the six reported items) are finished and checked but not
-committed. The changelog under `[Unreleased]` lists them.
+**`2.2.0-beta.1` is released** (14 November): version in `ForeverFlip.toc` and `Util.lua`,
+`CHANGELOG.md` heading, committed and pushed. The changelog says what it holds.
 
 ## Waiting
 
-- **The in-game checks of the batch of 14 November.** Everything below was proved by the test suite
-  and the simulated client, not in the game. Worth a look: **To vendor** with a purse too small for a
+- **The in-game checks of the batch of 14 November.** None of it is confirmed in the game yet,
+  though all of it is in `2.2.0-beta.1`. Worth a look: **To vendor** with a purse too small for a
   lot (the whole offer listed, Buy taking the part the money covers), the new **Cost** column, the
   Crafting page's **Learned recipes only** toggle, the learned professions list scrolling instead of
-  running off the window, **Check all** on **Journal and profit**, and a **wait** advice leaving the
-  other way out buttons usable.
+  running off the window, **Check all** on **Journal and profit**, a **wait** advice leaving the
+  other way out buttons usable, and **Check all** during a full scan (it keeps its name now and the
+  scan stops from **Stop scan**).
 - **The journal, still.** One defect was found and fixed (a purchase sold before its own mail arrived
   was booked twice, leaving phantom stock and a lot open for good). A review of the accounting found
   no other reproducible fault, but the player's report — "sometimes you can't see what happened
@@ -34,10 +35,6 @@ committed. The changelog under `[Unreleased]` lists them.
   routes, the `*`, the difference), the rebuilt My items footer (seven lines, then the price row,
   then the buttons — nothing overlapping), and the busy **merchant** frame's `Sell gear I can't use`
   inside the window in Ukrainian. All three are layout, which the mock cannot show.
-- **Release the unreleased fixes.** The Buy tab marks no longer touch the game's rows, blocked
-  actions are recorded and `/ff diag` lists them, and disenchanting uses the documented calls. These
-  need a version in `ForeverFlip.toc` and `ForeverFlip/Util.lua` (`2.1.0-beta.3` or `2.1.0`), a
-  `CHANGELOG.md` heading and a tag — the hooks never tag. Ask which version.
 - **The in-game checks are still owed.** The fixes were proved by the test suite and the simulated
   client, not in the game. Someone has to buy in the Buy tab on a new character (the bug that was
   fixed), read `/ff diag`, and look at disenchant deals. `docs/tester-checklist.uk.xlsx` holds the

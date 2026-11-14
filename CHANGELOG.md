@@ -7,6 +7,12 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+
+## [2.2.0-beta.1] - 2026-11-14
+
+A vendor deal is no longer offered on an item no merchant buys, Check all during a full scan no
+longer throws the scan away, and Selling → My items says why a route pays more.
+
 ### Added
 
 - **The Crafting page can hide recipes you have not learned.** The game lists every recipe of a
@@ -1139,7 +1145,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v2.1.0-beta.2...HEAD
+[Unreleased]: ../../compare/v2.2.0-beta.1...HEAD
+[2.2.0-beta.1]: ../../compare/v2.1.0-beta.2...v2.2.0-beta.1
 [2.1.0-beta.2]: ../../compare/v2.1.0-beta.1...v2.1.0-beta.2
 [2.1.0-beta.1]: ../../compare/v2.0.0-beta.1...v2.1.0-beta.1
 [1.2.0-beta.6]: ../../compare/v1.2.0-beta.5...v1.2.0-beta.6
