@@ -1,0 +1,10 @@
+{
+  // The key that does everything: Ctrl+Shift+Alt+C runs the "commit" task (stage, commit with a
+  // message written from the changes, install into the game, push). Local to this machine: the
+  // .vscode folder is in .gitignore.
+  "editor.formatOnSave": false,
+  "files.encoding": "utf8",
+  "python.defaultInterpreterPath": "C:/FF/.tools/python/Scripts/python.exe",
+  "python.terminal.executeInFileDir": true,
+  "terminal.integrated.defaultProfile.windows": "PowerShell"
+}

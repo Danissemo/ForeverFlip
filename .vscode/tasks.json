@@ -1,0 +1,66 @@
+{
+  // One step with no prompts: stage everything, write a message when none was given, commit, install
+  // into the game and push (tools/devflow.py commit). The commit hooks still run and still stop a
+  // bad commit. Bound to Ctrl+Shift+Alt+C in .vscode/settings.json.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "prepare message",
+      "detail": "devflow.py prepare-message: write the message for the changes and copy it to the clipboard",
+      "type": "process",
+      "command": "C:/FF/.tools/python.cmd",
+      "args": ["tools/devflow.py", "prepare-message"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "commit",
+      "detail": "devflow.py commit: stage, commit, install into the game, push",
+      "type": "process",
+      "command": "C:/FF/.tools/python.cmd",
+      "args": ["tools/devflow.py", "commit"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "group": "build"
+    },
+    {
+      "label": "check",
+      "detail": "devflow.py check: StyLua, pyflakes and the whole suite",
+      "type": "process",
+      "command": "C:/FF/.tools/python.cmd",
+      "args": ["tools/devflow.py", "check"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "test: one module or name (ask)",
+      "detail": "devflow.py test <word>: only what matches, in parallel",
+      "type": "process",
+      "command": "C:/FF/.tools/python.cmd",
+      "args": ["tools/devflow.py", "test", "${input:testWord}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "install into the game",
+      "detail": "devflow.py install: copy ForeverFlip/ into Interface/AddOns",
+      "type": "process",
+      "command": "C:/FF/.tools/python.cmd",
+      "args": ["tools/devflow.py", "install"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "testWord",
+      "type": "promptString",
+      "description": "A part of a module or test name, empty for the whole suite"
+    }
+  ]
+}

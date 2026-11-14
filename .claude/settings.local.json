@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/FF/.tools/python/Scripts/python.exe C:/FF/development/foreverflip/tools/status.py",
+            "timeout": 60,
+            "statusMessage": "Reading where the work stands"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/FF/.tools/python/Scripts/python.exe C:/FF/development/foreverflip/tools/devflow.py stop",
+            "timeout": 120,
+            "statusMessage": "Checking that the work is committed and pushed"
+          }
+        ]
+      }
+    ]
+  }
+}

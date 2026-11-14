@@ -27,7 +27,7 @@ Nothing: the working tree is clean and pushed, and the changes listed in the cha
 - Work goes straight to `main`; the hooks test, install into `C:/World of Warcraft/_forever_` and
   push after every commit. `FF_NO_PUSH=1` and `FF_NO_INSTALL=1` skip one step for one commit.
 - Releases are manual: a tag pushed by hand, never by a hook.
-- The game's client is 1.60.1.70862, Interface 16001. `C:\WOW\World of Warcraft\_retail_` is not
+- The game's client is 1.60.1.70938, Interface 16001. `C:\WOW\World of Warcraft\_retail_` is not
   the target.
 - ForeverFlip has a Sync helper (`sync/`, Python, standard library only) and a community aggregator;
   both are part of the same release cycle.
