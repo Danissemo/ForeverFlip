@@ -51,14 +51,19 @@ end
 -- learned = the character may craft it, r = { { itemID, count }, ... } }.
 -- GetAllRecipeIDs lists the whole profession, known and unknown: C_TradeSkillUI.GetRecipeInfo
 -- says which (its `learned` flag; the schematic has none). Without that call every recipe counts
--- as learned, so a client that lacks it keeps the old list.
+-- as learned, so a client that lacks it keeps the old list. An answer that is nil or no table is
+-- no answer (the call failed, or the recipe is not loaded yet): it is kept as nil, which C.hidden
+-- reads as "not known", so a failure never hides a recipe the character can craft.
 local function learned(id)
     local T = C_TradeSkillUI
     if not T or not T.GetRecipeInfo then
         return true
     end
     local ok, info = pcall(T.GetRecipeInfo, id)
-    return not ok or type(info) ~= "table" or info.learned ~= false
+    if not ok or type(info) ~= "table" then
+        return nil
+    end
+    return info.learned ~= false
 end
 
 function C.learn()
@@ -121,6 +126,20 @@ function C.unlearnedCount()
         end
     end
     return n
+end
+
+-- Whether every saved recipe is one the character has not learned, and there is at least one. The
+-- page says so when a count of every recipe comes back as large as the unlearned one: a learned
+-- recipe with no material price yet is still a row, so the count alone does not answer it.
+function C.allUnlearned()
+    local total, unlearned = 0, 0
+    for _, r in pairs(recipes()) do
+        total = total + 1
+        if r.learned == false then
+            unlearned = unlearned + 1
+        end
+    end
+    return total > 0 and total == unlearned
 end
 
 -- The auction price of an item: a fresh check (Check all on this page) before the scan's usual price.

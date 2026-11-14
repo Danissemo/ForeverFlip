@@ -84,8 +84,13 @@ class CategoryStatusTests(unittest.TestCase):
             UI.show(section);assert(not UI.bulkButton:IsEnabled(),section)
         end
         UI.show('deals:vendor');F.Trade.op={state='quote'};UI.refresh();assert(not UI.bulkButton:IsEnabled())
-        F.Trade.op=nil;assert(F.Scan.start());UI.refresh();assert(UI.bulkButton:GetText()=='Stop','a scan can be stopped')
-        UI.bulkButton:Click();assert(not F.Scan.job,'Stop ends the scan')
+        F.Trade.op=nil;assert(F.Scan.start());UI.refresh()
+        -- A full scan is not a check: the button keeps its own name and does not end the scan the
+        -- player is waiting for (it used to read Stop and cancel it).
+        assert(UI.bulkButton:GetText()~='Stop','a scan is not stopped by Check all')
+        UI.bulkButton:Click();assert(F.Scan.job,'Check all during a scan leaves the scan alone')
+        -- The scan can still be ended: Stop on the scan's own button, and the scan's own label.
+        F.Scan.stop();assert(not F.Scan.job,'the scan stops from its own control')
         AuctionHouseFrame:Hide();fire('AUCTION_HOUSE_CLOSED');UI.refreshStatus();assert(not UI.bulkButton:IsEnabled())
         ''')
 

@@ -26,7 +26,14 @@ committed. The changelog under `[Unreleased]` lists them.
   comes up again.
 - **The poison check in game.** A merchant that refuses an item (a rogue's poisons are the ones
   seen) can only be known by selling one: confirm that a stack refused by the merchant drops out of
-  **Sell to vendor** and of **Deals → To vendor**, and that a new deal shows `vendor, refuses`.
+  **Sell to vendor** and of **Deals → To vendor**, that no rescan brings it back, and that
+  `/ff refused` names it. Check too that `hasNoValue` is really in the container info of this client
+  (`C_Container.GetContainerItemInfo`): the item data and the API docs say it exists, but it is only
+  ever seen as nil so far, and an item it flags should be left off Sell to vendor at once.
+- **The three window changes in game.** The **Best** column's hover on Selling → My items (both
+  routes, the `*`, the difference), the rebuilt My items footer (seven lines, then the price row,
+  then the buttons — nothing overlapping), and the busy **merchant** frame's `Sell gear I can't use`
+  inside the window in Ukrainian. All three are layout, which the mock cannot show.
 - **Release the unreleased fixes.** The Buy tab marks no longer touch the game's rows, blocked
   actions are recorded and `/ff diag` lists them, and disenchanting uses the documented calls. These
   need a version in `ForeverFlip.toc` and `ForeverFlip/Util.lua` (`2.1.0-beta.3` or `2.1.0`), a

@@ -17,18 +17,45 @@ All notable changes are listed here. The format follows
 - **Check all works on the Journal pages.** It reads the current price of every item the page
   shows (Resale, To vendor and Bids read their own purchases), so the figures behind the rows can
   be brought up to date without leaving the page.
+- **The Best column of My items explains itself.** Hovering it shows both routes for one unit side
+  by side — what a vendor pays (marked `*` until a merchant has been seen to pay it), what the
+  auction house brings after its cut, and the deposits a lot is expected to lose — with the
+  difference and which way it goes. Until now the column said `Vendor` or `AH` and left the
+  arithmetic to the player.
+- **The My items footer has been rebuilt.** Three fixed lines and the price controls underneath sat
+  in a 108-pixel block, so a long explanation (the sale route, the market, the minimum) ran into the
+  fields. It now has the Undercuts page's shape: seven scrolling lines on top, then the price,
+  quantity and duration, then the posting buttons, in a 146-pixel block.
+- **`/ff refused` shows, and can forget, the session's merchant refusals.** A sale the server was
+  too busy to take can look exactly like a merchant refusing the item, and the verdict lasted the
+  session. The command names what has been learned and `clear` forgets it.
 
 ### Fixed
 
+- **Check all no longer ends the full scan.** The button read **Stop** whenever any work ran, and a
+  full scan counts as work: pressing **Check all** during the five to ten minutes of a scan
+  cancelled the scan the player was waiting for, and the checks that were wanted never ran. The
+  button keeps its own name during a scan (the checks wait for it and start when it settles) and
+  reads **Stop** only while checks, a sale or a purchase run, which is what it actually ends. A
+  running scan is stopped from its own button, which reads **Stop scan** while it runs. A Check all
+  whose searches the scan holds back is no longer counted as unanswered either, so the chat no
+  longer says "no answer for: ..." about searches that were never sent.
+- **The gear button no longer runs off the merchant window.** `Sell gear I can't use` is 30 letters
+  in Ukrainian against a 180-pixel button anchored to the frame's right edge, and the game lets a
+  button's text spill past it, so the label left the window. Buttons now widen to fit their label,
+  whichever language it is in.
 - **A vendor deal on an item merchants do not buy.** Item data gives a sell price for some items a
   merchant refuses — a rogue's poisons are the ones seen — so they were listed under **To vendor**
   as certain profit and could not be sold. There is no client call that says a merchant will refuse
   an item before the sale, so the refusal is learned: a stack the merchant does not take (three
-  tries over ten seconds) is remembered for the session, and from then on the item is left off
-  **Sell to vendor**, its old deals leave the list, and a new deal carries the mark `vendor,
-  refuses` in the Mode column and says so in its lines. The Merchant tab adds a line when items in
+  tries over ten seconds, with the merchant still open and the stack still in the bags) is
+  remembered for the session, and from then on the item is left off **Sell to vendor** and no scan
+  or price check brings its vendor deal back to the list. The Merchant tab adds a line when items in
   the bags are left out for this reason, so their absence is explained rather than silent. An item
   the game itself flags as having no value (`hasNoValue` in the container info) is left out at once.
+  A wrong verdict — a sale the server was too busy to take — would keep a good item off both lists
+  until the next reload, so `/ff refused` lists what has been learned this session and
+  `/ff refused clear` forgets it.
 - **The auction house is no longer named twice.** The game's title bar read "ForeverFlip: Alliance
   AH" while the addon's own bottom bar already names the open house; the title is just ForeverFlip.
 - **The learned professions list no longer runs off the window.** It was one text under the

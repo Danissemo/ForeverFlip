@@ -139,8 +139,13 @@ function D.evaluate(g, vendor, history, now)
         if deal.mode == "vendor" then
             deal.vendorHow = select(2, F.AH.vendorPrice(g.id))
             -- A merchant has refused the item before (a poison's item data is priced by what it
-            -- costs, not by what a merchant pays): shown with that warning, not hidden.
+            -- costs, not by what a merchant pays). The refusal is for the session, so it must hold
+            -- every scan: a scan started before the refusal would put the deal back, and the list
+            -- would show it again with only a warning. It is dropped here, so no scan re-adds it.
             deal.refused = F.AH.refusedByMerchant({ itemID = g.id })
+            if deal.refused then
+                return nil, "refused"
+            end
         end
         deal.found = now or clock()
     end
@@ -1174,6 +1179,19 @@ function D.busy()
         or false
 end
 
+-- Whether the Stop button has anything of its own to end: checks, a purchase, a merchant sale. A
+-- full scan is left out: it runs for minutes on its own, and Check all during it means "check the
+-- page" (the checks wait for the scan) rather than "throw the scan away". F.Deals.busy() still
+-- counts the scan, so nothing else starts during one.
+function D.stoppingWork()
+    local batch = D.batch
+    return (batch and batch.active)
+        or #D.requests > 0
+        or (F.Trade.checkQueue and #F.Trade.checkQueue > 0)
+        or (F.Trade.sellingToVendor and F.Trade.sellingToVendor())
+        or false
+end
+
 -- Stops all of it at once (the Stop button): queued and running searches are dropped (an answer
 -- still on its way is ignored), the full scan is stopped, the sniper's round ends, a merchant sale
 -- stops after what was sent, Buy all to vendor ends. Settings stay as they are.
@@ -1277,7 +1295,9 @@ function D.startBatch(scope, keys, mode)
                 batch.retried, batch.retryKeys = true, batch.failedKeys
                 batch.done, batch.failed, batch.failedKeys = batch.done - #batch.retryKeys, 0, {}
             else
-                batch.active = batch.done < batch.total
+                -- Searches the scan or a busy game held back are still this batch's work.
+                local held = batch.heldKeys and #batch.heldKeys > 0
+                batch.active = batch.done < batch.total or held or false
                 if not batch.active and batch.failed > 0 then
                     D.reportUnanswered(batch)
                 end
@@ -1300,6 +1320,21 @@ function D.startBatch(scope, keys, mode)
             accepted = F.Trade.checkPrice(key, complete, true)
         end
         if not accepted then
+            -- Refused right now: a full scan waiting for its answer holds every search that is
+            -- not the player's own click, and the game's throttle holds one too. That is not an
+            -- answer, so the key is not counted as failed (which told the player "no answer for:
+            -- ..." for searches that were never sent): it waits for the batch's next pass, which
+            -- goes as soon as the scan settles. A key already waiting is not queued twice.
+            if F.Scan.blocking() and not (batch.heldSet and batch.heldSet[key]) then
+                batch.heldSet = batch.heldSet or {}
+                batch.heldSet[key] = true
+                batch.heldKeys = batch.heldKeys or {}
+                batch.heldKeys[#batch.heldKeys + 1] = key
+                return
+            end
+            if F.Scan.blocking() then
+                return -- already waiting: the next pass has it
+            end
             complete(key, nil, false)
         end
     end
@@ -1323,11 +1358,27 @@ function D.startBatch(scope, keys, mode)
     return #snapshot
 end
 
--- Sends the second try of a batch's unanswered searches (called every frame).
+-- Sends the searches a batch could not start yet (the full scan was waiting for its answer, or the
+-- game was busy), and the second try of its unanswered ones. Called every frame.
 function D.batchRetry()
     local batch = D.batch
-    local keys = batch and batch.retryKeys
-    if not keys or not F.AH.isOpen() then
+    if not batch or not F.AH.isOpen() then
+        return
+    end
+    -- Held searches first: the player's Check all should start the moment the scan settles, not
+    -- after the unanswered ones have been tried again.
+    local held = batch.heldKeys
+    if held and #held > 0 and not F.Scan.blocking() then
+        batch.heldKeys, batch.heldSet = nil, nil
+        for _, key in ipairs(held) do
+            if D.batch ~= batch then
+                return
+            end
+            batch.send(key)
+        end
+    end
+    local keys = batch.retryKeys
+    if not keys then
         return
     end
     batch.retryKeys = nil

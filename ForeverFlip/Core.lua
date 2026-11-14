@@ -876,6 +876,36 @@ SlashCmdList.FOREVERFLIP = function(msg)
         print("ForeverFlip: " .. L("the full scan can be requested again."))
         return
     end
+    if msg == "refused" or msg:match("^refused%s") then
+        -- The session's merchant refusals (AH.refused): what is left off Sell to vendor and To
+        -- vendor. A wrong one (a sale the server was too busy to take) keeps a good item off both
+        -- lists until the UI is reloaded, so "clear" forgets them all.
+        local count = 0
+        for _ in pairs(F.AH.refused or {}) do
+            count = count + 1
+        end
+        if msg:match("^refused%s+clear") then
+            for id in pairs(F.AH.refused or {}) do
+                F.AH.refused[id] = nil
+            end
+            print(string.format("ForeverFlip: " .. L("%d merchant refusals forgotten."), count))
+            F.Engine.changed()
+            return
+        end
+        local list = {}
+        for id in pairs(F.AH.refused or {}) do
+            list[#list + 1] = id
+        end
+        table.sort(list)
+        print(string.format("ForeverFlip: " .. L("%d items a merchant refused this session."), #list))
+        for i = 1, math.min(20, #list) do
+            print("  " .. (U.itemInfo(list[i]) or "item") .. " (" .. list[i] .. ")")
+        end
+        if #list > 0 then
+            print("ForeverFlip: " .. L("/ff refused clear forgets them."))
+        end
+        return
+    end
     local lang = msg:match("^lang%s+(%a+)$")
     if lang == "en" or lang == "uk" then
         F.db.settings.language = lang

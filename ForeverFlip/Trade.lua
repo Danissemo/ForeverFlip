@@ -2928,6 +2928,13 @@ end
 -- and the sale closes the position. Left out: hidden items, items with a "keep" rule, and vendor-deal
 -- stock a merchant would pay less for than it cost. { bag, slot, key, id, count, price, link },
 -- dearest first.
+--
+-- T.vendorRefusedCount is how many stacks the last call left out because a merchant was seen to
+-- refuse them (the item data prices them all the same), counted from that call's own bag read: the
+-- Merchant tab tells them apart from the ones left out for another reason (hidden, a keep rule, a
+-- bound piece), and asking for the count costs no second read of every bag.
+T.vendorRefusedCount = 0
+
 function T.vendorSellList()
     local c = char()
     local items = F.AH.merchantItems()
@@ -2953,20 +2960,14 @@ function T.vendorSellList()
             held[b.key], stock[b] = (held[b.key] or 0) + b.count, true
         end
     end
-    local out = {}
+    local out, refused = {}, 0
     for _, b in ipairs(items) do
         local rule = T.rule(b.key)
         local price = F.AH.vendorPrice(b.id, true)
         -- The item data prices some items a merchant refuses (poisons): left off the list rather
-        -- than offered and refused.
-        if
-            price
-            and price > 0
-            and F.AH.accepts(b)
-            and not T.hidden(b.key)
-            and not (rule and rule.keep)
-            and not b.locked
-        then
+        -- than offered and refused, and counted so the page can say why they are missing.
+        local takes = price and price > 0 and F.AH.accepts(b)
+        if takes and not T.hidden(b.key) and not (rule and rule.keep) and not b.locked then
             local p = c.positions[b.key]
             local eligible
             if stock[b] then
@@ -2985,6 +2986,10 @@ function T.vendorSellList()
                     price = price * b.count,
                 }
             end
+        elseif price and price > 0 and not F.AH.accepts(b) then
+            -- Priced by the item data, but a merchant was seen to refuse it: the one case the page
+            -- explains (a hidden item or a keep rule needs no line).
+            refused = refused + 1
         end
     end
     table.sort(out, function(a, b)
@@ -2993,11 +2998,13 @@ function T.vendorSellList()
         end
         return a.key < b.key
     end)
+    T.vendorRefusedCount = refused
     return out
 end
 
 -- How many stacks in the bags a merchant has proved it does not buy. Shown on the Merchant tab, so
--- their absence from the list is explained.
+-- their absence from the list is explained. UI.merchant reads T.vendorRefusedCount from the list's
+-- own bag read; this is for a caller that wants the number without building the list.
 function T.refusedInBags()
     local n = 0
     for _, b in ipairs(F.AH.merchantItems()) do
@@ -3159,9 +3166,13 @@ local function sendStack(job, v)
                 job.failed = job.failed + 1
                 -- Three tries over a stack the merchant never took: it does not buy the item. Its
                 -- deals go with it, so it is not bought again for a merchant that refuses it.
-                F.AH.noteRefused(v.id)
-                job.refused = job.refused or {}
-                job.refused[v.id] = true
+                -- Only while the merchant is open: a sale cut short by the window closing or by a
+                -- throttled UseContainerItem says nothing about what the merchant buys, and a wrong
+                -- verdict would keep a good item off the list until the UI is reloaded.
+                if MerchantFrame and MerchantFrame:IsShown() and slotHolds(v) then
+                    F.AH.noteRefused(v.id)
+                    job.refused = true
+                end
             end
         end,
     })

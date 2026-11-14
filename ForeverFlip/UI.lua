@@ -98,10 +98,41 @@ local function text(parent, font)
     return t
 end
 
+-- Widens a button whose label does not fit `width`. The game lets a button's text spill past its
+-- frame and never cuts it, so a longer translation ran out of a right-anchored button and off the
+-- window (the Ukrainian "Sell gear I can't use" needs about 210 px against 180). The text is
+-- measured once the button has a font; without one the label's own length is the fallback.
+function UI.fitButton(b, width)
+    local function fit()
+        local fs = b.GetFontString and b.GetFontString()
+        local text = (b.GetText and b:GetText()) or ""
+        -- GetStringWidth is clipped to the font string's width once one has been set (the frame
+        -- grows, the string does not): the unbounded measure is the one that answers the question.
+        local need
+        if fs and fs.GetUnboundedStringWidth then
+            need = fs:GetUnboundedStringWidth()
+        elseif fs and fs.GetStringWidth then
+            need = fs:GetStringWidth()
+        end
+        if not need or need <= 0 then
+            need = #text * 7 -- letterfont: about 7 px a character, one line
+        end
+        b:SetSize(math.max(width or 0, math.ceil(need) + 20), 22)
+    end
+    fit()
+    -- A label set later (the counts of the merchant buttons) is measured then.
+    b.fitWidth = fit
+    return b
+end
+
 local function button(parent, label, width, onClick)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     b:SetSize(width or 110, 22)
     b:SetText(L(label))
+    -- A label longer than the width would run out of the button: with a right-anchored button it
+    -- ran off the window (the Ukrainian "Sell gear I can't use" is 30 letters against 180 px). The
+    -- button takes the wider of the two, so a translation never overflows.
+    UI.fitButton(b, width or 110)
     b:SetScript("OnClick", function(...)
         F.Engine.input()
         return onClick(...)
@@ -1143,6 +1174,13 @@ function UI.create()
 
     -- Top bar: scan, sniper and bulk check buttons, status text.
     UI.scanButton = button(f, "Full scan", 150, function()
+        -- The same button stops a scan it started: it reads Stop scan while one runs. Scan.stop
+        -- says what became of the request (the answer may still come and be read on reopening).
+        if F.Scan.busy() then
+            F.Scan.stop()
+            UI.refresh()
+            return
+        end
         local ok, why = F.Scan.start()
         if not ok then
             F.Engine.notify(why)
@@ -1156,9 +1194,12 @@ function UI.create()
     UI.sniperButton:SetPoint("LEFT", UI.scanButton, "RIGHT", 6, 0)
     -- Check all: every entry of the open page is searched on the auction house again (one search
     -- after another), and the page shows what was found.
-    -- Check all, or Stop while anything runs (F.Deals.busy): one click ends all work.
+    -- It reads Stop only while checks, a sale or a purchase run, which is what it ends. A full scan
+    -- is not one of them: it runs on its own and the checks wait for it (Deals.startBatch holds
+    -- them, Deals.startRequest lets none go meanwhile), so a button that read Stop during the six
+    -- minutes of a scan only ended the scan the player was waiting for.
     UI.bulkButton = button(f, "Check all", 110, function()
-        if F.Deals.busy() then
+        if F.Deals.stoppingWork() then
             F.Deals.stopAll()
             UI.refresh()
         else
@@ -2783,7 +2824,7 @@ local SELL_ROWS = 12
 function UI.createSell(p)
     local list = CreateFrame("Frame", nil, p)
     list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
-    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 112)
+    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 150)
     UI.sellTable = table_(
         list,
         {
@@ -2833,6 +2874,24 @@ function UI.createSell(p)
             GameTooltip:Show()
         end
     end)
+    -- The Best cell answers "why this route": a vendor pays at once with no cut, the auction house
+    -- pays after its cut and the deposits a lot is expected to lose.
+    for _, row in ipairs(UI.sellTable.rows) do
+        local cell = row.cols[4]
+        if cell then
+            cell:EnableMouse(true)
+            cell:SetScript("OnEnter", function(self)
+                if row.bestWay then
+                    UI.bestTooltip(self, row.bestWay, row.bestName)
+                end
+            end)
+            cell:SetScript("OnLeave", function()
+                if GameTooltip then
+                    GameTooltip:Hide()
+                end
+            end)
+        end
+    end
     noteHeader:SetScript("OnLeave", function()
         if GameTooltip then
             GameTooltip:Hide()
@@ -2931,9 +2990,13 @@ function UI.createSell(p)
     end)
     UI.ruleToggle:SetPoint("RIGHT", UI.sellHide, "LEFT", -4, 0)
 
-    local bar = footer(p, 108, "GameFontHighlightSmall")
+    -- The footer is laid out as the Undercuts page's: the selected item's lines in a scrolling block
+    -- at the top (7 rows, the wheel or the bar reaches the rest), then the price, quantity and
+    -- duration in a row of their own, then the posting buttons. Long explanations (the sale route,
+    -- the market, the minimum) need more than three lines, and three lines ran into the fields.
+    local bar = footer(p, 146, "GameFontHighlightSmall")
     bar.text:Hide()
-    UI.sellBox = UI.scrollText(bar, 3, 6, 26)
+    UI.sellBox = UI.scrollText(bar, 7, 6, 26)
     UI.sellText = UI.sellBox.text
     local priceLabel = text(bar, "GameFontNormal")
     priceLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 36)
@@ -3274,7 +3337,12 @@ function UI.refreshSell()
             local p = item.position
             r.cols[2]:SetText(p and p.qty > 0 and U.money(p.cost / p.qty) or "-")
             r.cols[3]:SetText(listings[item.key] or "-")
-            r.cols[4]:SetText(UI.bestText(way(item)))
+            -- The Best cell explains itself on hover: which route pays more for one unit, and by
+            -- how much. The row's own hover lists the columns; this one adds the sum behind Best.
+            local w = way(item)
+            r.bestWay = w
+            r.bestName = item.name or U.linkName(item.link) or nameOf(item.key)
+            r.cols[4]:SetText(UI.bestText(w))
             if hiddenView then
                 r.cols[5]:SetText(item.away and L("not in the bags") or L("hidden"))
             else
@@ -4495,11 +4563,13 @@ function UI.refreshCrafting()
     end
     local empty = UI.craftTable.empty
     if #rows == 0 then
-        local hiddenAll = #F.Crafting.profits(true) > 0
+        -- Every recipe is unlearned (not merely "some recipes exist"): a learned recipe with no
+        -- material price is still a row, and the reason for an empty page must name the real one.
+        local hiddenAll = F.Crafting.allUnlearned()
         empty:SetText(
             hiddenAll
                     and L(
-                        "Every saved recipe is one this character has not learned. Press Learned recipes only to see them."
+                        "Every saved recipe is one this character has not learned. Press All recipes to list them anyway."
                     )
                 or L(
                     "Open each of your profession windows once: ForeverFlip reads the recipes and prices them here with the auction prices of the materials and the product."
@@ -5849,10 +5919,12 @@ function UI.refreshStatus()
     UI.sniperBox:SetChecked(F.db.settings.sniper)
     local scope, keys = UI.statusTargets()
     local batchDone, batchTotal, batchActive, batchFailed = F.Deals.batchProgress()
-    if F.Deals.busy() then
+    if F.Deals.stoppingWork() then
         UI.bulkButton:SetText(L("Stop"))
         UI.bulkButton:SetEnabled(true)
     else
+        -- During a full scan this reads Check all (pressable: the checks wait for the scan) rather
+        -- than Stop, which used to end the scan the player was waiting for.
         UI.bulkButton:SetText(L("Check all"))
         UI.bulkButton:SetEnabled(
             scope ~= nil and #keys > 0 and F.AH.isOpen() and not F.Trade.busy() and not F.Scan.blocking()
@@ -5891,8 +5963,10 @@ function UI.refreshStatus()
         end
         UI.status:SetText(line)
         UI.progress:SetValue(total > 0 and done / total or 0)
-        UI.scanButton:SetText(L("Full scan"))
-        UI.scanButton:Disable()
+        -- The scan's own Stop: the button beside the progress offers it while a scan runs (Check
+        -- all no longer does, since it means "check the page" during one). Its tooltip says so.
+        UI.scanButton:SetText(L("Stop scan"))
+        UI.scanButton:Enable()
         return
     end
     UI.progress:SetValue(0)
@@ -6478,6 +6552,92 @@ function UI.bestText(w)
         return color .. L(BEST[w.name]) .. "|r " .. money
     end
     return color .. L(BEST[w.name]) .. "|r " .. U.money(w.value)
+end
+
+-- Why the Best column says what it says: the two routes read side by side for one unit, so the
+-- choice is visible instead of trusted. A vendor pays at once with no cut and no deposit; the
+-- auction house pays after its cut and after the deposits a lot is expected to lose. Prices that
+-- are only an estimate are marked, and a route that cannot be taken says why.
+function UI.bestTooltip(cell, w, name)
+    if not GameTooltip then
+        return
+    end
+    GameTooltip:SetOwner(cell, "ANCHOR_TOP")
+    local q = w.quote or {}
+    local cut = math.floor(F.Market.CUT * 100 + 0.5)
+    GameTooltip:SetText(L("Best") .. ": " .. (L(BEST[w.name]) or w.name), 1, 0.82, 0, 1, true)
+    GameTooltip:AddLine(name or "", 1, 1, 1, true)
+    GameTooltip:AddLine(" ")
+
+    -- The vendor route: the game's item data, confirmed or not.
+    local vendor, how = q.vendor, q.vendorHow
+    if vendor and vendor > 0 then
+        GameTooltip:AddDoubleLine(
+            L("Vendor") .. (how == "confirmed" and "" or " *"),
+            U.money(vendor),
+            1,
+            1,
+            1,
+            1,
+            0.73,
+            0.3
+        )
+    else
+        GameTooltip:AddDoubleLine(L("Vendor"), L("does not buy it"), 1, 1, 1, 0.6, 0.6, 0.6)
+    end
+
+    -- The auction route: what one unit brings after the cut and the deposits, when it is known.
+    if q.net then
+        GameTooltip:AddDoubleLine(
+            string.format(L("AH after the %d%% cut"), cut),
+            U.money(q.net) .. (q.guess and (" " .. L("(estimate)")) or ""),
+            1,
+            1,
+            1,
+            0.25,
+            1,
+            0.25
+        )
+        if q.lost and q.lost > 0 then
+            GameTooltip:AddDoubleLine(L("Deposits expected to be lost"), "-" .. U.money(q.lost), 1, 1, 1, 1, 0.4, 0.4)
+        end
+    else
+        GameTooltip:AddDoubleLine(
+            L("AH"),
+            q.guess and L("not enough price data") or L("no answer yet"),
+            1,
+            1,
+            1,
+            0.6,
+            0.6,
+            0.6
+        )
+    end
+
+    -- The difference, on the route the column chose.
+    if q.value and vendor and vendor > 0 then
+        GameTooltip:AddLine(" ")
+        local diff = U.money(math.abs((q.value or 0) - vendor))
+        if w.name == "vendor" then
+            GameTooltip:AddLine(string.format(L("A vendor pays %s more for it."), diff), 1, 0.73, 0.3, true)
+        else
+            GameTooltip:AddLine(string.format(L("The auction house brings %s more for it."), diff), 0.25, 1, 0.25, true)
+        end
+    end
+    -- A price not yet seen at a merchant is a guess from the item data, as the Sell page's * says.
+    if vendor and how ~= "confirmed" then
+        GameTooltip:AddLine(L("Vendor price from item data, not yet seen at a merchant."), 1, 0.82, 0, true)
+    end
+    if q.belowFloor then
+        GameTooltip:AddLine(
+            L("The market is below your minimum: wait, change the rule, or choose another route."),
+            1,
+            0.4,
+            0.4,
+            true
+        )
+    end
+    GameTooltip:Show()
 end
 
 function UI.refreshPostNext()
@@ -7126,6 +7286,9 @@ function UI.merchant(open)
         return selling and L("Selling...") or text
     end
     UI.gearButton:SetText(busy(gearText))
+    if UI.gearButton.fitWidth then
+        UI.gearButton.fitWidth()
+    end
     UI.gearButton:SetEnabled(not selling)
     UI.merchantView.sellGear:SetText(
         busy(#gear > 0 and string.format(L("Gear I can't use (%d)"), #gear) or L("No unusable gear"))
@@ -7142,11 +7305,15 @@ function UI.merchant(open)
         total = total + v.price
     end
     -- Items a merchant does not buy, though the item data prices them: said on the page, since
-    -- they drop out of the list without a word otherwise.
-    local refused = F.Trade.refusedInBags()
+    -- they drop out of the list without a word otherwise. Counted by the list's own bag read
+    -- (T.vendorRefusedCount), so the merchant page scans the bags once.
+    local refused = F.Trade.vendorRefusedCount or 0
     local view = UI.merchantView
     if #list > 0 and not view:IsShown() then
         UI.merchantButton:SetText(string.format(L("Sell to vendor (%d): %s"), #list, U.money(total)))
+        if UI.merchantButton.fitWidth then
+            UI.merchantButton.fitWidth()
+        end
         UI.merchantButton:Show()
     else
         UI.merchantButton:Hide()

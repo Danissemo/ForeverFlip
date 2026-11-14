@@ -129,9 +129,10 @@ the 150 items most often near a deal, one per second.
   Profit is certain as long as the lot is still there and the vendor price is confirmed (a yellow
   `*` marks a vendor price not yet seen at a merchant, see [Settings](#settings), Safety). Item data
   prices some items a merchant refuses (a rogue's poisons): the game has no call that says so before
-  the sale, so the refusal is learned from a stack the merchant does not take. From then on the item
-  is left off **Sell to vendor** and its deals, and a new deal is marked `vendor, refuses` with the
-  reason in its lines.
+  the sale, so the refusal is learned from a stack the merchant does not take (three tries, with the
+  merchant open). From then on the item is left off **Sell to vendor** and no scan puts its deals
+  back. `/ff refused` lists what has been learned this session and `/ff refused clear` forgets it,
+  for the rare case of a sale the server was too busy to take.
 - **Resale:** lots priced well below the next seller, for items that are measured to sell at the
   resale price. You buy them and post them again on the auction house.
 - **Deals from the list** (under Shopping list): lots at or below the price on your [shopping list](#shopping-list-and-ignored-items).
@@ -787,6 +788,7 @@ A key press is an action of yours, like a click, so it may buy, post and cancel.
 | `/ff diag` | Statistics of the last full scan: auctions total, read, skipped and your own; items; items with a known vendor price; items below vendor price; items still collecting sales data; deals; then how the last 5 full scan requests ended (read, no answer, list kept changing, dropped by the server, closed while waiting) and how many auctions the server had sent. |
 | `/ff rescan` | Clears the scan cooldown. Use it when the server did not answer a scan and you do not want to wait 15 minutes. The server may still refuse. |
 | `/ff bags` | Lists bag items that are not on the Sell page, with the reason: `bound`, `not_sellable` (the auction house refuses it) or `unknown_kind` (the game has not told what it is yet). Open the auction house first. |
+| `/ff refused` | Lists the items a merchant refused this session (left off **Sell to vendor** and **To vendor**). `/ff refused clear` forgets them, for a sale the server was too busy to take. |
 | `/ff export` | Opens the journal as CSV. |
 | `/ff lang en`, `/ff lang uk` | Sets the language. Type `/reload` afterwards. |
 
