@@ -1,17 +1,2 @@
-# Build output
+research/
 dist/
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-
-# Editors and OS
-.vscode/
-.idea/
-*.swp
-.DS_Store
-Thumbs.db
-
-# Local Claude Code settings (machine paths)
-.claude/settings.local.json
