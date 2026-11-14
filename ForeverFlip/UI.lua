@@ -104,7 +104,7 @@ end
 -- measured once the button has a font; without one the label's own length is the fallback.
 function UI.fitButton(b, width)
     local function fit()
-        local fs = b.GetFontString and b.GetFontString()
+        local fs = b.GetFontString and b:GetFontString()
         local text = (b.GetText and b:GetText()) or ""
         -- GetStringWidth is clipped to the font string's width once one has been set (the frame
         -- grows, the string does not): the unbounded measure is the one that answers the question.

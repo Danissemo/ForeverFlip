@@ -145,6 +145,12 @@ function methods:RegisterEvent(e)
     self.events = self.events or {}
     self.events[e] = true
 end
+-- As in the game, the button must be passed: b.GetFontString() without self is an error there.
+function methods:GetFontString()
+    assert(type(self) == "table" and rawget(self, "kind"), "Usage: button:GetFontString()")
+    self.fontString = rawget(self, "fontString") or widget("FontString", self)
+    return self.fontString
+end
 function methods:Click()
     if self.enabled and self.scripts.OnClick then
         self.scripts.OnClick(self)
