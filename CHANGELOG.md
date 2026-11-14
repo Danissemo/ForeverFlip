@@ -15,6 +15,26 @@ All notable changes are listed here. The format follows
   only through the widget API and keep their textures apart; switched off, the rows are not read.
 - **What the game blocks is recorded.** When the game blocks an action and names ForeverFlip, the
   chat says which function, and `/ff diag` lists it with what the addon was doing (the last 10).
+  The diag line is translated, says so when nothing was blocked, and no longer turns the marks off
+  every half second when the setting is off.
+- **The Buy tab marks find their rows through the game's own method.** The rows are listed with
+  `ScrollBox:GetFrames()`: a ScrollBox is a frame of the client, not a Lua table, so a field read
+  with `rawget` (as the first version did) returns nothing and no row was ever marked. Each row's
+  price is asked for once per refresh instead of twice.
+- **Disenchanting is detected by the documented call.** `C_SpellBook.IsSpellKnown` is asked first,
+  and the bare `IsPlayerSpell`/`IsSpellKnown` the client installs as deprecated fallbacks only when
+  it has no `C_SpellBook` (the same for counting items: `C_Item.GetItemCount` first).
+
+### Development
+
+- **The tests run in parallel.** `python tools/devflow.py test` runs one process per module, about
+  a minute in twenty seconds, and `test <word>` narrows the run to a module or a test name.
+- **`pyflakes` is part of the check.** The pre-commit hook and CI report unused imports and
+  undefined names in the tests, the Sync helper and the tools.
+- **CI checks Windows too,** where the local flow, the hooks and the Sync helper actually run.
+- **The Lua diagnostics see the game.** `undefined-global` is on again: the names the game's
+  interface gives the addon live in `references/wow-forever-globals.lua`, so a misspelt call is
+  reported and a wrong one is not.
 
 ## [2.1.0-beta.2] - 2026-11-13
 

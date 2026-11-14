@@ -2,7 +2,7 @@
 import unittest
 
 from test_addon import SETUP, run
-from test_audit import AntiUndercutTests, BASE
+from test_audit import AntiUndercutTests
 
 
 class SaleChancesTests(unittest.TestCase):

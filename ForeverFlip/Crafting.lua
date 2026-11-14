@@ -177,6 +177,8 @@ end
 -- Units of an item the player already has, in the bags and the bank (the bank as last seen);
 -- `bagsOnly`: in the bags.
 function C.have(id, bagsOnly)
+    -- The documented form takes the item as ItemInfo (an ID is accepted); the bare GetItemCount is
+    -- its deprecated fallback, kept for a client that does not have C_Item.
     local count = C_Item and C_Item.GetItemCount or GetItemCount
     if not count then
         return 0

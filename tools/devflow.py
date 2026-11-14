@@ -8,12 +8,19 @@ Git runs it through the hooks in .githooks (enable them once with
 
 Other commands:
 
+    python tools/devflow.py test [word]  the fast loop: the tests whose name matches `word`
+                                      (a module or a test name, e.g. `test_bids` or `mark`),
+                                      the whole suite when no word is given
     python tools/devflow.py install   copy ForeverFlip/ into the game's Interface/AddOns
     python tools/devflow.py push      push main when it is ahead of GitHub
     python tools/devflow.py stop      for an AI assistant's "stop" hook: refuses to stop while
                                       changes are not committed, pushes what is not pushed yet
 
 Releases stay manual: a tag (`git push origin vX.Y.Z`) is never pushed by this script.
+
+The whole suite takes about a minute, so the hooks and a quick loop run `test` the same way: one
+process per module in parallel (FF_JOBS, default: the processors, at most 8). A module that fails
+is then run again alone, so its output is readable and not mixed with the others.
 
 Settings (environment variables or `git config`):
 
@@ -80,6 +87,99 @@ def stylua() -> str | None:
     return shutil.which("stylua")
 
 
+# --- tests ---------------------------------------------------------------------------------------
+
+# The modules the suite is split into. `unittest discover` would find them too, but one process per
+# module is what makes the run parallel and its failures readable.
+def test_modules(word: str = "") -> list[str]:
+    found = []
+    for path in sorted((ROOT / "tests").glob("test_*.py")):
+        name = path.stem
+        # an empty word means the whole suite; otherwise a module or any test name in it
+        if not word or word in name:
+            found.append(name)
+    return found
+
+
+def jobs() -> int:
+    given = os.environ.get("FF_JOBS", "").strip()
+    if given.isdigit() and int(given) > 0:
+        return int(given)
+    return max(1, min(8, os.cpu_count() or 1))
+
+
+def one_module(name: str, pattern: str | None = None) -> subprocess.CompletedProcess[str]:
+    cmd = [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", f"{name}.py", "-q"]
+    return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=600)
+
+
+def run_tests(word: str = "", verbose: bool = False) -> int:
+    """`test`: one module at a time and in the open when verbose (the way a debugger needs them),
+    otherwise every module in parallel with one readable report per failing module."""
+    return debug(word + ".py" if word else "test_*.py") if verbose else run_tests_parallel(word)
+
+
+def debug(pattern: str = "test_*.py") -> int:
+    """The same discovery a debugger needs, one module at a time and in the open: the entry point
+    of the editor's test debugging (see .vscode/configurations in the workspace).
+
+        python tools/devflow.py test -v             every module of the suite
+        python tools/devflow.py test test_bids -v   one module
+    """
+    if not pattern.endswith(".py"):
+        pattern += ".py"
+    return subprocess.run(
+        [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", pattern, "-v"],
+        cwd=ROOT,
+    ).returncode
+
+
+def run_tests_parallel(word: str = "") -> int:
+    from concurrent.futures import ThreadPoolExecutor
+
+    modules = test_modules(word)
+    if not modules:
+        say(f"no test module matches {word!r}")
+        return 2
+    with ThreadPoolExecutor(max_workers=jobs()) as pool:
+        results = list(pool.map(one_module, modules))
+    failures = [(m, r) for m, r in zip(modules, results) if r.returncode != 0]
+    total = 0
+    for result in results:
+        total += int(result.stderr.split("Ran ")[1].split()[0]) if "Ran " in result.stderr else 0
+    if not failures:
+        say(f"tests passed ({total} tests in {modules_word(len(modules))})")
+        return 0
+    # Started in parallel, the failures would be mixed: each failing module is run again alone so its
+    # output is whole, and the matching test names are run first when the word named a test.
+    for name, first in failures:
+        narrowed = matching_tests(name, word) if word not in name else []
+        if narrowed:
+            again = subprocess.run([sys.executable, "-m", "unittest", "-q"] + narrowed, cwd=ROOT,
+                                   capture_output=True, text=True, timeout=600)
+            sys.stdout.write(again.stdout[-4000:])
+            sys.stdout.write(again.stderr[-6000:])
+        else:
+            sys.stdout.write(first.stdout[-4000:])
+            sys.stdout.write(first.stderr[-6000:])
+    say(f"tests failed ({modules_word(len(failures))}, {total} tests ran)")
+    return 1
+
+
+def modules_word(count: int) -> str:
+    return f"{count} module" if count == 1 else f"{count} modules"
+
+
+def matching_tests(module: str, word: str) -> list[str]:
+    """The tests of a module whose name contains `word`, so a narrow run is quick and readable."""
+    if not word:
+        return []
+    source = (ROOT / "tests" / f"{module}.py").read_text(encoding="utf-8")
+    names = [line.strip()[4:].split("(", 1)[0] for line in source.splitlines()
+             if line.strip().startswith("def test")]
+    return [f"{module}.{n}" for n in names if word in n]
+
+
 def check() -> int:
     if not staged_code():
         say("no code changed: checks skipped")
@@ -91,15 +191,29 @@ def check() -> int:
             return 1
     else:
         say("StyLua not found: style check skipped")
-    tests = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-q"],
-                           cwd=ROOT, capture_output=True, text=True)
-    if tests.returncode != 0:
-        sys.stdout.write(tests.stdout[-4000:] + tests.stderr[-4000:])
+    if pyflakes() != 0:
+        say("pyflakes: the Python is not clean, nothing was committed")
+        return 1
+    if run_tests() != 0:
         say("tests failed: nothing was committed")
         return 1
-    last = [line for line in tests.stderr.splitlines() if line.startswith("Ran ")]
-    say(f"tests passed ({last[-1][4:] if last else 'ok'})")
     return 0
+
+
+def pyflakes() -> int:
+    """Unused imports and undefined names in the Python: the tests, the Sync helper and the tools."""
+    try:
+        import pyflakes  # noqa: F401  # only asks whether the checker is installed
+        del pyflakes
+    except ImportError:
+        say("pyflakes is not installed: the Python check is skipped (pip install -r requirements-dev.txt)")
+        return 0
+    out = subprocess.run([sys.executable, "-m", "pyflakes", "sync", "tools", "tests"], cwd=ROOT,
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        sys.stdout.write(out.stdout)
+        sys.stderr.write(out.stderr)
+    return out.returncode
 
 
 # --- install -------------------------------------------------------------------------------------
@@ -204,11 +318,16 @@ def stop() -> int:
     return 0
 
 
-COMMANDS = {"check": check, "install": install, "push": push, "publish": publish, "stop": stop}
+COMMANDS = {"check": check, "test": run_tests, "install": install, "push": push, "publish": publish,
+            "stop": stop}
 
 if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else ""
     if command not in COMMANDS:
         print(__doc__)
         sys.exit(2)
+    args = sys.argv[2:]
+    if command == "test":
+        word = next((a for a in args if not a.startswith("-")), "")
+        sys.exit(run_tests(word, verbose="-v" in args))
     sys.exit(COMMANDS[command]())

@@ -12,7 +12,6 @@ styles, the result list, its colours, the filter and the progress formulas sized
 from __future__ import annotations
 
 import argparse
-import copy
 import io
 import math
 import pathlib

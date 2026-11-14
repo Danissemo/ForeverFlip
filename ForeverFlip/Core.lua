@@ -189,10 +189,19 @@ end
 -- it blocked and what ForeverFlip was doing then are kept (the last 10, shown by /ff diag): the
 -- game's own dialog says neither.
 E.BLOCKED_KEEP = 10
+-- A client that sends ADDON_ACTION_BLOCKED with the addon only: the function is unknown, and the
+-- record says so instead of "nil".
+local BLOCKED_UNKNOWN = "?"
+-- What /ff diag calls the record ("forbidden" is what the game says for the first event).
+function E.blockedKindText(kind)
+    local L = F.Locale.text
+    return L(kind == "forbidden" and "forbidden" or "blocked")
+end
 function E.onBlocked(event, addon, func)
     if addon ~= "ForeverFlip" or not F.db then
         return
     end
+    func = type(func) == "string" and func or (func ~= nil and tostring(func) or BLOCKED_UNKNOWN)
     local T, UI = F.Trade, F.UI
     local doing = {}
     if UI and UI.section then
@@ -227,20 +236,22 @@ function E.onBlocked(event, addon, func)
         at = E.clock(),
         version = F.version,
         event = event == "ADDON_ACTION_FORBIDDEN" and "forbidden" or "blocked",
-        func = tostring(func),
+        func = func,
         doing = table.concat(doing, ", "),
     })
     while #F.db.blocked > E.BLOCKED_KEEP do
         table.remove(F.db.blocked)
     end
+    -- Told once for each function, and once in every session (a saved list of the last 10 must not
+    -- silence the chat line for the ones seen before): the player has to know while it happens.
     E.blockedSeen = E.blockedSeen or {}
-    if not E.blockedSeen[tostring(func)] then
-        E.blockedSeen[tostring(func)] = true
+    if not E.blockedSeen[func] then
+        E.blockedSeen[func] = true
         print(
             "|cffff4040ForeverFlip:|r "
                 .. string.format(
                     F.Locale.text("the game blocked %s. Type /ff diag and send the lines to the developer."),
-                    tostring(func)
+                    func
                 )
         )
     end
@@ -786,12 +797,18 @@ SlashCmdList.FOREVERFLIP = function(msg)
         return
     end
     if msg == "diag" then
-        for _, b in ipairs(F.db and type(F.db.blocked) == "table" and F.db.blocked or {}) do
+        local blocked = F.db and type(F.db.blocked) == "table" and F.db.blocked or {}
+        if #blocked == 0 then
+            print("ForeverFlip: " .. L("No blocked action recorded."))
+        end
+        for _, b in ipairs(blocked) do
+            -- The whole line goes to the developer, so its English words are translated; the event's
+            -- name and the function name that the game gave are left as they are.
             print(
                 string.format(
                     "ForeverFlip %s: %s %s, %s ago; %s",
                     tostring(b.version),
-                    tostring(b.event),
+                    E.blockedKindText(b.event),
                     tostring(b.func),
                     F.UI and F.UI.age and F.UI.age(b.at) or tostring(b.at),
                     b.doing ~= "" and b.doing or "-"

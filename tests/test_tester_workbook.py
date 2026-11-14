@@ -11,7 +11,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 class TesterWorkbookTests(unittest.TestCase):
     def test_the_workbook_matches_the_guide_and_the_version(self):
         try:
-            import openpyxl  # noqa: F401
+            import openpyxl  # noqa: F401  # only asks whether the optional tool is there
+            del openpyxl
         except ImportError:
             self.skipTest("openpyxl is not installed (requirements-dev.txt)")
         done = subprocess.run(

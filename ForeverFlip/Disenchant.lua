@@ -141,15 +141,22 @@ function DE.outcomes(quality, level, classID)
 end
 
 function DE.canDisenchant()
+    -- C_SpellBook first: the bare IsPlayerSpell/IsSpellKnown are the deprecated fallbacks the client
+    -- installs only while `loadDeprecationFallbacks` is on, and they mean the same thing.
+    local known = C_SpellBook and C_SpellBook.IsSpellKnown
+    if known then
+        local ok, has = pcall(known, DE.SPELL, Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player)
+        return ok and has or false
+    end
     if IsPlayerSpell then
-        local ok, known = pcall(IsPlayerSpell, DE.SPELL)
-        if ok and known then
+        local ok, has = pcall(IsPlayerSpell, DE.SPELL)
+        if ok and has then
             return true
         end
     end
     if IsSpellKnown then
-        local ok, known = pcall(IsSpellKnown, DE.SPELL)
-        return ok and known or false
+        local ok, has = pcall(IsSpellKnown, DE.SPELL)
+        return ok and has or false
     end
     return false
 end

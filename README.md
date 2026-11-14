@@ -225,8 +225,9 @@ and auction house.
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m unittest discover -s tests -p "test_*.py"
+python tools/devflow.py test          # one process per module; `test <word>` narrows it
 stylua --check ForeverFlip
+python -m pyflakes sync tools tests
 python tools/build.py
 ```
 

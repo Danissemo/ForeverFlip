@@ -12,7 +12,13 @@ permissions:
 jobs:
   test:
     name: Format, test and package
-    runs-on: ubuntu-latest
+    # The local flow, the hooks and the Sync helper (tkinter, the tray) are Windows-only: one OS
+    # would leave the way the addon is actually built and installed unchecked.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
 
@@ -26,19 +32,27 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
 
       - name: Install StyLua
+        shell: bash
         run: |
+          case "$RUNNER_OS" in
+            Windows) asset=stylua-windows-x86_64.zip ;;
+            *) asset=stylua-linux-x86_64.zip ;;
+          esac
           curl -fsSL -o "$RUNNER_TEMP/stylua.zip" \
-            https://github.com/JohnnyMorganz/StyLua/releases/download/v2.6.0/stylua-linux-x86_64.zip
+            "https://github.com/JohnnyMorganz/StyLua/releases/download/v2.6.0/$asset"
           unzip -q "$RUNNER_TEMP/stylua.zip" -d "$RUNNER_TEMP/stylua"
           echo "$RUNNER_TEMP/stylua" >> "$GITHUB_PATH"
 
       - name: Check formatting
         run: stylua --check ForeverFlip
 
+      - name: Check the Python (unused imports, undefined names)
+        run: python -m pyflakes sync tools tests
+
       - name: Run tests and package
         run: python tools/build.py --output dist
 
       - uses: actions/upload-artifact@v7
         with:
-          name: ForeverFlip
+          name: ForeverFlip-${{ matrix.os }}
           path: dist/

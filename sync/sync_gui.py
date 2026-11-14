@@ -146,7 +146,6 @@ def measure(font, text):
 def fonts(root):
     families = set(tkfont.families(root))
     base = 'Segoe UI' if 'Segoe UI' in families else 'TkDefaultFont'
-    semi = 'Segoe UI Semibold' if 'Segoe UI Semibold' in families else base
     return {
         'title': (base, 18, 'bold'),
         'subtitle': (base, 10),
@@ -699,7 +698,7 @@ class SyncWindow:
 
     def draw_app_icon(self, x, y, size):
         """The app icon drawn by hand, for when the kit's image is missing."""
-        c, s = self.bg, self.s
+        c = self.bg
         r = size * 0.22
         rounded(c, x, y, x + size, y + size, r, fill='#2675F1', tags='header')
         for i in range(size - 2 * r):  # the gradient between the rounded ends

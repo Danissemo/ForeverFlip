@@ -12,12 +12,19 @@ You need Python 3.12 and, for formatting, [StyLua](https://github.com/JohnnyMorg
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m unittest discover -s tests -p "test_*.py"
+python tools/devflow.py test          # the whole suite, one process per module
+python tools/devflow.py test test_bids  # only a module or a test name
 stylua --check ForeverFlip
+python -m pyflakes sync tools tests
 ```
 
 The `sync/` folder (the Sync helper and the community aggregator) uses only the Python standard
 library; its tests run with the others.
+
+The suite is one process per module, so it takes about twenty seconds instead of a minute
+(`FF_JOBS` sets how many run at once). A module that fails is then run again alone, so its output is
+whole and not mixed with the others. `python -m unittest discover -s tests -p "test_*.py"` still
+runs everything in one process when a debugger is attached to it.
 
 ## Local development flow
 
@@ -32,7 +39,7 @@ Then every commit runs [`tools/devflow.py`](tools/devflow.py):
 
 | Hook | What it does |
 |---|---|
-| `pre-commit` | When code changed (`ForeverFlip/`, `sync/`, `tests/`, `tools/`): StyLua check and the whole test suite. A failure stops the commit. |
+| `pre-commit` | When code changed (`ForeverFlip/`, `sync/`, `tests/`, `tools/`): StyLua check, `pyflakes` and the whole test suite. A failure stops the commit. |
 | `post-commit` | Installs `ForeverFlip/` into the game's `Interface/AddOns` (a `/reload` in game picks it up; a full restart when a file was added or removed), then pushes `main` to GitHub. |
 
 Nothing else is published automatically: a release needs a tag (see [Releasing](#releasing)), which

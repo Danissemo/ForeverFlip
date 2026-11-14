@@ -4521,7 +4521,6 @@ function UI.lotHistory(lot)
         expired = "Expired",
         ["return"] = "Returned",
         loss = "Holding loss",
-        vendor = "Vendor sale",
     }
     for _, e in ipairs(lot.events or {}) do
         local label = L(labels[e.kind] or "Purchase")
@@ -5987,13 +5986,20 @@ local BUY_LISTS = {
     { "CommoditiesBuyFrame", true },
 }
 
+-- The game's row -> its mark texture. Kept here from the first line that uses it: highlightBrowse
+-- runs from the update loop before this section is read.
+local marks = setmetatable({}, { __mode = "k" })
+
 function UI.highlightBrowse()
     if not AuctionHouseFrame or not F.db then
         return
     end
-    -- Off: the game's rows are not looked at at all (their marks are hidden once).
+    -- Off: the game's rows are not looked at at all. The marks of the rows seen before the switch
+    -- were turned off are hidden here, once (hideMarks empties the table), and not twice a second.
     if not F.db.settings.highlight then
-        UI.hideMarks()
+        if next(marks) then
+            UI.hideMarks()
+        end
         return
     end
     for _, spec in ipairs(BUY_LISTS) do
@@ -6010,18 +6016,34 @@ end
 -- protected action (a purchase) whose code read a value the addon wrote or made. Calling the list's
 -- own Lua methods (ForEachFrame, GetElementData, GetItemID) or writing a field into its rows did
 -- both, twice a second, and a new player buying in the Buy tab saw "ForeverFlip has been blocked
--- from an action only available to the Blizzard UI". Now the rows come from the widget API
--- (ScrollTarget:GetChildren), their data is only read (rawget), and the marks are kept here.
-local marks = setmetatable({}, { __mode = "k" }) -- the game's row -> its mark texture
+-- from an action only available to the Blizzard UI". Now the rows come from the game's own method
+-- ScrollBox:GetFrames() (the view's list; the widget is not a Lua table, so not ScrollTarget),
+-- their data is only read (rawget), and the marks are kept here (in `marks`, above highlightBrowse).
 
+-- Walk the rows of a shared ScrollBox. It is a frame of the client, not a Lua table: a field read
+-- with rawget returns nothing, so it is only asked for its own method (tests pass plain tables).
 local function eachRow(box, fn)
-    local target = rawget(box, "ScrollTarget")
-    if type(target) ~= "table" or not target.GetChildren then
+    local get = rawget(box, "GetFrames")
+    if type(get) ~= "function" then
         return
     end
-    for _, row in ipairs({ target:GetChildren() }) do
+    local ok, frames = pcall(get, box)
+    if not ok or type(frames) ~= "table" then
+        return
+    end
+    for _, row in ipairs(frames) do
         fn(row)
     end
+end
+
+-- `button.rowData` and `button.elementData`, as the game's own row code reads them (the shared ScrollBox
+-- view stores the element data where the frames it made keep their data).
+local function rowData(row)
+    local data = rawget(row, "rowData")
+    if type(data) ~= "table" then
+        data = rawget(row, "elementData")
+    end
+    return data
 end
 
 -- The mark of a row of the game's Buy tab (tests and the off switch).
@@ -6030,15 +6052,16 @@ function UI.markOf(row)
 end
 
 function UI.hideMarks()
-    for _, mark in pairs(marks) do
+    for row, mark in pairs(marks) do
         mark:Hide()
+        marks[row] = nil
     end
 end
 
 function UI.markRows(box, perRow, frame)
     local on = F.db.settings.highlight
     eachRow(box, function(row)
-        local data = rawget(row, "rowData") or rawget(row, "elementData")
+        local data = rowData(row)
         local id, price, link
         if type(data) == "table" then
             local key = rawget(data, "itemKey")
@@ -6054,7 +6077,13 @@ function UI.markRows(box, perRow, frame)
             end
         end
         local mark = marks[row]
-        if not mark and on and id and dealItem(id, price, link, perRow) then
+        if not mark and not on then
+            return
+        end
+        -- One look at the price per row: the cost (the deals list, then the sniper's market history)
+        -- is too high to pay twice a second for the same row.
+        local deal = on and id and dealItem(id, price, link, perRow)
+        if not mark and deal then
             mark = row:CreateTexture(nil, "OVERLAY")
             marks[row] = mark
             mark:SetColorTexture(0.25, 1, 0.25, 0.9)
@@ -6063,7 +6092,7 @@ function UI.markRows(box, perRow, frame)
             mark:SetWidth(4)
         end
         if mark then
-            mark:SetShown(on and id ~= nil and dealItem(id, price, link, perRow))
+            mark:SetShown(not not deal)
         end
     end)
 end

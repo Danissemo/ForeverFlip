@@ -54,13 +54,45 @@ class MarkTests(unittest.TestCase):
         local function row(data) local r=CreateFrame('Button');r.rowData=data;return r end
         local cheap=row({itemID=10,unitPrice=60,quantity=5,numOwnerItems=0})
         local dear=row({itemID=10,unitPrice=150,quantity=5,numOwnerItems=0})
-        local list={ScrollBox={ScrollTarget={GetChildren=function() return cheap,dear end}}}
+        local asked=0
+        local list={ScrollBox={GetFrames=function() asked=asked+1;return {cheap,dear} end}}
         AuctionHouseFrame.CommoditiesBuyFrame=CreateFrame('Frame');AuctionHouseFrame.CommoditiesBuyFrame.ItemList=list
         run(0.6)
         local UI=F.UI
+        assert(asked>0,'the rows are listed with the game\\'s own GetFrames')
         assert(UI.markOf(cheap) and UI.markOf(cheap):IsShown(),'60c is below the 100c vendor price')
         assert(not UI.markOf(dear) or not UI.markOf(dear):IsShown())
         assert(rawget(cheap,'ffMark')==nil,'nothing is written into the rows of the game')''')
+
+    def test_rows_are_found_by_the_game_method_not_by_a_field(self):
+        # A ScrollBox is a frame of the client, not a Lua table: a field read with rawget returns
+        # nothing (a table with ScrollTarget is what the tests used to build) and the rows must be
+        # found through GetFrames.
+        run(SETUP + '''local F=ForeverFlip;fullScan()
+        local row=CreateFrame('Button');row.rowData={itemID=10,unitPrice=60,quantity=5,numOwnerItems=0}
+        local box={GetFrames=function() return {row} end}
+        local calls=0
+        box.GetScrollTarget=function() calls=calls+1 end
+        F.UI.markRows(box,true,nil)
+        assert(F.UI.markOf(row) and F.UI.markOf(row):IsShown(),'the row is marked')
+        assert(calls==0,'the widget is not asked for fields')''')
+
+    def test_the_off_switch_leaves_every_mark_hidden_once(self):
+        # The marks of the game's Buy tab are repainted on a timer, so the switch must be seen by the
+        # timer, not by a click: the auction house has to be shown for the timer to look at the rows.
+        run(SETUP + '''local F=ForeverFlip;fullScan()
+        local row=CreateFrame('Button');row.rowData={itemID=10,unitPrice=60,quantity=5,numOwnerItems=0}
+        local box={GetFrames=function() return {row} end}
+        AuctionHouseFrame=CreateFrame('Frame');AuctionHouseFrame:Show()
+        AuctionHouseFrame.CommoditiesBuyFrame=CreateFrame('Frame');AuctionHouseFrame.CommoditiesBuyFrame:Show()
+        AuctionHouseFrame.CommoditiesBuyFrame.ItemList={ScrollBox=box}
+        run(0.6)
+        local mark=F.UI.markOf(row)
+        assert(mark and mark:IsShown(),'60c is below the 100c vendor price')
+        F.db.settings.highlight=false
+        run(1.2)
+        assert(not mark:IsShown(),'hidden when the setting goes off')
+        assert(F.UI.markOf(row)==nil,'and forgotten, not hidden again twice a second')''')
 
 
 if __name__ == '__main__':
