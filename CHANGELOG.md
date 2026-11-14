@@ -8,6 +8,24 @@ All notable changes are listed here. The format follows
 ## [Unreleased]
 
 
+## [2.2.0-beta.2] - 2026-11-14
+
+The ForeverFlip tab is back in the auction house, and the merchant page opens again.
+
+### Fixed
+
+- **2.2.0-beta.1 showed no ForeverFlip tab and broke the merchant page.** The change that widens a
+  button to fit a longer translation measured the label the wrong way, which the game treats as an
+  error. The first button of each window failed, so the auction house tab and the merchant page
+  were never built, and a red error was printed in chat each time.
+
+### Development
+
+- **The simulated client no longer hides a method called without its frame.** A method the mock
+  did not know did nothing, so the faulty call passed every test. Buttons now have a
+  `GetFontString` that fails the same way the game does.
+
+
 ## [2.2.0-beta.1] - 2026-11-14
 
 A vendor deal is no longer offered on an item no merchant buys, Check all during a full scan no
@@ -1145,7 +1163,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v2.2.0-beta.1...HEAD
+[Unreleased]: ../../compare/v2.2.0-beta.2...HEAD
+[2.2.0-beta.2]: ../../compare/v2.2.0-beta.1...v2.2.0-beta.2
 [2.2.0-beta.1]: ../../compare/v2.1.0-beta.2...v2.2.0-beta.1
 [2.1.0-beta.2]: ../../compare/v2.1.0-beta.1...v2.1.0-beta.2
 [2.1.0-beta.1]: ../../compare/v2.0.0-beta.1...v2.1.0-beta.1

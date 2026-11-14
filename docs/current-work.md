@@ -8,8 +8,11 @@ Last updated: 14 November 2026.
 
 ## Being done now
 
-**`2.2.0-beta.1` is released** (14 November): version in `ForeverFlip.toc` and `Util.lua`,
-`CHANGELOG.md` heading, committed and pushed. The changelog says what it holds.
+**`2.2.0-beta.2` is released** (14 November): version in `ForeverFlip.toc` and `Util.lua`,
+`CHANGELOG.md` heading, committed and pushed; the tag `v2.2.0-beta.2` is pushed by hand. It fixes
+beta.1, which showed no auction house tab and broke the merchant page (`fitButton` called
+`b.GetFontString()` without the button). Confirm in game that the tab and the merchant page are
+back.
 
 ## Waiting
 
