@@ -21,10 +21,12 @@ python -m pyflakes sync tools tests
 The `sync/` folder (the Sync helper and the community aggregator) uses only the Python standard
 library; its tests run with the others.
 
-The suite is one process per module, so it takes about twenty seconds instead of a minute
-(`FF_JOBS` sets how many run at once). A module that fails is then run again alone, so its output is
-whole and not mixed with the others. `python -m unittest discover -s tests -p "test_*.py"` still
-runs everything in one process when a debugger is attached to it.
+The suite is one process per module, so it takes about half a minute instead of a minute
+(`FF_JOBS` sets how many run at once). `test_simulation` is run last and alone: it measures how long
+a frame takes, and on a busy processor that number would be the neighbours', not the addon's. A module
+that fails is then run again alone, so its output is whole and not mixed with the others.
+`python -m unittest discover -s tests -p "test_*.py"` still runs everything in one process when a
+debugger is attached to it.
 
 ## Local development flow
 
@@ -35,10 +37,11 @@ git config core.hooksPath .githooks
 git config ff.game "C:/World of Warcraft/_forever_"
 ```
 
-Then every commit runs [`tools/devflow.py`](tools/devflow.py):
+Then every commit runs the hooks in [.githooks](.githooks) and [`tools/devflow.py`](tools/devflow.py):
 
 | Hook | What it does |
 |---|---|
+| `prepare-commit-msg` | When the message is empty, writes one from what is staged (the areas that moved and the files), so `Commit` with nothing typed still leaves a readable history. A typed message is never touched. |
 | `pre-commit` | When code changed (`ForeverFlip/`, `sync/`, `tests/`, `tools/`): StyLua check, `pyflakes` and the whole test suite. A failure stops the commit. |
 | `post-commit` | Installs `ForeverFlip/` into the game's `Interface/AddOns` (a `/reload` in game picks it up; a full restart when a file was added or removed), then pushes `main` to GitHub. |
 

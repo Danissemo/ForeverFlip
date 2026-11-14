@@ -11,6 +11,11 @@ Other commands:
     python tools/devflow.py test [word]  the fast loop: the tests whose name matches `word`
                                       (a module or a test name, e.g. `test_bids` or `mark`),
                                       the whole suite when no word is given
+    python tools/devflow.py commit [text]  one step: stage everything, write a message when none was
+                                      given, commit, install into the game and push (what the hooks
+                                      do, in one command a key binding can run)
+    python tools/devflow.py prepare-message  only say what the message would be: writes it into the
+                                      commit template the editor reads and puts it in the clipboard
     python tools/devflow.py install   copy ForeverFlip/ into the game's Interface/AddOns
     python tools/devflow.py push      push main when it is ahead of GitHub
     python tools/devflow.py stop      for an AI assistant's "stop" hook: refuses to stop while
@@ -101,6 +106,11 @@ def test_modules(word: str = "") -> list[str]:
     return found
 
 
+# Modules that measure how long a frame takes: run alone, after the others, or the processors they
+# share with their neighbours are what the number shows, not the addon.
+TIMED = {"test_simulation"}
+
+
 def jobs() -> int:
     given = os.environ.get("FF_JOBS", "").strip()
     if given.isdigit() and int(given) > 0:
@@ -141,8 +151,16 @@ def run_tests_parallel(word: str = "") -> int:
     if not modules:
         say(f"no test module matches {word!r}")
         return 2
+    alone = [m for m in modules if m in TIMED]
+    together = [m for m in modules if m not in TIMED]
     with ThreadPoolExecutor(max_workers=jobs()) as pool:
-        results = list(pool.map(one_module, modules))
+        results = list(pool.map(one_module, together))
+    # The timed modules wait for the others to finish: a frame measured next to seven busy
+    # neighbours is not the frame the addon draws.
+    results += [one_module(m) for m in alone]
+    ordered = dict(zip(together + alone, results))
+    modules = [m for m in modules if m in ordered]
+    results = [ordered[m] for m in modules]
     failures = [(m, r) for m, r in zip(modules, results) if r.returncode != 0]
     total = 0
     for result in results:
@@ -296,6 +314,92 @@ def publish() -> int:
     return push()
 
 
+# --- commit --------------------------------------------------------------------------------------
+
+def message(index: bool) -> str:
+    """A message from what is staged (or working tree), the same shape the prepare-commit-msg hook
+    writes: the areas that moved on the subject, the files under it."""
+    names = git("diff", "--cached" if index else "HEAD", "--name-only", check=False).splitlines()
+    if not names:
+        return ""
+
+    def area(name: str) -> str:
+        for prefix, label in (("ForeverFlip/", "the addon"), ("tests/", "tests"), ("tools/", "tools"),
+                              ("sync/", "the Sync helper"), (".github/", "the build and the hooks"),
+                              (".githooks/", "the build and the hooks")):
+            if name.startswith(prefix):
+                return label
+        return "the documentation" if name.endswith(".md") or name.startswith("docs/") else "the project"
+
+    groups: dict[str, int] = {}
+    for name in names:
+        groups[area(name)] = groups.get(area(name), 0) + 1
+    parts = ", ".join(f"{label} ({count})" for label, count in groups.items())
+    subject = f"Change {len(names)} file(s) -- {parts}"
+    return subject + "\n\nChanged:\n" + "\n".join(f"- {n}" for n in names)
+
+
+def commit(text: str = "") -> int:
+    """`commit [text]`: stage everything, write a message when none was given, commit, install and
+    push. What one button does: the hooks still run (style, pyflakes, the tests), and a failure
+    stops it before anything is committed."""
+    subprocess.run(["git", "add", "-A"], cwd=ROOT, check=True)
+    staged = git("diff", "--cached", "--name-only", check=False)
+    if not staged:
+        say("nothing to commit")
+        return 0
+    text = text.strip() or message(index=True)
+    if not text:
+        say("no message and nothing staged to describe")
+        return 2
+    first = text.splitlines()[0]
+    result = subprocess.run(["git", "commit", "-F", "-"], cwd=ROOT, input=text, text=True,
+                            capture_output=True)
+    if result.returncode != 0:
+        sys.stdout.write(result.stdout[-2000:] + result.stderr[-2000:])
+        return result.returncode
+    say(f"committed {git('rev-parse', '--short', 'HEAD')}: {first}")
+    # The hooks did their part above: pre-commit ran the style check, pyflakes and the tests, and
+    # post-commit installed the addon and pushed. Nothing is repeated here.
+    return 0
+
+
+# --- prepare-message -----------------------------------------------------------------------------
+
+TEMPLATE = ROOT / ".git" / "ff-commit-message.txt"
+
+
+def prepare_message(copy: bool = True) -> int:
+    """`prepare-message`: write the message for what is staged into the commit template, and put it
+    into the clipboard. The editor fills its Commit box from that template (the Git extension's
+    command "Restore Commit Template"), so one key gives both the box and the clipboard.
+
+    Nothing is committed: this only says what the message would be.
+    """
+    subprocess.run(["git", "add", "-A"], cwd=ROOT, check=False)
+    text = message(index=True)
+    if not text:
+        say("nothing to describe: the working tree is clean")
+        return 0
+    TEMPLATE.parent.mkdir(parents=True, exist_ok=True)
+    TEMPLATE.write_text(text + "\n", encoding="utf-8")
+    subject = text.splitlines()[0]
+    if copy and not clipboard(subject):
+        say(f"the template is written; copy it by hand: {subject}")
+        return 0
+    say(f"in the clipboard: {subject}")
+    return 0
+
+
+def clipboard(text: str) -> bool:
+    """The system clipboard, on Windows through clip.exe (no extra package)."""
+    try:
+        out = subprocess.run(["clip.exe"], input=text, text=True, timeout=15, check=False)
+        return out.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 # --- stop hook -----------------------------------------------------------------------------------
 
 def stop() -> int:
@@ -318,8 +422,8 @@ def stop() -> int:
     return 0
 
 
-COMMANDS = {"check": check, "test": run_tests, "install": install, "push": push, "publish": publish,
-            "stop": stop}
+COMMANDS = {"check": check, "test": run_tests, "commit": commit, "prepare-message": prepare_message,
+            "install": install, "push": push, "publish": publish, "stop": stop}
 
 if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -330,4 +434,8 @@ if __name__ == "__main__":
     if command == "test":
         word = next((a for a in args if not a.startswith("-")), "")
         sys.exit(run_tests(word, verbose="-v" in args))
+    if command == "commit":
+        sys.exit(commit(" ".join(args)))
+    if command == "prepare-message":
+        sys.exit(prepare_message(copy="--no-copy" not in args))
     sys.exit(COMMANDS[command]())

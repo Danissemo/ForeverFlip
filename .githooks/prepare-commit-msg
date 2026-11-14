@@ -1,0 +1,60 @@
+#!/bin/sh
+# A commit message for the person who only presses "Commit": when the message is still empty (the
+# editor was closed, or nothing was typed), it is written from what is staged, so the history keeps
+# saying what changed instead of "Update" or "wip". A message that was typed is never touched.
+#
+# Installed by `git config core.hooksPath .githooks`. $1 is the message file, $2 the source of the
+# message (message, template, merge, squash, commit) and $3 the commit id when there is one.
+case "$2" in
+    message|merge|squash) exit 0 ;;  # the person or Git already wrote one
+esac
+cd "$(git rev-parse --show-toplevel)" || exit 0
+# An empty message, or only the lines Git itself puts there (they start with '#').
+grep -qv '^#' "$1" 2>/dev/null && exit 0
+
+names=$(git diff --cached --name-only)
+[ -n "$names" ] || exit 0
+
+# The area first (what part of the project moved), then the files: the first line is the subject,
+# the rest is the body, so `git log --oneline` stays readable.
+area() {
+    case "$1" in
+        ForeverFlip/*) echo "the addon" ;;
+        tests/*) echo "tests" ;;
+        tools/*) echo "tools" ;;
+        sync/*) echo "the Sync helper" ;;
+        .github/*|.githooks/*) echo "the build and the hooks" ;;
+        docs/*|*.md) echo "the documentation" ;;
+        *) echo "the project" ;;
+    esac
+}
+
+counts=""
+for a in "the addon" "tests" "tools" "the Sync helper" "the build and the hooks" "the documentation" "the project"; do
+    n=$(echo "$names" | while IFS= read -r f; do [ "$(area "$f")" = "$a" ] && echo x; done | grep -c x)
+    [ "$n" -gt 0 ] && counts="$counts, $a ($n)"
+done
+counts=${counts#, }
+
+added=$(git diff --cached --diff-filter=A --name-only | wc -l | tr -d ' ')
+removed=$(git diff --cached --diff-filter=D --name-only | wc -l | tr -d ' ')
+files=$(echo "$names" | wc -l | tr -d ' ')
+
+subject="Change $files file(s) -- $counts"
+[ "$added" -gt 0 ] && subject="$subject, $added new"
+[ "$removed" -gt 0 ] && subject="$subject, $removed removed"
+
+{
+    echo "$subject"
+    echo
+    echo "Changed:"
+    echo "$names" | while IFS= read -r f; do
+        listed=$(git diff --cached --name-status --diff-filter=ACDMR -- "$f" | head -1 | cut -f1)
+        case "$listed" in
+            A) echo "- added $f" ;;
+            D) echo "- removed $f" ;;
+            R*) echo "- renamed $f" ;;
+            *) echo "- $f" ;;
+        esac
+    done
+} > "$1"
