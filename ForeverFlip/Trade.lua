@@ -86,6 +86,7 @@ end
 -- `peek` false (a click): the throttle watchdog is kept up to date (AH.ready).
 function T.wayReady(peek)
     return F.AH.isOpen()
+        and not F.AH.restricted()
         and not T.busy()
         and not T.postingNow()
         and not F.Deals.searching()
@@ -641,7 +642,22 @@ function T.onItemBought(auctionID)
     end
 end
 
-function T.onError()
+function T.onError(err)
+    -- A post the server refused gets no AUCTION_HOUSE_AUCTION_CREATED: the wait for it ends now
+    -- rather than keeping every posting button off for ten seconds. An item the server will not
+    -- take is held for this visit, so Post all goes on to the next; a restriction holds nothing.
+    local l = T.lastPost
+    if l and #l.ids == 0 and clock() - l.at <= 10 then
+        T.lastPost = nil
+        local codes = Enum and Enum.AuctionHouseError
+        if codes and err ~= nil and err == codes.HasRestriction then
+            F.Engine.notify("restricted")
+        else
+            T.held[l.key] = true
+            F.Engine.notify("post_refused")
+        end
+        F.Engine.changed()
+    end
     local op = T.op
     if op and op.state == "awaiting" and op.kind ~= "commodity" then
         -- AUCTION_HOUSE_SHOW_ERROR has no auction ID and may belong to another action. It can
@@ -1207,6 +1223,11 @@ end
 function T.post(item, qty, price, duration)
     if T.postingNow() or not F.AH.isOpen() then
         return false, "busy"
+    end
+    -- In combat (and the game's other addon restrictions) the server refuses the post and no
+    -- answer comes: said at once instead of waiting for it.
+    if F.AH.restricted() then
+        return false, "restricted"
     end
     -- Like a purchase, a post waits for a search in flight and for the server (T.wayFree).
     if not T.wayFree() then

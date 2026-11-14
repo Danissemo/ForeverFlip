@@ -13,16 +13,16 @@ class GearButtonTests(unittest.TestCase):
     def test_the_buttons_wait_for_the_sale_and_the_click_prints_nothing_yet(self):
         run(GEAR + '''MerchantFrame:Show(); fire('MERCHANT_SHOW')
         local before = #printed
-        UI.gearButton:Click()
+        UI.merchantView.sellGear:Click()
         assert(T.sellingToVendor(), 'the sale goes in paced batches')
         assert(#printed == before, 'nothing printed before anything sold: ' .. tostring(printed[#printed]))
-        assert(not UI.gearButton:IsEnabled() and not UI.merchantView.sellGear:IsEnabled())
+        assert(not UI.merchantView.sellGear:IsEnabled())
         assert(not UI.merchantView.sellAll:IsEnabled())
         for _ = 1, 100 do run(0.1); if not T.sellingToVendor() then break end end
         UI.merchant(true)
         assert(printed[#printed]:find('pieces of gear', 1, true), printed[#printed])
         assert(#printed == before + 1, 'one line, from the end of the sale')
-        assert(UI.gearButton:IsEnabled(), 'free again once the sale ended')''')
+        assert(UI.merchantView.sellGear:IsEnabled() == (#T.unusableGearList() > 0), 'free again once the sale ended')''')
 
 
 class StopVendorTests(unittest.TestCase):

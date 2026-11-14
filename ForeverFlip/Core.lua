@@ -135,6 +135,7 @@ local events = {
     "COMMODITY_PURCHASE_FAILED",
     "AUCTION_HOUSE_PURCHASE_COMPLETED",
     "AUCTION_HOUSE_SHOW_ERROR",
+    "ADDON_RESTRICTION_STATE_CHANGED",
     "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED",
     "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
     "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED",
@@ -340,7 +341,9 @@ function E.handle(event, ...)
     elseif event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
         F.Trade.onItemBought(...)
     elseif event == "AUCTION_HOUSE_SHOW_ERROR" then
-        F.Trade.onError()
+        F.Trade.onError(...)
+    elseif event == "ADDON_RESTRICTION_STATE_CHANGED" then
+        E.changed() -- the posting buttons follow the game's restriction (AH.restricted)
     elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
         -- The sniper hears it first, while the purchase, scan or exact search that may own the
         -- dropped message is still marked as waiting for its answer.

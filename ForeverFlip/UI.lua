@@ -71,6 +71,8 @@ local MESSAGES = {
     post_busy = "The auction house is busy: press again in a moment.",
     post_dropped = "The auction house threw the post away (too many messages): press again.",
     post_unconfirmed = "The auction house did not confirm the post: check My auctions, then press again.",
+    restricted = "The game does not let addons post, buy or cancel right now (combat, a boss, a keystone or a PvP match). Try again once it ends.",
+    post_refused = "The auction house refused the post (the game said why). The item is skipped until the auction house is opened again.",
     sold = "Sale recorded.",
     verify_first = "Checking the current price first...",
     no_money = "Not enough money.",
@@ -2820,7 +2822,7 @@ UI.FALLBACK_TEXT = {
     cost = "Nobody sells it and there is no price history. Suggested: your cost plus 25%%, %s.",
     vendor = "Nobody sells it and there is no price history. Suggested: 1.5 x the vendor price, %s.",
 }
-local SELL_ROWS = 12
+local SELL_ROWS = 11 -- a 12th row ran under the For sale / Hidden / Rule / Hide buttons
 function UI.createSell(p)
     local list = CreateFrame("Frame", nil, p)
     list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
@@ -3404,9 +3406,9 @@ function UI.refreshSell()
         return
     end
     UI.sellCheck:SetEnabled(not F.Deals.pending(item.key) and not F.Trade.busy() and not F.Scan.blocking())
-    -- One sum for the page, the tooltip and the Best column (F.Trade.quote); read first, it also
-    -- takes the prices of a full scan up to 5 minutes old.
-    local quote = F.Trade.quote(item.key, item.id)
+    -- One sum for the page, the tooltip and the Best column (F.Trade.quote, through way()); read
+    -- first, it also takes the prices of a full scan up to 5 minutes old.
+    way(item)
     local price, floor, cheapest, why = F.Trade.suggest(item)
     local lines = {}
     if item.position and item.position.mode == "vendor" then
@@ -3436,13 +3438,17 @@ function UI.refreshSell()
         end
         -- Every suggestion names the price the box gets: never below the floor (break-even, rule).
         if why == "normal" and cheapest then
-            lines[#lines + 1] = string.format(
-                L("The cheapest other seller asks %s, above the maximum. Suggested: the normal price %s."),
-                U.money(cheapest),
-                U.money(math.max(price, floor or 0))
-            )
+            lines[#lines + 1] = gold("Price")
+                .. " "
+                .. string.format(
+                    L("The cheapest other seller asks %s, above the maximum. Suggested: the normal price %s."),
+                    U.money(cheapest),
+                    U.money(math.max(price, floor or 0))
+                )
         elseif UI.FALLBACK_TEXT[why] then
-            lines[#lines + 1] = string.format(L(UI.FALLBACK_TEXT[why]), U.money(math.max(price, floor or 0)))
+            lines[#lines + 1] = gold("Price")
+                .. " "
+                .. string.format(L(UI.FALLBACK_TEXT[why]), U.money(math.max(price, floor or 0)))
             if F.Trade.GUESSES[why] then
                 lines[#lines + 1] = "|cffffd100"
                     .. L(
@@ -3451,20 +3457,17 @@ function UI.refreshSell()
                     .. "|r"
             end
         else
-            lines[#lines + 1] = cheapest
-                    and string.format(
-                        L("Cheapest other seller: %s each. Suggested: %s."),
-                        U.money(cheapest),
-                        U.money(math.max(price, floor or 0))
-                    )
-                or L("Nobody else sells it now. Suggested: the usual asking price.")
-        end
-        if quote and quote.net then
-            local line = UI.netLabel(quote) .. ": " .. U.money(quote.net)
-            if quote.profit then
-                line = line .. "; " .. L("profit each") .. " " .. UI.signed(quote.profit)
-            end
-            lines[#lines + 1] = line .. "."
+            lines[#lines + 1] = gold("Price")
+                .. " "
+                .. (
+                    cheapest
+                        and string.format(
+                            L("Cheapest other seller: %s each. Suggested: %s."),
+                            U.money(cheapest),
+                            U.money(math.max(price, floor or 0))
+                        )
+                    or L("Nobody else sells it now. Suggested: the usual asking price.")
+                )
         end
     elseif F.Deals.search and F.Deals.search.key == item.key then
         lines[#lines + 1] = L("Reading current listings...")
@@ -3479,6 +3482,10 @@ function UI.refreshSell()
             L("The auction house did not answer the check. Press Check price again, or type a price and press Post.")
     else
         lines[#lines + 1] = L("Press Check price to read the current listings.")
+    end
+    -- Why the Best column chose its route, then every route side by side (UI.bestLines).
+    for _, line in ipairs(UI.bestLines(way(item))) do
+        lines[#lines + 1] = line
     end
     local h = F.Data.market(F.db, F.Engine.scope()).history[item.key]
     -- What buyers really paid (sales seen between full scans), and how much sells a day at the price.
@@ -3496,7 +3503,7 @@ function UI.refreshSell()
         )
     end
     if #market > 0 then
-        lines[#lines + 1] = L("Market") .. ": " .. table.concat(market, "; ") .. "."
+        lines[#lines + 1] = gold("Market") .. " " .. table.concat(market, "; ") .. "."
     end
     local timing = h and F.Market.timing(h, F.Engine.clock())
     if timing and timing.ready and timing.now <= 0.95 and timing.spread >= 0.08 then
@@ -3507,13 +3514,6 @@ function UI.refreshSell()
         )
     end
     if floor then
-        if quote and quote.best == "vendor" and quote.vendor and (quote.marketNet or quote.net) then
-            lines[#lines + 1] = string.format(
-                L("Vendor pays %s each; auction at current market prices brings %s."),
-                U.money(quote.vendor),
-                U.money(quote.marketNet or quote.net)
-            )
-        end
         lines[#lines + 1] = string.format(
             L("Minimum after the %d%% cut, margin and rules: %s each."),
             math.floor(F.Market.CUT * 100 + 0.5),
@@ -6558,6 +6558,110 @@ end
 -- choice is visible instead of trusted. A vendor pays at once with no cut and no deposit; the
 -- auction house pays after its cut and after the deposits a lot is expected to lose. Prices that
 -- are only an estimate are marked, and a route that cannot be taken says why.
+-- Why the Best column says what it says, in the Undercuts page's shape: a verdict led by its
+-- subject, then each route in two lines, the chosen one first and marked: what one unit brings,
+-- then in grey how. The same sums as the column and its hover (F.Trade.quote).
+local ROUTE = {
+    auction = { "|cff40ff40", "AH" },
+    vendor = { "|cffffb84d", "Vendor" },
+    disenchant = { "|cffb070ff", "Disenchant" },
+}
+function UI.bestLines(w)
+    local q = w.quote or {}
+    local vendor = q.vendor and q.vendor > 0 and q.vendor or nil
+    -- The route is chosen at the market price; a minimum above it only lifts the price posted.
+    local auction = q.belowFloor and q.marketNet or q.net
+    local verdict
+    if w.name == "vendor" then
+        verdict = string.format(
+            L("Vendor pays %s each; auction at current market prices brings %s."),
+            U.money(vendor or 0),
+            auction and U.money(auction) or "-"
+        )
+    elseif w.name == "auction" then
+        verdict = vendor
+                and auction
+                and string.format(L("the auction house brings %s more than a vendor."), U.money(auction - vendor))
+            or L("the auction house: no merchant buys it.")
+    elseif w.name == "disenchant" then
+        verdict = string.format(
+            L("disenchanting brings %s more than selling it."),
+            U.money(math.max(0, (q.disenchant or 0) - math.max(vendor or 0, auction or 0)))
+        )
+    elseif q.guess then
+        verdict = L("not decided: the auction house price is only a guess until the listings are read.")
+    else
+        verdict = L("not decided yet: the auction house price is not known.")
+    end
+    local lines = { gold("Best") .. " " .. verdict }
+    local function detail(s)
+        -- Money ends its colour with |r: the grey is taken up again after each amount.
+        return "      |cffaaaaaa" .. s:gsub("|r", "|r|cffaaaaaa") .. "|r"
+    end
+    local function route(id, head, how)
+        local best = w.name == id
+        local v = ROUTE[id]
+        lines[#lines + 1] = (best and "> " or "   ")
+            .. v[1]
+            .. L(v[2])
+            .. "|r  "
+            .. head
+            .. (best and ("  |cff40ff40" .. L("(best)") .. "|r") or "")
+        if how then
+            lines[#lines + 1] = detail(how)
+        end
+    end
+    local order = { "auction", "vendor", "disenchant" }
+    for i, id in ipairs(order) do
+        if id == w.name then
+            table.remove(order, i)
+            table.insert(order, 1, id)
+            break
+        end
+    end
+    for _, id in ipairs(order) do
+        if id == "auction" then
+            if q.net and q.post then
+                local how = string.format(
+                    L("posted at %s: the %d%% cut %s, deposits expected to be lost %s"),
+                    U.money(q.post),
+                    math.floor(F.Market.CUT * 100 + 0.5),
+                    U.money(q.post - F.Market.net(q.post, 1)),
+                    U.money(q.lost or 0)
+                )
+                if q.profit then
+                    how = how .. "; " .. L("profit each") .. " " .. UI.signed(q.profit)
+                end
+                route("auction", string.format(L("brings %s each"), U.money(q.net)), how)
+            else
+                route(
+                    "auction",
+                    L("no price yet"),
+                    q.guess and L("only a guess so far: Check price reads the listings")
+                        or L("Check price reads the current listings")
+                )
+            end
+        elseif id == "vendor" then
+            if vendor then
+                local how = L("at once, no cut and no deposit")
+                if q.vendorHow ~= "confirmed" then
+                    how = how .. "; " .. L("price from item data, not yet seen at a merchant")
+                end
+                route("vendor", string.format(L("pays %s each"), U.money(vendor)), how)
+            else
+                route("vendor", L("does not buy it"))
+            end
+        elseif q.disenchant and q.disenchant > 0 then
+            route(
+                "disenchant",
+                string.format(L("about %s in materials"), U.money(q.disenchant)),
+                L("the expected materials at their current prices")
+            )
+        end
+    end
+    return lines
+end
+
 function UI.bestTooltip(cell, w, name)
     if not GameTooltip then
         return
@@ -7246,11 +7350,10 @@ local function createMerchantTab()
     end
     view.buyWheel = wheel
 
-    -- The Merchant tab: one button sells the list at once.
+    -- The Merchant tab: one button sells the list at once. Gear the class cannot use is sold from
+    -- the ForeverFlip tab only: a second button over the game's tabs covered their items.
     UI.merchantButton = button(MerchantFrame, "Sell to vendor", 180, sellAll)
     UI.merchantButton:SetPoint("TOPRIGHT", MerchantFrame, "TOPRIGHT", -40, -28)
-    UI.gearButton = button(MerchantFrame, "Sell gear I can't use", 180, sellGear)
-    UI.gearButton:SetPoint("TOPRIGHT", UI.merchantButton, "BOTTOMRIGHT", 0, -2)
 end
 
 function UI.merchantOffers(open)
@@ -7270,35 +7373,18 @@ function UI.merchant(open)
     if not open then
         UI.merchantSelect(false, true)
         UI.merchantButton:Hide()
-        UI.gearButton:Hide()
         return
     end
     local gear = F.Trade.unusableGearList()
-    local gearTotal = 0
-    for _, v in ipairs(gear) do
-        gearTotal = gearTotal + v.price
-    end
-    local gearText = #gear > 0 and string.format(L("Gear I can't use (%d): %s"), #gear, U.money(gearTotal))
-        or L("Sell gear I can't use")
-    -- One merchant sale at a time: while one goes, both gear buttons wait for it.
+    -- One merchant sale at a time: while one goes, the gear button waits for it.
     local selling = F.Trade.sellingToVendor and F.Trade.sellingToVendor()
     local function busy(text)
         return selling and L("Selling...") or text
     end
-    UI.gearButton:SetText(busy(gearText))
-    if UI.gearButton.fitWidth then
-        UI.gearButton.fitWidth()
-    end
-    UI.gearButton:SetEnabled(not selling)
     UI.merchantView.sellGear:SetText(
         busy(#gear > 0 and string.format(L("Gear I can't use (%d)"), #gear) or L("No unusable gear"))
     )
     UI.merchantView.sellGear:SetEnabled(#gear > 0 and not selling)
-    if #gear > 0 and not UI.merchantView:IsShown() then
-        UI.gearButton:Show()
-    else
-        UI.gearButton:Hide()
-    end
     local list = F.Trade.vendorSellList()
     local total = 0
     for _, v in ipairs(list) do

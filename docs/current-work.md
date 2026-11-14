@@ -14,6 +14,14 @@ beta.1, which showed no auction house tab and broke the merchant page (`fitButto
 `b.GetFontString()` without the button). Confirm in game that the tab and the merchant page are
 back.
 
+**Unreleased, after beta.2** (14 November): My items footer explains Best (verdict and the routes
+in the Undercuts shape), 11 rows so the list stops above its buttons, posting under the game's
+addon restriction (`AH.restricted`, `C_RestrictedActions`) blocked with a reason and a refused post
+no longer holding the buttons, and the Gear I can't use button gone from the game's merchant tabs.
+To check in game: the footer's wording and layout, and that Post AH-worthy out of combat posts.
+The restriction is the likely cause of "That action is currently restricted" — the player was in
+a group — but it was not reproduced: if it appears out of combat, look further.
+
 ## Waiting
 
 - **The in-game checks of the batch of 14 November.** None of it is confirmed in the game yet,

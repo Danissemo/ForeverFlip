@@ -7,6 +7,38 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Selling → My items says why Best chose its route.** The footer opens with a **Best** line
+  naming the winner and by how much (the auction house brings 9s 80c more than a vendor, or the
+  vendor pays more than the auction at market prices). Under it, every route is listed in the
+  Undercuts page's shape, with the chosen one marked `>` and `(best)`: what one unit brings, and in
+  grey how — the price posted, the cut, the deposits expected to be lost and the profit for the
+  auction house; at once, no cut and no deposit for a vendor (with a note when the price comes from
+  the item data); the materials for disenchanting. The Price and Market lines are led by their
+  subject the same way. Until now the reason was only in the Best cell's hover.
+- **No more Gear I can't use button over the merchant's own tabs.** It sat over the items on the
+  Merchant and Buyback tabs. Unusable gear is sold from the merchant's ForeverFlip tab.
+
+### Fixed
+
+- **The last row of My items no longer runs under the For sale / Hidden / Rule / Hide buttons.** The
+  list shows 11 rows instead of 12; the wheel and the scrollbar reach the rest.
+- **Posting while the game restricts addons no longer locks the buttons.** The game refuses a post,
+  a purchase or a cancel from an addon during combat, a boss encounter, a keystone or a PvP match,
+  and the server only answers "That action is currently restricted": ForeverFlip then waited ten
+  seconds for an auction that never came, with every posting button off, and the next click tried
+  the same thing again. The posting and cancel buttons now stay off while such a restriction is
+  on, a post asked for then says why without reaching the server, and a post the server refuses
+  ends the wait at once. An item the
+  server refuses for another reason (bound, quest item...) is skipped by Post all until the auction
+  house is opened again, so the next click posts the next item.
+
+### Development
+
+- `test_sell_route_and_restrictions`: the Best verdict and routes in the footer, and posting under
+  a game restriction (`C_RestrictedActions`) or after the server refuses a post.
+
 
 ## [2.2.0-beta.2] - 2026-11-14
 

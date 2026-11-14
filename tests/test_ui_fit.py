@@ -23,7 +23,7 @@ class FitButtonTests(unittest.TestCase):
     def test_the_gear_button_fits_its_ukrainian_label(self):
         run(BASE + """F.db.settings.language='uk'
         """ + MERCHANT + """
-        local b=UI.gearButton
+        local b=UI.merchantView.sellGear
         assert(b and b:GetText()~='','the gear button exists with its label')
         assert(b.width>=#b:GetText()*7,'the button is at least as wide as its label needs')""")
 

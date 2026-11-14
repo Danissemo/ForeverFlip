@@ -1141,6 +1141,30 @@ function A.postCount(item)
     return math.min(math.floor(available), matching)
 end
 
+-- The game refuses some auction house calls from addons while one of its restrictions is on:
+-- PostItem, PostCommodity, CancelAuction, PlaceBid and StartCommoditiesPurchase are marked
+-- HasRestrictions, and the server answers "That action is currently restricted". Returns the
+-- active restriction (Combat, Encounter, ChallengeMode, PvPMatch or Map), or nil. A client without
+-- C_RestrictedActions has none.
+local RESTRICTIONS = { "Combat", "Encounter", "ChallengeMode", "PvPMatch", "Map" }
+function A.restricted()
+    local R = C_RestrictedActions
+    local types = Enum and Enum.AddOnRestrictionType
+    if not (R and R.IsAddOnRestrictionActive and types) then
+        return nil
+    end
+    for _, name in ipairs(RESTRICTIONS) do
+        local t = types[name]
+        if t ~= nil then
+            local ok, active = pcall(R.IsAddOnRestrictionActive, t)
+            if ok and active then
+                return name
+            end
+        end
+    end
+    return nil
+end
+
 -- Returns true when the game asks for a confirmation (call again with confirm = true).
 function A.post(item, qty, price, duration, confirm)
     if item.kind == "commodity" then

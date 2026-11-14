@@ -480,8 +480,10 @@ class GearSellTests(unittest.TestCase):
         table.sort(ids)
         assert(table.concat(ids, ',') == '81,84', table.concat(ids, ','))
         MerchantFrame:Show(); fire('MERCHANT_SHOW')
-        assert(UI.gearButton:IsShown(), 'its own button at the merchant')
-        UI.gearButton:Click()
+        assert(UI.gearButton == nil, 'no gear button over the merchant tabs')
+        UI.merchantSelect(true)
+        assert(UI.merchantView.sellGear:IsEnabled(), 'sold from the ForeverFlip tab')
+        UI.merchantView.sellGear:Click()
         assert(#soldToVendor == 2)''')
 
     def test_bag_items_stay_for_sale_while_a_full_scan_is_awaited(self):
