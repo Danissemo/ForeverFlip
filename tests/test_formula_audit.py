@@ -107,11 +107,12 @@ class LostDepositTests(unittest.TestCase):
 class CraftCountTests(unittest.TestCase):
     def test_a_day_of_crafts_divides_by_the_units_made(self):
         run(SETUP + '''local F, UI = ForeverFlip, ForeverFlip.UI
-        local asked
-        F.Crafting.shopMaterials = function(_, count) asked = count; return 1 end
+        local asked, called
+        F.Crafting.shopMaterials = function(_, count) called, asked = true, count; return 1 end
         UI.craftSelected = { id = 1, n = 5, perDay = 10 }
         UI.craftShop:Click()
-        assert(asked == 2, 'ten a day of a recipe that makes five: two crafts, not ' .. tostring(asked))''')
+        -- The plan counts the crafts (test_crafting.CraftPlanTests): the button passes no count.
+        assert(called and asked == nil, tostring(asked))''')
 
 
 class AnalyticsDaysTests(unittest.TestCase):

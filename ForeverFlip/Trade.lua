@@ -651,7 +651,7 @@ function T.onError(err)
         T.lastPost = nil
         local codes = Enum and Enum.AuctionHouseError
         if codes and err ~= nil and err == codes.HasRestriction then
-            F.Engine.notify("restricted")
+            F.Engine.notify("post_restricted")
         else
             T.held[l.key] = true
             F.Engine.notify("post_refused")
@@ -1115,6 +1115,7 @@ function T.quote(key, id)
         local market = M.advice(id, key, h, q.market)
         if market then
             q.marketPost, q.marketNet = market.post, market.auction
+            q.marketLost, q.marketTries, q.marketPerDay = market.lost, market.tries, market.perDay
             q.best, q.value = market.best, market.value
         end
     end

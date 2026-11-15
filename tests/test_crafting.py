@@ -173,5 +173,94 @@ class DisenchantTests(unittest.TestCase):
         local d=F.Deals.get('g:60:rough boots');assert(not d or d.mode~='disenchant')''')
 
 
+
+class SpellBookLearnedTests(unittest.TestCase):
+    """WoW Forever's GetRecipeInfo gives no learned flag: the spell book answers instead."""
+
+    NO_FLAG = UNLEARNED + """C_TradeSkillUI.GetRecipeInfo=function(id) return {recipeID=id} end
+"""
+
+    def test_the_spell_book_hides_a_recipe_the_character_does_not_know(self):
+        run(self.NO_FLAG + """C_SpellBook={IsSpellKnown=function(id) return id==2963 end}
+        fire('TRADE_SKILL_SHOW');F.db.settings.hideUnlearned=true
+        local p=F.Crafting.profits()
+        assert(#p==1 and p[1].name=='Bolt of Linen Cloth',#p)
+        assert(F.Crafting.unlearnedCount()==1)""")
+
+    def test_a_recipe_saved_without_the_flag_is_answered_by_the_spell_book(self):
+        run(self.NO_FLAG + """fire('TRADE_SKILL_SHOW')
+        local c=F.Data.char(F.db,F.Engine.owner())
+        assert(c.recipes[2657].learned==nil,'no answer without the spell book')
+        C_SpellBook={IsSpellKnown=function(id) return id==2963 end}
+        F.db.settings.hideUnlearned=true
+        assert(#F.Crafting.profits()==1,'hidden without reopening the profession window')""")
+
+    def test_a_spell_book_that_knows_none_of_them_is_not_believed(self):
+        run(self.NO_FLAG + """C_SpellBook={IsSpellKnown=function() return false end}
+        fire('TRADE_SKILL_SHOW');F.db.settings.hideUnlearned=true
+        assert(#F.Crafting.profits()==2,'IDs that are not spells hide nothing')""")
+
+
+
+class CraftPlanTests(unittest.TestCase):
+    """Crafting.plan: how many crafts pay, and up to what price each material is bought."""
+
+    # A product that brings 755 a craft and sells 100 a day; two Linen Cloth a craft, listed in
+    # three lots: 6 at 100, 4 at 200, 10 at 400.
+    PLAN = CRAFT + r"""fire('TRADE_SKILL_SHOW')
+    local profits = F.Crafting.profits
+    F.Crafting.profits = function(all)
+        local out = profits(all)
+        for _, row in ipairs(out) do row.value, row.perDay, row.route = 755, 100, 'auction' end
+        return out
+    end
+    F.Trade.prices['c:10'] = { rows = { { unit = 100, qty = 6 }, { unit = 200, qty = 4 }, { unit = 400, qty = 10 } }, at = F.Engine.clock() }
+    """
+
+    def test_crafts_stop_where_the_next_lots_no_longer_pay(self):
+        run(self.PLAN + """local plan = F.Crafting.plan(2963)
+        -- 2 x 400 = 800 a craft leaves less than 5% of 755: the dear lot is not bought.
+        assert(plan.crafts == 5 and plan.limit == 'price', plan.crafts .. ' ' .. plan.limit)
+        local m = plan.materials[1]
+        assert(m.buy == 10 and m.maxPrice == 200 and m.spend == 6 * 100 + 4 * 200, m.buy .. ' ' .. tostring(m.maxPrice))
+        assert(plan.profit == 5 * 755 - 1400, plan.profit)""")
+
+    def test_the_money_on_hand_limits_the_plan(self):
+        run(self.PLAN + """money = 1000 -- 80% may be spent: 800
+        local plan = F.Crafting.plan(2963)
+        assert(plan.crafts == 3 and plan.limit == 'money' and plan.spend == 600, plan.crafts .. ' ' .. plan.limit)""")
+
+    def test_materials_in_the_bags_are_used_first(self):
+        run(self.PLAN + """putBag(0, 1, 10, 4)
+        local plan = F.Crafting.plan(2963)
+        local m = plan.materials[1]
+        assert(m.held == 4 and m.buy == plan.crafts * 2 - 4, m.held .. ' ' .. m.buy)""")
+
+    def test_the_sales_cap_the_crafts(self):
+        run(self.PLAN + """F.Crafting.profits = (function(inner) return function(all)
+            local out = inner(all); for _, row in ipairs(out) do row.perDay = 2 end; return out end end)(F.Crafting.profits)
+        local plan = F.Crafting.plan(2963)
+        assert(plan.crafts == 2 and plan.limit == 'sales', plan.crafts .. ' ' .. plan.limit)""")
+
+    def test_a_day_of_crafts_divides_by_the_units_made(self):
+        run(self.PLAN + """F.Data.char(F.db, F.Engine.owner()).recipes[2963].n = 5
+        F.Crafting.profits = (function(inner) return function(all)
+            local out = inner(all); for _, row in ipairs(out) do row.perDay = 10 end; return out end end)(F.Crafting.profits)
+        local plan = F.Crafting.plan(2963)
+        assert(plan.crafts == 2 and plan.limit == 'sales', 'ten a day of a recipe that makes five: ' .. plan.crafts)""")
+
+    def test_shop_materials_puts_the_plan_on_the_list(self):
+        run(self.PLAN + """local n = F.Crafting.shopMaterials(2963)
+        local e = F.Shopping.entry('c:10')
+        assert(n == 1 and e.qty == 10 and e.max == 200, tostring(e and e.qty) .. ' ' .. tostring(e and e.max))""")
+
+    def test_the_page_shows_the_plan(self):
+        run(self.PLAN + """local UI = F.UI; UI.show('crafting'); UI.craftTable.rows[1]:Click(); UI.refresh()
+        local t = UI.craftProfText.full()
+        assert(t:find('5 crafts', 1, true) and t:find('buy 10', 1, true), t)
+        UI.craftShop:Click()
+        assert(F.Engine.message == 'craft_saved', tostring(F.Engine.message))""")
+
+
 if __name__ == '__main__':
     unittest.main()

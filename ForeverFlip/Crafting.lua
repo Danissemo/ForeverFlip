@@ -50,20 +50,34 @@ end
 -- Reads every recipe of the open profession window: { name, out = itemID, n = units made,
 -- learned = the character may craft it, r = { { itemID, count }, ... } }.
 -- GetAllRecipeIDs lists the whole profession, known and unknown: C_TradeSkillUI.GetRecipeInfo
--- says which (its `learned` flag; the schematic has none). Without that call every recipe counts
--- as learned, so a client that lacks it keeps the old list. An answer that is nil or no table is
--- no answer (the call failed, or the recipe is not loaded yet): it is kept as nil, which C.hidden
--- reads as "not known", so a failure never hides a recipe the character can craft.
-local function learned(id)
-    local T = C_TradeSkillUI
-    if not T or not T.GetRecipeInfo then
-        return true
+-- says which (its `learned` flag; the schematic has none). On WoW Forever it gave no flag, so the
+-- spell book is asked as well whenever the page is drawn (a recipe's ID is its spell's; C.learnedMap).
+-- No answer from either reads as "not known": a failure never hides a recipe the character can craft.
+local function knowsSpell(id)
+    local S = C_SpellBook
+    local known = S and S.IsSpellKnown
+    if not known and not S then
+        known = IsSpellKnown -- the deprecated fallback, only without the namespace
     end
-    local ok, info = pcall(T.GetRecipeInfo, id)
-    if not ok or type(info) ~= "table" then
+    if not known then
         return nil
     end
-    return info.learned ~= false
+    local ok, has = pcall(known, id)
+    if ok and type(has) == "boolean" then
+        return has
+    end
+    return nil
+end
+
+local function learned(id)
+    local T = C_TradeSkillUI
+    if T and T.GetRecipeInfo then
+        local ok, info = pcall(T.GetRecipeInfo, id)
+        if ok and type(info) == "table" and type(info.learned) == "boolean" then
+            return info.learned
+        end
+    end
+    return nil -- the spell book is asked when the page is drawn (C.learnedMap), not saved
 end
 
 function C.learn()
@@ -110,18 +124,38 @@ function C.rememberMerchantPrice(id, unit)
     end
 end
 
+-- Whether each saved recipe is learned, asked of the spell book now: a recipe saved before the
+-- flag existed, or learned since the profession window was last open, is answered without it. If
+-- the spell book knows none of them, the IDs are not spells in this client and the saved flags
+-- stand. { [id] = true | false | nil }; nil is "not known" and hides nothing.
+function C.learnedMap()
+    local live, any = {}, false
+    for id in pairs(recipes()) do
+        live[id] = knowsSpell(id)
+        any = any or live[id] == true
+    end
+    local out = {}
+    for id, r in pairs(recipes()) do
+        if any and live[id] ~= nil then
+            out[id] = live[id]
+        else
+            out[id] = r.learned
+        end
+    end
+    return out
+end
+
 -- Whether a saved recipe is left out of the page: one the character has not learned, while the
--- setting asks for learned recipes only. A recipe saved before the flag existed is shown (only a
--- known "no" hides it).
-function C.hidden(r)
-    return r.learned == false and (F.db.settings.hideUnlearned or false) and true or false
+-- setting asks for learned recipes only. Only a known "no" hides it.
+function C.hidden(learnedFlag)
+    return learnedFlag == false and (F.db.settings.hideUnlearned or false) and true or false
 end
 
 -- How many saved recipes the setting hides (the toggle says what it is doing).
 function C.unlearnedCount()
     local n = 0
-    for _, r in pairs(recipes()) do
-        if r.learned == false then
+    for _, flag in pairs(C.learnedMap()) do
+        if flag == false then
             n = n + 1
         end
     end
@@ -133,9 +167,9 @@ end
 -- recipe with no material price yet is still a row, so the count alone does not answer it.
 function C.allUnlearned()
     local total, unlearned = 0, 0
-    for _, r in pairs(recipes()) do
+    for _, flag in pairs(C.learnedMap()) do
         total = total + 1
-        if r.learned == false then
+        if flag == false then
             unlearned = unlearned + 1
         end
     end
@@ -190,8 +224,9 @@ function C.profits(countUnlearned)
     local now = F.Engine.clock()
     local history = F.Data.market(F.db, F.Engine.scope()).history
     local out = {}
+    local learnedMap = C.learnedMap()
     for id, r in pairs(recipes()) do
-        if countUnlearned or not C.hidden(r) then
+        if countUnlearned or not C.hidden(learnedMap[id]) then
             local cost, missing = 0, nil
             for _, m in ipairs(r.r) do
                 local unit = C.materialCost(history, m[1])
@@ -221,7 +256,7 @@ function C.profits(countUnlearned)
                 row.cost, row.perDay = math.floor(cost), perDay
                 row.profit = row.value and row.value - row.cost or nil
             end
-            row.learned = r.learned ~= false
+            row.learned = learnedMap[id] ~= false
             out[#out + 1] = row
         end
     end
@@ -248,12 +283,194 @@ function C.have(id, bagsOnly)
     return ok and U.finite(n) and n or 0
 end
 
--- Puts the materials of `count` crafts on the shopping list, each at its current cost, less what
--- the bags and the bank already hold.
+-- How many crafts of a recipe are worth making now, and what to buy for them. Crafts are added one
+-- at a time; each takes its materials cheapest first: the stock in the bags and the bank (valued
+-- at the material's usual cost, though it is not bought), then the lots of a fresh check or of the
+-- last full scan, then a merchant's price, else the usual price as an estimate. A craft is planned
+-- while what it brings (Crafting.profits: the product after the cut and the deposit, or the
+-- vendor) exceeds what its materials cost by C.PLAN_RETURN of it. The plan also ends at
+--   * a day of the product's sales, less the product held (auction route; one craft to try when
+--     the sales are not measured, none when nothing sells),
+--   * the lots listed, the money on hand (settings.spendShare of it), or C.PLAN_MAX crafts.
+-- Each material's price limit is the dearest unit the plan takes of it, so a shopping list entry
+-- buys exactly the lots that keep the crafts paying.
+-- { crafts, limit, perDay, value, cost, profit, materials = { { id, key, name, per, held, buy,
+-- maxPrice, spend, estimated } } }, or nil and a reason ("missing", "unknown").
+C.PLAN_RETURN = 0.05
+C.PLAN_MAX = 100
+C.PLAN_DAYS = 1
+
+local function lotsOf(key, id, history)
+    local rows, estimated = {}, false
+    local check = F.Trade.prices[key]
+    local source = check and F.Engine.clock() - check.at <= 300 and check or F.Trade.scanPrice(key)
+    for _, l in ipairs(source and source.rows or {}) do
+        if U.finite(l.unit) and l.unit > 0 and (l.qty or 0) > 0 then
+            rows[#rows + 1] = { unit = l.unit, qty = l.qty }
+        end
+    end
+    local merchant = F.db.merchantPrices and F.db.merchantPrices[id]
+    if merchant then
+        rows[#rows + 1] = { unit = merchant, qty = math.huge, merchant = true }
+    end
+    if #rows == 0 then
+        local usualCost = C.materialCost(history, id)
+        if usualCost then
+            rows[1] = { unit = usualCost, qty = math.huge }
+            estimated = true
+        end
+    end
+    table.sort(rows, function(a, b)
+        return a.unit < b.unit
+    end)
+    return rows, estimated
+end
+
+function C.plan(recipeID)
+    local r = recipes()[recipeID]
+    if not r then
+        return nil, "unknown"
+    end
+    local row
+    for _, p in ipairs(C.profits(true)) do
+        if p.id == recipeID then
+            row = p
+            break
+        end
+    end
+    if not row or row.missing or not row.value then
+        return nil, "missing"
+    end
+    local history = F.Data.market(F.db, F.Engine.scope()).history
+    local made = math.max(1, r.n or 1)
+    local plan = { crafts = 0, perDay = row.perDay, value = row.value, cost = 0, spend = 0, materials = {} }
+    -- How many crafts the sales take.
+    local cap, capLimit = C.PLAN_MAX, "max"
+    if row.route == "auction" then
+        if not row.perDay then
+            cap, capLimit = 1, "unknown_sales"
+        else
+            local units = row.perDay * C.PLAN_DAYS - C.have(r.out)
+            cap, capLimit = math.max(0, math.floor(units / made)), "sales"
+            if cap == 0 then
+                capLimit = row.perDay * C.PLAN_DAYS >= made and "stock" or "no_sales"
+            end
+        end
+    end
+    local money = math.floor(F.Engine.wallet() * (F.db.settings.spendShare or 0.8))
+    local mats = {}
+    for _, m in ipairs(r.r) do
+        local kind = F.AH.kindOf(m[1])
+        local key = kind and U.key(kind, m[1]) or nil
+        local lots, estimated = lotsOf(key or "", m[1], history)
+        local mat = {
+            id = m[1],
+            key = key,
+            name = U.itemInfo(m[1]),
+            per = m[2],
+            held = C.have(m[1]),
+            usedHeld = 0,
+            buy = 0,
+            spend = 0,
+            maxPrice = nil,
+            estimated = estimated,
+            usual = C.materialCost(history, m[1]) or 0,
+            lots = lots,
+            lot = 1,
+            taken = 0, -- units taken of the current lot
+            buyable = kind ~= nil and kind ~= "gear",
+        }
+        mats[#mats + 1] = mat
+        plan.materials[#plan.materials + 1] = mat
+    end
+    local limit = capLimit
+    while plan.crafts < cap do
+        -- The cost of one more craft, without taking it yet.
+        local cost, spend, ran = 0, 0, false
+        local takes = {}
+        for i, mat in ipairs(mats) do
+            local need, fromHeld = mat.per, math.min(mat.per, math.max(0, mat.held - mat.usedHeld))
+            need = need - fromHeld
+            cost = cost + fromHeld * mat.usual
+            local lot, taken, top = mat.lot, mat.taken, nil
+            local buy, paid = 0, 0
+            while need > 0 do
+                local l = mat.lots[lot]
+                if not l or not mat.buyable then
+                    ran = true
+                    break
+                end
+                local n = math.min(need, l.qty - taken)
+                if n <= 0 then
+                    lot, taken = lot + 1, 0
+                else
+                    need, taken, buy = need - n, taken + n, buy + n
+                    cost, spend, paid = cost + n * l.unit, spend + n * l.unit, paid + n * l.unit
+                    top = l.unit
+                end
+            end
+            takes[i] = { fromHeld = fromHeld, lot = lot, taken = taken, buy = buy, paid = paid, top = top }
+        end
+        if ran then
+            limit = "supply"
+            break
+        end
+        if row.value - cost < row.value * C.PLAN_RETURN then
+            limit = plan.crafts == 0 and "no_profit" or "price"
+            break
+        end
+        if plan.spend + spend > money then
+            limit = "money"
+            break
+        end
+        plan.crafts = plan.crafts + 1
+        plan.cost, plan.spend = plan.cost + cost, plan.spend + spend
+        for i, mat in ipairs(mats) do
+            local t = takes[i]
+            mat.usedHeld, mat.lot, mat.taken = mat.usedHeld + t.fromHeld, t.lot, t.taken
+            mat.buy, mat.spend = mat.buy + t.buy, mat.spend + t.paid
+            if t.top then
+                mat.maxPrice = math.max(mat.maxPrice or 0, t.top)
+            end
+        end
+    end
+    for _, mat in ipairs(mats) do
+        mat.lots, mat.lot, mat.taken = nil, nil, nil
+    end
+    plan.limit = limit
+    plan.profit = plan.crafts * row.value - plan.cost
+    return plan
+end
+
+-- Puts the materials of the plan (C.plan) on the shopping list: each the units to buy, at the
+-- price limit that keeps the crafts paying. Returns the entries added and the plan. With `count`,
+-- the materials of that many crafts at their usual cost, less what the bags and the bank hold.
 function C.shopMaterials(recipeID, count)
     local r = recipes()[recipeID]
     if not r then
         return 0
+    end
+    if not count then
+        local plan, why = C.plan(recipeID)
+        if not plan then
+            return 0, nil, why
+        end
+        local added = 0
+        for _, mat in ipairs(plan.materials) do
+            if mat.buy > 0 and mat.key and mat.maxPrice then
+                local e = type(F.db.shopping) == "table" and F.db.shopping[mat.key]
+                local max, qty, name = mat.maxPrice, mat.buy, mat.name
+                if type(e) == "table" then
+                    max = math.max(max, U.finite(e.max) and e.max or 0)
+                    qty = U.finite(e.qty) and math.max(e.qty, qty) or nil
+                    name = name or e.name
+                end
+                if F.Shopping.add(mat.key, max, qty, name) then
+                    added = added + 1
+                end
+            end
+        end
+        return added, plan
     end
     local history = F.Data.market(F.db, F.Engine.scope()).history
     local added = 0

@@ -3,7 +3,7 @@ locks the posting buttons."""
 
 import unittest
 
-from test_addon import run
+from test_addon import SETUP, run
 from test_hidden_items import HIDE
 from test_quote import plain
 
@@ -35,6 +35,7 @@ class BestRouteTests(unittest.TestCase):
         lines = [plain(x) for x in text.split('\n')]
         verdict = [x for x in lines if x.startswith('Best ')]
         self.assertEqual(len(verdict), 1, text)
+        self.assertTrue(lines[0].startswith('Best ') and lines[1].startswith('Why '), 'Best and why come first')
         chosen = [x for x in lines if x.startswith('> ')]
         self.assertEqual(len(chosen), 1, 'one route is marked')
         self.assertIn('(best)', chosen[0])
@@ -49,6 +50,18 @@ class BestRouteTests(unittest.TestCase):
         UI.refresh(); row('i:30'):Click(); UI.refresh()
         return UI.sellBox.full()""")
         self.assertIn('Найкраще', plain(out))
+
+
+class WrapTests(unittest.TestCase):
+    def test_a_long_line_goes_on_in_the_next_rows_with_its_colour(self):
+        run(HIDE + """local box = UI.sellBox
+        local long = '|cffaaaaaa' .. string.rep('word ', 40) .. 'end|r'
+        box.set({ 'short', long, 'after' }, 'wrap')
+        assert(#box.wrapped > 3, 'the long line takes more than one row: ' .. #box.wrapped)
+        assert(box.wrapped[2]:sub(-2) == '|r', 'the first piece closes its colour')
+        assert(box.wrapped[3]:find('^%s+|cffaaaaaa'), 'the next piece is indented and grey again: ' .. box.wrapped[3])
+        assert(box.wrapped[#box.wrapped] == 'after')
+        assert(box.full() == table.concat({ 'short', long, 'after' }, '\\n'), 'the text itself is kept whole')""")
 
 
 class RestrictionTests(unittest.TestCase):
@@ -71,7 +84,7 @@ class RestrictionTests(unittest.TestCase):
         assert(T.postingNow(), 'waiting for the auction house')
         fire('AUCTION_HOUSE_SHOW_ERROR', Enum.AuctionHouseError.HasRestriction)
         assert(not T.postingNow(), 'no ten-second wait')
-        assert(F.Engine.message == 'restricted', tostring(F.Engine.message))
+        assert(F.Engine.message == 'post_restricted', tostring(F.Engine.message))
         assert(not next(T.held), 'a restriction holds no item')""")
 
     def test_an_item_the_server_refuses_is_skipped_for_the_visit(self):
@@ -87,6 +100,26 @@ class RestrictionTests(unittest.TestCase):
     def test_a_client_without_restrictions_posts_as_before(self):
         run(HIDE + """C_RestrictedActions = nil
         assert(F.AH.restricted() == nil)""")
+
+
+
+class VendorProfitTests(unittest.TestCase):
+    def test_profit_on_to_vendor_is_one_unit(self):
+        run(SETUP + """local F, UI, U = ForeverFlip, ForeverFlip.UI, ForeverFlip.Util
+        fullScan()
+        UI.show('deals:vendor'); UI.refresh()
+        local checked = 0
+        for _, r in ipairs(UI.vendorTable.rows) do
+            local d = r:IsShown() and r.key and F.Deals.get(r.key)
+            if d then
+                local buy = math.floor((d.cost or 0) / math.max(1, d.qty or 1) + 0.5)
+                local sells = d.exit and math.floor(d.exit)
+                    or math.floor(((d.cost or 0) + (d.profit or 0)) / math.max(1, d.qty or 1) + 0.5)
+                assert(r.cols[5]:GetText() == U.money(sells - buy), r.cols[5]:GetText() .. ' vs ' .. U.money(sells - buy))
+                checked = checked + 1
+            end
+        end
+        assert(checked > 0, 'a vendor deal is listed')""")
 
 
 if __name__ == '__main__':

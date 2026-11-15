@@ -68,9 +68,9 @@ class VendorConsistencyTests(unittest.TestCase):
 
     def test_sell_explanation_scrolls_without_growing_into_the_price_controls(self):
         run(WOOL + '''UI.show('sell');UI.sellSelected=F.AH.bagItems()[1];UI.refreshSell()
-        -- The footer is laid out as the Undercuts one: seven fixed text rows above the price
-        -- controls, so a long explanation scrolls instead of running into them.
-        assert(UI.sellBox and UI.sellBox.rows==7,'seven fixed text rows above the price controls')
+        -- Six fixed text rows above the price controls, so a long explanation scrolls instead of
+        -- running into them.
+        assert(UI.sellBox and UI.sellBox.rows==6,'six fixed text rows above the price controls')
         assert(UI.sellBox.full():find('below your minimum',1,true),'warning is retained in scrollable content')
         -- More lines than rows: the rest is reached by the bar, and the place is kept for the item.
         local box=UI.sellBox
@@ -82,12 +82,12 @@ class VendorConsistencyTests(unittest.TestCase):
 
     def test_the_sell_footer_is_sized_like_the_undercuts_one(self):
         run(WOOL + '''UI.show('sell')
-        -- Seven rows of 14 px start 6 below the footer's top; the price row sits 36 above its
-        -- bottom, in a 146 px footer. 6 + 7*14 = 104, and the fields begin at 146 - 36 = 110 from
-        -- the top, so the block always ends above them however long the explanation is.
+        -- Rows of 14 px start 6 below the footer's top. The price row's 20 px fields stand on a
+        -- line 36 above the bottom of the 146 px footer, so their top is 146 - 36 - 20 = 90 from
+        -- the top: six rows (6 + 6*14 = 90) end on it, a seventh ran into "Price each" in game.
         local rows=UI.sellBox.rows
-        assert(rows==7,'the Undercuts text block')
-        assert(6+rows*14 < 146-36,'the text block ends above the price row')
+        assert(rows==6,'six rows fit')
+        assert(6+rows*14 <= 146-36-20,'the text block ends above the price row')
         assert(UI.sellText~=nil and UI.sellPrice~=nil and UI.sellCheck~=nil,'the controls exist')
         ''')
 

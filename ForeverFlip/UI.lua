@@ -72,6 +72,9 @@ local MESSAGES = {
     post_dropped = "The auction house threw the post away (too many messages): press again.",
     post_unconfirmed = "The auction house did not confirm the post: check My auctions, then press again.",
     restricted = "The game does not let addons post, buy or cancel right now (combat, a boss, a keystone or a PvP match). Try again once it ends.",
+    post_restricted = 'The auction house answered "That action is currently restricted" and did not post. The game reports no combat or other addon restriction: try the same item from the game\'s Sell tab.',
+    craft_saved = "The materials of the plan are on the shopping list, each at its price limit.",
+    craft_nothing = "Nothing to buy: the plan holds no craft, or the bags already hold its materials.",
     post_refused = "The auction house refused the post (the game said why). The item is skipped until the auction house is opened again.",
     sold = "Sale recorded.",
     verify_first = "Checking the current price first...",
@@ -794,8 +797,9 @@ function UI.scrollBar(parent, anchor, height, onScroll, wheel)
 end
 
 -- A block of text lines that scrolls like the tables: the same scrollbar on the right, the mouse
--- wheel, one line per step. Lines do not wrap (each says one thing, short); hovering shows the
--- whole block. box.set(lines) replaces them and keeps the place when the text stays alike.
+-- wheel, one line per step. A line wider than the block goes on in the next rows, indented, its
+-- colour carried over; hovering shows the whole block. box.set(lines) replaces them and keeps the
+-- place when the text stays alike.
 function UI.scrollText(parent, rows, top, bottom, height)
     local LINE = 14
     local box = { offset = 0, lines = {}, rows = rows, shown = "" }
@@ -818,20 +822,90 @@ function UI.scrollText(parent, rows, top, bottom, height)
     local anchor = CreateFrame("Frame", nil, parent)
     anchor:SetSize(1, 1)
     anchor:SetPoint("BOTTOMRIGHT", parent, "TOPRIGHT", -(SCROLL_WIDTH + 4), -(top or 6))
+    -- Does `s` fit one row? Measured by the game's font once the rows have a width; before that
+    -- (and in a client without the measure) about WRAP_CHARS letters a row.
+    local WRAP_CHARS = 110
+    local probe = box.rowTexts[1]
+    local function fits(s, width)
+        if width and probe.GetUnboundedStringWidth then
+            probe:SetText(s)
+            local w = probe:GetUnboundedStringWidth()
+            if w and w > 0 then
+                return w <= width
+            end
+        end
+        local plain = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "  ")
+        local _, letters = plain:gsub("[^\128-\191]", "") -- UTF-8: one count per letter
+        return letters <= WRAP_CHARS
+    end
+    -- The colour still open at the end of `s` (its last |c code with no |r after it), or nil.
+    local function openColour(s)
+        local last, at
+        for p, code in s:gmatch("()(|c%x%x%x%x%x%x%x%x)") do
+            last, at = code, p
+        end
+        if last and not s:find("|r", at, true) then
+            return last
+        end
+        return nil
+    end
+    local cache, cached = {}, 0
+    local function wrap(line, width)
+        local key = tostring(width) .. "\1" .. line
+        if cache[key] then
+            return cache[key]
+        end
+        local out = {}
+        if fits(line, width) then
+            out[1] = line
+        else
+            local indent = (line:match("^(%s*)") or "") .. "   "
+            local current
+            for word in line:gmatch("%S+") do
+                if not current then
+                    current = (line:match("^(%s*)") or "") .. word
+                elseif fits(current .. " " .. word, width) then
+                    current = current .. " " .. word
+                else
+                    local colour = openColour(current)
+                    out[#out + 1] = current .. (colour and "|r" or "")
+                    current = indent .. (colour or "") .. word
+                end
+            end
+            out[#out + 1] = current or line
+        end
+        if cached > 300 then
+            cache, cached = {}, 0
+        end
+        cache[key], cached = out, cached + 1
+        return out
+    end
+    local function rowsOf(lines)
+        local width = probe.GetWidth and probe:GetWidth() or 0
+        width = width > 0 and width or nil
+        local out = {}
+        for _, line in ipairs(lines) do
+            for _, piece in ipairs(wrap(line, width)) do
+                out[#out + 1] = piece
+            end
+        end
+        return out
+    end
     local function render()
         local shown = {}
         for i = 1, rows do
-            local line = box.lines[box.offset + i]
+            local line = box.wrapped[box.offset + i]
             box.rowTexts[i]:SetText(line or "")
             shown[#shown + 1] = line
         end
         box.shown = table.concat(shown, "\n")
-        box.bar.update(box.offset, #box.lines, rows)
+        box.bar.update(box.offset, #box.wrapped, rows)
     end
     local function scrollTo(offset)
-        box.offset = math.max(0, math.min(math.max(0, #box.lines - rows), offset))
+        box.offset = math.max(0, math.min(math.max(0, #box.wrapped - rows), offset))
         render()
     end
+    box.wrapped = {}
     local function wheel(_, delta)
         scrollTo(box.offset - (delta or 0))
     end
@@ -845,7 +919,7 @@ function UI.scrollText(parent, rows, top, bottom, height)
         parent:EnableMouse(true)
     end
     parent:SetScript("OnEnter", function(self)
-        if GameTooltip and #box.lines > rows then
+        if GameTooltip and #box.wrapped > rows then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:SetText(table.concat(box.lines, "\n"), 1, 1, 1, 1, true)
             GameTooltip:Show()
@@ -864,6 +938,7 @@ function UI.scrollText(parent, rows, top, bottom, height)
             box.key, box.offset = key, 0
         end
         box.lines = lines
+        box.wrapped = rowsOf(lines)
         scrollTo(box.offset)
     end
     function box.full()
@@ -1727,7 +1802,7 @@ function UI.createDeals(p)
     headerTip(
         UI.vendorTable.headers[6],
         "Profit",
-        "What the whole offer brings once a merchant has bought it: Sells at times Qty, less Cost. No auction house cut and no deposit are counted (a merchant pays at once)."
+        "What one unit brings once a merchant has bought it: Sells at less Buy at. No auction house cut and no deposit are counted (a merchant pays at once). The line under the table adds up the whole offers."
     )
     -- The deals scroll like every table (the scrollbar on the right); the line below counts them.
     UI.pageText = text(p, "GameFontHighlightSmall")
@@ -2232,7 +2307,7 @@ function UI.refreshDeals()
     end
     -- The figures the two layouts share. The general page keeps the columns it always had (Status,
     -- the last one, falls through to the state ranking below); the vendor page has one column fewer
-    -- and its fifth is the collection cost, its sixth the whole offer's profit.
+    -- and its fifth is the collection cost, its sixth the profit of one unit (Sells at - Buy at).
     local function sortValue(d)
         local field = UI.dealSort
         if field == 1 then
@@ -2247,7 +2322,7 @@ function UI.refreshDeals()
         elseif field == 5 then
             return vendor and (d.offer and d.offer.cost or d.cost) or d.profit
         elseif field == 6 then
-            return vendor and (d.offer and d.offer.profit or d.profit) or estimates[d.key].perDay
+            return vendor and (unitExit(d) - unitCost(d)) or estimates[d.key].perDay
         elseif field == 7 and not vendor then
             return sures[d.key]
         end
@@ -2298,7 +2373,9 @@ function UI.refreshDeals()
                 r.cols[2]:SetText(U.money(unitCost(d)))
                 r.cols[3]:SetText(sellsAtText(d, history))
                 r.cols[4]:SetText(U.money(o.cost or 0))
-                r.cols[5]:SetText(U.money(o.profit or d.profit))
+                -- One unit, the difference of the two price columns; the line under the table adds
+                -- up the whole offers.
+                r.cols[5]:SetText(U.money(unitExit(d) - unitCost(d)))
                 r.cols[6]:SetText(dealStatus(d))
             else
                 r.cols[1]:SetText(d.qty)
@@ -2998,7 +3075,7 @@ function UI.createSell(p)
     -- the market, the minimum) need more than three lines, and three lines ran into the fields.
     local bar = footer(p, 146, "GameFontHighlightSmall")
     bar.text:Hide()
-    UI.sellBox = UI.scrollText(bar, 7, 6, 26)
+    UI.sellBox = UI.scrollText(bar, 6, 6, 26) -- a seventh row ran into the price row
     UI.sellText = UI.sellBox.text
     local priceLabel = text(bar, "GameFontNormal")
     priceLabel:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 8, 36)
@@ -3410,7 +3487,13 @@ function UI.refreshSell()
     -- first, it also takes the prices of a full scan up to 5 minutes old.
     way(item)
     local price, floor, cheapest, why = F.Trade.suggest(item)
+    -- Best and why come first: the reason for the route is what the footer is read for. The
+    -- routes follow the price lines (UI.bestLines).
+    local verdict, routes = UI.bestLines(way(item))
     local lines = {}
+    for _, line in ipairs(verdict) do
+        lines[#lines + 1] = line
+    end
     if item.position and item.position.mode == "vendor" then
         lines[#lines + 1] = L("Bought as a vendor deal: sell it to any vendor (button at the merchant).")
     end
@@ -3483,8 +3566,7 @@ function UI.refreshSell()
     else
         lines[#lines + 1] = L("Press Check price to read the current listings.")
     end
-    -- Why the Best column chose its route, then every route side by side (UI.bestLines).
-    for _, line in ipairs(UI.bestLines(way(item))) do
+    for _, line in ipairs(routes) do
         lines[#lines + 1] = line
     end
     local h = F.Data.market(F.db, F.Engine.scope()).history[item.key]
@@ -4476,7 +4558,7 @@ local CRAFT_ROWS = 15
 function UI.createCrafting(p)
     local list = CreateFrame("Frame", nil, p)
     list:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
-    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 76)
+    list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 108)
     UI.craftTable = table_(
         list,
         {
@@ -4493,12 +4575,15 @@ function UI.createCrafting(p)
             UI.refresh()
         end
     )
-    local bar = footer(p, 72)
+    -- 104 px: four text rows of 14 from 20 below the top end at 76, above the buttons (22 high, 4
+    -- above the bottom: their top is 78). At 72 px the rows and the bar ran into the buttons. The
+    -- table keeps its 15 rows: 432 - 108 = 324 = 24 + 15 x 20.
+    local bar = footer(p, 104)
     UI.craftText = bar.text
     -- The professions are a list as long as the character has professions: a plain font string ran
     -- off the bottom of the window. The scrolling block reaches every line (the box height is its 4
     -- rows; a wheel or the bar shows the rest), and its own text is hidden.
-    UI.craftProfText = UI.scrollText(bar, 4, 20, 0, 40)
+    UI.craftProfText = UI.scrollText(bar, 4, 20, 0, 56)
     UI.craftProfButton = button(bar, "Learned professions", 150, function()
         UI.craftProfOpen = not UI.craftProfOpen
         UI.refreshCrafting()
@@ -4513,13 +4598,13 @@ function UI.createCrafting(p)
         UI.refresh()
     end)
     UI.craftHideButton:SetPoint("LEFT", UI.craftProfButton, "RIGHT", 4, 0)
+    -- The plan under the table (F.Crafting.plan) goes on the shopping list: the units to buy of
+    -- each material, at the dearest price that keeps the crafts paying.
     UI.craftShop = button(bar, "Shop materials", 150, function()
         local r = UI.craftSelected
         if r then
-            local made = math.max(1, r.n or 1) -- units one craft makes
-            local count = math.max(1, math.floor((r.perDay or 1) / made))
-            local n = F.Crafting.shopMaterials(r.id, count)
-            F.Engine.notify(n > 0 and "saved" or "values")
+            local n = F.Crafting.shopMaterials(r.id)
+            F.Engine.notify(n > 0 and "craft_saved" or "craft_nothing")
         end
     end)
     UI.craftShop:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 4)
@@ -4602,7 +4687,7 @@ function UI.refreshCrafting()
         UI.craftText:Hide()
         UI.craftProfText.set(lines, "professions")
     else
-        UI.craftProfText.set({}, "")
+        UI.craftProfText.set(s and not s.missing and UI.craftPlanLines(s) or {}, s and ("plan" .. s.id) or "")
         UI.craftText:Show()
     end
     if s and s.missing then
@@ -4612,9 +4697,7 @@ function UI.refreshCrafting()
     elseif s then
         UI.craftText:SetText(
             string.format(
-                L(
-                    "Materials %s, product %s (%s): profit %s per craft. Shop materials puts one day of crafts on the shopping list."
-                ),
+                L("Materials %s, product %s (%s): profit %s per craft at the usual prices."),
                 U.money(s.cost),
                 U.money(s.value or 0),
                 L(s.route == "vendor" and "vendor" or "auction"),
@@ -4625,6 +4708,58 @@ function UI.refreshCrafting()
         UI.craftText:SetText(L("Material prices: the cheaper of the usual auction price and a merchant's price."))
     end
     UI.craftShop:SetEnabled(s ~= nil and not s.missing)
+end
+
+-- The plan of the selected recipe (F.Crafting.plan), in the lines under the table: how many crafts
+-- and what stopped there, each material to buy with its price limit, and the profit.
+local PLAN_LIMIT = {
+    sales = "a day of its sales",
+    stock = "you already hold a day of its sales",
+    no_sales = "the product hardly sells",
+    unknown_sales = "its sales are not measured yet: one craft to try",
+    price = "the next craft would not pay at the next lots' prices",
+    no_profit = "it does not pay even with the cheapest materials",
+    supply = "no more material is listed",
+    money = "the money on hand",
+    max = "the most one plan makes",
+}
+function UI.craftPlanLines(s)
+    local plan = F.Crafting.plan(s.id)
+    if not plan then
+        return {}
+    end
+    local lines = {
+        gold("Plan") .. " " .. string.format(L("%d crafts"), plan.crafts) .. "  ·  " .. L("limit") .. ": " .. L(
+            PLAN_LIMIT[plan.limit] or plan.limit
+        ),
+    }
+    if plan.crafts > 0 then
+        for _, mat in ipairs(plan.materials) do
+            local name = mat.name or ("#" .. mat.id)
+            local line = string.format(
+                L("%s: %d needed, %d held, buy %d"),
+                name,
+                mat.per * plan.crafts,
+                math.min(mat.held, mat.per * plan.crafts),
+                mat.buy
+            )
+            if mat.buy > 0 and mat.maxPrice then
+                line = line
+                    .. string.format(L(" at up to %s each, %s in all"), U.money(mat.maxPrice), U.money(mat.spend))
+                    .. (mat.estimated and (" |cffffd100" .. L("(usual price: no lots read)") .. "|r") or "")
+            end
+            lines[#lines + 1] = "   " .. line
+        end
+        lines[#lines + 1] = gold("Profit")
+            .. " "
+            .. string.format(
+                L("about %s for %d crafts, %s to spend"),
+                UI.signed(plan.profit),
+                plan.crafts,
+                U.money(plan.spend)
+            )
+    end
+    return lines
 end
 
 -- Journal page -------------------------------------------------------------------------------------
@@ -6561,6 +6696,66 @@ end
 -- Why the Best column says what it says, in the Undercuts page's shape: a verdict led by its
 -- subject, then each route in two lines, the chosen one first and marked: what one unit brings,
 -- then in grey how. The same sums as the column and its hover (F.Trade.quote).
+-- What decided the route, in one sentence: the deposits a slow seller loses, the cut, a merchant
+-- that does not buy it, or the materials. Read at the market price the route was chosen at.
+local function bestReason(w, q, vendor, auction)
+    local cut = math.floor(F.Market.CUT * 100 + 0.5)
+    local post = q.belowFloor and q.marketPost or q.post
+    local lost = (q.belowFloor and q.marketLost or q.lost) or 0
+    local tries = (q.belowFloor and q.marketTries or q.tries) or 1
+    local perDay = q.belowFloor and q.marketPerDay or q.perDay
+    if w.name == "vendor" then
+        if not (auction and post) then
+            return nil
+        end
+        if lost > 0 and auction + lost > vendor then
+            local pace = perDay and perDay >= 0.05 and string.format(L("it sells about %.1f a day"), perDay)
+                or L("it hardly sells")
+            return string.format(
+                L(
+                    "at %s %s: about %d posts are expected to expire before one sells, and their lost deposits (%s) cost more than the auction house would gain over a vendor."
+                ),
+                U.money(post),
+                pace,
+                math.max(1, math.floor(tries - 1 + 0.5)),
+                U.money(lost)
+            )
+        end
+        return string.format(
+            L("after the %d%% cut, %s on the auction house brings %s: less than the %s a vendor pays at once."),
+            cut,
+            U.money(post),
+            U.money(auction),
+            U.money(vendor)
+        )
+    elseif w.name == "auction" then
+        if not vendor then
+            return L("no merchant buys it: the auction house is the only way to sell it.")
+        end
+        if not (auction and post) then
+            return nil
+        end
+        return string.format(
+            L(
+                "%s on the auction house brings %s after the %d%% cut and %s of expected lost deposits: %s more than a vendor pays."
+            ),
+            U.money(post),
+            U.money(auction),
+            cut,
+            U.money(lost),
+            U.money(auction - vendor)
+        )
+    elseif w.name == "disenchant" then
+        return string.format(
+            L("the materials bring %s, more than the auction house (%s) or a vendor (%s)."),
+            U.money(q.disenchant or 0),
+            auction and U.money(auction) or "-",
+            vendor and U.money(vendor) or "-"
+        )
+    end
+    return nil
+end
+
 local ROUTE = {
     auction = { "|cff40ff40", "AH" },
     vendor = { "|cffffb84d", "Vendor" },
@@ -6593,19 +6788,24 @@ function UI.bestLines(w)
     else
         verdict = L("not decided yet: the auction house price is not known.")
     end
-    local lines = { gold("Best") .. " " .. verdict }
+    local head = { gold("Best") .. " " .. verdict }
+    local reason = bestReason(w, q, vendor, auction)
+    if reason then
+        head[2] = gold("Why") .. " " .. reason
+    end
+    local lines = {}
     local function detail(s)
         -- Money ends its colour with |r: the grey is taken up again after each amount.
         return "      |cffaaaaaa" .. s:gsub("|r", "|r|cffaaaaaa") .. "|r"
     end
-    local function route(id, head, how)
+    local function route(id, brings, how)
         local best = w.name == id
         local v = ROUTE[id]
         lines[#lines + 1] = (best and "> " or "   ")
             .. v[1]
             .. L(v[2])
             .. "|r  "
-            .. head
+            .. brings
             .. (best and ("  |cff40ff40" .. L("(best)") .. "|r") or "")
         if how then
             lines[#lines + 1] = detail(how)
@@ -6659,7 +6859,7 @@ function UI.bestLines(w)
             )
         end
     end
-    return lines
+    return head, lines
 end
 
 function UI.bestTooltip(cell, w, name)

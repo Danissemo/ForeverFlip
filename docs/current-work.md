@@ -19,8 +19,11 @@ in the Undercuts shape), 11 rows so the list stops above its buttons, posting un
 addon restriction (`AH.restricted`, `C_RestrictedActions`) blocked with a reason and a refused post
 no longer holding the buttons, and the Gear I can't use button gone from the game's merchant tabs.
 To check in game: the footer's wording and layout, and that Post AH-worthy out of combat posts.
-The restriction is the likely cause of "That action is currently restricted" — the player was in
-a group — but it was not reproduced: if it appears out of combat, look further.
+**Open: Post AH-worthy gets "That action is currently restricted" out of combat** (15 November).
+The server's `AUCTION_HOUSE_SHOW_ERROR` is `HasRestriction` while `C_RestrictedActions` reports
+nothing. ForeverFlip posted 60 times from Lasqa until 14 November 08:24 and the posting code has
+not changed since. Next: does the game's own Sell tab post the same item? Yes → the client refuses
+addon calls (taint, a restriction type not checked); no → the server restricts the character.
 
 ## Waiting
 

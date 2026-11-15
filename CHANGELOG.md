@@ -7,6 +7,20 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The Crafting page plans how many crafts to make and what to buy for them.** Select a recipe:
+  the lines under the table say how many crafts pay now and what stopped the plan there (a day of
+  the product's sales, the product you already hold, the next lots costing too much, no more
+  material listed, the money on hand), then for each material how many are needed, how many you
+  hold, how many to buy and up to what price, and the profit of the plan. Crafts are added one at a
+  time, each taking its materials cheapest first — your own stock, then the lots of a fresh check
+  or the last full scan, then a merchant — while what the craft brings stays at least 5% above what
+  its materials cost. **Shop materials** puts exactly that on the shopping list: the units to buy
+  of each material at the dearest price that keeps the crafts paying. Until now it put one day of
+  materials at their usual price, which the auction house often did not have, and said nothing
+  about how many crafts were worth it.
+
 ### Changed
 
 - **Selling → My items says why Best chose its route.** The footer opens with a **Best** line
@@ -16,12 +30,29 @@ All notable changes are listed here. The format follows
   grey how — the price posted, the cut, the deposits expected to be lost and the profit for the
   auction house; at once, no cut and no deposit for a vendor (with a note when the price comes from
   the item data); the materials for disenchanting. The Price and Market lines are led by their
-  subject the same way. Until now the reason was only in the Best cell's hover.
+  subject the same way. A **Why** line under Best names what decided it: an item that hardly sells
+  loses more in expired deposits than the auction house would gain (with how many posts are
+  expected to expire), the cut leaving less than the vendor's price, no merchant buying it, or the
+  materials being worth more. The text block has six rows, so the last no longer runs into
+  **Price each**, and a line too long for a row goes on in the next one instead of being cut off.
+  Until now the reason was only in the Best cell's hover.
+- **Profit on Deals → To vendor is per unit.** It is Sells at less Buy at, the two columns beside it,
+  so a lot of 40 no longer reads as 40 times the gain of one; sorting by Profit follows. The line
+  under the table still adds up the whole offers.
 - **No more Gear I can't use button over the merchant's own tabs.** It sat over the items on the
   Merchant and Buyback tabs. Unusable gear is sold from the merchant's ForeverFlip tab.
 
 ### Fixed
 
+- **Learned recipes only now hides the recipes you have not learned.** On WoW Forever the game's
+  recipe data carries no "learned" flag, so no recipe was ever known to be unlearned: the button
+  showed no count and hid nothing (Smelt Thorium stayed listed for Mining 140). The page now asks
+  the spell book (`C_SpellBook.IsSpellKnown`, a recipe's ID being its spell's) each time it is
+  drawn, so recipes saved earlier are answered too without reopening the profession window. If the
+  spell book knows none of the recipes, its answer is not trusted and nothing is hidden.
+- **The Crafting footer no longer runs into its buttons.** Its four text rows and the scrollbar
+  reached below the top of Learned professions / Learned recipes only; the footer is taller now
+  and the table keeps its 15 rows.
 - **The last row of My items no longer runs under the For sale / Hidden / Rule / Hide buttons.** The
   list shows 11 rows instead of 12; the wheel and the scrollbar reach the rest.
 - **Posting while the game restricts addons no longer locks the buttons.** The game refuses a post,
@@ -30,7 +61,9 @@ All notable changes are listed here. The format follows
   seconds for an auction that never came, with every posting button off, and the next click tried
   the same thing again. The posting and cancel buttons now stay off while such a restriction is
   on, a post asked for then says why without reaching the server, and a post the server refuses
-  ends the wait at once. An item the
+  ends the wait at once. When the server itself answers "That action is currently restricted"
+  while the game reports no such restriction, the page says so as the server's answer instead of
+  blaming combat; the cause of that answer is not known yet. An item the
   server refuses for another reason (bound, quest item...) is skipped by Post all until the auction
   house is opened again, so the next click posts the next item.
 
