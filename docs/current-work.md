@@ -4,21 +4,15 @@ The first file to read in a new session. The changelog says what was done; this 
 being done now, what waits, and what was decided. Keep it short and current: when a task ends, move
 its line to the changelog and start the next.
 
-Last updated: 14 November 2026.
+Last updated: 15 November 2026.
 
 ## Being done now
 
-**`2.2.0-beta.2` is released** (14 November): version in `ForeverFlip.toc` and `Util.lua`,
-`CHANGELOG.md` heading, committed and pushed; the tag `v2.2.0-beta.2` is pushed by hand. It fixes
-beta.1, which showed no auction house tab and broke the merchant page (`fitButton` called
-`b.GetFontString()` without the button). Confirm in game that the tab and the merchant page are
-back.
+**`2.3.0-beta.1` is the current release** (15 November): crafting batch and material purchase
+plans, learned-recipe filtering, clearer Best route explanations, per-unit vendor-deal profit,
+and selling/crafting layout and restriction handling fixes. See the changelog and current beta
+checklist. Automated checks do not replace the pending in-game checks below.
 
-**Unreleased, after beta.2** (14 November): My items footer explains Best (verdict and the routes
-in the Undercuts shape), 11 rows so the list stops above its buttons, posting under the game's
-addon restriction (`AH.restricted`, `C_RestrictedActions`) blocked with a reason and a refused post
-no longer holding the buttons, and the Gear I can't use button gone from the game's merchant tabs.
-To check in game: the footer's wording and layout, and that Post AH-worthy out of combat posts.
 **Open: Post AH-worthy gets "That action is currently restricted" out of combat** (15 November).
 The server's `AUCTION_HOUSE_SHOW_ERROR` is `HasRestriction` while `C_RestrictedActions` reports
 nothing. ForeverFlip posted 60 times from Lasqa until 14 November 08:24 and the posting code has

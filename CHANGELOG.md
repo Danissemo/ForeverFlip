@@ -7,6 +7,15 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+
+## [2.3.0-beta.1] - 2026-11-15
+
+Crafting plans profitable batches and their material purchases; Selling explains its Best route.
+
+Known issue: the server can still refuse addon posting with "That action is currently restricted"
+while the client reports no active restriction. This beta explains the refusal and frees the
+buttons; it does not claim to resolve the server refusal. In-game checks remain pending.
+
 ### Added
 
 - **The Crafting page plans how many crafts to make and what to buy for them.** Select a recipe:
@@ -1228,7 +1237,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v2.2.0-beta.2...HEAD
+[Unreleased]: ../../compare/v2.3.0-beta.1...HEAD
+[2.3.0-beta.1]: ../../compare/v2.2.0-beta.2...v2.3.0-beta.1
 [2.2.0-beta.2]: ../../compare/v2.2.0-beta.1...v2.2.0-beta.2
 [2.2.0-beta.1]: ../../compare/v2.1.0-beta.2...v2.2.0-beta.1
 [2.1.0-beta.2]: ../../compare/v2.1.0-beta.1...v2.1.0-beta.2

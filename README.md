@@ -94,12 +94,11 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> **Current beta: [2.1.0-beta.2](https://github.com/Danissemo/ForeverFlip/releases/tag/v2.1.0-beta.2)**
-> fixes full scans that lost most items of a busy auction house, loads item data much faster
-> after a scan, and makes the Sync helper fast (a few seconds after `/reload` instead of a minute),
-> able to keep syncing in the tray, with a turning status ring. In game, Settings → Sharing now
-> tells which of your scans the helper shared. Includes 2.1.0-beta.1 (a full code review) and all
-> earlier betas. Download the new helper EXE as well as updating the addon. See the
+> **Current beta: [2.3.0-beta.1](https://github.com/Danissemo/ForeverFlip/releases/tag/v2.3.0-beta.1)**
+> plans profitable crafting batches and material purchases, fixes learned-recipe filtering, and
+> explains the Best selling route with its cut and expected lost deposits. Includes layout fixes
+> and clearer handling of refused posts. The server can still refuse posting outside combat;
+> its cause remains under investigation. See the
 > [current beta checklist](docs/testing.md#current-beta-checklist) and
 > [Beta testing](docs/testing.md#beta-testing).
 
