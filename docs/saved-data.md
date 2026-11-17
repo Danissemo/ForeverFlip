@@ -13,7 +13,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | number | How many of `Data.MIGRATIONS` have run (`2`). A file from a newer ForeverFlip is left as it is. |
+| `schemaVersion` | number | How many of `Data.MIGRATIONS` have run (`4`). A file from a newer ForeverFlip is left as it is. |
 | `salesModel` | number | Sales-estimation model (`4`). Older derived sales/flow/pending values and daily sold counts are reset once; prices, positions and journals are retained. |
 | `vendorMarginReset` | boolean | The one-time default vendor-margin migration has run. |
 | `settings` | table | User settings, see below. |
@@ -25,7 +25,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `lastScan` | number | Time of the last full-scan request (the 15-minute cooldown is per account). |
 | `scanPending` | table | The full-scan request still waiting for (or in the middle of) its answer: `{ at, scope, base, baseMark, other, answered }`. Kept over closing the auction house and `/reload`; cleared when the scan is read or given up. |
 | `scanLog` | list | The last 20 full-scan requests: `{ at, ended, outcome, count, other }`; outcome is read, no answer, list kept changing, dropped by the server, empty list, closed while waiting or closed while reading. |
-| `markets` | table | `markets[scope]`, one per auction house, where scope = `<realm>-<faction>` or `<realm>-Neutral`; hardcore realms add ` (HC)` to the realm. |
+| `markets` | table | `markets[scope]`, one per auction house, where scope = `<realm>-Alliance`, `<realm>-Horde`, `<realm>-Neutral` (WoW Forever), or `<realm>-Server` (Retail). Hardcore realms add ` (HC)` to the realm. Connected realms resolve to the player's house scope. |
 | `chars` | table | `chars[owner]`, one per character, where owner = `<realm>-<character>`. |
 | `ui` | table | `ui.section`: the last opened page. |
 | `cuts` | table | `cuts[scope]` = the auction cut learned from invoices (for example `0.05` or `0.15`). |
@@ -38,11 +38,15 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `fights` | table | Per-item undercut/repost observations used by selling advice. |
 | `toVendor` | table | `toVendor[key]` = time an item was marked by the anti-undercut plan for a merchant sale. A mark counts for 3 days and is cleared when the item is sold or posted. |
 | `shopping` | table | `shopping[key]` = shopping list entry `{ max, qty, name }`. |
-| `blocked` | table | `blocked[key]` = name of an ignored item. |
+| `blocked` | table | Ignored-item entries (`blocked[key]` = name). The engine also stores a bounded numeric list of protected-action blockage reports here; this mixed use is retained for compatibility and needs a separate cleanup. |
 | `merchantPrices` | table | `merchantPrices[itemID]` = price per unit a merchant asked. |
 | `gold` | table | `gold[owner][day]` = the character's money on that day (day = Unix time / 86400), kept 60 days. |
 | `errors` | array | The latest 20 addon errors, newest first: `{ at, version, message }`. |
 | `diag` | table | The last `/ff diag` result. |
+| `trace` | array of strings | Diagnostic timeline from `Log.trace` (last 2,000 entries, with short repeated events coalesced). Turn off with `/ff trace off`. |
+| `traceStats` | table | Measurements by kind: `{ [kind] = { n, total, max, maxAt } }`; values are milliseconds unless the kind specifies seconds. |
+| `traceSlow` | array | Up to 25 slowest searches, sorted by duration: `{ ms, key, name, why, at }`. |
+| `tipSkew` | table | Per-font tooltip width correction (`tipSkew[font]`), learned from rendered tooltips; observations are bounded to ±20 pixels. |
 
 ## `settings`
 
@@ -53,6 +57,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `minProfit` | `100` | Minimum profit of a resale. |
 | `minROI` | `0.2` | Minimum resale return (profit / cost). |
 | `spendShare` | `0.8` | Share of the gold on hand one deal may use. |
+| `sellMinReturn` | `0.05` | Minimum return on selling owned stock over actual cost, including lost deposits. |
 | `itemShare` | `0.3` | Share of the gold one item may hold (stock plus the new resale). |
 | `duration` | `3` | Posting duration: `1` = 2 h, `2` = 8 h, `3` = 24 h, `0` = automatic. |
 | `autoScan` | `false` | Automatic full scan every 15 minutes; enabled in Settings. |
@@ -75,8 +80,21 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `vendorMargin` | `0` | Percent off the client's vendor price while a merchant has not confirmed it (the old default of 20 is reset once, `vendorMarginReset`). |
 | `spendLimit` | `0` | Gold one auction house visit may spend on deals; `0` = no limit. |
 | `leaveLots` | `0` | Cheap units of a vendor deal left for other buyers. |
+| `median` | `true` | Market reset strategy enabled internally; `medianShare = 0` effectively disables it. |
+| `medianItemGold` | `50` | Gold limit per item for Market reset. |
+| `medianDayGold` | `200` | Daily spending cap for Market reset. |
+| `medianShare` | `0.5` | Share of available gold for Market reset (0 disables it). |
+| `hideUnlearned` | `false` | Hide recipes that the current character has not learned. |
+| `logEcho` | `{ error = true }` | Message categories echoed to the main chat. |
+| `logSound` | `true` | Play an alert on an error. |
+| `soundSold` | `true` | Play a sound on a confirmed sold auction. |
+| `soundOutbid` | `true` | Play a sound when outbid. |
+| `windowScale` | `1` | UI scale on Settings → Display. |
+| `logTabMade` | `false` | Whether the private chat tab has already been created. |
+| `trace` | enabled unless `false` | Collect bounded trace records. `/ff trace on` enables; `/ff trace off` disables. |
+| `dev` | off unless `true` | Include detailed actions, events, pages and frame timings in the trace. `/ff dev` toggles this mode. |
 
-Missing settings are filled in with these defaults at load.
+These are `D.DEFAULTS` (the Balanced baseline). On **first install only**, `D.NEW_PRESET = "careful"` overrides six thresholds: `minROI`, `minProfit`, `vendorMinProfit`, `spendShare`, `itemShare`, and `alertMinProfit`. Existing saved settings are preserved. Missing settings are filled in from `D.DEFAULTS` at load.
 
 ## `markets[scope]`
 
@@ -132,7 +150,7 @@ ForeverFlipRaw = {
     format = "FFR1",
     scans = { -- newest first, at most 8; uploaded older entries are removed
         { scope = "Realm-Alliance", realm = "Realm", faction = "Alliance", at = <time>, count = <auctions>,
-          addon = "1.2.0", seal = <checksum>, rows = "<one line per auction>" },
+          addon = "3.1.0", seal = <checksum>, rows = "<one line per auction>" },
     },
 }
 ```
@@ -145,7 +163,7 @@ read; the Sync helper and the data repository refuse a scan whose lines no longe
 ## `ForeverFlipShared`
 
 Not saved by the game: a global set by the **ForeverFlip_Shared** addon, which the Sync helper writes.
-It has the form `{ generated = <time>, scans = { "FF1|...", ... } }` and is merged at login.
+It contains `{ generated = <time>, scans = { "FF3|...", ... }, uploaded = {...}, status = {...}, latest = { version, beta, page } }` when those fields are provided by Sync. `FF1` and `FF2` remain readable as older summary formats; `latest` lets the addon announce a newer release without accessing the internet. Imported scans are merged at login.
 
 ## Compatibility
 

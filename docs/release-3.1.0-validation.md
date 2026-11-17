@@ -6,8 +6,9 @@ this checklist. The addon declares `3.1.0` in `ForeverFlip/ForeverFlip.toc` and
 `ForeverFlip/Core/Util.lua`; `sync/foreverflip_sync.py` has an independent helper identifier.
 
 This checklist is a **plan**, not a test report. No live WoW Forever or Retail session was
-performed as part of this documentation pass. The [historical Ukrainian checklist](testing.md)
-still describes 2.3.0-beta.1 and its workbook must not be treated as evidence for 3.1.0.
+performed as part of this documentation pass. The [historical Ukrainian checklist](testing.md) and its Excel workbook
+contain the 2.3.0-beta.1 scenarios. Even when the workbook header reflects the current
+TOC version, this does **not** mean its procedures were verified for 3.1.0.
 
 ## Automated release gates
 
@@ -71,7 +72,8 @@ for actual run results.
 | Check | Result | Evidence / issues |
 |---|---|---|
 | Current source manifest and published release metadata | Inspected | v3.1.0 tag; main-tree source inventory |
-| Python/Lua tests on this documentation branch | Not run in this environment | Verify in CI before merging |
+| Baseline Windows/Linux CI on main after repository cleanup | Passed | [GitHub Actions run 44144665994](https://github.com/Danissemo/ForeverFlip/actions/runs/44144665994) (17 November 2026) |
+| Tests for later changes | Not attested by the baseline run | Check the CI run for each new PR commit before merging |
 | Manual WoW Forever client validation | Not run | Needs game-side tester |
 | Manual Retail compatibility validation | Not run | Needs Retail tester |
 | Helper Windows executable build and GUI review | Not run | Verify Windows release CI |

@@ -23,8 +23,8 @@ without changing the addon release number.
 - [CHANGELOG.md](../CHANGELOG.md): shipped behavior and full release history.
 - [Architecture](architecture.md): current modules, game API boundaries and runtime flow.
 - [How it works](how-it-works.md): formulas and business rules.
-- [Testing](testing.md): historical Ukrainian 2.3.0-beta.1 manual checklist;
-  it is **not** proof of 3.1.0 in-game testing.
+- [Testing](testing.md): historical Ukrainian 2.3.0-beta.1 manual checklist
+  and workbook; their version header is **not** evidence of 3.1.0 in-game testing.
 - [Release verification](release-3.1.0-validation.md): remaining checks for 3.1.0.
 
 Completed development notes and superseded proposals are available in Git history rather

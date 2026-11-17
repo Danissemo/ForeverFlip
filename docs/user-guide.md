@@ -803,6 +803,14 @@ A key press is an action of yours, like a click, so it may buy, post and cancel.
 | `/ff bags` | Lists bag items that are not on the Sell page, with the reason: `bound`, `not_sellable` (the auction house refuses it) or `unknown_kind` (the game has not told what it is yet). Open the auction house first. |
 | `/ff refused` | Lists the items a merchant refused this session (left off **Sell to vendor** and **To vendor**). `/ff refused clear` forgets them, for a sale the server was too busy to take. |
 | `/ff export` | Opens the journal as CSV. |
+| `/ff log` | Opens ForeverFlip's own message window. |
+| `/ff trace` | Prints timing statistics, ten slowest searches and the last 20 trace lines. |
+| `/ff trace stats` · `/ff trace slow` · `/ff trace N` | Prints timing totals, slow searches or the last `N` trace entries. |
+| `/ff trace on` · `/ff trace off` · `/ff trace clear` | Enables/disables diagnostics or erases the stored trace and measurements. |
+| `/ff dev` | Toggles detailed developer traces for actions and events; the basic trace remains separate. |
+| `/ff stats rollback` | Restores the prior derived sales statistics for the current house, if a rebuild backup exists and is not still rebuilding. |
+| `/ff reset` | Opens a confirmation to clear saved addon data while preserving settings. |
+| `/ff look` | Prints UI layer/anchor diagnostics for the auction house category button. |
 | `/ff lang en`, `/ff lang uk` | Sets the language. Type `/reload` afterwards. |
 
 ## Messages
@@ -861,7 +869,10 @@ Careful preset to be more careful.
 
 **Crafting page is empty.** Open your profession windows once; recipes are read from them.
 
-**Reporting a bug.** Type `/reload`, then open
+**Reporting a bug.** Type `/ff trace` for timing diagnostics and `/ff diag` for scan results.
+If you need an extended trace, reproduce the problem with `/ff dev` enabled, then turn it off
+again. Diagnostic entries are saved in `ForeverFlipData` and may include item keys, search names
+and timestamps; review them before sharing publicly. Type `/reload`, then open
 `WTF/Account/<ACCOUNT>/SavedVariables/ForeverFlip.lua` and copy the `errors` section into an issue.
 The result of `/ff diag` helps too.
 
