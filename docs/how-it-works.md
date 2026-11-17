@@ -679,6 +679,9 @@ crafts.
 
 ## Sharing scans
 
+Scopes use the same side names as `Engine.SIDES`. Connected realms are normalized to the
+player's own realm on import; prices from unrelated realms are rejected.
+
 `Share.lua`.
 
 - **Snapshot.** Every item seen in the player's last full scan, with its usual price, the day's
@@ -698,7 +701,9 @@ crafts.
   - The receiver joins the parts and drops an incomplete scan when no part came for 5 minutes; a
     sender has one scan being received at a time.
 - **Acceptance** (`S.merge`):
-  - the scope must be `<the player's realm>-Alliance|Horde|Neutral`, and every item key canonical;
+  - the scope must be a recognized house of the player's realm (or a connected realm):
+    `<realm>-Alliance`, `<realm>-Horde`, `<realm>-Neutral` on WoW Forever, or
+    `<realm>-Server` when the client has one shared Retail auction house; every item key must be canonical;
   - the scan must be at most 7 days old, and no more than 10 minutes in the future;
   - each scan is merged once (`F.db.sharedSeen`);
   - a scan within 2 minutes of the player's own scan is the same server scan, and is skipped.
