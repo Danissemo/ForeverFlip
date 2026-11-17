@@ -14,12 +14,14 @@
 ## Category-zhCN: 拍卖
 ## Category-zhTW: 拍賣
 ## IconTexture: Interface\AddOns\ForeverFlip\Media\Logo
-## Version: 2.3.0-beta.1
+## Version: 3.0.0
 ## OptionalDeps: LibAHTab, auxForever, ForeverFlip_Shared
 ## SavedVariables: ForeverFlipData, ForeverFlipRaw
 
 Util.lua
+Compat.lua
 Locale.lua
+Log.lua
 Market.lua
 Data.lua
 Shopping.lua
@@ -38,3 +40,13 @@ Share.lua
 Raw.lua
 Core.lua
 UI.lua
+UIDeals.lua
+UISelling.lua
+UIAnalytics.lua
+UICrafting.lua
+UIJournal.lua
+UISettings.lua
+UIStatus.lua
+UITab.lua
+UITooltip.lua
+UIMerchant.lua

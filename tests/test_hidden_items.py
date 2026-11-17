@@ -10,6 +10,8 @@ fullScan()
 F.Scan.last.groups=nil -- these tests read prices by search (T.scanPrice is tested on its own)
 putBag(0,1,30,1);putBag(0,2,10,20)
 UI.show('sell')
+-- For sale and Hidden are the views of My items in the menu (UI.menuKids).
+local saleTab,hiddenTab=UI.menuKids['sell:sale'],UI.menuKids['sell:hidden']
 local function row(key) for _,r in ipairs(UI.sellTable.rows) do if r.key==key and r:IsShown() then return r end end end
 '''
 
@@ -19,19 +21,19 @@ class HiddenItemsTests(unittest.TestCase):
         run(HIDE + '''assert(row('i:30'));row('i:30'):Click();UI.sellHide:Click()
         assert(T.hidden('i:30') and not row('i:30'),'hidden from the list')
         for _,b in ipairs(T.toPostAll()) do assert(b.key~='i:30','not posted by Post all') end
-        assert(UI.sellHiddenTab:GetText()=='Hidden (1)' and UI.sellSaleTab:GetText()=='For sale (1)',UI.sellHiddenTab:GetText())''')
+        assert(hiddenTab.label:GetText()=='Hidden (1)' and saleTab.label:GetText()=='For sale (1)',hiddenTab.label:GetText())''')
 
     def test_hidden_view_lists_and_returns_items(self):
         run(HIDE + '''row('i:30'):Click();UI.sellHide:Click()
-        UI.sellHiddenTab:Click();assert(row('i:30') and not row('c:10'),'only hidden items')
+        hiddenTab:Click();assert(row('i:30') and not row('c:10'),'only hidden items')
         assert(UI.sellHide:GetText()=='Return to sale' and not UI.postButton:IsEnabled())
         if F.Deals.search then answer() end;run(1.1)
         row('i:30'):Click();assert(not F.Deals.search,'no price check in the hidden view')
         UI.sellHide:Click();assert(not T.hidden('i:30'))
-        UI.sellSaleTab:Click();assert(row('i:30'))''')
+        saleTab:Click();assert(row('i:30'))''')
 
     def test_hidden_item_not_in_the_bags_is_still_listed(self):
-        run(HIDE + '''T.hide('c:99','Old Junk');UI.sellHiddenTab:Click()
+        run(HIDE + '''T.hide('c:99','Old Junk');hiddenTab:Click()
         local r=row('c:99');assert(r and r.name:GetText()=='Old Junk' and r.cols[1]:GetText()=='-')''')
 
     def test_hidden_purchase_is_skipped_by_post_next_bought(self):
@@ -70,11 +72,34 @@ class BestWayTests(unittest.TestCase):
         UI.refresh()
         assert(UI.postAll:GetText() == 'Post all (2)', UI.postAll:GetText())
         assert(UI.postAuction:GetText() == 'Post AH-worthy (1)', UI.postAuction:GetText())
-        assert(row('i:30').cols[4]:GetText():find('Vendor'), row('i:30').cols[4]:GetText())
-        assert(row('c:10').cols[4]:GetText():find('AH'), row('c:10').cols[4]:GetText())
+        -- Both routes clear their thresholds, but a vendor pays more: Best is the vendor, not AH / V.
+        local best = row('i:30').cols[2]:GetText()
+        assert(best:find('Vendor', 1, true), 'a vendor pays more: ' .. best)
+        assert(row('i:30').bestWay.name == 'vendor')
+        assert(row('i:30').bestWay.routes.verdict.why == 'vendor_more', row('i:30').bestWay.routes.verdict.why)
+        assert(row('c:10').cols[2]:GetText():find('AH'), row('c:10').cols[2]:GetText())
         UI.postAuction:Click()
         local q = lastCall('SendSearchQuery') or lastCall('PostCommodity') or lastCall('PostItem')
         assert(not lastCall('PostItem'), 'the vendor item is not posted')""")
+
+    def test_the_player_chooses_ah_or_vendor_with_the_sums_shown(self):
+        run(self.SETUP + """MerchantFrame:Show()
+        local function sold(key) for _, v in ipairs(T.vendorSellList()) do if v.key == key then return true end end end
+        assert(sold('i:30'), 'a vendor pays more: on the merchant list without a choice')
+        UI.refresh(); row('i:30'):Click()
+        assert(not UI.chooseAH:IsShown() and not UI.chooseVendor:IsShown(), 'decided: no choice offered')
+        local text = table.concat(UI.sellBox.lines, ' | ')
+        assert(text:find('deposits', 1, true) and text:find('at once', 1, true), 'both sums shown: ' .. text)
+        T.setRouteChoice('i:30', 'vendor'); UI.refresh()
+        assert(UI.chooseAH:IsShown() and UI.chooseVendor:IsShown(), 'a choice made: it can be switched')
+        assert(T.routeChoice('i:30') == 'vendor' and sold('i:30'), 'chosen: sold to the merchant')
+        assert(row('i:30').cols[2]:GetText():find('Vendor'), row('i:30').cols[2]:GetText())
+        assert(not UI.chooseVendor:IsEnabled() and UI.chooseAH:IsEnabled())
+        UI.chooseAH:Click()
+        assert(T.routeChoice('i:30') == 'auction' and not sold('i:30'))
+        local has = false
+        for _, b in ipairs(T.toPostAll(true)) do if b.key == 'i:30' then has = true end end
+        assert(has, 'chosen AH: Post AH-worthy takes it')""")
 
 
 class CheckAllTests(unittest.TestCase):

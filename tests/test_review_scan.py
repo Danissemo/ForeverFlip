@@ -36,6 +36,23 @@ class WaitingTests(unittest.TestCase):
         fullScan()
         assert(S.last.total==900 and F.db.scanLog[1].outcome=='read', F.db.scanLog[1].outcome)''')
 
+    def test_an_empty_first_answer_is_waited_past(self):
+        # In game: the event comes first with 0 auctions, the list 10-15 seconds later.
+        run(BASE + MANY + '''replicateIgnored=true
+        assert(S.start()); replicatedCount=0; fire('REPLICATE_ITEM_LIST_UPDATE'); run(12)
+        assert(S.busy() and S.job.state=='waiting' and not S.job.other, 'still our own wait')
+        replicateIgnored=false; C_AuctionHouse.ReplicateItems(); fire('REPLICATE_ITEM_LIST_UPDATE')
+        while S.busy() do run(0.05) end
+        assert(S.last and S.last.total==2000, 'the real list is read')
+        assert(F.db.scanLog[1].outcome=='read' and not F.db.scanLog[1].other, F.db.scanLog[1].outcome)''')
+
+    def test_a_list_that_stays_empty_is_a_refusal(self):
+        run(BASE + MANY + '''replicateIgnored=true
+        assert(S.start()); replicatedCount=0; fire('REPLICATE_ITEM_LIST_UPDATE')
+        run(S.EMPTY_WAIT-5); assert(S.busy())
+        run(10)
+        assert(not S.busy() and F.db.scanLog[1].outcome=='empty list', F.db.scanLog[1].outcome)''')
+
     def test_an_unanswered_call_over_the_last_list_is_a_miss(self):
         run(SETUP + '''local F,S=ForeverFlip,ForeverFlip.Scan
         fullScan()

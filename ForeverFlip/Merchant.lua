@@ -20,22 +20,9 @@ local function historyFor(id, link)
     end
 end
 
--- Merchant item info: C_MerchantFrame on modern clients (the global may be missing, as GetItemInfo
--- is on WoW Forever), the old global otherwise.
+-- Merchant item info: the capability adapter's (Compat.merchantItem).
 local function merchantInfo(i)
-    if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
-        local info = C_MerchantFrame.GetItemInfo(i)
-        if not info then
-            return nil
-        end
-        return info.name, info.price, info.stackCount, info.numAvailable, info.isPurchasable, info.hasExtendedCost
-    end
-    ---@diagnostic disable-next-line: deprecated
-    if GetMerchantItemInfo then
-        ---@diagnostic disable-next-line: deprecated
-        local name, _, price, quantity, available, purchasable, _, extended = GetMerchantItemInfo(i)
-        return name, price, quantity, available, purchasable, extended
-    end
+    return F.Compat.merchantItem(i)
 end
 
 -- Profitable merchant items, best profit per day first.
@@ -62,7 +49,7 @@ function V.offers(now)
                 local reference = U.finite(low) and math.min(market, low) or market
                 local exit = U.below(reference, item.kind)
                 local unit = price / quantity
-                local each = M.net(exit, 1) - unit - M.unitDeposit(id, item.kind, nil, key, exit)
+                local each = M.unitNet(id, item.kind, key, exit) - unit
                 local d = M.saleability(h, exit, now)
                 -- As a resale on the auction house: the sales times the item's trust factor, and
                 -- at most one day of them held, the stock already held included. Offered without

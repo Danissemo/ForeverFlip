@@ -12,10 +12,17 @@ F.Scan = S
 -- sooner is not answered and starts the 15 minutes again. In game, retries a minute after an
 -- unanswered call kept the scan away (04:08, 04:14, 04:23 unanswered, 04:38 read), and a call
 -- exactly 15:00 after the last one was not answered while 15:02 was. Hence 15 minutes and 20 seconds.
-S.COOLDOWN = 920
+S.COOLDOWN = F.Compat.REPLICATE_COOLDOWN
 S.ROWS = 40 -- cheapest auctions kept per item
 S.RECOVER = 30 -- seconds without any item's data arriving before the rows still waiting are given up
 S.RECOVER_MAX = 300 -- the longest the deferred rows are waited for, however slowly the data arrives
+S.PREFETCH = 400 -- item ids queued for loading per frame while the answer of a full scan is awaited
+-- Milliseconds a frame for reading the full scan's list: 6 read 200 000 auctions in about a
+-- minute at 60 frames a second; 12 halves that, the frame rate dropping only while the list is read.
+-- While the player clicks or a price check is waited for, READ_SOFT_MS (a purchase: 2).
+S.READ_MS = 12
+S.READ_SOFT_MS = 6
+S.MISSING_AGE = 900 -- seconds a failed item data load is believed (the item does not exist)
 S.DAYS = 14 -- daily records kept per item (price, cheapest, units listed and sold)
 -- Seconds to wait for the server's answer to a full scan. Since WoW Forever launched the answer
 -- can take minutes (ForeverForge waits 2, auxForever 0.8.2 waits 10), and it grows when the server
@@ -37,14 +44,18 @@ local function clock()
 end
 
 -- Time budget for one frame: milliseconds with the profiler, else a fixed amount of work.
-local function budget(ms, fallback)
-    ms = F.Engine.workSlice(ms)
+-- `every`: the clock is read after that many steps (10 by default: a row is cheap). The end of a
+-- scan reads it after each item, whose sales comparison and evaluation can take far longer than a
+-- row: ten such items made one long frame. `soft`: the cap while the player clicks (E.workSlice).
+local function budget(ms, fallback, every, soft)
+    ms = F.Engine.workSlice(ms, soft)
+    every = every or 10
     local start = debugprofilestop and debugprofilestop()
     local n = 0
     return function()
         n = n + 1
         if start then
-            return n % 10 == 0 and debugprofilestop() - start >= ms
+            return n % every == 0 and debugprofilestop() - start >= ms
         end
         return n >= fallback
     end
@@ -104,12 +115,49 @@ local function remember(j)
     F.db.scanPending = { at = j.at, scope = j.scope, base = j.base, baseMark = j.baseMark, other = j.other }
 end
 
-function S.start()
+-- Would S.start send now? The same checks without sending anything and without spending the
+-- stuck-throttle allowance (AH.available only watches), so the Full scan button can be greyed out
+-- while a press would only fail (cooldown, a purchase or search in flight, server busy). The
+-- click still runs S.start, which checks again.
+function S.canStart()
+    if S.rebuild then
+        return false, "rebuilding"
+    end
     if S.job then
         return false, "busy"
     end
     if not F.AH.isOpen() then
         return false, "closed"
+    end
+    -- A client without the full scan API (C_AuctionHouse.ReplicateItems) says so instead of failing.
+    if not F.Compat.caps.fullScan then
+        return false, "unavailable"
+    end
+    if S.cooldown() > 0 then
+        return false, "cooldown"
+    end
+    if F.Trade.busy() or F.Trade.postingNow() or F.Deals.searching() or F.Sniper.inFlight() then
+        return false, "busy"
+    end
+    if F.AH.available and not F.AH.available() then
+        return false, "throttled"
+    end
+    return true
+end
+
+function S.start()
+    if S.rebuild then
+        return false, "rebuilding"
+    end
+    if S.job then
+        return false, "busy"
+    end
+    if not F.AH.isOpen() then
+        return false, "closed"
+    end
+    -- A client without the full scan API (C_AuctionHouse.ReplicateItems) says so instead of failing.
+    if not F.Compat.caps.fullScan then
+        return false, "unavailable"
     end
     if S.cooldown() > 0 then
         return false, "cooldown"
@@ -188,6 +236,8 @@ end
 -- quiet seconds, or the end of the wait).
 S.SETTLE = 5
 S.SHORT = 60
+-- An answer of 0 auctions is taken as a refusal only after it stays empty this long (S.onReplicate).
+S.EMPTY_WAIT = 60
 
 -- The size of a complete list of this house: the largest complete scan of the last day (saved as
 -- `peak`), else the last scan of the last day. Measuring against the last scan alone let partial
@@ -302,6 +352,7 @@ function S.auto()
     if
         F.db.settings.autoScan
         and not S.job
+        and not S.rebuild
         and F.AH.isOpen()
         and S.cooldown() <= 0
         and not F.Trade.busy()
@@ -415,9 +466,10 @@ function S.onReplicate()
         return
     end
     if not U.finite(total) or total <= 0 then
-        S.job = nil
-        settle("empty list", 0)
-        F.Engine.notify("scan_empty")
+        -- In game the server first clears the list (an event with 0 auctions) and sends the
+        -- auctions 10-15 seconds later: giving up here reported "empty list" and then read the real
+        -- answer as another addon's scan. The wait goes on; S.step gives up after S.EMPTY_WAIT.
+        j.emptyAt = j.emptyAt or clock()
         return
     end
     beginReading(j, total)
@@ -464,6 +516,76 @@ waitingRows = function(j)
     return out
 end
 
+-- Items whose data the game failed to load (ITEM_DATA_LOAD_RESULT with success false, S.itemFailed)
+-- and that C_Item.DoesItemExistByID does not know either: auctions of items the server no longer
+-- has. Their rows never become readable, and waiting for them held the end of every scan back by
+-- S.RECOVER seconds. Such rows are given up at once and their items count as unread (never sold).
+-- Neither sign alone is trusted: a load may fail once, and DoesItemExistByID says false for an
+-- item that is merely not cached yet. A successful load later clears the mark (S.itemLoaded).
+S.missing = {}
+function S.itemFailed(id)
+    if type(id) == "number" then
+        S.missing[id] = clock()
+    end
+end
+local function missingItem(id)
+    local at = id and S.missing[id]
+    if not at then
+        return false
+    end
+    if clock() - at > S.MISSING_AGE then
+        S.missing[id] = nil
+        return false
+    end
+    local exists = C_Item and C_Item.DoesItemExistByID
+    if exists then
+        local ok, yes = pcall(exists, id)
+        if ok and yes then
+            return false
+        end
+    end
+    return true
+end
+-- A row of an item the server does not have: counted as skipped, its item as unread.
+local function giveUp(j, id, rows)
+    j.skipped = j.skipped + rows
+    j.missing = j.missing or {}
+    j.missing[id] = true
+end
+
+-- While the answer of a full scan is awaited (2 to 10 minutes), the data of the items this house
+-- listed before is asked for, a slice of S.PREFETCH ids a frame. Rows of uncached items wait for
+-- their data during reading; most of it is now in the client when the list arrives. These are item
+-- data requests (F.AH.requestItem, paced by F.AH.pump), not auction house messages: the auction
+-- house throttle is not touched, and cached items are not asked for again.
+local function prefetch(j)
+    if j.prefetched then
+        return
+    end
+    if not j.prefetchIds then
+        local ids, seen = {}, {}
+        local history = F.Data.market(F.db, j.scope).history
+        for key in pairs(history) do
+            local item = U.parseKey(key)
+            if item and item.id and not seen[item.id] then
+                seen[item.id] = true
+                ids[#ids + 1] = item.id
+            end
+        end
+        j.prefetchIds, j.prefetchAt = ids, 1
+        return
+    end
+    local ids = j.prefetchIds
+    local stop = math.min(#ids, j.prefetchAt + S.PREFETCH - 1)
+    for n = j.prefetchAt, stop do
+        F.AH.requestItem(ids[n])
+    end
+    j.prefetchAt = stop + 1
+    if j.prefetchAt > #ids then
+        j.prefetched, j.prefetchIds = true, nil
+    end
+end
+
 -- True when the game holds the item's data (else it is asked for, paced by F.AH.requestItem).
 local function dataLoaded(id)
     local cached = C_Item and C_Item.IsItemDataCachedByID
@@ -490,6 +612,10 @@ local function ingest(j, r, held)
         return true
     end
     if not r.complete then
+        if missingItem(r.id) then
+            giveUp(j, r.id, 1)
+            return true
+        end
         F.AH.requestItem(r.id)
         held[r.id] = true
         return false
@@ -579,7 +705,11 @@ local function finish(j, done)
         end)
         local value = M.bucketValue(g.buckets)
         local h = history[key]
-        if not h and g.units >= 2 then
+        -- Every item of the house gets a history, a single lot too: most gear is listed one at a
+        -- time, and without one it had no price, no sales and no Sure of its own (an empty
+        -- tooltip). A rarely traded item keeps no daily records (below), and S.stale forgets it
+        -- after 14 days unseen.
+        if not h and g.units >= 1 then
             h = {}
             history[key] = h
         end
@@ -592,6 +722,8 @@ local function finish(j, done)
                 soldToday, confirmed = S.trackLots(h, g.seq or {}, now, g.owners, key, j.scope)
             end
             M.recordFlow(h, g.buckets, value, now, confirmed)
+            -- T24: the cheapest unit of this scan, the market reference's "now" (own lots left out).
+            h.scan.low = low
             h.units = g.units
             -- Weekly pattern only for items traded often enough to have one.
             if g.units >= 10 or h.t then
@@ -611,8 +743,14 @@ local function finish(j, done)
                 last.m = value or last.m
                 last.n = g.units
                 last.s = (last.s or 0) + soldToday
+                -- T24: the day's prices from own scans alone (shared scans write cm/cmin).
+                if low and (not last.lmin or low < last.lmin) then
+                    last.lmin = low
+                end
+                last.lm = value or last.lm
             else
-                h.days[#h.days + 1] = { d = day, min = low, m = value, n = g.units, s = soldToday }
+                h.days[#h.days + 1] =
+                    { d = day, min = low, m = value, n = g.units, s = soldToday, lm = value, lmin = low }
                 while #h.days > S.DAYS do
                     table.remove(h.days, 1)
                 end
@@ -639,7 +777,11 @@ local function finish(j, done)
             j.waitVendor[g.id] = j.waitVendor[g.id] or {}
             table.insert(j.waitVendor[g.id], waiting)
         end
-        local deal, reason = F.Deals.evaluate(g, vendor, h, now)
+        local deal, reason, medianWhy = F.Deals.evaluate(g, vendor, h, now)
+        if medianWhy and medianWhy ~= "off" then
+            stats.medianReasons = stats.medianReasons or {}
+            stats.medianReasons[medianWhy] = (stats.medianReasons[medianWhy] or 0) + 1
+        end
         if h and M.saleability(h, value, now).known then
             stats.salesReady = (stats.salesReady or 0) + 1
         end
@@ -899,18 +1041,33 @@ end
 
 -- True when a recent full scan (up to 20 minutes old) of this auction house saw no lot of the item
 -- from another player: nobody sells it, whether or not an exact search answers.
-function S.notListed(key)
+-- `maxAge` (optional): how old the scan may be. With it, a complete scan restored from the saved
+-- data (after a reload: no list of what it saw) counts too: the item's history carries the time of
+-- the last scan that saw it (h.scan.at), so an item whose history is not of that scan was not seen.
+function S.notListed(key, maxAge)
     local last = S.last
-    return last ~= nil
-        and last.listed ~= nil
-        and last.scope == F.Engine.scope()
-        and F.Engine.clock() - (last.at or 0) <= 1200
-        and not last.listed[key]
-        and not unread(last, key)
+    if not last or last.scope ~= F.Engine.scope() or F.Engine.clock() - (last.at or 0) > (maxAge or 1200) then
+        return false
+    end
+    if last.listed then
+        return not last.listed[key] and not unread(last, key)
+    end
+    if not maxAge or last.partial then
+        return false
+    end
+    local h = F.Data.market(F.db, last.scope).history[key]
+    return not (type(h) == "table" and type(h.scan) == "table" and h.scan.at == last.at)
 end
 
 local function beginFinish(j, now)
     j.state, j.cursor, j.finishAt = "finishing", 1, now
+    -- Items the server does not have count as unread: their lots are not booked as sold.
+    if j.missing then
+        j.unread = j.unread or {}
+        for id in pairs(j.missing) do
+            j.unread[id] = true
+        end
+    end
     j.deals, j.waitVendor, j.hot, j.listed = {}, {}, {}, {}
     j.stats = { items = 0, vendorKnown = 0, belowVendor = 0, collecting = 0, salesReady = 0, reasons = {} }
     -- The history is written from here on: the request is over, so nothing reads the list again
@@ -1012,7 +1169,15 @@ recover = function(j, now)
         j.waitCursor = (j.waitCursor or 0) % n + 1
         local id = ids[j.waitCursor]
         local list = j.waitBy[id]
-        if list and list.pos <= #list and dataLoaded(id) then
+        if list and list.pos <= #list and missingItem(id) then
+            -- The server does not have the item: its waiting rows are given up at once.
+            local rows = #list - list.pos + 1
+            giveUp(j, id, rows)
+            j.waitLeft = j.waitLeft - rows
+            list.pos = #list + 1
+            j.waitBy[id] = nil
+            F.Engine.changed()
+        elseif list and list.pos <= #list and dataLoaded(id) then
             local held = {}
             while list.pos <= #list do
                 if not ingest(j, readRow(list[list.pos]), held) then
@@ -1041,7 +1206,229 @@ recover = function(j, now)
     return (j.waitLeft or 0) <= 0
 end
 
+-- Rebuild of the derived sales statistics (T32) ---------------------------------------------------
+-- When a house's statistics were built by older formulas (F.Data.STATS_VERSION), the raw full scans
+-- still kept for it (ForeverFlipRaw, F.Raw.scansFor) are replayed, oldest first, through the same
+-- lot comparison as a live scan (S.trackLots, M.recordFlow) into separate tables per item; once the
+-- replay of the house is complete they replace the old ones (F.Data.commitStats), which are kept
+-- for a week (F.Data.rollbackStats). The observations are only read: prices, listed units, days,
+-- the raw scans and every journal stay as they are. A slice per frame; full scans wait for it.
+-- What a replay cannot see: sellers (raw lines carry none, so a lot of an unknown seller posted
+-- again at a new price counts as a repost, M.trackSales) and scans the helper already uploaded.
+S.REBUILD_MS = 4
+
+function S.rebuilding()
+    return S.rebuild ~= nil
+end
+
+-- Houses whose statistics are older than the formulas; called once, on the first frame with data.
+function S.planRebuild(now)
+    S.rebuildChecked = true
+    if not F.db or type(F.db.markets) ~= "table" then
+        return
+    end
+    F.Data.dropStatsBackups(F.db, now)
+    local scopes = {}
+    for scope, m in pairs(F.db.markets) do
+        if type(m) == "table" and not F.Data.statsCurrent(m) then
+            if F.Raw.scansFor(scope)[1] then
+                scopes[#scopes + 1] = scope
+            else
+                -- Nothing to replay: the tables stay as they are (not marked legacy: the house has
+                -- no rebuilt item to tell them from).
+                m.statsVersion = F.Data.STATS_VERSION
+            end
+        end
+    end
+    table.sort(scopes)
+    if scopes[1] then
+        S.rebuild = { scopes = scopes, at = 0 }
+    end
+end
+
+-- The next house, or the end of the job.
+local function nextHouse(job)
+    job.at = job.at + 1
+    local scope = job.scopes[job.at]
+    if not scope then
+        S.rebuild = nil
+        return
+    end
+    local market = F.Data.market(F.db, scope)
+    job.scope, job.market = scope, market
+    job.scans, job.scanAt = F.Raw.scansFor(scope), 0
+    job.shadows, job.scan, job.lines = {}, nil, 0
+    job.scannedAt = market.scannedAt
+end
+
+-- The rows of one raw scan, grouped per item like a live scan reads them (S.ingest): the player's
+-- own lots, bid-only lots and items the history does not know are left out.
+local function readRaw(job, line)
+    local s = job.scan
+    s.lines = s.lines + 1
+    local r = F.Raw.parse(line)
+    if not r then
+        s.unreadable = s.unreadable + 1
+        return
+    end
+    if not r.kind or (r.kind == "gear" and not r.name) then
+        s.unread[r.id] = true
+        return
+    end
+    if r.own or r.buyout <= 0 or r.count <= 0 then
+        return
+    end
+    local key = U.key(r.kind, r.id, r.name)
+    if type(job.market.history[key]) ~= "table" then
+        return
+    end
+    local g = s.groups[key]
+    if not g then
+        g = { seq = {}, owners = {}, buckets = {}, units = 0 }
+        s.groups[key] = g
+        s.order[#s.order + 1] = key
+    end
+    local unit = r.buyout / r.count
+    M.bucketAdd(g.buckets, unit, r.count)
+    if r.band and #g.seq < 3 * M.LOTS then
+        local seq = g.seq
+        seq[#seq + 1] = math.floor(unit + 0.5)
+        seq[#seq + 1] = r.count
+        seq[#seq + 1] = r.band
+        g.owners[#g.owners + 1] = 0
+    end
+    g.units = g.units + r.count
+end
+
+local function shadowOf(job, key)
+    local w = job.shadows[key]
+    if not w then
+        w = { daySold = {} }
+        job.shadows[key] = w
+    end
+    return w
+end
+
+local function noteSold(w, at, sold)
+    if sold and sold > 0 then
+        local day = math.floor(at / 86400)
+        w.daySold[day] = (w.daySold[day] or 0) + sold
+    end
+end
+
+-- One slice of the rebuild. `done` (optional): the frame's budget, as S.step's.
+function S.rebuildStep(done)
+    local job = S.rebuild
+    if not job or not F.db then
+        return
+    end
+    done = done or budget(S.REBUILD_MS, 2000)
+    local ok, err = pcall(function()
+        if not job.scope then
+            nextHouse(job)
+            return
+        end
+        local s = job.scan
+        if not s then
+            job.scanAt = job.scanAt + 1
+            local raw = job.scans[job.scanAt]
+            if not raw then
+                -- Replayed: replace the old tables, unless a live scan of the house finished
+                -- meanwhile (its sales went into the old ones): then the house starts over.
+                if job.market.scannedAt ~= job.scannedAt then
+                    job.at = job.at - 1
+                else
+                    F.Data.commitStats(job.market, job.shadows, clock(), {
+                        at = clock(),
+                        scans = #job.scans,
+                        from = job.scans[1] and job.scans[1].at or nil,
+                        to = job.scans[#job.scans] and job.scans[#job.scans].at or nil,
+                    })
+                end
+                job.scope = nil
+                return
+            end
+            job.scan = {
+                at = raw.at,
+                reader = F.Raw.reader(raw),
+                groups = {},
+                order = {},
+                unread = {},
+                unreadable = 0,
+                lines = 0,
+                state = "read",
+                cursor = 1,
+            }
+            return
+        end
+        if s.state == "read" then
+            if F.Raw.readLines(s.reader, done, function(line)
+                readRaw(job, line)
+            end) then
+                s.state, s.reader = "apply", nil
+            end
+            return
+        end
+        if s.state == "apply" then
+            while s.cursor <= #s.order do
+                local key = s.order[s.cursor]
+                s.cursor = s.cursor + 1
+                local g, w = s.groups[key], shadowOf(job, key)
+                local sold, confirmed = S.trackLots(w, g.seq, s.at, g.owners, key, job.scope)
+                M.recordFlow(w, g.buckets, M.bucketValue(g.buckets), s.at, confirmed)
+                noteSold(w, s.at, sold)
+                if done() then
+                    return
+                end
+            end
+            -- Items that left the house, as S.finish's sweep: not after a scan with unreadable
+            -- rows, nor one far smaller than the scan before it (a part of the answer).
+            s.sweep = s.unreadable <= s.lines * 0.005 and not (job.lines > 0 and s.lines < job.lines * 0.6)
+            s.state, s.keys, s.cursor = "sweep", {}, 1
+            for key in pairs(job.shadows) do
+                s.keys[#s.keys + 1] = key
+            end
+            return
+        end
+        while s.sweep and s.cursor <= #s.keys do
+            local key = s.keys[s.cursor]
+            s.cursor = s.cursor + 1
+            local w = job.shadows[key]
+            local item = U.parseKey(key)
+            if
+                not s.groups[key]
+                and (w.lots or w.pending)
+                and (w.lotsAt or w.pendingAt or s.at) < s.at
+                and not (item and s.unread[item.id])
+            then
+                noteSold(w, s.at, S.trackLots(w, {}, s.at, {}, key, job.scope))
+                w.lots, w.lotsAt = nil, nil
+                if w.pending then
+                    w.lotsAt = w.pendingAt
+                end
+            end
+            if done() then
+                return
+            end
+        end
+        job.lines, job.scan = s.lines, nil
+    end)
+    if not ok then
+        -- The old tables stay as they are; the next login tries again.
+        if job.market then
+            job.market.statsError = tostring(err)
+        end
+        job.scope, job.scan = nil, nil
+    end
+end
+
 function S.step()
+    if not S.rebuildChecked and F.db then
+        S.planRebuild(clock())
+    end
+    if S.rebuild and not S.job then
+        S.rebuildStep()
+    end
     local last = S.last
     if last and clock() - (last.at or 0) > 300 then
         -- Both posting-price reuse and money-gain repricing expire after five minutes.
@@ -1064,10 +1451,16 @@ function S.step()
         F.Engine.changed()
     end
     if j.state == "waiting" then
+        prefetch(j)
         local growing = j.quietSince and now - j.quietSince < S.SHORT and (j.seen or 0) > 0
         local waited = now - (j.waitFrom or j.at)
         if polled(j, now) then
             beginReading(j, j.last)
+        elseif j.emptyAt and (j.seen or 0) == 0 and F.AH.replicateCount() <= 0 and now - j.emptyAt > S.EMPTY_WAIT then
+            -- The list stayed empty: the server really refused the call.
+            S.job = nil
+            settle("empty list", 0)
+            F.Engine.notify("scan_empty")
         elseif waited > S.ANSWER_WAIT and growing and waited <= S.GROW_WAIT then
             return -- the list still grows: the rest is on its way
         elseif waited > S.ANSWER_WAIT and (j.seen or 0) > 0 and S.isShort(j.scope, j.last or j.seen) then
@@ -1090,7 +1483,7 @@ function S.step()
         return
     end
     if j.state == "reading" then
-        local done = budget(6, 400)
+        local done = budget(S.READ_MS, 800, nil, S.READ_SOFT_MS)
         while j.index < j.total do
             local i = j.index
             j.index = i + 1
@@ -1143,12 +1536,16 @@ function S.step()
         return
     end
     if j.state == "finishing" then
-        if not finish(j, budget(6, 300)) then
+        if not finish(j, budget(6, 300, 1)) then
             return
         end
         -- The largest complete list of the last day: a smaller one never lowers it (each part
         -- read as complete lowered the bar for the next, 185 344 down to 36 864 in game).
         local market = F.Data.market(F.db, j.scope)
+        -- When this house last had a complete full scan: item tooltips go quiet a day later (T31).
+        market.scannedAt = j.finishAt
+        -- Held: the helper brings this scan back once uploaded, and it is not merged again.
+        F.Share.hold(j.scope, j.finishAt)
         if j.total >= (S.freshPeak(market) or 0) then
             market.peak = { total = j.total, at = j.finishAt }
         end
@@ -1256,6 +1653,12 @@ function S.save()
     for _, d in ipairs(F.Deals.list) do
         local copy = U.copy(d)
         copy.rows = nil
+        if copy.alt then
+            copy.alt.rows = nil
+        end
+        if F.Deals.medianOf(copy) then
+            copy.median.rows = nil
+        end
         deals[#deals + 1] = copy
     end
     F.Data.market(F.db, last.scope).last = {
@@ -1349,6 +1752,7 @@ end
 
 -- Item data arrived: an item of the last scan without a known vendor price may be a vendor deal.
 function S.itemLoaded(id)
+    S.missing[id] = nil
     local last = S.last
     local list = last and last.waitVendor and last.waitVendor[id]
     if not list then
@@ -1368,13 +1772,23 @@ function S.itemLoaded(id)
             -- out. Without the item's sales no resale is priced; the deal the scan found from every
             -- row stays unless this one pays more.
             local deal = F.Deals.evaluate(g, vendor, nil, last.at)
-            local old = F.Deals.get(g.key)
-            if
-                deal
-                and deal.mode == "vendor"
-                and not (last.purchased and last.purchased[g.key])
-                and not (old and (old.verified or (old.profit or 0) >= deal.profit))
-            then
+            local old = F.Deals.get(g.key, "all")
+            local usable = deal and deal.mode == "vendor" and not (last.purchased and last.purchased[g.key])
+            if usable and old and old.mode == "flip" and not old.verified then
+                -- The resale the scan found stays: resale and vendor are separate routes (T11).
+                -- The one that pays more leads the item's entry.
+                deal.alt = nil
+                if deal.profit > (old.profit or 0) then
+                    old.alt, deal.alt = nil, old
+                    if F.Deals.medianOf(old) then
+                        deal.median, old.median = old.median, nil
+                    end
+                    F.Deals.add(deal, last.scope)
+                else
+                    old.alt = deal
+                    F.Engine.changed()
+                end
+            elseif usable and not (old and (old.verified or (old.profit or 0) >= deal.profit)) then
                 F.Deals.add(deal, last.scope)
             end
         end

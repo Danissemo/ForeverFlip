@@ -168,6 +168,22 @@ class SureTests(unittest.TestCase):
         assert(M.confidence(history(20, 24, nil, nil, { cuts = 24 }), 1000, 5, now) < base, 'a rival')
         assert(M.confidence(history(20, 24), 1000, 5, now + 4 * 86400) < base, 'old data')''')
 
+    def test_a_cheaper_price_is_surer_and_a_dearer_one_less(self):
+        # Sales at 950-1100, and 12 units listed at 960-1040: under them a lot is first in line.
+        run(SURE + '''local h = history(0, 24)
+        M.bucketAdd(h.sales.b, 950, 10); M.bucketAdd(h.sales.b, 1100, 20)
+        h.sales.sure = 30
+        h.lots = '960:4:0,1000:4:0,1040:4:0'; h.lotsAt = now
+        local low, lowParts = M.confidence(h, 955, 5, now)
+        local mid, midParts = M.confidence(h, 1010, 5, now)
+        local high = M.confidence(h, 1060, 5, now)
+        assert(lowParts.listed == 0 and midParts.listed == 8, midParts.listed)
+        assert(low > mid and mid > high, low .. ' / ' .. mid .. ' / ' .. high)
+        -- Lots from a scan a day and more old are no queue.
+        h.lotsAt = now - 2 * 86400
+        local _, old = M.confidence(h, 1010, 5, now)
+        assert(old.listed == 0)''')
+
     def test_vendor_deals_are_sure_and_the_page_shows_it(self):
         run(SETUP + '''local F, UI = ForeverFlip, ForeverFlip.UI
         fullScan()

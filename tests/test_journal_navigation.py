@@ -13,9 +13,9 @@ local journal = analytics.subs[3]
 
 
 class JournalNavigationTests(unittest.TestCase):
-    def test_journal_opens_four_children_and_selects_all_by_default(self):
+    def test_journal_opens_seven_children_and_selects_all_by_default(self):
         run(NAV + '''UI.show('journal')
-        assert(#journal.kids == 4 and journal.selected:IsShown())
+        assert(#journal.kids == 7 and journal.selected:IsShown())
         for i, kid in ipairs(journal.kids) do
             assert(kid:IsShown())
             assert(kid.selected:IsShown() == (i == 1))
@@ -38,7 +38,7 @@ class JournalNavigationTests(unittest.TestCase):
         UI.show('sell')
         for _, kid in ipairs(journal.kids) do assert(not kid:IsShown()) end
         analytics:Click()
-        assert(UI.journalFilter == 'vendor' and journal.kids[3].selected:IsShown())
+        assert(UI.journalFilter == 'vendor' and journal.kids[5].selected:IsShown())
         UI.show('analytics')
         for _, kid in ipairs(journal.kids) do assert(not kid:IsShown()) end''')
 
@@ -49,7 +49,7 @@ class JournalNavigationTests(unittest.TestCase):
         assert(UI.section == 'journal' and UI.journalFilter == 'bid')
         for _, c in ipairs(UI.categories) do
             if c.group.label == 'Analytics' then
-                assert(c.subs[3].kids[4]:IsShown() and c.subs[3].kids[4].selected:IsShown())
+                assert(c.subs[3].kids[4]:IsShown() and c.subs[3].kids[4].selected:IsShown(), 'bid is the 4th view')
             end
         end''')
 

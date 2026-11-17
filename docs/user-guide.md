@@ -68,7 +68,7 @@ history, because the listings are separate, and counts the 15% cut.
 
 | Control | What it does |
 |---|---|
-| **Full scan** | Asks the server for every auction of the house. The button shows a countdown while the 15-minute cooldown runs. |
+| **Full scan** | Asks the server for every auction of the house. The button shows a countdown while the 15-minute cooldown runs, and is greyed out while a press would fail (a purchase, post or search on the wire, the server busy). |
 | **Sniper: ON / OFF** | Turns the [sniper](#sniper) on or off. |
 | **Check all** | Searches every entry of the open page on the auction house again, one search after another, and the page shows what was found: deals are kept, updated or dropped (All, Resale, To vendor, Deals from the list); the items on the **Shopping list** are checked as shopping deals; **Bids** reads the best bid of every candidate; **My items** and **My auctions** read the current price of every item (the Best column and the suggested prices use it); **Crafting** reads every material and product, and the recipes are priced with those prices for 5 minutes. While it runs the button shows `Checking <page>: done/total`. Afterwards it shows `Checked ...`. Searches without an answer are sent once more by themselves; what still has none is shown as `(N without an answer)` and named in the chat. Either nobody else sells them (WoW Forever does not answer a search for an item only you have), or the server did not answer their search: the next check searches them by name, like gear. An item a full scan of the last 20 minutes did not see is not searched at all. |
 | Auction house (bottom bar, beside the money display) | Which auction house is open: **Alliance AH** (blue), **Horde AH** (red) or **Neutral AH, 15% cut** (gold, at Booty Bay, Gadgetzan or Everlook). Each house keeps its own scans, prices and deals; the window title says it too. |
@@ -148,7 +148,7 @@ weapons and armor priced below the expected value of their materials.
 | Item | Icon and name. Hover for the game tooltip; right-click for the price history. |
 | Qty | Units to buy. |
 | Buy at | The price of one unit (the average when the deal buys lots of different prices). Qty × Buy at is the whole cost; the total of the page is in the line under the table. |
-| Sells at | The price to sell one unit at: list it at this price (a vendor deal: what a merchant pays for one). For a resale it is worked out from the market: just below the next other seller, at most the usual price and at most what a quarter of the sales seen reached; only as many units are bought as sell in a day at that price, and your own unsold stock of the item lowers the estimate. `*` when no sales were seen yet (the price is then only the asking price), or for a vendor deal when the vendor price is not yet confirmed at a merchant. |
+| Sells at | The price to sell one unit at: list it at this price (a vendor deal: what a merchant pays for one). For a resale it is worked out from the market: just below the next other seller, at most the usual price and at most what a quarter of the sales seen reached; only as many units are bought as sell in a day at that price, and your own unsold stock of the item lowers the estimate. `*` when no sales were seen yet (the price is then only the asking price), or for a vendor deal when the safety margin is set. |
 | Profit | The whole deal's profit: what selling all the units brings after the 5% cut and the deposits, minus what buying them costs. For a shopping deal: the saving against your price. For a disenchant deal: the material value minus the cost. |
 | Est./day | For a resale: units per day that disappear near the Sells at price (how popular it is at that price). For other deals: the kind of deal. Hover the header for what it counts. |
 | Sure | How sure the deal is to pay back at its Sells at price: the chance that real buyers take its units at that price within 2 days. Few sales give a low number even when they came fast; lots that vanished whole (often other resellers), shelves cleared in one go, a rival who undercuts often and old data lower it. Green from 70%, yellow from 40%, red below; vendor deals 100%. Select a deal to see what the number is made of. |
@@ -229,11 +229,13 @@ purchase by itself when it appears.
 Searching an item yourself in the game's **Buy** tab counts as a check too: if its listings hold a
 deal, the deal is listed as **ready** at once.
 
-### Buy all to vendor
+### Buy first
 
-On **Deals → To vendor**, **Buy all to vendor (N)** buys every vendor deal you can afford, click
-after click. The first click checks the best deal; then the button reads **Buy next (N left)** and
-each click buys one lot. For stackable goods one click asks the price and the next confirms it
+On **Deals → To vendor**, **Buy first (N)** buys the top row of the table as you have it sorted
+now — never a row further down while an upper one can be bought. Sort by Profit, Cost or any other
+column first and the button follows that order. The first click checks that deal's lot on the
+auction house; then the button reads **Buy next (N left)** and each click buys one lot of the row
+now on top. For stackable goods one click asks the price and the next confirms it
 (**Confirm**). The next deal is checked while you click, just before its turn: the server sells an
 item only right after a search of that same item, so deals cannot all be checked in advance. While
 the run goes on, Check all and the sniper wait. A deal that cannot be confirmed after two checks
@@ -371,6 +373,9 @@ from Settings. Gear and plain items are listed in whole silver; commodities may 
 
 - **No other seller,** or the cheapest one asks more than the maximum: the normal price is used
   (the rule's normal price, else the usual price from the scans).
+- **Never above what buyers paid:** once sales were seen, the price is at most the price a quarter
+  of them reached (unless the item has a rule's normal price). Asking prices above that rarely sell.
+  Resale on Deals and the tooltip's recommendation use this same price, and each says why.
 - **No other seller and no price history** (an item that is never on the auction house), in this
   order:
   1. your last posting price of the item;
@@ -506,12 +511,12 @@ what to do with it:
 |---|---|
 | Bargains | Items selling today far below their usual price. Click one to check it and buy. |
 | Popular | Items bought the most every day: the easiest to resell. |
-| Getting cheaper | Items whose price is dropping: wait before buying, sell yours soon. |
-| Getting dearer | Items whose price is rising: a good time to sell what you hold. |
+| Cheaper | Items whose price is dropping: wait before buying, sell yours soon. |
+| Dearer | Items whose price is rising: a good time to sell what you hold. |
 | Buy now | Items usually cheapest at this time of the week: buy now, sell at the time shown. |
 | Sell now | Items you hold that are usually dearest at this time of the week. |
 
-Columns: usual price, cheapest today, change, and how many sell a day. The lists fill in after a
+Columns: usual price, cheapest today (the best time of the week on the two time-of-week tabs), change, and how many sell a day. The lists fill in after a
 few full scans; price changes need scans on two different days, and the time-of-week tabs scans on
 at least four weekdays.
 
@@ -581,7 +586,7 @@ The Settings page has four tabs: **General** (the table below), **Key bindings**
 
 | Setting | Default | Meaning |
 |---|---|---|
-| Vendor prices not yet confirmed at a merchant count less, % | 0 | A safety margin for vendor prices not yet seen at a merchant. Every price checked in game so far matched the item data, so it is off; a price a merchant really paid is always used for its item. Set it if Safety lists items a merchant paid less for. A vendor deal on such a price shows a yellow `*`. |
+| Vendor prices of deals count less by this safety margin, % | 0 | A safety margin for vendor deals. The game's Sell Price is what merchants pay (113 of 115 items sold by hand matched it; the other two were worn gear), so it is off. Set it if Safety lists items a merchant paid less for. A vendor deal on a price with the margin shows a yellow `*`. |
 | Gold one auction house visit may spend on deals | 0 | 0 = no limit. Otherwise buying stops for the visit once this much gold was spent. |
 | Cheap units of a vendor deal left for other buyers | 0 | The priciest of the cheap units stay listed, so you do not empty the market. |
 
@@ -591,7 +596,7 @@ throttle got stuck.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| Minimum profit of a vendor deal | 10c | Smaller vendor deals are not listed. |
+| Minimum profit of a vendor deal, per unit | 10c | Lots that earn less on each unit are not listed. |
 | Minimum profit of a resale | 1s | Smaller resale deals are not listed. Also the minimum profit of disenchant deals and bids. |
 | Minimum resale return, % | 20 | Profit divided by cost, for resale deals. |
 | Money one deal may use, % | 80 | The share of the gold you carry that one deal may spend. |
@@ -600,7 +605,7 @@ throttle got stuck.
 | Undercut, % | 0 | How far below the cheapest other seller to post. 0 means one legal price step. |
 | Never post below, % of the usual price | 0 | A floor for every post. 0 turns it off. |
 | Ignore sellers above, % of the usual price | 200 | A cheapest seller above this is ignored, and the item is posted at its usual price. |
-| **Presets** | | **Careful**, **Balanced** (the defaults) and **Aggressive** set the profit, return and money limits in one click. |
+| **Presets** | | **Careful** (what a new profile starts with), **Balanced** (the defaults of profiles made before 2.3.0) and **Aggressive** set the profit, return and money limits in one click. |
 | Check found deals automatically | off | Checks the best unchecked deals by itself when enabled; saved between logins. |
 | Full scan every 15 minutes | off | Starts a full scan whenever the cooldown ends and the auction house is open. |
 | Sniper | off | See [Sniper](#sniper). |
@@ -614,12 +619,12 @@ throttle got stuck.
 
 | Preset | Min. return | Min. resale profit | Min. vendor profit | Money per deal | Money per item | Alert from |
 |---|---|---|---|---|---|---|
-| Careful | 35% | 5s | 50c | 50% | 15% | 1s |
+| Careful | 35% | 5s | 15c | 50% | 15% | 1s |
 | Balanced | 20% | 1s | 10c | 80% | 30% | 50c |
 | Aggressive | 10% | 50c | 5c | 95% | 50% | 20c |
 
 Money fields accept `1g 20s 5c`, `20s`, `1.5g` or a bare number of silver. Click **Save** to apply
-them.
+them. **Save** is off while no box was changed (check boxes and presets are saved at once).
 
 ## Sharing scans
 
@@ -680,7 +685,15 @@ Each item alerts once, and alerts again only after 10 minutes or if the profit g
 Item tooltips get a **ForeverFlip** block, headed with the auction house its prices belong to
 (for example `ForeverFlip: Alliance AH`; outside the auction house, your faction's house). Each line
 appears only when there is something to show, so items you only hold or could sell to a vendor get
-a block too:
+a block too.
+
+The block needs auction scan data of the house from the last 24 hours. Either way of getting them
+is enough: a complete **Full scan** in the game, or a scan brought by ForeverFlip Sync (optional).
+When the newest data are 24 hours old or more, or there are none, the block is replaced by a
+warning with their age: run a Full scan, or Sync and then `/reload`. Nothing else of ForeverFlip's
+is shown then: prices, sales, Sure and Best would all be read from the old data. Running Sync
+counts only when it brings a newer scan of the house. The game's own lines and other addons' lines
+stay.
 
 | Line | Meaning |
 |---|---|
@@ -690,8 +703,8 @@ a block too:
 | **cheapest / dearest time** | When the time-of-week pattern is known. |
 | **You hold** | Stock you bought (through ForeverFlip, a bid, or elsewhere) and what it cost each. |
 | **On sale by you** | Your auctions of the item now, and the lowest price among them. |
-| **Deal now** | The profit of the item's current deal. |
-| **Vendor pays** | What a merchant pays, marked when not yet confirmed at a merchant. |
+| **Deal now** | The profit of the item's current deal, and how sure it is to sell every unit it leaves you holding at its exit price. The **Sure** under Demand is for one unit at the post price. |
+| **Vendor pays** | What a merchant pays: the game's Sell Price, marked `*` only when the safety margin is set. |
 | **Auction house, after the cut and N deposits** | One unit's money from the auction house: the usual (or sale) price after the cut, less the deposits of the posts expected to expire first: (1 − s) / s, s = the chance one post sells (your own share of posts that sold, else from the units sold a day over the post's duration; at most 20). Commodities pay the deposit of a stack of 20, per unit. The deposit is for the duration the item's post would go for (the Duration setting, or Auto's choice for the item). |
 | **Disenchant** | The materials' value after the cut, for a character who can disenchant. |
 | **Best: …** | Which of these pays the most. |

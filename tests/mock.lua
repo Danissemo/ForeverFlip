@@ -17,7 +17,7 @@ function GetRealmName()
     return "Realm"
 end
 function UnitGUID()
-    return 'Player-1'
+    return "Player-1"
 end
 function UnitName()
     return "Me"
@@ -67,6 +67,25 @@ end
 function methods:SetScript(k, fn)
     self.scripts[k] = fn
 end
+function methods:GetScript(k)
+    return self.scripts[k]
+end
+-- Text widths: without a client font there is no measure (nil, as before). A test that checks
+-- whether texts fit sets `measureText = true`: a letter is then CHAR_WIDTH pixels (the small font
+-- the tables use is about 6 px a letter, Cyrillic as Latin), colour codes and icons left out.
+CHAR_WIDTH = 6
+measureText = false
+local function textWidth(self)
+    if not measureText then
+        return nil
+    end
+    local plain = tostring(rawget(self, "text") or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    plain = plain:gsub("|T.-|t", "  ")
+    local _, letters = plain:gsub("[^\128-\191]", "")
+    return letters * CHAR_WIDTH
+end
+methods.GetUnboundedStringWidth = textWidth
+methods.GetStringWidth = textWidth
 function methods:Show()
     local was = self.shown
     self.shown = true
@@ -99,8 +118,12 @@ function methods:SetShown(on)
         self:Hide()
     end
 end
+-- As in the game, setting an edit box's text runs its OnTextChanged (userInput false).
 function methods:SetText(v)
     self.text = tostring(v or "")
+    if self.kind == "EditBox" and self.scripts.OnTextChanged then
+        self.scripts.OnTextChanged(self, false)
+    end
 end
 function methods:GetText()
     return self.text
@@ -180,6 +203,21 @@ AuctionHouseFrame = CreateFrame("Frame")
 AuctionHouseFrame.Tabs = { CreateFrame("Button") }
 MerchantFrame = CreateFrame("Frame")
 function hooksecurefunc() end
+-- enableHooks() makes hooksecurefunc a real post-hook (after the hooked function, same arguments).
+-- Tests that need it call it, then install the hooks again (e.g. AH.hookBrowse).
+function enableHooks()
+    hooksecurefunc = function(t, name, fn)
+        if type(t) == "string" then
+            t, name, fn = _G, t, name
+        end
+        local orig = t[name]
+        t[name] = function(...)
+            local a, b, c = orig(...)
+            fn(...)
+            return a, b, c
+        end
+    end
+end
 GameTooltip = CreateFrame("GameTooltip")
 
 -- Items ------------------------------------------------------------------------------------------
@@ -560,7 +598,17 @@ function GetInboxInvoiceInfo(i)
     local inv = inbox[i] and inbox[i].invoice
     if type(inv) == "table" then
         -- the game's order: ..., money delay, eta hour, eta minute, count
-        return inv.kind, inv.item, inv.player or "Buyer", inv.bid, inv.bid, inv.deposit or 0, inv.cut or 0, 0, 0, 0, inv.count or 1
+        return inv.kind,
+            inv.item,
+            inv.player or "Buyer",
+            inv.bid,
+            inv.bid,
+            inv.deposit or 0,
+            inv.cut or 0,
+            0,
+            0,
+            0,
+            inv.count or 1
     end
     return inv
 end
@@ -711,14 +759,21 @@ function enableBrowse(pageSize)
         assert(browsePending, "no browse request pending")
         browsePending = false
         local first = #browseShown == 0
+        local added = {}
         for _ = 1, pageSize do
             local r = browseQuery[#browseShown + 1]
             if not r then
                 break
             end
             browseShown[#browseShown + 1] = r
+            added[#added + 1] = r
         end
-        fire(first and "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or "AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
+        -- As the client: ADDED carries the rows it added (addedBrowseResults), UPDATED nothing.
+        if first then
+            fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+        else
+            fire("AUCTION_HOUSE_BROWSE_RESULTS_ADDED", added)
+        end
     end
     function browsePendingNow()
         return browsePending

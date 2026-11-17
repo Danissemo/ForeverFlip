@@ -104,8 +104,9 @@ function T.wayFree()
     return false
 end
 
-function T.buy(key)
-    local deal = F.Deals.get(key)
+-- `mode` (optional): the route to buy of a lot that pays both ways (Deals.get); else the page's.
+function T.buy(key, mode)
+    local deal = F.Deals.get(key, mode)
     if not T.canBuy(deal) then
         return false, "verify_first"
     end
@@ -133,6 +134,11 @@ function T.buy(key)
     if T.overLimit(cost) then
         return false, "spend_limit"
     end
+    -- T25: a resale below the median keeps to its own limits as well (a day's spending, a share
+    -- of the money on hand).
+    if deal.strategy == "median" and cost > F.Deals.medianRoom() then
+        return false, "spend_limit"
+    end
     if not T.wayFree() then
         return false, "buy_busy"
     end
@@ -149,6 +155,7 @@ function T.buy(key)
         id = deal.id,
         -- Units bought out against an undercut are resold at the player's price.
         mode = deal.resell and "flip" or deal.mode,
+        strategy = not deal.resell and deal.strategy or nil, -- T25: "median"
         exit = deal.resell or deal.exit,
         link = deal.link,
         at = clock(),
@@ -242,7 +249,7 @@ function T.cancel()
     end
 end
 
--- Buy run: every vendor deal bought click after click (the Buy all to vendor button). The game
+-- Buy run: every vendor deal bought click after click (the Buy first button, To vendor page). The game
 -- takes a purchase only from a click, and an item auction only right after a search of that item:
 -- so the run checks one deal at a time, just before the click that buys it, and the next lot of
 -- the same item is bought without a new search. Check all and the sniper rest meanwhile, so
@@ -289,19 +296,30 @@ local function runPurchase(d)
     return { qty = qty, cost = cost, profit = qty * d.exit - cost, lots = used }
 end
 
--- `first`: only the highest profit purchase is wanted. Verification and table order do not
--- change the money earned by a click; exact ties use the key so selection stays stable.
+-- `first`: only the purchase of the next click is wanted. The deals go in the order of the To vendor
+-- table as the player sorted it (the screen's vendorOrder, Engine.screen): Buy first buys the top row that can be bought,
+-- never one further down. Deals the table has not shown yet follow, by profit; exact ties use the
+-- key so selection stays stable.
 function T.runTargets(first)
     local scored = {}
-    for _, d in ipairs(F.Deals.list) do
-        if not (T.run and T.run.skipped[d.key]) then
+    local order = F.Engine.screen().vendorOrder or {}
+    for _, entry in ipairs(F.Deals.list) do
+        -- A lot that pays both ways is bought here as its vendor deal (Deals.route).
+        local d = F.Deals.route(entry, "vendor")
+        if d and not (T.run and T.run.skipped[d.key]) then
             local purchase = runPurchase(d)
             if purchase then
-                scored[#scored + 1] = { deal = d, profit = purchase.profit }
+                scored[#scored + 1] = { deal = d, profit = purchase.profit, row = order[d.key] }
             end
         end
     end
     table.sort(scored, function(a, b)
+        if (a.row ~= nil) ~= (b.row ~= nil) then
+            return a.row ~= nil
+        end
+        if a.row and a.row ~= b.row then
+            return a.row < b.row
+        end
         if a.profit ~= b.profit then
             return a.profit > b.profit
         end
@@ -341,8 +359,8 @@ function T.runStep()
     if not run then
         return
     end
-    local ui = F.UI
-    local away = ui and ui.frame and (not ui.frame:IsShown() or ui.section ~= "deals" or ui.filter ~= "vendor")
+    local ui = F.Engine.screen()
+    local away = ui.frame and (not ui.shown or ui.section ~= "deals" or ui.filter ~= "vendor")
     if not F.AH.isOpen() or away or clock() - run.clicked > T.RUN_IDLE then
         T.run = nil
         F.Engine.changed()
@@ -366,9 +384,7 @@ function T.runStep()
     end
     if run.key ~= d.key then
         run.key, run.checks = d.key, 0
-        if F.UI then
-            F.UI.selected = d.key
-        end
+        F.Engine.emit("select", d.key)
     end
     -- Checked and still fresh (and, for an item, its search is the last one): ready, even when the
     -- way to the server is busy for a moment. Only a stale check is sent again.
@@ -424,7 +440,7 @@ function T.runClick()
     if not T.run then
         return false, "no_deal"
     end
-    local d = T.run.key and F.Deals.get(T.run.key)
+    local d = T.run.key and F.Deals.get(T.run.key, "vendor")
     if not d or not T.readyToBuy(d) then
         return false, "run_checking"
     end
@@ -437,7 +453,7 @@ function T.runClick()
         d.maxUnit = d.lots[#d.lots].unit
         d.roi = d.profit / d.cost
     end
-    local ok, why = T.buy(d.key)
+    local ok, why = T.buy(d.key, "vendor")
     if ok then
         T.run.bought = T.run.bought + 1
         T.run.checks = 0
@@ -456,7 +472,7 @@ function T.runState()
     if T.busy() then
         return "busy"
     end
-    local d = T.run.key and F.Deals.get(T.run.key)
+    local d = T.run.key and F.Deals.get(T.run.key, "vendor")
     return d and T.readyToBuy(d) and "ready" or "checking"
 end
 
@@ -534,11 +550,17 @@ local function bought(op, line)
     local c = char()
     local name = displayName(op.key, op.link)
     awaitInvoice(c, name, op.qty)
-    F.Data.addPosition(c, op.key, name, op.qty, op.cost, op.mode, op.exit, clock(), nil, "addon")
-    F.Data.log(
-        c,
-        { at = clock(), kind = "buy", key = op.key, name = name, qty = op.qty, amount = op.cost, mode = op.mode }
-    )
+    F.Data.addPosition(c, op.key, name, op.qty, op.cost, op.mode, op.exit, clock(), nil, "addon", nil, op.strategy)
+    F.Data.log(c, {
+        at = clock(),
+        kind = "buy",
+        key = op.key,
+        name = name,
+        qty = op.qty,
+        amount = op.cost,
+        mode = op.mode,
+        strategy = op.strategy,
+    })
     if not line then
         forgetOwnLines()
         ownLines[#ownLines + 1] = { name = string.lower(name), qty = op.qty, at = clock() }
@@ -555,7 +577,7 @@ local function bought(op, line)
     -- A resale's price is one step below the lot after the ones it buys: a cheap lot left behind
     -- undercuts it. The player is told to buy the rest (in game: one of two 4-silver gloves bought,
     -- the other then sold below the resale price).
-    local rest = op.mode == "flip" and op.kind ~= "commodity" and F.Deals.get(op.key)
+    local rest = op.mode == "flip" and op.kind ~= "commodity" and F.Deals.get(op.key, "flip")
     if rest and rest.mode == "flip" and type(rest.lots) == "table" and #rest.lots > 0 then
         F.Engine.notify("bought_more")
     end
@@ -693,7 +715,9 @@ function T.onChat(msg)
     if pattern then
         local name = msg:match(pattern)
         if name then
-            F.Bids.outbid((name:gsub("%s*%(x%d+%)%s*$", "")))
+            if F.Bids.outbid((name:gsub("%s*%(x%d+%)%s*$", ""))) then
+                F.Log.sound("outbid")
+            end
             return
         end
     end
@@ -718,6 +742,7 @@ function T.onChat(msg)
     if pattern then
         if msg:match(pattern) then
             T.ownedDue = 0
+            F.Log.sound("sold")
         end
     end
 end
@@ -800,7 +825,20 @@ function T.settle(index, wasBought)
     if wasBought then
         F.Engine.spent = (F.Engine.spent or 0) + u.cost
         awaitInvoice(c, u.name, u.qty)
-        F.Data.addPosition(c, u.key, u.name, u.qty, u.cost, u.mode, u.exit, clock(), nil, "unknown_settled")
+        F.Data.addPosition(
+            c,
+            u.key,
+            u.name,
+            u.qty,
+            u.cost,
+            u.mode,
+            u.exit,
+            clock(),
+            nil,
+            "unknown_settled",
+            nil,
+            u.strategy
+        )
         F.Data.log(
             c,
             { at = clock(), kind = "buy", key = u.key, name = u.name, qty = u.qty, amount = u.cost, mode = u.mode }
@@ -945,9 +983,14 @@ function T.undercut(price, kind)
     return step
 end
 
+-- A cheapest seller above this is ignored when pricing (setting maxPricePercent of the usual price).
+function T.postLimit(usual, rule)
+    local share = F.db.settings.maxPricePercent or 0
+    return rule and rule.max or (U.finite(usual) and share > 0 and usual * share) or nil
+end
+
 local function usualOf(key)
-    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
-    return M.usual(h), h
+    return F.Deals.usualOf(key)
 end
 
 -- Lowest price a post of `item` may use: break-even of the stock, the rule's minimum, the minimum
@@ -972,10 +1015,93 @@ function T.floorFor(item)
 end
 
 -- Price of an item nobody sells and ForeverFlip has no market price for, with its source:
--- "last" = the player's last post of it, "aux" = auxForever's usual price, then two guesses:
+-- "last" = the player's last post of it, "aux" = auxForever's usual price, "history" = the item's
+-- older market data (T.historyPrice), "similar" = its other versions' usual price, then two guesses:
 -- "cost" = the stock's break-even plus 25%, "vendor" = 1.5 x the vendor price (the game's own
 -- default). Guesses are only suggestions: the posting queues never use them.
 T.GUESSES = { cost = true, vendor = true }
+
+-- What the history knows of an item without a usual price of its last scan: the newest day's usual
+-- price (h.days, own and shared scans), the sales between scans (h.flow), else the cheapest price
+-- buyers paid lot by lot (h.sales). Nil when the history holds none of it.
+local function historyPrice(h)
+    if type(h) ~= "table" then
+        return nil
+    end
+    if type(h.days) == "table" then
+        for i = #h.days, 1, -1 do
+            local d = h.days[i]
+            local m = type(d) == "table" and (d.m or d.min)
+            if U.finite(m) and m > 0 then
+                return m
+            end
+        end
+    end
+    if type(h.flow) == "table" and U.finite(h.flow.market) and h.flow.market > 0 then
+        return h.flow.market
+    end
+    local b = type(h.sales) == "table" and h.sales.b
+    if type(b) == "table" then
+        -- b[2k] = units, b[2k+1] = cheapest price of bucket k: the price of the median unit sold.
+        local total, buckets = 0, {}
+        for i = 2, #b - 1, 2 do
+            if U.finite(b[i]) and b[i] > 0 and U.finite(b[i + 1]) and b[i + 1] > 0 then
+                total = total + b[i]
+                buckets[#buckets + 1] = { units = b[i], price = b[i + 1] }
+            end
+        end
+        table.sort(buckets, function(x, y)
+            return x.price < y.price
+        end)
+        local seen = 0
+        for _, k in ipairs(buckets) do
+            seen = seen + k.units
+            if seen >= total / 2 then
+                return k.price
+            end
+        end
+    end
+end
+T.historyPrice = historyPrice
+
+-- Another version of the same item (another ending of a gear item, or the item without one) with a
+-- usual price: the median of those prices. The index of the history by item ID is built once a
+-- minute; the history holds tens of thousands of keys.
+local sameItem = { at = -math.huge }
+local function similarPrice(key, id)
+    local market = F.Data.market(F.db, F.Engine.scope())
+    local history = market.history
+    if sameItem.history ~= history or clock() - sameItem.at > 60 then
+        sameItem.history, sameItem.at, sameItem.byId = history, clock(), {}
+        for k in pairs(history) do
+            local it = U.parseKey(k)
+            if it and it.id then
+                local list = sameItem.byId[it.id]
+                if not list then
+                    list = {}
+                    sameItem.byId[it.id] = list
+                end
+                list[#list + 1] = k
+            end
+        end
+    end
+    local prices = {}
+    for _, k in ipairs(sameItem.byId[id] or {}) do
+        if k ~= key then
+            local h = history[k]
+            local p = M.usual(h) or historyPrice(h)
+            if U.finite(p) and p > 0 then
+                prices[#prices + 1] = p
+            end
+        end
+    end
+    if #prices == 0 then
+        return nil
+    end
+    table.sort(prices)
+    return prices[math.floor((#prices + 1) / 2)]
+end
+
 function T.fallbackPrice(item)
     local last = F.db.lastPosted and F.db.lastPosted[item.key]
     if U.finite(last) and last > 0 then
@@ -984,6 +1110,15 @@ function T.fallbackPrice(item)
     local aux = F.Engine.auxPrice and F.Engine.auxPrice(item.id)
     if aux then
         return aux, "aux"
+    end
+    -- The item's own older market data, then its other versions'.
+    local known = historyPrice(F.Data.market(F.db, F.Engine.scope()).history[item.key])
+    if known then
+        return known, "history"
+    end
+    local similar = item.id and similarPrice(item.key, item.id)
+    if similar then
+        return similar, "similar"
     end
     local position = char().positions[item.key]
     if position and position.qty > 0 then
@@ -997,7 +1132,7 @@ end
 
 -- Suggested price: below the cheapest other seller (by the undercut setting); the normal price when
 -- nobody else sells or the cheapest asks more than the maximum; else a fallback price.
--- Returns price, floor, cheapest, why ("undercut", "normal", "last", "aux", "cost", "vendor").
+-- Returns price, floor, cheapest, why ("undercut", "normal", "sales", "last", "aux", "cost", "vendor").
 -- Nobody else sells the item for sure: the last check found no lot, or the server did not answer
 -- the check of an item the last full scan did not see, or a recent full scan did not see it at all.
 -- On WoW Forever an exact search for an item without any lot gets no answer.
@@ -1010,6 +1145,55 @@ function T.noSellers(key)
     return F.Scan.notListed(key) or (silent and not (F.Scan.last and F.Scan.last.listed and F.Scan.last.listed[key]))
 end
 
+-- The Deals strategy the stock of an item was bought for: "median" (Market reset: it sells at the
+-- median), "resale" (Resale: at the price its deal chose from the sales, T.postCap), or nil
+-- (bought by hand, or none held).
+function T.heldStrategy(key)
+    local p = char().positions[key]
+    if not p or (p.qty or 0) <= 0 then
+        return nil
+    end
+    if p.strategy == "median" then
+        return "median"
+    elseif p.mode == "flip" then
+        return "resale"
+    end
+end
+
+-- Price of the stock a strategy bought (T.heldStrategy): a market reset at the median, never
+-- above the cheapest other lot (undercut). nil: the usual rule decides.
+-- The highest price stock is posted at, under the cheapest other lot: what buyers paid
+-- (M.saleCap); for Resale stock, also the price its deal chose by Sure and Est./day (the
+-- position's exit), so it is posted where it was expected to sell. Without sales seen there is no
+-- cap: the usual, normal or last price stands.
+function T.postCap(key, h, strategy)
+    local paid = M.saleCap(h)
+    if strategy ~= "resale" or not paid then
+        return paid
+    end
+    local p = char().positions[key]
+    local planned = p and U.finite(p.exit) and p.exit > 0 and p.exit or nil
+    return planned and math.max(paid, planned) or paid
+end
+
+local function strategyPrice(item, h, cheapest)
+    if T.heldStrategy(item.key) ~= "median" then
+        return nil
+    end
+    local target = M.usualTarget(h, clock())
+    if not U.finite(target) or target <= 0 then
+        return nil
+    end
+    local price, why = U.stepDown(target, item.kind), "median"
+    if U.finite(cheapest) then
+        local under = T.undercut(cheapest, item.kind)
+        if under and under < price then
+            price, why = under, "undercut"
+        end
+    end
+    return price, why
+end
+
 function T.suggest(item)
     local check = T.prices[item.key]
     local floor = T.floorFor(item)
@@ -1019,18 +1203,32 @@ function T.suggest(item)
         end
         check = { rows = {}, at = clock() }
     end
-    local s = F.db.settings
     local rule = T.rule(item.key) or {}
-    local usual = usualOf(item.key)
+    local usual, h = usualOf(item.key)
     local normal = rule.normal or usual
-    local cap = rule.max or (normal and s.maxPricePercent > 0 and normal * s.maxPricePercent) or nil
+    local cap = T.postLimit(normal, rule)
     local cheapest = check.rows[1] and check.rows[1].unit
+    -- One rule with the Resale exit and the tooltip (Market.postPrice); the player's normal price
+    -- stands over what sales reached, and stock bought by a Deals strategy sells as it planned.
+    local strategy = not rule.normal and T.heldStrategy(item.key)
     local price, why
-    if cheapest and not (cap and cheapest > cap and normal) then
-        price, why = T.undercut(cheapest, item.kind), "undercut"
-    elseif normal then
-        price, why = U.stepDown(normal, item.kind), "normal"
-    else
+    if strategy == "median" then
+        price, why = strategyPrice(item, h, cheapest)
+    end
+    if not price then
+        price, why = M.postPrice({
+            kind = item.kind,
+            usual = normal,
+            cap = not rule.normal and T.postCap(item.key, h, strategy) or nil,
+            cheapest = cheapest,
+            limit = cap,
+            undercut = T.undercut,
+        })
+    end
+    if why == "usual" then
+        why = "normal"
+    end
+    if not price then
         local fallback, source = T.fallbackPrice(item)
         if fallback then
             price, why = U.stepDown(fallback, item.kind), source
@@ -1074,8 +1272,34 @@ function T.quote(key, id)
     if not price then
         local rule = T.rule(key) or {}
         local normal = rule.normal or M.usual(h)
-        if normal then
-            price, why = U.stepDown(normal, item.kind), "estimate"
+        -- The cheapest lot of today's full scan is undercut as a check would (a seller far above
+        -- the usual price is ignored): posting above it waits behind it.
+        local today = h and type(h.days) == "table" and h.days[#h.days]
+        local low = today
+                and today.d == math.floor(clock() / 86400)
+                and U.finite(today.min)
+                and today.min > 0
+                and today.min
+            or nil
+        local strategy = not rule.normal and T.heldStrategy(key)
+        local estimate, how
+        if strategy == "median" then
+            estimate, how = strategyPrice(item, h, low)
+        end
+        if not estimate then
+            estimate, how = M.postPrice({
+                kind = item.kind,
+                usual = normal,
+                cap = not rule.normal and T.postCap(key, h, strategy) or nil,
+                cheapest = low,
+                limit = T.postLimit(normal, rule),
+                undercut = T.undercut,
+            })
+        end
+        if estimate then
+            -- No check: what sells (the usual price, or what buyers paid when that is lower).
+            price, why = estimate, how == "undercut" and "undercut" or how == "sales" and "sales" or "estimate"
+            cheapest = cheapest or (how == "undercut" and low or nil)
         else
             local fallback, source = T.fallbackPrice(item)
             if fallback then
@@ -1122,6 +1346,7 @@ function T.quote(key, id)
     if q.net and q.cost then
         q.profit = q.net - q.cost
     end
+    q.post = q.post or price
     return q
 end
 
@@ -1278,6 +1503,17 @@ function T.post(item, qty, price, duration)
         deposit = T.depositFor(item.key, qty, duration),
         scope = F.Engine.scope(), -- the house whose own-auction list holds its auctions (T.onOwned)
     }
+    -- T32: the prediction at posting time, kept on the journal entry so Analytics can set it
+    -- against what sold (Sure of the units in 2 days, Est./day at the price).
+    local okSure, sure = pcall(F.Deals.sureAt, item.key, price, qty, T.lastPost.at)
+    if okSure and U.finite(sure) then
+        T.lastPost.sure = math.floor(sure * 1000 + 0.5) / 1000
+    end
+    local okSale, sale =
+        pcall(F.Market.saleability, F.Data.market(F.db, T.lastPost.scope).history[item.key], price, T.lastPost.at)
+    if okSale and type(sale) == "table" and sale.known and U.finite(sale.perDay) then
+        T.lastPost.perDay = math.floor(sale.perDay * 100 + 0.5) / 100
+    end
     T.ownedDue = clock() + 3
     F.Engine.changed()
     -- "Auction created" only when the game reports it (T.onAuctionCreated).
@@ -1344,6 +1580,8 @@ function T.onAuctionCreated(auctionID)
             qty = l.qty,
             amount = l.price * l.qty,
             deposit = l.deposit,
+            sure = l.sure,
+            perDay = l.perDay,
         })
         F.Engine.notify("posted")
         -- Posted again: the advice to sell it to a merchant (T.fight "vendor") was not taken.
@@ -2072,7 +2310,8 @@ end
 -- Where one unit of an item brings the most: "vendor" when a merchant pays at least what the
 -- auction house leaves after the cut and the deposits, "auction" when the auction house pays more,
 -- "disenchant" when the materials are worth more (a character who can); "unknown" when the auction
--- house has no price for it yet (a guessed price does not count). Returns way, value, quote
+-- house has no price for it yet (a guessed price does not count): the merchant's list and Post
+-- AH-worthy never act on a guess. Returns way, value, quote
 -- (T.quote): value is what one unit brings that way (for the auction house: after the cut and
 -- the deposits), quote.post the price to post at.
 function T.bestWay(key, id)
@@ -2089,14 +2328,136 @@ function T.bestWay(key, id)
     return q.best, q.value, q
 end
 
+-- The route the player chose for an item both routes pay for (F.db.routeChoice[key], "auction" or
+-- "vendor"), or nil. ForeverFlip does not choose between two good sales: the player does.
+function T.routeChoice(key)
+    local c = type(F.db.routeChoice) == "table" and F.db.routeChoice[key] or nil
+    return (c == "auction" or c == "vendor") and c or nil
+end
+
+-- Remembers the player's route for `key`; any other `way` forgets it.
+function T.setRouteChoice(key, way)
+    if way ~= "auction" and way ~= "vendor" then
+        way = nil
+    end
+    if way and type(F.db.routeChoice) ~= "table" then
+        F.db.routeChoice = {}
+    end
+    if type(F.db.routeChoice) == "table" then
+        F.db.routeChoice[key] = way
+    end
+end
+
+-- Stock bought through Deals for the auction house (resale, market reset, a bid) keeps that way,
+-- whatever Best says later, until it has been held T.KEEP_DAYS and the auction house no longer
+-- passes its threshold. Vendor-deal stock needs no lock: its own stacks go to the merchant
+-- (T.vendorSellList) and Selling leaves them out. Returns the way and the strategy, or nil.
+T.KEEP_DAYS = U.TUNING.keepDays
+local BOUGHT_WAY = { flip = "auction" }
+function T.boughtWay(key, routes)
+    local p = char().positions[key]
+    local way = p and p.qty > 0 and p.strategy and BOUGHT_WAY[p.mode]
+    if not way then
+        return nil
+    end
+    local route = routes and routes[way]
+    local old = clock() - (p.bought or p.since or clock()) > T.KEEP_DAYS * 86400
+    if old and not (route and route.pass) then
+        return nil -- held long and that way stopped paying: Best decides again
+    end
+    return way, p.strategy
+end
+
+-- How `count` units of an item are sold (default: all in the bags): the player's choice first,
+-- then the way it was bought for (T.boughtWay), then T.bestWay, except that when both the
+-- auction house and a vendor pass their thresholds (Market.sellRoutes) and the verdict is open
+-- the player decides: "undecided" until they make a choice. An undecided item goes neither to
+-- the merchant's list nor to Post AH-worthy. Returns way, value, quote, routes, chosen, strategy
+-- (the Deals strategy that holds the way, or nil).
+function T.sellWay(key, id, count)
+    local name, value, q = T.bestWay(key, id)
+    if name == "disenchant" and q.net then
+        -- Bought for a sale: disenchanting does not take it over either.
+        local routes = F.Market.sellRoutes(q, count or T.bagCount(key), F.db.settings)
+        local held, strategy = T.boughtWay(key, routes)
+        if held == "vendor" and q.vendor then
+            return "vendor", q.vendor, q, routes, false, strategy
+        elseif held == "auction" then
+            return "auction", q.net, q, routes, false, strategy
+        end
+    end
+    if name ~= "vendor" and name ~= "auction" then
+        return name, value, q, nil, false
+    end
+    local routes = F.Market.sellRoutes(q, count or T.bagCount(key), F.db.settings)
+    local choice = T.routeChoice(key)
+    local held, strategy = T.boughtWay(key, routes)
+    local verdict
+    if routes.both then
+        -- Both pay: the obvious cases are decided by F.Market.routeVerdict, at the market price
+        -- the routes were judged at; only a really open one is left to the player. Read even
+        -- when the player chose, so the page knows the choice settled a doubtful item.
+        local n = math.max(1, math.floor(tonumber(count or T.bagCount(key)) or 1))
+        local post = q.belowFloor and q.marketPost or q.post
+        local h = F.Data.market(F.db, F.Engine.scope()).history[key]
+        local sure = F.Deals.sureAt(key, post, n)
+        local quality = F.Deals.qualityAt(key, post, clock())
+        verdict = M.routeVerdict(routes, {
+            sure = sure,
+            reliable = quality and quality.reliable,
+            war = T.answerRate(key, type(h) == "table" and h or nil) >= T.WAR_RATE,
+        }, F.db.settings)
+        routes.verdict, routes.sure = verdict, sure
+    end
+    if choice == "vendor" and routes.vendor then
+        return "vendor", q.vendor, q, routes, true
+    elseif choice == "auction" and routes.auction then
+        return "auction", q.net, q, routes, true
+    end
+    if held == "vendor" and q.vendor then
+        return "vendor", q.vendor, q, routes, false, strategy
+    elseif held == "auction" then
+        return "auction", q.net, q, routes, false, strategy
+    end
+    if routes.both then
+        if not verdict or verdict.way == "undecided" then
+            return "undecided", nil, q, routes, false
+        end
+        if verdict.way == "vendor" then
+            return "vendor", q.vendor, q, routes, false
+        end
+        return "auction", q.net, q, routes, false
+    end
+    return name, value, q, routes, false
+end
+
 -- Every sellable bag item, not only purchases: vendor-deal stock, stock bought from the shopping
 -- list or to disenchant (for the player's own use) and blocked items are left out, and each item's
 -- "keep" rule stays in the bags. With `auctionOnly`, items a merchant pays at least as much for
--- (T.bestWay) are left out too: they are better sold to a vendor.
+-- (T.bestWay) are left out too: they are better sold to a vendor, as are items the player chose to
+-- sell to one (T.sellWay); an item both routes pay for and no choice yet goes by T.bestWay.
+-- Units of each item in the bags, read once: { [key] = count }.
+local function bagCounts(bags)
+    local n = {}
+    for _, b in ipairs(bags) do
+        n[b.key] = (n[b.key] or 0) + (b.count or 0)
+    end
+    return n
+end
+
 function T.toPostAll(auctionOnly)
     local positions = char().positions
     local out, seen = {}, {}
-    for _, b in ipairs(F.AH.bagItems()) do
+    local bags = F.AH.bagItems()
+    local counts = auctionOnly and bagCounts(bags)
+    local function toVendor(b)
+        local way = T.sellWay(b.key, b.id, counts[b.key])
+        if way == "undecided" then
+            way = T.bestWay(b.key, b.id)
+        end
+        return way == "vendor"
+    end
+    for _, b in ipairs(bags) do
         local p = positions[b.key]
         local rule = T.rule(b.key)
         local blocked = F.Shopping and F.Shopping.blocked(b.key)
@@ -2106,7 +2467,7 @@ function T.toPostAll(auctionOnly)
             and not (p and (p.mode == "vendor" or p.mode == "shop" or p.mode == "disenchant"))
             and not blocked
             and not (rule and rule.keep and rule.keep >= T.bagCount(b.key))
-            and not (auctionOnly and T.bestWay(b.key, b.id) == "vendor")
+            and not (auctionOnly and toVendor(b))
         then
             seen[b.key] = true
             out[#out + 1] = b
@@ -2255,7 +2616,8 @@ function T.ownedStatus(a)
     end
     local cheapest = check.rows[1] and check.rows[1].unit
     if not cheapest then
-        return "alone"
+        -- asOf: answered from the full scan of that moment, not a search (Deals.startBatch, T10).
+        return "alone", nil, check.asOf
     end
     if a.price and cheapest < a.price then
         return "undercut", cheapest
@@ -2363,73 +2725,10 @@ function T.rounds(key)
     return n
 end
 
--- The error function (Abramowitz and Stegun 7.1.26), for the normal approximation of the chances
--- of many units (T.saleChances).
-local function erf(x)
-    local sign = x < 0 and -1 or 1
-    x = math.abs(x)
-    local t = 1 / (1 + 0.3275911 * x)
-    local y = 1
-        - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592)
-            * t
-            * math.exp(-x * x)
-    return sign * y
-end
-
--- Chances of the units sold in `t` hours when n units sold in h hours watched (T.saleChances):
--- the negative binomial of a Gamma(n + 1/2, (h + M.PRIOR_HOURS) / 24) rate. Returns tail(k) =
--- P(N >= k); a normal approximation beyond T.CHANCE_TERMS units.
-T.CHANCE_TERMS = 20000
-function T.saleChances(sold, hours, t, prior, priorHours)
-    local shape = math.max(0, U.finite(sold) and sold or 0) + (U.finite(prior) and prior > 0 and prior or 0.5)
-    local exposure = (
-        math.max(0, U.finite(hours) and hours or 0) + (U.finite(priorHours) and priorHours or M.PRIOR_HOURS)
-    ) / 24
-    local days = math.max(0, U.finite(t) and t or 0) / 24
-    if days <= 0 then
-        return function(k)
-            return k <= 0 and 1 or 0
-        end
-    end
-    local p = exposure / (exposure + days) -- the chance of "no sale" in each step of the mixture
-    local mean = shape * (1 - p) / p
-    local sd = math.sqrt(mean / p)
-    local tails = { [0] = 1 }
-    local log1p = math.log(1 - p)
-    -- log P(N = n), stepped n by n: kept as a log, a term too small for a number is still exact.
-    local logTerm = shape * math.log(p)
-    local below, n = 0, 0
-    return function(k)
-        if k <= 0 then
-            return 1
-        end
-        if k > T.CHANCE_TERMS then
-            local z = (k - 0.5 - mean) / math.max(sd, 1e-9)
-            return math.max(0, math.min(1, 1 - 0.5 * (1 + erf(z / math.sqrt(2)))))
-        end
-        while n < k do
-            below = below + math.exp(logTerm)
-            logTerm = logTerm + math.log((n + shape) / (n + 1)) + log1p
-            n = n + 1
-            tails[n] = math.max(0, math.min(1, 1 - below))
-        end
-        return tails[k]
-    end
-end
-
--- Expected units of a lot of `qty` sold behind `ahead` units, with tail(k) = P(N >= k):
--- sum over j = 1..qty of P(N >= ahead + j).
-function T.expectedSold(tail, ahead, qty)
-    local units = 0
-    for j = 1, math.max(0, qty or 0) do
-        local p = tail(ahead + j)
-        units = units + p
-        if p < 1e-6 then
-            break
-        end
-    end
-    return units
-end
+-- The Sure maths (the chances of units sold in t hours, the units of a lot sold behind others)
+-- live in Market (M.saleChances, M.expectedSold); these names stay for the callers.
+T.saleChances = M.saleChances
+T.expectedSold = M.expectedSold
 
 -- The answer rate of rival sellers per hour (see the comment above) and where it comes from.
 function T.answerRate(key, h)
@@ -2863,9 +3162,9 @@ function T.afterScan()
     local n = T.fightCount()
     if n > 0 and n ~= T.toldFights then
         local L = F.Locale.text
-        print(
-            "ForeverFlip: "
-                .. string.format(L("%d of your auctions were undercut and are worth answering: Selling, Undercuts."), n)
+        F.Log.add(
+            "trade",
+            string.format(L("%d of your auctions were undercut and are worth answering: Selling, Undercuts."), n)
         )
     end
     T.toldFights = n
@@ -2983,6 +3282,7 @@ function T.vendorSellList()
         end
     end
     local out, refused = {}, 0
+    local counts = bagCounts(items)
     for _, b in ipairs(items) do
         local rule = T.rule(b.key)
         local price = F.AH.vendorPrice(b.id, true)
@@ -2995,7 +3295,8 @@ function T.vendorSellList()
             if stock[b] then
                 eligible = price * p.qty >= p.cost
             else
-                eligible = not b.bound and (T.bestWay(b.key, b.id) == "vendor" or vendorMarked(b.key))
+                -- An item both routes pay for waits for the player's choice (T.sellWay).
+                eligible = not b.bound and (T.sellWay(b.key, b.id, counts[b.key]) == "vendor" or vendorMarked(b.key))
             end
             if eligible then
                 out[#out + 1] = {
@@ -3043,12 +3344,12 @@ end
 function T.unusableGearList()
     local c = char()
     local out = {}
-    if not C_Container then
+    if not F.Compat.caps.container then
         return out
     end
     for bag = 0, 4 do
-        for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
-            local info = C_Container.GetContainerItemInfo(bag, slot)
+        for slot = 1, F.Compat.bagSlots(bag) do
+            local info = F.Compat.bagItem(bag, slot)
             local id = info and info.itemID
             if id and not info.isLocked and F.AH.unusableGear(id) then
                 local key = F.AH.keyFor(id, info.hyperlink)
@@ -3100,7 +3401,7 @@ local function preciseNow()
 end
 
 local function slotHolds(v)
-    local info = C_Container and C_Container.GetContainerItemInfo(v.bag, v.slot)
+    local info = F.Compat.bagItem(v.bag, v.slot)
     return info ~= nil and info.itemID == v.id and (info.stackCount or 1) == v.count
 end
 
@@ -3135,14 +3436,14 @@ local function finishVendorJob(job)
     if job.sold > 0 then
         local text = job.gear and "sold %d pieces of gear you cannot use for %s"
             or "sold %d stacks to the vendor for %s"
-        print("ForeverFlip: " .. string.format(F.Locale.text(text), job.sold, U.money(job.money)))
+        F.Log.add("trade", string.format(F.Locale.text(text), job.sold, U.money(job.money)))
     end
     if job.failed > 0 then
         local text = "%d stacks did not sell: the merchant did not take them"
         if job.refused then
             text = "%d stacks did not sell: the merchant does not buy them, so they are no vendor deals"
         end
-        print("ForeverFlip: " .. string.format(F.Locale.text(text), job.failed))
+        F.Log.add("trade", string.format(F.Locale.text(text), job.failed))
     end
     F.Engine.changed()
 end
@@ -3165,7 +3466,7 @@ end
 -- is sent again (up to 3 tries) or counted as not sold; the merchant closed, it stays unsold.
 local function sendStack(job, v)
     job.out = job.out + 1
-    C_Container.UseContainerItem(v.bag, v.slot)
+    F.Compat.useBagItem(v.bag, v.slot)
     F.Merchant.track({
         kind = "sell",
         qty = 1,

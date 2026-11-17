@@ -19,9 +19,46 @@ end
 -- Journal kinds of a post that came back: `amount` is the deposit (and cancel fee) lost.
 local LOSS = { expired = true, cancel = true, ["return"] = true }
 
+-- The start of the local calendar day holding `now` (the player's midnight, not UTC's) and the
+-- start of the next one. date("*t") gives the local clock; the hours, minutes and seconds past
+-- midnight are taken off. The next day starts at the midnight before the noon 36 hours later, so a
+-- 23- or 25-hour day (summer time) still ends at the next local midnight.
+local function midnight(now)
+    local t = date("*t", now)
+    return now - ((t.hour or 0) * 3600 + (t.min or 0) * 60 + (t.sec or 0))
+end
+
+function A.dayStart(now)
+    now = math.floor(now or F.Engine.clock())
+    local start = midnight(now)
+    return start, midnight(start + 36 * 3600)
+end
+
+-- Adds one journal entry to a day's totals, as Data's daily records do (Data.addDay).
+local function addEntry(d, e)
+    if e.kind == "buy" then
+        d.spent, d.buys = d.spent + (e.amount or 0), d.buys + 1
+    elseif e.kind == "sell" or e.kind == "vendor" then
+        local profit = e.profit or 0
+        d.earned, d.profit, d.sales = d.earned + (e.amount or 0), d.profit + profit, d.sales + 1
+        d.cost = d.cost + ((e.amount or 0) - profit)
+        d.wins = d.wins + (profit > 0 and 1 or 0)
+        if e.kind == "vendor" then
+            d.vendor = d.vendor + profit
+        else
+            d.auction = d.auction + profit
+        end
+    elseif LOSS[e.kind] and U.finite(e.profit) then
+        d.profit = d.profit + e.profit
+    end
+end
+
 -- Own results over `days` days: totals, per-day profit, return, hit rate and the best and worst
 -- items. Profit is booked when a sale is recorded (cost of the units sold is subtracted), and when
 -- a deposit or fee is lost with none of the item in stock.
+-- `days` 1 is Today: the local calendar day so far (from local midnight), worked out from the
+-- journal. The daily records are kept by UTC day, which for a player away from UTC starts hours
+-- off; 7 and 30 days still use them (they outlive the 500-entry journal).
 function A.results(days, now)
     days = days or 7
     now = now or F.Engine.clock()
@@ -42,9 +79,27 @@ function A.results(days, now)
     for i = 1, days do
         r.days[i] = { day = today - days + i, profit = 0, earned = 0, spent = 0 }
     end
+    -- Which day of the period a journal entry belongs to (nil: outside it).
+    local function dayIndex(e)
+        return math.floor((e.at or 0) / DAY) - (today - days)
+    end
+    if days == 1 then
+        local start, stop = A.dayStart(now)
+        r.since = start
+        dayIndex = function(e)
+            local at = e.at or 0
+            return at >= start and at < stop and 1 or nil
+        end
+        for _, e in ipairs(c.journal) do
+            if dayIndex(e) then
+                addEntry(r, e)
+            end
+        end
+        r.days[1].profit, r.days[1].earned, r.days[1].spent = r.profit, r.earned, r.spent
+    end
     -- Totals from the daily records (they outlive the 500-entry journal); the best and worst items
     -- from the journal, which is all that names them.
-    local daily = F.Data.daily(c)
+    local daily = days == 1 and {} or F.Data.daily(c)
     for i, d in ipairs(r.days) do
         local t = daily[d.day]
         if t then
@@ -58,8 +113,8 @@ function A.results(days, now)
     end
     local byItem = {}
     for _, e in ipairs(c.journal) do
-        local index = math.floor((e.at or 0) / DAY) - (today - days)
-        local d = r.days[index]
+        local index = dayIndex(e)
+        local d = index and r.days[index]
         if d then
             local sale = e.kind == "sell" or e.kind == "vendor"
             local profit = sale and (e.profit or 0) or nil
@@ -72,10 +127,11 @@ function A.results(days, now)
             if profit then
                 local item = byItem[e.key]
                 if not item then
-                    item = { key = e.key, name = e.name, profit = 0, sales = 0 }
+                    item = { key = e.key, name = e.name, profit = 0, sales = 0, earned = 0 }
                     byItem[e.key] = item
                 end
                 item.profit, item.sales = item.profit + profit, item.sales + (sale and (e.qty or 1) or 0)
+                item.earned = item.earned + (sale and (e.amount or 0) or 0)
             end
         end
     end
@@ -92,6 +148,13 @@ function A.results(days, now)
         end
         return a.key < b.key
     end)
+    -- Every item of the period, best first (Analytics, My results); its return is the profit
+    -- against what the units sold had cost, nil without a sale.
+    for _, item in ipairs(items) do
+        local cost = item.earned - item.profit
+        item.roi = item.sales > 0 and cost > 0 and item.profit / cost or nil
+    end
+    r.items = items
     r.best, r.worst = {}, {}
     for i = 1, math.min(3, #items) do
         if items[i].profit > 0 then
@@ -162,8 +225,8 @@ local function rowOf(key, h, now, lastAt)
             change = avg and avg > 0 and (market - avg) / avg or nil,
             listed = not lastAt or h.scan.at == lastAt,
         }
-        if cheap and cheap < market * 0.95 then
-            r.gap = market * 0.95 - cheap
+        if cheap and cheap < market * U.TUNING.gapShare then
+            r.gap = market * U.TUNING.gapShare - cheap
             r.score = r.gap * math.min(r.perDay or 0, 10)
         end
         return r
@@ -218,8 +281,8 @@ local function collect(b, r)
     if r.listed then
         ranked(b.top.liquid, r, r.perDay and r.perDay > 0 and r.perDay)
         ranked(b.top.gaps, r, r.score and r.score > 0 and r.score)
-        ranked(b.top.falling, r, r.change and r.change < -0.05 and -r.change)
-        ranked(b.top.rising, r, r.change and r.change > 0.05 and r.change)
+        ranked(b.top.falling, r, r.change and r.change < -U.TUNING.trendMove and -r.change)
+        ranked(b.top.rising, r, r.change and r.change > U.TUNING.trendMove and r.change)
         ranked(b.top.cheapNow, r, r.timing and r.timing.now <= 0.93 and (r.perDay or 0) >= 0.5 and -r.timing.now)
     end
     ranked(b.top.sellNow, r, r.timing and r.timing.now >= 1.07 and b.positions[r.key] ~= nil and r.timing.now)
@@ -377,6 +440,44 @@ function A.realm(back, now)
         end
     end
     return out
+end
+
+-- T32: Sure against what happened. Every post the journal holds with its Sure (Trade.post keeps it)
+-- whose horizon (M.SURE_HOURS) has passed is a record: did sales of the item, booked by invoice,
+-- reach the posted units within it? Sales of the item count for each post they follow, so posts of
+-- one item close together share them. Returns M.calibration's result plus `predicted` and
+-- `observed` (means over the records), or nil with fewer than A.CALIBRATION_MIN records.
+A.CALIBRATION_MIN = 10
+function A.calibration(now)
+    now = now or F.Engine.clock()
+    local horizon = F.Market.SURE_HOURS * 3600
+    local journal = char().journal or {}
+    local records = {}
+    for i, e in ipairs(journal) do
+        if e.kind == "post" and U.finite(e.sure) and U.finite(e.at) and now - e.at >= horizon then
+            local sold = 0
+            for j = i + 1, #journal do
+                local s = journal[j]
+                if U.finite(s.at) and s.at > e.at + horizon then
+                    break
+                end
+                if s.kind == "sell" and s.key == e.key then
+                    sold = sold + (s.qty or 0)
+                end
+            end
+            records[#records + 1] = { p = e.sure, ok = sold >= (e.qty or 1) }
+        end
+    end
+    if #records < A.CALIBRATION_MIN then
+        return nil, #records
+    end
+    local out = F.Market.calibration(records)
+    local predicted, observed = 0, 0
+    for _, r in ipairs(records) do
+        predicted, observed = predicted + r.p, observed + (r.ok and 1 or 0)
+    end
+    out.predicted, out.observed = predicted / #records, observed / #records
+    return out, #records
 end
 
 function A.invalidate()

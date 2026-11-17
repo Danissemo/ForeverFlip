@@ -1,8 +1,44 @@
 ForeverFlip = ForeverFlip or {}
 local F = ForeverFlip
-F.version = "2.3.0-beta.1"
+F.version = "3.0.0"
+
+-- The ways stock is bought and sold, in the one order every page lists them (Deals, Journal and
+-- profit, the Selling note). `id` is the saved name (positions, lots, the log: old names kept, so
+-- "flip" is Resale and "median" is Market reset), `label` the page's name, `note` the word on
+-- Selling -> My items, `page` the Deals page that buys it (nil: made by the player's own work).
+F.STRATEGIES = {
+    { id = "flip", label = "Resale", note = "resale", page = "deals:flip" },
+    { id = "median", label = "Market reset", note = "market reset", page = "deals:median" },
+    { id = "bid", label = "Bids", note = "bid", page = "bids" },
+    { id = "vendor", label = "To vendor", note = "vendor deal", page = "deals:vendor" },
+    { id = "craft", label = "Crafting", note = "crafting" },
+    { id = "disenchant", label = "Disenchant", note = "disenchant" },
+}
+F.STRATEGY = {}
+for i, st in ipairs(F.STRATEGIES) do
+    st.order = i
+    F.STRATEGY[st.id] = st
+end
 local U = {}
 F.Util = U
+
+-- The fixed judgements of the addon, in one place. They are not settings (the player never sees
+-- them), but each is a choice about money that could be one: change them here, never in a module.
+--   routeGain, routeSure, routeFair: when held stock goes to a vendor instead of the auction house
+--     (Market.routeVerdict);
+--   keepDays: how long stock bought for the auction house keeps that way (Trade.boughtWay);
+--   planReturn: the least return a crafting plan buys materials for (Crafting.plan);
+--   gapShare: Analytics counts a lot as cheap under this share of the market price;
+--   trendMove: Analytics counts a price as rising or falling past this change.
+U.TUNING = {
+    routeGain = 0.1,
+    routeSure = 0.5,
+    routeFair = 0.5,
+    keepDays = 14,
+    planReturn = 0.05,
+    gapShare = 0.95,
+    trendMove = 0.05,
+}
 
 -- True when the client hides the value from addons (a "secret" value: chat text on newer clients).
 -- Such a value cannot be read, compared or indexed without an error.
@@ -125,7 +161,10 @@ function U.money(copper)
         all[3] = nil -- gold and silver: the copper is left out
     end
     for i, p in ipairs(all) do
-        shown[i] = U.coins and (p[2] .. COIN[p[1]]) or string.format(LETTER[p[1]], p[2])
+        -- A smaller coin after a larger one keeps two digits (1g 05s, 26s 00c), so the columns of
+        -- a table line up and 26s 0c is not read as 26s 0 gold.
+        local n = i > 1 and string.format("%02d", p[2]) or tostring(p[2])
+        shown[i] = U.coins and (n .. COIN[p[1]]) or string.format(LETTER[p[1]]:gsub("%%d", "%%s"), n)
     end
     return (copper < 0 and "-" or "") .. table.concat(shown, " ")
 end
@@ -193,15 +232,7 @@ function U.copy(t)
 end
 
 -- GetItemInfo moved to C_Item on the WoW Forever client; the global may be missing.
+-- The call itself is the capability adapter's (Compat.itemInfo).
 function U.itemInfo(id)
-    local get = (C_Item and C_Item.GetItemInfo) or GetItemInfo
-    if not get then
-        return nil
-    end
-    local ok, name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice, classID =
-        pcall(get, id)
-    if not ok then
-        return nil
-    end
-    return name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice, classID
+    return F.Compat.itemInfo(id)
 end

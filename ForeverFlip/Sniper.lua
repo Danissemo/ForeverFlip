@@ -37,9 +37,88 @@ function S.supported()
     return F.AH.canBrowse()
 end
 
--- Running: the sniper is on and the game offers browse queries.
+-- Quick scan: one round of the whole house asked by the player, the way TSM scans (a browse gives
+-- every item's lowest price in about 16 requests, against one full scan per 15 minutes). It runs
+-- with the sniper off: its candidates get the same exact check before anything can be bought, and
+-- it ends once the round is read and they are checked. { at, items, found, done } while it runs.
+S.quick = nil
+S.QUICK_MAX = 180 -- seconds a quick scan may take before it is given up
+-- Lowest prices the browse rounds read, by item ID, for the house in `scope`:
+-- { price, qty, at, own } (own: the lowest may be the player's own lot). Kept for the session.
+S.lows = { scope = nil }
+
+-- Running: the sniper is on (or a quick scan runs) and the game offers browse queries.
 function S.active()
-    return F.db and F.db.settings.sniper and S.supported() or false
+    return F.db and (F.db.settings.sniper or S.quick ~= nil) and S.supported() or false
+end
+
+-- A quick scan can start: the game offers browse queries, the auction house is open, and neither
+-- the sniper (which already browses) nor a full scan runs.
+function S.canQuick()
+    return F.db ~= nil
+        and S.supported()
+        and F.AH.isOpen()
+        and not S.quick
+        and not F.db.settings.sniper
+        and not F.Scan.busy()
+        and not F.Scan.rebuilding()
+end
+
+function S.startQuick()
+    if not S.canQuick() then
+        return false
+    end
+    S.quick = { at = now(), items = S.items, found = S.found }
+    -- Deals check candidates for the house of its list; with no saved scan here there is none
+    -- yet, and the candidates would wait until the quick scan gave up.
+    if not F.Deals.scope then
+        F.Deals.replace({}, F.Engine.scope())
+    end
+    S.nextRound = 0
+    F.Engine.changed()
+    return true
+end
+
+-- The quick scan running: items read and candidates found so far, or nil; once the house is read,
+-- also the candidates still waiting for their exact check (only the best 200 are kept).
+function S.quickProgress()
+    local q = S.quick
+    if not q then
+        return nil
+    end
+    return S.items - q.items, S.found - q.found, q.done and #S.candidates or nil
+end
+
+local function endQuick(message)
+    local q = S.quick
+    if not q then
+        return
+    end
+    S.quick = nil
+    S.lastQuick = { at = F.Engine.clock(), items = S.items - q.items, found = S.found - q.found }
+    if not F.db.settings.sniper then
+        S.query, S.candidates = nil, {}
+    end
+    F.Engine.notify(message)
+end
+
+-- The player stops the quick scan (the scan button reads Stop quick scan while it runs). What
+-- it read is kept.
+function S.stopQuick()
+    if not S.quick then
+        return false
+    end
+    endQuick("quick_stopped")
+    return true
+end
+
+-- The lowest price the last browse read for an item of this house, or nil: { price, qty, at, own }.
+function S.low(id)
+    local lows = S.lows
+    if lows.scope ~= F.Engine.scope() then
+        return nil
+    end
+    return lows[id]
 end
 
 -- Gear keys by item ID: one item ID covers several endings, told apart only by the exact search.
@@ -103,7 +182,7 @@ function S.threshold(key, id, history)
     local limit
     local vendor = F.AH.vendorPrice(id)
     if vendor then
-        limit = vendor - math.max(1, s.vendorMinProfit or 10)
+        limit = F.Market.maxBuy(vendor, "vendor", s)
     end
     local h = history[key]
     local exit, sells
@@ -111,14 +190,13 @@ function S.threshold(key, id, history)
         exit, sells = exitOf(h, item and item.kind)
     end
     if sells then
-        local deposit = F.Market.unitDeposit(id, item and item.kind, nil, key, exit)
-        local buy = (F.Market.net(exit, 1) - deposit) / (1 + (s.minROI or 0.2))
-        limit = math.max(limit or 0, math.floor(buy))
+        local buy = F.Market.maxBuy(F.Market.unitNet(id, item and item.kind, key, exit), "auction", s, true)
+        limit = math.max(limit or 0, buy or 0)
     end
     if item and item.kind == "gear" and F.Disenchant.active() then
         local value = F.Disenchant.value(id)
         if value then
-            limit = math.max(limit or 0, value - (s.minProfit or 100))
+            limit = math.max(limit or 0, F.Market.maxBuy(value, "disenchant", s) or 0)
         end
     end
     local wanted = F.Shopping and F.Shopping.maxPrice(key)
@@ -150,8 +228,9 @@ local function enqueue(key, score)
     end
 end
 
--- Judges one lowest price. Also used for prices the player's own browsing shows.
-function S.judge(key, id, price, history)
+-- Judges one lowest price. Also used for prices the player's own browsing shows. `gear`: one key
+-- of several endings priced by one browse row; readRow lists and counts them together.
+function S.judge(key, id, price, history, gear)
     if F.Shopping and F.Shopping.blocked(key) then
         return false
     end
@@ -164,14 +243,44 @@ function S.judge(key, id, price, history)
     if seen and price >= seen.price and t - seen.at < S.REJUDGE then
         return false
     end
+    -- A deal checked in the last D.FRESH seconds keeps its "ready" for that long: the next browse
+    -- round queued it again after a minute, and the list showed it queued and checking all the
+    -- time. A lower price than the deal's own is news and is checked at once.
     local d = F.Deals.get(key)
-    if d and d.verified and t - d.verified < 60 and price >= (d.maxUnit or 0) then
+    if d and d.verified and t - d.verified < F.Deals.FRESH and price >= (d.maxUnit or 0) then
         return false
     end
     S.judged[key] = { price = price, at = t }
-    enqueue(key, (limit - price) / limit)
+    local score = (limit - price) / limit
+    if gear then
+        enqueue(key, score)
+        return true
+    end
+    -- A quick scan lists its find in Deals at once; the finds that already make a deal are
+    -- checked first once the house is read.
+    local listed = S.quick ~= nil and F.Deals.addFound(key, price, t)
+    enqueue(key, score + (listed and 1 or 0))
     S.found = S.found + 1
     return true
+end
+
+-- The endings of one piece of gear that one browse row priced (S.judge with `gear`): one find, one
+-- row in Deals, its listed ending checked first.
+local function judgeGear(keys, id, price, history)
+    local hits = {}
+    for _, key in ipairs(keys) do
+        if S.judge(key, id, price, history, true) then
+            hits[#hits + 1] = key
+        end
+    end
+    if #hits == 0 then
+        return
+    end
+    S.found = S.found + 1
+    local listed = S.quick ~= nil and F.Deals.addFound(hits, price, F.Engine.clock())
+    if listed then
+        enqueue(listed, 1)
+    end
 end
 
 local function listed(keys, key)
@@ -210,25 +319,34 @@ end
 local function readRow(r, ctx)
     local history = ctx.history
     S.items = S.items + 1
+    local lows = S.lows
+    if lows.scope ~= ctx.scope then
+        lows = { scope = ctx.scope }
+        S.lows = lows
+    end
+    lows[r.id] = { price = r.minPrice, qty = r.qty, at = F.Engine.clock(), own = r.containsOwnerItem or nil }
     if F.Market.learnLow then
         F.Market.learnLow(history, r, F.Engine.clock())
     end
     local kind = F.AH.kindOf(r.id)
     if kind == "gear" then
-        for _, key in ipairs(gearFor(r.id) or {}) do
-            S.judge(key, r.id, r.minPrice, history)
-        end
         ctx.shopping = ctx.shopping or shoppingGear()
-        for _, key in ipairs(ctx.shopping[r.id] or {}) do
-            S.judge(key, r.id, r.minPrice, history)
+        local keys = {}
+        for _, key in ipairs(gearFor(r.id) or {}) do
+            keys[#keys + 1] = key
         end
+        for _, key in ipairs(ctx.shopping[r.id] or {}) do
+            keys[#keys + 1] = key
+        end
+        judgeGear(keys, r.id, r.minPrice, history)
     elseif kind then
         S.judge(U.key(kind, r.id), r.id, r.minPrice, history)
     end
 end
 
 local function readContext()
-    return { history = F.Data.market(F.db, F.Engine.scope()).history }
+    local scope = F.Engine.scope()
+    return { history = F.Data.market(F.db, scope).history, scope = scope }
 end
 
 -- Lowest prices of browse or key queries: { id, minPrice, qty }.
@@ -256,6 +374,7 @@ local function idle()
         and not F.Scan.blocking()
         and not F.Trade.busy()
         and not D.search
+        and not D.preFlight()
         and #D.requests == 0
         and not D.backgroundRetry
         and #S.backlog == 0
@@ -307,6 +426,37 @@ function S.inFlight()
     return S.query ~= nil and not S.query.more and not S.query.answered
 end
 
+-- The player uses the game's own Buy tab (AH.playerUse): a query of the sniper still in flight gives
+-- way for good. Kept, it took the player's own browse answer for its own and asked for its next
+-- pages, which changed the list the player was reading. Its own answer, should it still come, is
+-- read as somebody else's (S.onResults) and a gear search does not take it for its browse.
+local function abandon()
+    if S.query then
+        S.query = nil
+        S.nextRound = now() + S.PAUSE
+        F.AH.foreignAt = F.Engine.clock()
+    end
+end
+
+-- AH.hookBrowse: the player sent a search of their own.
+function S.onPlayerQuery()
+    abandon()
+end
+
+-- Why the sniper waits for the player, as the text the status shows, or nil.
+local PAUSED = {
+    purchase = "Sniper paused: a purchase page is open",
+    buy = "Sniper paused: you are using the Buy tab",
+    sell = "Sniper paused: you are using the Sell tab",
+}
+function S.paused()
+    if not S.active() or not F.AH.isOpen() then
+        return nil
+    end
+    local why = F.AH.playerUse and F.AH.playerUse()
+    return why and PAUSED[why] or nil
+end
+
 -- A gear search needs the browse: the round in flight gives way and starts again after a pause.
 function S.yield()
     if S.query then
@@ -348,6 +498,22 @@ function S.step()
         return
     end
     local t = now()
+    local quick = S.quick
+    if quick then
+        -- Done once the last candidate's check is answered too: the end of a quick scan says
+        -- its deals are checked.
+        if quick.done and #S.backlog == 0 and #S.candidates == 0 and not F.Deals.search and #F.Deals.requests == 0 then
+            endQuick("quick_done")
+            return
+        elseif t - quick.at > S.QUICK_MAX then
+            endQuick("quick_timeout")
+            return
+        end
+    end
+    if F.AH.playerUse and F.AH.playerUse() then
+        abandon()
+        return
+    end
     local q = S.query
     if q and t - q.at > S.TIMEOUT then
         S.query, q = nil, nil
@@ -364,7 +530,9 @@ function S.step()
             and #S.backlog == 0
             and not F.Trade.busy()
             and not F.Trade.postingNow()
-            and #S.candidates == 0
+            -- A quick scan reads every page first and checks its candidates after (D.snipe holds
+            -- them): checking each page's before asking for the next made the round crawl.
+            and (#S.candidates == 0 or quick and not quick.done)
             and not F.Deals.holding()
             and not F.Scan.blocking()
             and not (F.AH.nativeShown and F.AH.nativeShown())
@@ -375,15 +543,16 @@ function S.step()
         end
         return
     end
-    if not idle() then
+    if not idle() or quick and quick.done then
         return
     end
     if t >= (S.nextRound or 0) then
         send("browse")
         return
     end
-    -- Pause between rounds: the watched items, a batch of keys per second.
-    if t - (S.lastKeys or 0) >= 1 then
+    -- Pause between rounds: the watched items, a batch of keys per second (not for a quick scan,
+    -- whose one round is its whole work).
+    if not quick and t - (S.lastKeys or 0) >= 1 then
         local ids = watchIDs()
         if #ids > 0 then
             local from = ((S.keyIndex or 0) % #ids) + 1
@@ -400,28 +569,39 @@ end
 
 -- AUCTION_HOUSE_BROWSE_RESULTS_UPDATED / _ADDED. Results of a query the player sent in the game's
 -- own Buy tab are read too (lowest prices and candidates), without changing the round.
-function S.onResults(first)
+-- rows: what the event brought (AH.browseAnswer), the whole list when `whole`; without them the
+-- whole list is read here.
+function S.onResults(first, rows, whole)
     local q = S.query
-    local rows = F.AH.browseResults()
+    if not rows then
+        rows, whole = F.AH.browseResults(), true
+    end
+    local from, total = 1, nil
     if not q then
-        if first or #rows < S.outsideRead then
-            S.outsideRead = 0
+        if whole then
+            if first or #rows < S.outsideRead then
+                S.outsideRead = 0
+            end
+            from, total = S.outsideRead + 1, #rows
+        else
+            total = S.outsideRead + #rows
         end
-        for i = S.outsideRead + 1, #rows do
+        for i = from, #rows do
             S.backlog[#S.backlog + 1] = rows[i]
         end
-        S.outsideRead = #rows
+        S.outsideRead = total
         return
     end
     q.answered = true
-    local fresh = {}
-    for i = q.read + 1, #rows do
-        fresh[#fresh + 1] = rows[i]
+    if whole then
+        from, total = q.read + 1, #rows
+    else
+        total = q.read + #rows
     end
-    q.read = #rows
+    q.read = total
     -- Judge our own large pages under the same per-frame bound as other addons' pages.
-    for _, row in ipairs(fresh) do
-        S.backlog[#S.backlog + 1] = row
+    for i = from, #rows do
+        S.backlog[#S.backlog + 1] = rows[i]
     end
     if q.kind == "browse" and not F.AH.browseFull() then
         q.more, q.at = true, now()
@@ -430,6 +610,10 @@ function S.onResults(first)
     if q.kind == "browse" then
         S.rounds = S.rounds + 1
         S.nextRound = now() + S.PAUSE
+        if S.quick then
+            -- Read: its candidates are checked next (S.step ends it), with time of their own.
+            S.quick.done, S.quick.at = true, now()
+        end
     end
     S.query = nil
     F.Engine.changed()
@@ -469,6 +653,7 @@ end
 
 -- The auction house closed or the sniper was switched off.
 function S.reset()
+    S.quick = nil
     S.query, S.candidates, S.nextRound = nil, {}, nil
     S.backlog, S.backlogAt, S.outsideRead = {}, 1, 0
 end

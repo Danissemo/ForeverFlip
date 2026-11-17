@@ -22,6 +22,8 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 import addon_update
 import github_login
+import profiles
+import self_update
 import tray
 from game_location import AmbiguousGame, GameNotFound, normalize_game
 
@@ -463,6 +465,11 @@ class ActivityBar(tk.Canvas):
         self.after(30, self.tick)
 
 
+def tray_icons(folder=ASSETS):
+    """The tray icon's image files, best first (the kit has no app-icon.png at its root)."""
+    return [folder/'app-icon.ico', folder/'2x'/'app-icon.png', folder/'1x'/'app-icon.png']
+
+
 def shorten(path: str, limit: int = 46) -> str:
     return path if len(path) <= limit else path[:16] + '…' + path[-(limit - 17):]
 
@@ -471,6 +478,14 @@ class SyncWindow:
     def __init__(self, root, args, config, folder, core):
         self.root, self.args, self.config, self.folder, self.core = root, args, config, folder, core
         self.events = queue.Queue()
+        if profiles.migrate(config):  # a single "game" becomes the first of the installations
+            try:
+                core.save_json(folder/'config.json', config)
+            except OSError:
+                pass
+        self.helper_release = None  # a newer ForeverFlip Sync for this channel
+        self.helper_text = tk.StringVar(value='')
+        self.helper_running = self.helper_cancel = False
         self.game = self.session = None
         self.busy = self.closing = False
         self.next_check = 0.0
@@ -493,8 +508,9 @@ class SyncWindow:
         self.code_text = tk.StringVar()
         self.log_open = False
         self.tone_name = 'idle'
-        self.tray_on = tk.BooleanVar(value=bool(config.get('tray', False)))
-        self.tray = tray.Tray(ASSETS/'app-icon.png', lambda what: self.events.put(('tray', what)))
+        # On unless the player switched it off (a saved False is kept).
+        self.tray_on = tk.BooleanVar(value=bool(config.get('tray', True)))
+        self.tray = tray.Tray(tray_icons(), lambda what: self.events.put(('tray', what)))
         self.quitting = False  # Quit from the tray: the window closes for good
         self.spin_angle, self.spinning = 90, False
         self.layout_pending = False
@@ -531,12 +547,24 @@ class SyncWindow:
         self.row_count = 0
 
         game = self.row('game', 'Game')
-        tk.Label(game, textvariable=self.path_text, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(side='left')
-        self.locations = ttk.Combobox(game, textvariable=self.path, state='readonly', width=40)
+        line = tk.Frame(game, bg=CARD)
+        line.pack(anchor='w', fill='x')
+        tk.Label(line, textvariable=self.path_text, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(side='left')
+        self.locations = ttk.Combobox(line, textvariable=self.path, state='readonly', width=40)
         self.locations.bind('<<ComboboxSelected>>', lambda _: self.select_game(self.path.get()))
         self.choose_button = RoundButton(self.actions, 'Change', self.choose_game, f['button'], s, accent=True,
                                          width=s(106), images=img)
         self.choose_button.pack(side='right')
+        # Several installations: each its own profile (its own market, state and addon backups).
+        installs = tk.Frame(game, bg=CARD)
+        installs.pack(anchor='w', pady=(s(8), 0))
+        self.installs_box = ttk.Combobox(installs, state='readonly', width=44)
+        self.installs_box.bind('<<ComboboxSelected>>', lambda _: self.switch_install(self.installs_box.current()))
+        self.installs_box.pack(side='left')
+        self.add_link = LinkButton(installs, '+', self.add_install, f['button'], CARD)
+        self.add_link.pack(side='left', padx=(s(10), 0))
+        self.remove_link = LinkButton(installs, '−', self.remove_install, f['button'], CARD)
+        self.remove_link.pack(side='left', padx=(s(8), 0))
 
         github = self.row('github', 'GitHub')
         tk.Label(github, textvariable=self.account_text, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(anchor='w')
@@ -559,8 +587,12 @@ class SyncWindow:
         toggles = tk.Frame(addon, bg=CARD)
         toggles.pack(anchor='w', pady=(s(10), 0))
         Switch(toggles, 'Install updates', self.update_auto, self.addon_options_changed, f['switch'], s, images=img).pack(side='left')
-        Switch(toggles, 'Beta tester', self.beta, self.addon_options_changed, f['switch'], s, images=img).pack(
+        Switch(toggles, 'Beta tester', self.beta, self.beta_changed, f['switch'], s, images=img).pack(
             side='left', padx=(s(28), 0))
+        helper = tk.Frame(addon, bg=CARD)
+        helper.pack(anchor='w', pady=(s(8), 0))
+        tk.Label(helper, textvariable=self.helper_text, font=f['hint'], bg=CARD, fg=HINT, anchor='w').pack(side='left')
+        self.helper_link = LinkButton(helper, '', self.helper_action, f['hint'], CARD)
         self.update_button = RoundButton(self.actions, 'Update', lambda: self.start_update(install=True), f['button'],
                                          s, width=s(106), images=img)
         self.update_button.pack(side='right')
@@ -568,6 +600,9 @@ class SyncWindow:
 
         prices = self.row('database', 'Prices', last=True)
         tk.Label(prices, textvariable=self.last_sync, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(anchor='w')
+        self.community_text = tk.StringVar(value='')
+        tk.Label(prices, textvariable=self.community_text, font=f['hint'], bg=CARD, fg=HINT, anchor='w',
+                 justify='left', wraplength=s(320)).pack(anchor='w', pady=(s(4), 0))
         self.auto_button = Switch(prices, 'Sync automatically', self.auto, self.options_changed, f['switch'], s, images=img)
         self.auto_button.pack(anchor='w', pady=(s(10), 0))
         self.tray_button = Switch(prices, 'Keep syncing in the tray when closed', self.tray_on, self.tray_changed,
@@ -606,12 +641,14 @@ class SyncWindow:
         self.log_item = None
 
         self.refresh_share_state()
+        self.refresh_installs()
         core.LOG_SINK = lambda line: self.events.put(('log', line))
         self.set_busy(True)
         self.status.trace_add('write', lambda *_: self.draw_status())
         self.layout()
         root.after(50, self.discover)
         root.after(60, self.check_account)
+        root.after(2000, self.check_helper)
         root.after(100, self.poll)
 
     # --- Drawing ----------------------------------------------------------------------------------
@@ -848,6 +885,13 @@ class SyncWindow:
 
     # --- Addon updates ----------------------------------------------------------------------------
 
+    def beta_changed(self):
+        """The player chose the channel: from now on the installed build no longer chooses it."""
+        self.config['beta_by_user'] = True
+        self.addon_options_changed()
+        self.helper_release = None
+        self.check_helper()
+
     def addon_options_changed(self):
         self.config['update_addon'], self.config['beta'] = self.update_auto.get(), self.beta.get()
         try:
@@ -875,6 +919,14 @@ class SyncWindow:
         threading.Thread(target=work, daemon=True).start()
 
     def show_addon(self, status):
+        if self.core.apply_beta_choice(self.config, status):  # a beta build is installed: offer betas
+            self.beta.set(True)
+            self.core.log('The installed ForeverFlip is a beta, so the beta channel is on. Switch '
+                          '"Beta tester" off to stay on stable releases.')
+            try:
+                self.core.save_json(self.folder/'config.json', self.config)
+            except OSError as error:
+                self.status.set(f'Could not save options: {error}')
         installed = status.get('installed') or 'Not installed'
         release = status.get('release')
         self.addon_release = None if status.get('development') else release
@@ -889,6 +941,112 @@ class SyncWindow:
         else:
             self.addon_text.set(f'{installed}{beta} — up to date')
         self.update_button.state(['!disabled'] if self.addon_release else ['disabled'])
+
+    # --- ForeverFlip Sync's own updates -----------------------------------------------------------
+
+    def check_helper(self):
+        if self.helper_running or self.closing:
+            return
+        self.helper_running = True
+        config = dict(self.config)
+
+        def work():
+            try:
+                self.events.put(('helper', self.core.check_helper(config)))
+            except Exception as error:
+                self.events.put(('helper_error', self.core.describe(error)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def show_helper(self, status):
+        release = status.get('release')
+        self.helper_link.pack_forget()
+        if not release:
+            self.helper_release = None
+            self.helper_text.set(f'ForeverFlip Sync {status.get("current")}')
+            return
+        self.helper_release = release
+        beta = ' (beta)' if release.get('beta') else ''
+        if status.get('frozen'):
+            self.helper_text.set(f'ForeverFlip Sync {release["version"]}{beta} is available')
+            self.helper_link.configure(text='Download')
+            self.helper_link.pack(side='left', padx=(self.s(8), 0))
+        else:
+            self.helper_text.set(f'ForeverFlip Sync {release["version"]}{beta} is out (running from the sources)')
+
+    def helper_action(self):
+        if self.helper_running:
+            self.helper_cancel = True  # Cancel while it downloads
+            return
+        release, exe = self.helper_release, self_update.running_executable()
+        if not release or exe is None:
+            return
+        self.helper_running, self.helper_cancel = True, False
+        self.helper_text.set(f'Downloading ForeverFlip Sync {release["version"]}…')
+        self.helper_link.configure(text='Cancel')
+        agent = f'ForeverFlipSync/{self.core.VERSION}'
+
+        def progress(done, total):
+            self.events.put(('helper_progress', (done, total)))
+
+        def work():
+            try:
+                result = self_update.update(release, exe, agent, cancelled=lambda: self.helper_cancel or self.closing,
+                                            progress=progress)
+                self.events.put(('helper_done', result))
+            except self_update.Cancelled:
+                self.events.put(('helper_error', 'cancelled'))
+            except Exception as error:
+                self.events.put(('helper_error', self.core.describe(error)))
+        threading.Thread(target=work, daemon=True).start()
+
+    # --- Installations ----------------------------------------------------------------------------
+
+    def refresh_installs(self):
+        installs = self.config.get('installs') or []
+        self.installs_box.configure(values=[profiles.describe(i) for i in installs])
+        ids = [i['id'] for i in installs]
+        if self.config.get('active') in ids:
+            self.installs_box.current(ids.index(self.config['active']))
+        else:
+            self.installs_box.set('')
+        self.remove_link.disabled = len(installs) <= 1
+        self.remove_link.redraw()
+
+    def add_install(self):
+        if self.busy:
+            return
+        chosen = filedialog.askdirectory(title='Add another WoW Forever installation', parent=self.root)
+        if chosen:
+            self.select_game(chosen)
+
+    def switch_install(self, index):
+        installs = self.config.get('installs') or []
+        if self.busy or not 0 <= index < len(installs):
+            self.refresh_installs()
+            return
+        self.select_game(installs[index]['game'])
+
+    def remove_install(self, ask=True):
+        active = profiles.active_install(self.config)
+        if self.busy or not active or len(self.config.get('installs') or []) <= 1:
+            return
+        if ask and not messagebox.askyesno('Remove installation', f'Stop syncing {active["game"]}?\n\nThe game '
+                                           'folder and its files stay; you can add it again with +.', parent=self.root):
+            return
+        profiles.remove_install(self.config, active['id'])
+        self.select_game(self.config['game'])
+
+    def state_file(self, game=None):
+        """The active installation's sync state (what was shared, the community exchange)."""
+        return profiles.state_path(self.folder, profiles.find_install(self.config, game or self.game))
+
+    def show_community(self, state=None):
+        if state is None:
+            try:
+                state = self.core.load_json(self.state_file(), {}) if self.game else {}
+            except OSError:
+                state = {}
+        self.community_text.set('\n'.join(self.core.community_status(state if isinstance(state, dict) else {})))
 
     # --- GitHub sign-in ---------------------------------------------------------------------------
 
@@ -992,13 +1150,21 @@ class SyncWindow:
         if game is None:
             messagebox.showerror('Choose WoW Forever', 'Choose the Forever game folder or its parent installation folder.', parent=self.root)
             return
+        changed = self.game is None or not profiles.same_path(self.game, game)
         try:
-            self.config['game'] = str(game)
+            profiles.add_install(self.config, game)  # its own profile, made the active one
             self.core.save_json(self.folder/'config.json', self.config)
         except OSError as error:
             self.status.set(f'Could not save this folder: {error}')
             return
         self.game, self.session = game, None
+        if changed:  # another installation: its own addon, prices and state
+            self.addon_release, self.next_update, self.next_check = None, 0.0, 0.0
+            self.addon_text.set('Checking for updates…')
+            self.update_button.state(['disabled'])
+            self.last_sync.set('Not synced yet')
+        self.refresh_installs()
+        self.show_community()
         self.path.set(str(game))
         self.path_text.set(shorten(str(game)))
         self.locations.pack_forget()
@@ -1054,7 +1220,7 @@ class SyncWindow:
         def work():
             try:
                 if self.session is None:
-                    state_path = self.folder/'state.json'
+                    state_path = self.state_file(game)
                     state = self.core.load_json(state_path, {})
                     if not isinstance(state, dict):
                         state = {}
@@ -1069,7 +1235,10 @@ class SyncWindow:
                 self.session.refresh_credentials(self.config, force=force)
                 if not self.core.saved_variable_files(game):
                     self.core.log('No saved ForeverFlip scan yet. Make a full scan in game, then /reload.')
-                count = self.session.sync(force=force)
+                try:
+                    count = self.session.sync(force=force)
+                finally:
+                    self.events.put(('community', self.core.community_status(self.session.state)))
                 self.events.put(('synced', count))
             except Exception as error:
                 self.events.put(('error', str(error)))
@@ -1114,6 +1283,31 @@ class SyncWindow:
             elif kind == 'addon':
                 self.updating = False
                 self.show_addon(value)
+            elif kind == 'community':
+                self.community_text.set('\n'.join(value))
+            elif kind == 'helper':
+                self.helper_running = False
+                self.show_helper(value)
+            elif kind == 'helper_progress':
+                done, total = value
+                if total:
+                    self.helper_text.set(f'Downloading ForeverFlip Sync… {100 * done // total}%')
+            elif kind == 'helper_done':
+                self.helper_running, self.helper_release = False, None
+                self.helper_link.pack_forget()
+                self.helper_text.set(f'ForeverFlip Sync {value["version"]} is ready: restart the helper to use it')
+                self.core.log(f'ForeverFlip Sync {value["version"]} was downloaded and matches its published SHA-256. '
+                              'It runs from the next start; your settings stay as they are.')
+            elif kind == 'helper_error':
+                self.helper_running = False
+                if self.helper_release:
+                    self.helper_link.configure(text='Download')
+                    self.helper_text.set(f'ForeverFlip Sync {self.helper_release["version"]} is available'
+                                         + (' (download cancelled)' if value == 'cancelled' else ' (download failed)'))
+                else:
+                    self.helper_text.set('')
+                if value != 'cancelled':
+                    self.core.log(f'ForeverFlip Sync update: {value}.')
             elif kind == 'addon_error':
                 self.updating = False
                 self.addon_text.set('Could not check for updates')
@@ -1148,7 +1342,7 @@ class SyncWindow:
             elif kind in ('synced', 'error'):
                 self.set_busy(False)
                 if kind == 'synced':
-                    self.last_sync.set(('Community prices updated' if value else 'No community prices yet')
+                    self.last_sync.set(('Community data downloaded' if value else 'No community data downloaded yet')
                                        + ' · ' + time.strftime('%H:%M'))
                     self.status.set('Up to date')
                     self.tone('ok')
@@ -1184,10 +1378,13 @@ class SyncWindow:
     def close(self):
         # With "Keep syncing in the tray" the window only hides: syncing and sharing go on.
         if self.tray_on.get() and tray.available() and not self.quitting:
-            self.root.withdraw()
-            self.tray.show('ForeverFlip Sync keeps syncing here. Right-click the icon to open it or quit.')
-            self.core.log('The window is closed: syncing goes on in the tray (right-click its icon to quit).')
-            return
+            # Hide only with the icon there: a hidden window without an icon could not come back.
+            if self.tray.show('ForeverFlip Sync keeps syncing here. Right-click the icon to open it or quit.') \
+                    is not False:
+                self.root.withdraw()
+                self.core.log('The window is closed: syncing goes on in the tray (right-click its icon to quit).')
+                return
+            self.core.log('The tray icon could not be shown, so the helper closes.')
         if self.busy:
             self.closing = True
             self.auto.set(False)
@@ -1207,6 +1404,7 @@ def launch(args, config, folder, core):
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except (AttributeError, OSError):
             pass
+    self_update.cleanup(self_update.running_executable())  # what a finished self-update left behind
     root = tk.Tk()
     SyncWindow(root, args, config, pathlib.Path(folder), core)
     root.mainloop()

@@ -274,10 +274,7 @@ function Mail.stop(reason)
     if job and reason then
         F.Engine.notify(reason)
         local L = F.Locale.text
-        print(
-            "ForeverFlip: "
-                .. string.format(L("auction mail taken: %s gold, %d items"), F.Util.money(job.gold), job.items)
-        )
+        F.Log.add("trade", string.format(L("auction mail taken: %s gold, %d items"), F.Util.money(job.gold), job.items))
     end
     F.Engine.changed()
 end

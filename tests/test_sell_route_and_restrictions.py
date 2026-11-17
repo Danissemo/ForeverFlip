@@ -29,9 +29,13 @@ class BestRouteTests(unittest.TestCase):
         F.Data.market(F.db, F.Engine.scope()).history['i:30'] = { scan = { at = now, market = 5000 } }
         T.prices['i:30'] = { rows = { { unit = 4500, qty = 1 } }, at = now }
         UI.refresh(); row('i:30'):Click(); UI.refresh()
+        local undecided = UI.sellBox.full()
+        -- Both routes pay here: the player chooses (the undecided footer is checked below).
         local w = { T.bestWay('i:30', 30) }
-        return w[1] .. ' @@ ' .. UI.sellBox.full()""")
-        best, text = out.split(' @@ ', 1)
+        T.setRouteChoice('i:30', w[1]); UI.refresh()
+        return w[1] .. ' @@ ' .. UI.sellBox.full() .. ' @@ ' .. undecided""")
+        best, text, undecided = out.split(' @@ ', 2)
+        self.assertTrue(plain(undecided.split('\n')[0]).startswith('Best not decided'), undecided)
         lines = [plain(x) for x in text.split('\n')]
         verdict = [x for x in lines if x.startswith('Best ')]
         self.assertEqual(len(verdict), 1, text)
@@ -43,6 +47,34 @@ class BestRouteTests(unittest.TestCase):
         self.assertTrue(any(x.lstrip('> ').startswith('AH') for x in lines), 'the auction route is listed')
         self.assertTrue(any(x.lstrip('> ').startswith('Vendor') for x in lines), 'the vendor route is listed')
         self.assertTrue(any('posted at' in x and 'cut' in x for x in lines), 'the auction sum is explained')
+
+    def test_a_doubtful_item_asks_for_a_route_and_reset_asks_again(self):
+        out = run(HIDE + """F.db.settings.vendorMargin = 0
+        F.Data.market(F.db, F.Engine.scope()).history['i:30'] = { scan = { at = now, market = 5000 } }
+        T.prices['i:30'] = { rows = { { unit = 4500, qty = 1 } }, at = now }
+        UI.refresh(); row('i:30'):Click(); UI.refresh()
+        local r = row('i:30')
+        assert(r.bestWay.name == 'undecided', r.bestWay.name)
+        local note = r.cols[5]:GetText()
+        assert(note:find('|cffff6060', 1, true) and note:find('Choose', 1, true), note)
+        local profit = r.cols[3]:GetText()
+        assert(profit:find(' / ', 1, true) and not profit:find('AH', 1, true), 'both profits, no labels: ' .. profit)
+        assert(UI.chooseAH:IsShown() and UI.chooseVendor:IsShown())
+        assert(not UI.sellSureReset:IsEnabled(), 'nothing to reset yet')
+        UI.chooseVendor:Click()
+        assert(T.routeChoice('i:30') == 'vendor')
+        r = row('i:30')
+        assert(r.cols[4]:GetText() == '-', 'a vendor has no Sure')
+        assert(r.cols[5]:GetText():find('your choice', 1, true), 'the Note says it is your choice')
+        assert(UI.sellSureReset:IsEnabled(), 'the choice of a doubtful item can be reset')
+        local chosen = r.cols[2]:GetText()
+        UI.sellSureReset:Click()
+        assert(T.routeChoice('i:30') == nil and row('i:30').bestWay.name == 'undecided')
+        return chosen .. ' @@ ' .. row('i:30').cols[2]:GetText() .. ' @@ ' .. UI.ruleToggle:GetText()""")
+        chosen, best, rule = (plain(x) for x in out.split(' @@ '))
+        self.assertEqual(chosen, 'Vendor')
+        self.assertEqual(best, 'AH / V')
+        self.assertEqual(rule, 'Rule')
 
     def test_the_verdict_is_translated(self):
         out = run(HIDE + """F.Locale.apply('uk')

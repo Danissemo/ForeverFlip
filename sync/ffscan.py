@@ -436,13 +436,24 @@ def lua_string(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
 
 
-def lua_data_file(summaries: list[str], generated: int, uploaded: list[str] | None = None) -> str:
+def lua_data_file(summaries: list[str], generated: int, uploaded: list[str] | None = None,
+                  status: dict | None = None) -> str:
     """Data.lua of the ForeverFlip_Shared addon. `uploaded`: the scans ("scope@time") this helper
-    uploaded, so the addon stops keeping them (Raw.lua)."""
+    uploaded, so the addon stops keeping them (Raw.lua). `status`: {scope: {checked_at, published_at,
+    reason}} from the data repository's status.json, so the addon can say when the community data was
+    published and why there is no community price."""
     lines = ["-- Written by the ForeverFlip Sync helper. Do not edit: it is replaced on every update.",
              "ForeverFlipShared = {", f"    generated = {int(generated)},", "    uploaded = {"]
     for ident in uploaded or []:
         lines.append(f"        [{lua_string(ident)}] = true,")
+    if status:
+        lines += ["    },", "    status = {"]
+        for scope, info in sorted(status.items()):
+            fields = [f"{key} = {int(info[key])}" for key in ("checked_at", "published_at")
+                      if isinstance(info.get(key), (int, float))]
+            if info.get("reason"):
+                fields.append(f"reason = {lua_string(str(info['reason']))}")
+            lines.append(f"        [{lua_string(scope)}] = {{ {', '.join(fields)} }},")
     lines += ["    },", "    scans = {"]
     for text in summaries:
         level = 1

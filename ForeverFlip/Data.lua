@@ -13,9 +13,9 @@ F.Data = D
 
 D.DEFAULTS = {
     language = nil, -- "en" or "uk"; nil follows the game client
-    vendorMinProfit = 10, -- copper per vendor deal
-    minProfit = 100, -- copper per resale deal
-    minROI = 0.2, -- resale return on the money spent
+    vendorMinProfit = F.Market.THRESHOLDS.vendorMinProfit, -- copper per unit of a vendor deal
+    minProfit = F.Market.THRESHOLDS.minProfit, -- copper per resale deal
+    minROI = F.Market.THRESHOLDS.minROI, -- resale return on the money spent
     sellMinReturn = 0.05, -- the least a sale of own stock brings over its real cost (price, lost deposits)
     spendShare = 0.8, -- share of the money on hand one deal may use
     duration = 3, -- 1 = 2 h, 2 = 8 h, 3 = 24 h, 0 = automatic from the item's sales
@@ -45,24 +45,71 @@ D.DEFAULTS = {
     vendorMargin = 0,
     spendLimit = 0, -- gold one auction house visit may spend on deals (0 = no limit)
     leaveLots = 0, -- cheap lots (or commodity units) of a deal left for other buyers
+    -- T25: the market reset (Deals -> Market reset, internal id "median"): every lot under the
+    -- usual price bought to relist alone. Always on (0 in medianShare or medianDayGold is off); its
+    -- own money limits come on top of the ordinary ones.
+    median = true,
+    medianItemGold = 50, -- gold one item may take
+    medianDayGold = 200, -- gold the strategy may spend in a day
+    medianShare = 0.5, -- share of the money on hand the strategy may use
     autoVerify = false, -- check found deals in the background (the best ones first)
     hideUnlearned = false, -- Crafting: leave out recipes the character has not learned
+    -- The messages chat tab (Log.lua), which already reads a missing value as these.
+    logEcho = { error = true }, -- categories also printed to the general chat
+    logSound = true, -- a sound for an error
+    soundSold = true, -- a coin sound when one of the player's auctions sold
+    soundOutbid = true, -- an alarm when another player outbids the player
+    windowScale = 1, -- the size of ForeverFlip's window (Settings, Display)
+    logTabMade = false, -- the tab was made once; a closed tab is not made again by itself
 }
 
+-- Presets set the money and profit thresholds in one click (Settings). Balanced is D.DEFAULTS.
+-- Careful's vendor deal minimum is 15 copper (T27): 50 left out most vendor deals, which are
+-- risk-free (a merchant pays at once), so being careful there costs only profit.
+D.PRESETS = {
+    careful = {
+        minROI = 0.35,
+        minProfit = 500,
+        vendorMinProfit = 15,
+        spendShare = 0.5,
+        itemShare = 0.15,
+        alertMinProfit = 100,
+    },
+    balanced = {
+        minROI = 0.2,
+        minProfit = 100,
+        vendorMinProfit = 10,
+        spendShare = 0.8,
+        itemShare = 0.3,
+        alertMinProfit = 50,
+    },
+    aggressive = {
+        minROI = 0.1,
+        minProfit = 50,
+        vendorMinProfit = 5,
+        spendShare = 0.95,
+        itemShare = 0.5,
+        alertMinProfit = 20,
+    },
+}
+-- A brand-new profile (no saved file) starts on Careful; a profile that exists keeps every value
+-- the player has, so an update never changes thresholds behind the player's back.
+D.NEW_PRESET = "careful"
+
 function D.open(saved)
+    local fresh = type(saved) ~= "table"
     local db = type(saved) == "table" and saved or {}
     db.settings = type(db.settings) == "table" and db.settings or {}
-    for k, v in pairs(D.DEFAULTS) do
-        if db.settings[k] == nil then
+    if fresh and D.NEW_PRESET then
+        for k, v in pairs(D.PRESETS[D.NEW_PRESET]) do
             db.settings[k] = v
         end
     end
-    -- 1.2.0-beta.1 to beta.3 saved a default margin of 20%: back to the new default, once.
-    if not db.vendorMarginReset then
-        if db.settings.vendorMargin == 20 then
-            db.settings.vendorMargin = 0
+    for k, v in pairs(D.DEFAULTS) do
+        if db.settings[k] == nil then
+            -- A table default is copied: a profile changing it must not change the default.
+            db.settings[k] = type(v) == "table" and U.copy(v) or v
         end
-        db.vendorMarginReset = true
     end
     db.vendor = type(db.vendor) == "table" and db.vendor or {}
     db.vendorSeen = type(db.vendorSeen) == "table" and db.vendorSeen or {}
@@ -70,8 +117,94 @@ function D.open(saved)
     db.deSeen = type(db.deSeen) == "table" and db.deSeen or {}
     db.markets = type(db.markets) == "table" and db.markets or {}
     db.chars = type(db.chars) == "table" and db.chars or {}
-    D.cleanSales(db)
+    D.migrate(db)
     return db
+end
+
+-- The settings of a new profile (Settings > Data > Reset settings): the defaults and the starting
+-- preset. The language and whether the chat tab was made stay; nothing but the settings changes.
+D.KEPT_SETTINGS = { language = true, logTabMade = true }
+function D.resetSettings(db)
+    local fresh = D.open(nil).settings
+    for k in pairs(db.settings) do
+        if not D.KEPT_SETTINGS[k] then
+            db.settings[k] = nil
+        end
+    end
+    for k, v in pairs(fresh) do
+        if not D.KEPT_SETTINGS[k] then
+            db.settings[k] = v
+        end
+    end
+    return db
+end
+
+-- A clean start the player asked for (Settings, /ff reset): a new profile of nothing but the
+-- player's own settings. Prices, sales, journals, positions and the shopping list all go.
+function D.reset(db)
+    local fresh = D.open(nil)
+    if type(db) == "table" and type(db.settings) == "table" then
+        fresh.settings = U.copy(db.settings)
+    end
+    return fresh
+end
+
+-- Schema of ForeverFlipData: db.schemaVersion is the number of D.MIGRATIONS already applied. Each
+-- migration runs once, in order, from the file's version up; each is idempotent too (it keeps its
+-- own older marker), so a file without schemaVersion, written before migrations had numbers, is
+-- brought up safely. A fresh file runs them all and gets the current version. A file of a newer
+-- ForeverFlip (a version this one does not know) is left as it is, with a warning in the log.
+-- The derived sales statistics have their own version (D.STATS_VERSION, rebuilt by Scan).
+D.MIGRATIONS = {
+    -- 1: 1.2.0-beta.1 to beta.3 saved a default margin of 20%: back to the new default, once.
+    function(db)
+        if not db.vendorMarginReset then
+            if db.settings.vendorMargin == 20 then
+                db.settings.vendorMargin = 0
+            end
+            db.vendorMarginReset = true
+        end
+    end,
+    -- 2: sales measured by an older model are dropped (D.cleanSales, db.salesModel).
+    function(db)
+        D.cleanSales(db)
+    end,
+    -- 3: Under market was saved off with 20% of the gold, the old defaults: the new ones, once.
+    -- A player who changed either keeps their choice.
+    function(db)
+        if not db.medianDefaults then
+            local s = db.settings
+            if s.median == false and s.medianShare == 0.2 then
+                s.median, s.medianShare = true, 0.5
+            end
+            db.medianDefaults = 2
+        end
+    end,
+    -- 4: Market reset lost its Turn on box (0 in its "% of gold" is off now): a page saved off
+    -- keeps being off as a share of 0.
+    function(db)
+        local s = db.settings
+        if s.median == false then
+            s.median, s.medianShare = true, 0
+        end
+    end,
+}
+D.SCHEMA_VERSION = #D.MIGRATIONS
+
+function D.migrate(db)
+    local version = tonumber(db.schemaVersion) or 0
+    if version > D.SCHEMA_VERSION then
+        if F.Log and F.Log.add then
+            local text = "Saved data comes from a newer ForeverFlip (schema %d, this version knows %d): left as it is."
+            F.Log.add("error", string.format(F.Locale and F.Locale.text(text) or text, version, D.SCHEMA_VERSION))
+        end
+        return
+    end
+    for i = math.max(version, 0) + 1, D.SCHEMA_VERSION do
+        D.MIGRATIONS[i](db)
+        db.schemaVersion = i
+    end
+    db.schemaVersion = D.SCHEMA_VERSION
 end
 
 -- Sales measured before 1.2.0-beta.4 counted reposts (and the flow cancelled, expired and repriced
@@ -108,10 +241,309 @@ function D.cleanSales(db)
     db.salesModel = D.SALES_MODEL
 end
 
+-- Derived sales statistics (T32). What is observed and what is inferred are kept apart:
+--   observed  per item h.scan (usual price, listed units by level), h.days[].d/min/m/n, h.t, h.units,
+--             h.lots/lotsAt/lotOwners (the last scan's lots), the full scans in ForeverFlipRaw, and
+--             the journals, invoices and settings of every character (never touched here);
+--   derived   h.sales (lot-tracked sales: Est./day, Sure, sale prices), h.flow (units that
+--             disappeared), h.days[].s (units seen sold per day), and the pending suspects.
+-- The derived tables carry the version of the formulas that built them (market.statsVersion). A
+-- newer version rebuilds them from the observations at load (F.Scan.rebuildStep): the raw full
+-- scans still kept are replayed through the current formulas into separate tables, and only a
+-- complete replay replaces the old ones (D.commitStats). The old ones are kept beside them for
+-- D.STATS_KEEP (market.statsBackup, D.rollbackStats). An item no raw scan covers keeps its tables,
+-- marked legacy (M.quality says so) until new scans have measured it again; a house without raw
+-- scans is only stamped with the version.
+-- 1: whole lots that vanished count M.LOT_WEIGHT of a sale everywhere, a lot of an unknown seller
+--    posted again at a new price is no sale, sample quality (M.quality).
+D.STATS_VERSION = 1
+D.STATS_KEEP = 7 * 86400
+-- The last scan's lots and the suspects waiting for the next scan: taken from a rebuild only when
+-- it saw a newer scan than the one they come from.
+D.CARRY = { "lots", "lotsAt", "lotOwners", "pending", "pendingAt" }
+
+function D.statsCurrent(market)
+    return type(market) == "table"
+        and ((tonumber(market.statsVersion) or 0) >= D.STATS_VERSION or market.statsHold == D.STATS_VERSION)
+end
+
+-- Replaces the derived tables of `market` with the rebuilt ones. `shadows`: { [key] = { sales,
+-- flow, daySold = { [day] = units }, lots, lotsAt, ... } } for the items the raw scans covered; an
+-- item without one keeps its tables, marked legacy (h.sales.legacy: built by older formulas, see
+-- M.quality), so no measurement is lost. `info` is kept as market.statsBuilt. The tables replaced
+-- are kept in market.statsBackup (one generation). Returns the number of items rebuilt.
+function D.commitStats(market, shadows, now, info)
+    local backup = { version = tonumber(market.statsVersion) or 0, at = now, items = {}, legacy = {} }
+    local built = 0
+    for key, h in pairs(market.history) do
+        -- Covered: the replay compared at least one pair of scans of the item.
+        local w = shadows[key]
+        if w and not w.sales then
+            w = nil
+        end
+        if type(h) == "table" and not w then
+            if type(h.sales) == "table" and not h.sales.legacy then
+                h.sales.legacy = true
+                backup.legacy[#backup.legacy + 1] = key
+            end
+        elseif type(h) == "table" then
+            local old = { sales = h.sales, flow = h.flow, s = {} }
+            for _, d in ipairs(type(h.days) == "table" and h.days or {}) do
+                if type(d) == "table" and d.s then
+                    old.s[#old.s + 1] = d.d
+                    old.s[#old.s + 1] = d.s
+                end
+            end
+            if (w.lotsAt or 0) > (h.lotsAt or 0) then
+                old.carry = true
+                for _, f in ipairs(D.CARRY) do
+                    old[f] = h[f]
+                    h[f] = w[f]
+                end
+            end
+            backup.items[key] = old
+            h.sales, h.flow = w.sales, w.flow
+            if h.sales then
+                built = built + 1
+            end
+            for _, d in ipairs(type(h.days) == "table" and h.days or {}) do
+                if type(d) == "table" then
+                    d.s = w.daySold and w.daySold[d.d] or nil
+                end
+            end
+        end
+    end
+    market.statsBackup = backup
+    market.statsVersion = D.STATS_VERSION
+    market.statsBuilt = info or { at = now }
+    if market.statsBuilt.items == nil then
+        market.statsBuilt.items = built
+    end
+    market.statsError = nil
+    return built
+end
+
+-- Puts back the derived tables a rebuild replaced, and keeps that version from being rebuilt again
+-- (market.statsHold) until the formulas change once more. False without a backup.
+function D.rollbackStats(market)
+    local b = type(market) == "table" and market.statsBackup
+    if type(b) ~= "table" or type(b.items) ~= "table" then
+        return false
+    end
+    for key, old in pairs(b.items) do
+        local h = market.history[key]
+        if type(h) == "table" then
+            h.sales, h.flow = old.sales, old.flow
+            local days = {}
+            for i = 1, #(old.s or {}) - 1, 2 do
+                days[old.s[i]] = old.s[i + 1]
+            end
+            for _, d in ipairs(type(h.days) == "table" and h.days or {}) do
+                if type(d) == "table" then
+                    d.s = days[d.d]
+                end
+            end
+            if old.carry then
+                for _, f in ipairs(D.CARRY) do
+                    h[f] = old[f]
+                end
+            end
+        end
+    end
+    for _, key in ipairs(b.legacy or {}) do
+        local h = market.history[key]
+        if type(h) == "table" and type(h.sales) == "table" then
+            h.sales.legacy, h.sales.newPairs = nil, nil
+        end
+    end
+    market.statsHold = market.statsVersion
+    market.statsVersion = b.version
+    market.statsBackup, market.statsBuilt = nil, nil
+    return true
+end
+
+-- Backups older than D.STATS_KEEP go: each holds a copy of every item's sales.
+function D.dropStatsBackups(db, now)
+    for _, m in pairs(type(db) == "table" and type(db.markets) == "table" and db.markets or {}) do
+        local b = type(m) == "table" and m.statsBackup
+        if type(b) == "table" and U.finite(now) and now - (b.at or 0) > D.STATS_KEEP then
+            m.statsBackup = nil
+        end
+    end
+end
+
+-- The client reads the saved file as one Lua 5.1 chunk, which holds at most 262143 distinct
+-- constants (every different string and number, keys included). Past that the whole file fails to
+-- load ("constant table overflow" in Logs\FrameXML.log), the addon starts empty and the next logout
+-- writes the empty data over it: in game, 26274 items of sales history were lost that way at 260 000
+-- constants. D.fitSave runs at logout: fractions in the item histories (hours, rates, factors, all
+-- estimates) keep 4 significant digits, so they stop being a new constant each; if the file would
+-- still hold more than D.SAVE_LIMIT, the items of the houses seen longest ago go until D.SAVE_TARGET.
+-- Items the player holds or has listed stay.
+D.SAVE_LIMIT = 200000
+D.SAVE_TARGET = 180000
+
+local function round4(x)
+    if x == math.floor(x) or not U.finite(x) or x == 0 then
+        return x
+    end
+    local f = 10 ^ (3 - math.floor(math.log10(math.abs(x))))
+    return math.floor(x * f + 0.5) / f
+end
+D.round4 = round4
+
+local function roundTree(t, depth)
+    for k, v in pairs(t) do
+        if type(v) == "number" then
+            local r = round4(v)
+            if r ~= v then
+                t[k] = r
+            end
+        elseif type(v) == "table" and depth < 6 then
+            roundTree(v, depth + 1)
+        end
+    end
+end
+
+-- Calls add(value) for every constant the saved file of `t` would hold: string and number values,
+-- and keys except the positions 1..#t of a list (written without a key).
+local function constants(t, add, depth)
+    local n = #t
+    for k, v in pairs(t) do
+        if type(k) ~= "number" or k < 1 or k > n or k ~= math.floor(k) then
+            add(k)
+        end
+        if type(v) == "table" then
+            if depth < 30 then
+                constants(v, add, depth + 1)
+            end
+        elseif type(v) == "string" or type(v) == "number" then
+            add(v)
+        end
+    end
+end
+
+-- Number of distinct constants of the saved globals (D.fitSave).
+function D.countConstants(...)
+    local seen, n = {}, 0
+    local function add(v)
+        if not seen[v] then
+            seen[v], n = true, n + 1
+        end
+    end
+    for i = 1, select("#", ...) do
+        local t = select(i, ...)
+        if type(t) == "table" then
+            constants(t, add, 0)
+        end
+    end
+    return n
+end
+
+local function lastSeen(h)
+    local at = 0
+    if type(h) == "table" then
+        at = math.max(tonumber(h.lotsAt) or 0, type(h.scan) == "table" and tonumber(h.scan.at) or 0)
+    end
+    return at
+end
+
+-- Keeps the saved file loadable. Returns the number of constants written and of items dropped.
+function D.fitSave(db, raw, limit, target)
+    limit, target = limit or D.SAVE_LIMIT, target or D.SAVE_TARGET
+    if type(db) ~= "table" or type(db.markets) ~= "table" then
+        return 0, 0
+    end
+    for _, m in pairs(db.markets) do
+        if type(m) == "table" and type(m.history) == "table" then
+            for _, h in pairs(m.history) do
+                if type(h) == "table" then
+                    roundTree(h, 0)
+                end
+            end
+        end
+    end
+    -- How often each constant is used: an item's constants leave the file only with their last use.
+    local uses, n = {}, 0
+    local function add(v)
+        local c = uses[v]
+        if not c then
+            n = n + 1
+        end
+        uses[v] = (c or 0) + 1
+    end
+    constants(db, add, 0)
+    if type(raw) == "table" then
+        constants(raw, add, 0)
+    end
+    if n <= limit then
+        return n, 0
+    end
+    local held = {}
+    for _, c in pairs(type(db.chars) == "table" and db.chars or {}) do
+        if type(c) == "table" then
+            for key in pairs(type(c.positions) == "table" and c.positions or {}) do
+                held[key] = true
+            end
+            for _, l in ipairs(type(c.listings) == "table" and c.listings or {}) do
+                if type(l) == "table" and l.key then
+                    held[l.key] = true
+                end
+            end
+        end
+    end
+    local items = {}
+    for _, m in pairs(db.markets) do
+        if type(m) == "table" and type(m.history) == "table" then
+            for key, h in pairs(m.history) do
+                if not held[key] then
+                    items[#items + 1] = { m = m, key = key, at = lastSeen(h) }
+                end
+            end
+        end
+    end
+    table.sort(items, function(a, b)
+        return a.at < b.at
+    end)
+    local function drop(v)
+        local c = uses[v] - 1
+        if c <= 0 then
+            uses[v], n = nil, n - 1
+        else
+            uses[v] = c
+        end
+    end
+    local dropped = 0
+    for _, x in ipairs(items) do
+        if n <= target then
+            break
+        end
+        local h = x.m.history[x.key]
+        drop(x.key)
+        if type(h) == "table" then
+            constants(h, drop, 0)
+        elseif type(h) == "string" or type(h) == "number" then
+            drop(h)
+        end
+        x.m.history[x.key] = nil
+        if type(x.m.statsBackup) == "table" and type(x.m.statsBackup.items) == "table" then
+            local old = x.m.statsBackup.items[x.key]
+            if type(old) == "table" then
+                constants(old, drop, 0)
+                drop(x.key)
+                x.m.statsBackup.items[x.key] = nil
+            end
+        end
+        dropped = dropped + 1
+    end
+    return n, dropped
+end
+
 function D.market(db, scope)
     local m = db.markets[scope]
     if type(m) ~= "table" then
-        m = { history = {} }
+        -- A new house is measured by the current formulas from its first scan on.
+        m = { history = {}, statsVersion = D.STATS_VERSION }
         db.markets[scope] = m
     end
     m.history = type(m.history) == "table" and m.history or {}
@@ -335,16 +767,22 @@ local function lotKind(mode, bid)
     return bid and "bid" or mode == "vendor" and "vendor" or "flip"
 end
 
--- Only purchases of the same kind join the item's last lot.
-local function lotToJoin(lots, key, at, mode, bid)
+-- Only purchases of the same kind join the item's last lot. The products of a craft or a
+-- disenchant (T21: `chain`) are a lot of their own, and nothing joins them.
+local function lotToJoin(lots, key, at, mode, bid, chain, strategy)
+    if chain then
+        return nil
+    end
     for i = #lots, 1, -1 do
         local lot = lots[i]
         if lot.key == key then
             return at
+                    and not lot.chain
                     and lot.at
                     and at - lot.at <= D.LOT_MERGE
                     and at >= lot.at
                     and lotKind(lot.mode, lot.bid) == lotKind(mode, bid)
+                    and lot.strategy == strategy
                     and lot
                 or nil
         end
@@ -355,7 +793,7 @@ end
 local function joinSaved(char)
     local out = {}
     for _, lot in ipairs(char.lots) do
-        local into = lotToJoin(out, lot.key, lot.at, lot.mode, lot.bid)
+        local into = lotToJoin(out, lot.key, lot.at, lot.mode, lot.bid, lot.chain, lot.strategy)
         if into then
             joinLot(into, lot)
         else
@@ -408,7 +846,7 @@ function D.lots(char)
         local open = {}
         for _, e in ipairs(char.journal or {}) do
             if e.kind == "buy" and e.key and (e.qty or 0) > 0 then
-                local lot = lotToJoin(char.lots, e.key, e.at, e.mode, e.bid)
+                local lot = lotToJoin(char.lots, e.key, e.at, e.mode, e.bid, nil, e.strategy)
                 if lot then
                     lot.qty, lot.cost, lot.left = lot.qty + e.qty, lot.cost + (e.amount or 0), lot.left + e.qty
                 else
@@ -817,17 +1255,23 @@ function D.recount(char, deposit)
 end
 
 -- Positions: what was bought and not yet sold, with its cost (average price).
-function D.addPosition(char, key, name, qty, cost, mode, exit, at, bid, source)
+-- `chain` (T21): the units are the products of a craft or a disenchant (D.convert), not a purchase:
+-- their cost was spent on the materials, so the item's bought/spent totals are left alone.
+-- `strategy` (Deals): "median" for a market reset; it keeps its own lots, and the position
+-- remembers the way it was bought for (p.strategy, p.bought) so Selling keeps it (Trade.sellWay).
+function D.addPosition(char, key, name, qty, cost, mode, exit, at, bid, source, chain, strategy)
     local p = char.positions[key]
     if not p then
         p = { qty = 0, cost = 0, name = name, since = at }
         char.positions[key] = p
     end
     if at then
-        local s = D.itemStats(char, key, name)
-        s.bought, s.spent = s.bought + qty, s.spent + cost
+        if not chain then
+            local s = D.itemStats(char, key, name)
+            s.bought, s.spent = s.bought + qty, s.spent + cost
+        end
         local lots = D.lots(char)
-        local into = lotToJoin(lots, key, at, mode, bid)
+        local into = lotToJoin(lots, key, at, mode, bid, chain, strategy)
         if into then
             into.qty, into.cost, into.left = into.qty + qty, into.cost + cost, into.left + qty
             into.mode = into.mode or mode
@@ -847,6 +1291,8 @@ function D.addPosition(char, key, name, qty, cost, mode, exit, at, bid, source)
                 received = 0,
                 lost = 0,
                 events = {},
+                chain = chain,
+                strategy = strategy,
             }
             lots[#lots + 1] = into
         end
@@ -856,13 +1302,18 @@ function D.addPosition(char, key, name, qty, cost, mode, exit, at, bid, source)
             qty,
             cost
         )
-        remember(char, "buy", key, { { lot = into, event = event } }, at)
+        if not chain then
+            remember(char, "buy", key, { { lot = into, event = event } }, at)
+        end
         trimLots(lots)
     end
     -- Stock held for resale stays for resale when a vendor deal of the same item adds cheap units:
     -- else the vendor sale would sell the dearer resale units at a loss too.
-    if mode == "vendor" and p.qty > 0 and p.mode and p.mode ~= "vendor" then
+    local kept = mode == "vendor" and p.qty > 0 and p.mode and p.mode ~= "vendor"
+    if kept then
         mode = p.mode
+    elseif at and not chain then
+        p.strategy, p.bought = bid and "bid" or strategy or mode, at
     end
     p.qty, p.cost = p.qty + qty, p.cost + cost
     p.mode, p.exit, p.name = mode or p.mode, exit or p.exit, name or p.name
@@ -911,4 +1362,96 @@ function D.takePosition(char, key, qty)
         char.positions[key] = nil
     end
     return cost
+end
+
+-- T21: chains. Held units made into other items: `op` "disenchant" or "craft", `inputs` and
+-- `outputs` { { key, name, qty }, ... } (an output may carry `value`, its unit price, to share the
+-- cost by worth; else by units). The inputs leave their positions and their oldest lots at the
+-- positions' cost (lot.converted, lot.convertedCost and a movement of kind `op`); the outputs become
+-- lots of their own (lot.chain) that carry that cost, so their sale shows what the chain earned.
+-- Only held units count: none held, no chain (nil). Older entries and lots have no chain.
+D.CHAINS = 200
+function D.convert(char, op, inputs, outputs, at)
+    local id = (char.chainSeq or 0) + 1
+    local used, cost = {}, 0
+    for _, input in ipairs(inputs or {}) do
+        local p = input.key and char.positions[input.key]
+        local qty = p and math.min(input.qty or 0, p.qty) or 0
+        if qty > 0 then
+            local taken = D.takePosition(char, input.key, qty)
+            local left, allocated, refs = qty, 0, {}
+            for _, lot in ipairs(openLots(char, input.key)) do
+                if left <= 0 then
+                    break
+                end
+                local n = math.min(left, lot.left)
+                left = left - n
+                local share = left == 0 and taken - allocated or math.floor(taken * n / qty)
+                allocated = allocated + share
+                lot.left = lot.left - n
+                lot.converted = (lot.converted or 0) + n
+                lot.convertedCost = (lot.convertedCost or 0) + share
+                movement(lot, { kind = op, at = at }, n, share).chain = id
+                refs[#refs + 1] = { id = lot.id, qty = n, amount = share }
+            end
+            cost = cost + taken
+            used[#used + 1] = { key = input.key, name = input.name or p.name, qty = qty, cost = taken, lots = refs }
+        end
+    end
+    local made = {}
+    for _, o in ipairs(outputs or {}) do
+        if o.key and U.finite(o.qty) and o.qty > 0 then
+            made[#made + 1] = o
+        end
+    end
+    if #used == 0 or #made == 0 then
+        return nil
+    end
+    char.chainSeq = id
+    local weights, total = {}, 0
+    for i, o in ipairs(made) do
+        weights[i] = (U.finite(o.value) and o.value > 0 and o.value or 1) * o.qty
+        total = total + weights[i]
+    end
+    local chain = { id = id, op = op, at = at, cost = cost, inputs = used, outputs = {} }
+    local allocated = 0
+    for i, o in ipairs(made) do
+        local share = i == #made and cost - allocated or math.floor(cost * weights[i] / total)
+        allocated = allocated + share
+        D.addPosition(char, o.key, o.name, o.qty, share, "flip", nil, at, nil, op, id)
+        chain.outputs[#chain.outputs + 1] = { key = o.key, name = o.name, qty = o.qty, cost = share }
+    end
+    char.chains = type(char.chains) == "table" and char.chains or {}
+    char.chains[id] = chain
+    char.chains[id - D.CHAINS] = nil
+    D.log(char, {
+        at = at,
+        kind = op,
+        key = used[1].key,
+        name = used[1].name,
+        qty = used[1].qty,
+        amount = cost,
+        chain = id,
+    })
+    return chain
+end
+
+-- What a chain brought so far: { cost, received, lost, left (output units unsold), profit, done }.
+-- nil when the chain is not kept.
+function D.chainProfit(char, id)
+    local chain = id and type(char.chains) == "table" and char.chains[id]
+    if not chain then
+        return nil
+    end
+    local out = { cost = chain.cost or 0, received = 0, lost = 0, left = 0, op = chain.op }
+    for _, lot in ipairs(D.lots(char)) do
+        if lot.chain == id then
+            out.received = out.received + (lot.received or 0)
+            out.lost = out.lost + (lot.lost or 0)
+            out.left = out.left + (lot.left or 0)
+        end
+    end
+    out.profit = out.received - out.lost - out.cost
+    out.done = out.left <= 0
+    return out
 end

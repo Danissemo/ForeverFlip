@@ -37,12 +37,35 @@ function B.value(key, id, history)
         local s = F.Market.saleability(h, market, F.Engine.clock())
         if s.known and s.perDay >= 0.5 then
             local item = U.parseKey(key)
-            local net = F.Market.net(U.stepDown(market, item and item.kind), 1)
-                - F.Market.unitDeposit(id, item and item.kind, nil, key, market)
+            local net = F.Market.unitNet(id, item and item.kind, key, U.stepDown(market, item and item.kind))
             value = math.max(value, net)
         end
     end
     return value > 0 and value or nil
+end
+
+-- How sure a won bid brings its worth back: certain when a merchant pays it; otherwise the
+-- resale's Sure at the usual price, or (approx = true) the one of the item's other endings.
+function B.sure(c, now)
+    now = now or F.Engine.clock()
+    local count = math.max(1, c.count or 1)
+    local vendor = F.AH.vendorPrice(c.id)
+    if U.finite(vendor) and vendor > 0 and vendor * count >= (c.value or 0) then
+        return 1, false
+    end
+    local h = F.Data.market(F.db, F.Engine.scope()).history[c.key]
+    local market = h and F.Market.usual(h)
+    if U.finite(market) and market > 0 then
+        local sure = F.Deals.sureAt(c.key, market, count, now)
+        if U.finite(sure) then
+            return sure, false
+        end
+    end
+    local other = F.Deals.siblingEstimate(c.key, count, now)
+    if other and U.finite(other.sure) then
+        return other.sure, true
+    end
+    return nil, false
 end
 
 -- Full scan row with a bid ending soon: time band 0 = under 30 minutes, 1 = up to 2 hours (only
@@ -101,7 +124,7 @@ end
 -- once per item key (it depends on nothing else), and only the best B.MAX are kept in order.
 function B.finish(j, history)
     local out = {}
-    local minProfit = F.db.settings.minProfit or 100
+    local minProfit = F.Market.thresholds(F.db.settings).minProfit
     local worth = {} -- key -> B.value, false when ignored or worth nothing
     for _, c in ipairs(j.bids or {}) do
         local value = worth[c.key]
@@ -190,7 +213,7 @@ function B.read(k)
             local own = mine[r.auctionID]
             if
                 (not own or own.outbid or gone(own))
-                and profit >= (F.db.settings.minProfit or 100)
+                and profit >= F.Market.thresholds(F.db.settings).minProfit
                 and most
                 and r.bid <= most
                 and (not best or profit > best.profit)
@@ -372,7 +395,7 @@ function B.step()
     end
     local bids = char().bids
     local running = bids ~= nil and next(bids) ~= nil
-    local shown = F.UI and F.UI.section == "mybids"
+    local shown = F.Engine.screen().section == "mybids"
     -- Like a purchase, the query waits for a sniper browse or a post (AUCTION_CREATED) still
     -- unanswered: the game queues a message behind an unanswered one, and on WoW Forever some are
     -- never answered. The throttle is asked last: after a long "not ready" it lets one message
@@ -466,12 +489,7 @@ end
 -- minimum profit and return of Settings: a bid costs nothing when outbid (the money comes back), so
 -- bidding again pays whenever winning at that price would.
 function B.maxBid(value)
-    local s = F.db.settings
-    if not U.finite(value) or value <= 0 then
-        return nil
-    end
-    local roi = math.max(0, s.minROI or 0.2)
-    return math.floor(math.min(value - (s.minProfit or 100), value / (1 + roi)))
+    return F.Market.maxBuy(value, "auction", F.db.settings)
 end
 
 -- Every bid of the player with its state and the advice:
@@ -486,7 +504,7 @@ function B.mine()
     local c = char()
     local history = F.Data.market(F.db, F.Engine.scope()).history
     local wallet = F.Engine.wallet()
-    local minProfit = F.db.settings.minProfit or 100
+    local minProfit = F.Market.thresholds(F.db.settings).minProfit
     local out = {}
     for id, b in pairs(c.bids or {}) do
         local item = U.parseKey(b.key or "")

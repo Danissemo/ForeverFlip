@@ -132,7 +132,8 @@ function sim.expire()
                     end
                 end
                 addToBags(a.item, a.count, items[a.item].commodity and nil or a.name)
-                local subject = AUCTION_EXPIRED_MAIL_SUBJECT:format(a.name .. (a.count > 1 and (" (" .. a.count .. ")") or ""))
+                local subject =
+                    AUCTION_EXPIRED_MAIL_SUBJECT:format(a.name .. (a.count > 1 and (" (" .. a.count .. ")") or ""))
                 inbox[#inbox + 1] = { sender = "Auction House", subject = subject, money = 0, items = 1 }
                 sim.expired = sim.expired + a.count
             end
@@ -252,15 +253,25 @@ function sim.serve()
                     local a = addAuction(id, price, qty, "Me", name)
                     a.timeLeft = 2
                     auctionID = a.id
-                    owned[#owned + 1] =
-                        { auctionID = a.id, itemKey = { itemID = id }, quantity = qty, buyoutAmount = price, status = 0 }
+                    owned[#owned + 1] = {
+                        auctionID = a.id,
+                        itemKey = { itemID = id },
+                        quantity = qty,
+                        buyoutAmount = price,
+                        status = 0,
+                    }
                 else
                     for _ = 1, qty do
                         local a = addAuction(id, price, 1, "Me", name)
                         a.timeLeft = 2
                         auctionID = auctionID or a.id
-                        owned[#owned + 1] =
-                            { auctionID = a.id, itemKey = { itemID = id }, quantity = 1, buyoutAmount = price, status = 0 }
+                        owned[#owned + 1] = {
+                            auctionID = a.id,
+                            itemKey = { itemID = id },
+                            quantity = 1,
+                            buyoutAmount = price,
+                            status = 0,
+                        }
                     end
                 end
                 sim.posted = sim.posted + qty
@@ -408,12 +419,18 @@ function sim.check()
     end
     -- The books against what really happened on the market.
     local boughtUnits, soldUnits = 0, 0
+    -- A resale whose listing expired may go to a merchant at a loss (Trade.vendorSellList: once the
+    -- resale no longer pays, the merchant closes the position); any other vendor sale never does.
+    local expired = {}
     for _, e in ipairs(c.journal) do
+        if e.kind == "expired" then
+            expired[e.key or ""] = true
+        end
         if e.kind == "buy" then
             boughtUnits = boughtUnits + (e.qty or 0)
         elseif e.kind == "sell" then
             soldUnits = soldUnits + (e.qty or 0)
-        elseif e.kind == "vendor" and (e.profit or 0) < 0 and F.Data.char(F.db, F.Engine.owner()) then
+        elseif e.kind == "vendor" and (e.profit or 0) < 0 and not expired[e.key or ""] then
             bad("vendor sale of " .. tostring(e.name) .. " at a loss: " .. tostring(e.profit))
         end
     end

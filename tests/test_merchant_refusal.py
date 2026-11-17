@@ -11,6 +11,8 @@ F.db.settings.vendorMargin=0
 addItem(2930,'Instant Poison',28,'commodity')
 putBag(0,1,2930,20)
 F.Data.market(F.db,F.Engine.scope()).history['c:2930']={scan={at=now,market=20}}
+-- Both routes pay for it: the player chose the merchant (an undecided item is not offered).
+F.Trade.setRouteChoice('c:2930','vendor')
 '''
 
 
@@ -23,7 +25,7 @@ class RefusedByMerchantTests(unittest.TestCase):
         for _=1,200 do run(0.1);if not T.sellingToVendor() then break end end
         assert(F.AH.refused[2930],'the refusal is learned')
         assert(#T.vendorSellList()==0,'no longer offered')
-        local last=printed[#printed]
+        local last=ForeverFlip.Log.last('trade')
         assert(last:find('does not buy',1,true),last)''')
 
     def test_the_refusal_drops_its_vendor_deal_and_no_scan_puts_it_back(self):

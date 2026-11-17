@@ -53,7 +53,7 @@ class ShareTests(unittest.TestCase):
         -- another player of the realm receives it a day later
         now=now+86400;local at=Sh.decode(table.concat((function()
             local parts={} for _,m in ipairs(sentMessages) do parts[#parts+1]=m[2]:match('^%w+:%w+:%w+:(.*)$') end return parts end)())).at
-        F.Scan.last=nil
+        F.Scan.last=nil;F.db.sharedSeen={} -- the receiver holds no scan of the sender's
         for _,m in ipairs(sentMessages) do Sh.onMessage('ForeverFlip',m[2],'GUILD','Friend-Realm') end
         run(0.5) -- decoded and merged a slice per frame
         local h=F.Data.market(F.db,F.Engine.scope()).history['c:10']

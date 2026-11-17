@@ -65,7 +65,14 @@ this **once per 15 minutes per account** (`S.COOLDOWN = 900`).
    are read again only once its data has arrived, so a list where most rows wait (210 000 rows of
    a few hundred commodities) is not read again row by row. The wait ends 30 seconds after the last
    item came in (`S.RECOVER`), 5 minutes at most (`S.RECOVER_MAX`); rows still waiting then are
-   left unread, and their items are not counted as unlisted or sold.
+   left unread, and their items are not counted as unlisted or sold. Rows of an item whose data
+   load failed (`ITEM_DATA_LOAD_RESULT` with success false) and that `C_Item.DoesItemExistByID`
+   does not know either are given up at once instead (`S.missing`, believed for 15 minutes,
+   `S.MISSING_AGE`): the server no longer has the item, and waiting for it held the end of the scan
+   back by 30 seconds. Those items count as unread too. While the answer is still awaited (step 1),
+   the data of every item this house listed before is already requested, `S.PREFETCH` ids a frame
+   through the same paced queue (no auction house messages), so most rows are readable when the
+   list arrives.
 3. **Grouping.** Rows are grouped per item key. For each item ForeverFlip keeps:
    - the **40 cheapest auctions** (`S.ROWS`);
    - a **price histogram** of every listed unit;
@@ -200,21 +207,25 @@ none.
 
 Take every unit priced below the vendor sell price, within budget. Profit is
 `qty × vendor price − cost`. There is no auction cut, no deposit and no waiting: the units are sold
-to any merchant right away. The deal is kept if profit ≥ **Minimum profit of a vendor deal**.
+to any merchant right away. Only lots whose every unit earns at least **Minimum profit of a vendor deal, per unit** are taken.
 
-The vendor price is what a merchant really paid when one was seen in the buyback list (any item you
-sell to a merchant). Until then it is the game's item data, less the **Safety** margin if you set
-one (0% by default: every merchant price checked in game matched the item data, and a margin of 20%
-removed nearly all vendor deals). A price a merchant paid that differs is used for that item from then on. Gear sold damaged sells for less, so for
-gear a lower buyback price only replaces a higher one after a patch changed the client's price.
+The vendor price is the game's item data, the same figure as the game's own Sell Price line: of 115
+items sold by hand and read back from the buyback list, 113 were paid exactly that, and the other two
+were worn gear. For deals it is less the **Safety** margin if you set one (0% by default; 20% removed
+nearly all vendor deals). When a merchant pays a different price for a non-gear item (buyback list),
+that price is used for it from then on; gear keeps the item data's price, since worn gear pays less.
 With **Cheap units left for other buyers** set, the priciest of the cheap units are not bought.
 
 ### Resale
 
 Try every prefix of the cheapest listings, up to 40 auctions. For a prefix that ends at listing *i*:
 
-1. **Exit price** is one legal step below the cheapest unit left after buying. A resale above that
-   lot would not sell before it does. The exit is also capped at the usual price.
+1. **Exit price** is the price the Sell page will suggest once the lots are bought
+   (`Market.postPrice`, the one sell price of the tooltip, the Sell page and Resale): one undercut
+   below the cheapest unit left after buying, unless that unit asks more than **Max price %** of the
+   usual price (then one step below the usual price), and never above what buyers really paid
+   (`Market.saleCap`). The reason (`exitWhy`: undercut, sales or usual) is shown on the Resale
+   panel and under the tooltip's recommendation.
 2. **Profit** = `net(exit, qty) − cost − deposit risk`.
    - `net` removes the [auction cut](#auction-houses-and-the-cut).
    - The deposit risk counts the deposits lost if the lots do not sell: one per auction for items and
@@ -260,12 +271,17 @@ old data.
 | real | Real-buyer share: `(sure + lots / 2) / (sure + lots)`, from the sales at the price only (like n). A lot bought in part is a sure purchase; a lot that vanished whole may be another reseller (or a repost) and counts half. |
 | trust | Own results of the item: stock that did not sell lowers it (`Deals.trust`). |
 | m | Units per purchase at the price (sale log: units / buys, at least 1). Four units bought at once are one buyer. |
-| ahead | Rivals' undercut units that buyers take before yours: c undercuts an hour (`M.undercutRate`) × 48 hours × the item's median lot (`M.medianLot`). A popular item sells through them; a slow one does not. |
-| P | `P(B >= ceil((qty + ahead) / m))`, B the purchases in 48 hours: negative binomial of a `Gamma(n·real·trust/m + 0.1, (h + 24) / 24 days)` rate. A quiet day is assumed until the scans show sales. |
+| ahead | Units listed below the price at the last scan (`M.listedBelow`): buyers take them first. |
+| share | Buyers rivals take by undercutting later: c undercuts an hour (`M.undercutRate`) × the item's median lot (`M.medianLot`) against the units bought an hour, at most half (`M.RIVAL_SHARE`). Many undercuts are the same sellers reposting lower, not new stock. |
+| P | `P(B >= ceil((qty + ahead) / m))`, B the purchases in 48 hours: negative binomial of a `Gamma(n·real·trust·(1 − share)/m + 0.1, (h + 24) / 24 days)` rate. A quiet day is assumed until the scans show sales. |
 | sweep | `1 - min(1, sweeps / pairs) / 2`: shelves cleared in one go are speculation. Both counts decay with the sales (3-day half-life), so old sweeps fade. A pair is a sweep when its units an hour pass 3 × the median rate of the last 12 pairs (rates, not counts: pairs differ in length). |
 | fresh | `0.5 ^ (max(0, age - 6 h) / 48 h)`: sales data loses half its weight every 2 days after 6 hours. |
 
-`Sure = P × sweep × fresh`. A vendor deal is 100% (a merchant pays at once). Before two full
+`Sure = P × sweep × fresh`. A vendor deal is 100% (a merchant pays at once). The item has one Sure:
+qty is the units to sell (`Deals.sellQty`: a resale's units plus those held, else the units in the
+bags) and the price the recommended one, on the tooltip, Deals and Selling alike. The tooltip's
+Recommendation ranks the auction house by net × Sure and never recommends it under 10%
+(`M.SURE_UNLIKELY`): with no other route it says to hold. Before two full
 scans have tracked the item's lots, only the older measure is there: units that disappeared near
 the price (`h.flow`), which also counts expired, cancelled and reposted lots. Sure is then reckoned
 from those with every unit counted as a whole lot (real = 1/2) and capped at 50%

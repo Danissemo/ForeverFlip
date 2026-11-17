@@ -94,13 +94,11 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> **Current beta: [2.3.0-beta.1](https://github.com/Danissemo/ForeverFlip/releases/tag/v2.3.0-beta.1)**
-> plans profitable crafting batches and material purchases, fixes learned-recipe filtering, and
-> explains the Best selling route with its cut and expected lost deposits. Includes layout fixes
-> and clearer handling of refused posts. The server can still refuse posting outside combat;
-> its cause remains under investigation. See the
-> [current beta checklist](docs/testing.md#current-beta-checklist) and
-> [Beta testing](docs/testing.md#beta-testing).
+> **Current release: [3.0.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.0.0)**
+> prices Resale and Market reset from the market's own sales, shows one Sure and one sell price
+> everywhere (gear seen rarely included), scans the house about twice as fast, and brings a new
+> item tooltip with a market reference and price chart. Sync restores the scans your history
+> lacks. See the [changelog](CHANGELOG.md#300---2026-11-17) for everything.
 
 > [!TIP]
 > To update, replace the `ForeverFlip` folder, or let the
@@ -228,6 +226,7 @@ python tools/devflow.py test          # one process per module; `test <word>` na
 stylua --check ForeverFlip
 python -m pyflakes sync tools tests
 python tools/build.py
+python tools/savedata.py backup       # copy the saved data out of the game (`list`, `restore <name>`)
 ```
 
 `tools/build.py` checks the TOC and the version, runs the tests, writes `dist/ForeverFlip-<version>.zip`

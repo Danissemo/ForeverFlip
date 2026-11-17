@@ -614,12 +614,12 @@ class SettingsMenuTests(unittest.TestCase):
     def test_settings_pages_open_from_the_menu(self):
         run(BASE + '''UI.show('settings:keys')
         local settings = UI.categories[#UI.categories]
-        assert(settings.group.label == 'Settings' and #settings.subs == 4, 'four pages under Settings')
+        assert(settings.group.label == 'Settings' and #settings.subs == 7, 'seven pages under Settings')
         assert(UI.settingFrames.keys:IsShown() and not UI.settingFrames.general:IsShown(), 'key bindings shown')
         UI.show('settings')
         assert(UI.settingFrames.general:IsShown() and UI.settingsTab == 'general', 'general is the first page')
-        settings.subs[4]:Click()
-        assert(UI.section == 'settings' and UI.settingFrames.safety:IsShown(), 'its menu entry opens the page')''')
+        settings.subs[5]:Click()
+        assert(UI.section == 'settings' and UI.settingFrames.share:IsShown(), 'its menu entry opens the page')''')
 
 
 class MerchantRefreshTests(unittest.TestCase):
@@ -854,6 +854,7 @@ class PacedVendorSaleTests(unittest.TestCase):
         local slot = 0
         for bag = 0, 1 do for s = 1, 12 do putBag(bag, s, 71, 1); slot = slot + 1 end end
         F.Data.market(F.db, F.Engine.scope()).history['c:71'] = { scan = { at = now, market = 20 } }
+        T.setRouteChoice('c:71', 'vendor') -- both routes pay: the player chose the merchant
         -- The server ignores the first sale of every third stack (as in game: 17 of 24 taken).
         local use, n, tried = C_Container.UseContainerItem, 0, {}
         C_Container.UseContainerItem = function(bag, s)
@@ -868,7 +869,7 @@ class PacedVendorSaleTests(unittest.TestCase):
         assert(T.sellingToVendor())
         for _ = 1, 100 do run(0.1); if not T.sellingToVendor() then break end end
         assert(not T.sellingToVendor() and #soldToVendor == 24, #soldToVendor .. ' of 24 sold')
-        local last = printed[#printed]
+        local last = ForeverFlip.Log.last('trade')
         assert(last:find('sold 24 stacks'), last)''')
 
     def test_stock_left_in_the_bags_is_not_booked_as_sold(self):
@@ -880,4 +881,4 @@ class PacedVendorSaleTests(unittest.TestCase):
         MerchantFrame:Show(); T.sellAllToVendor()
         for _ = 1, 100 do run(0.1); if not T.sellingToVendor() then break end end
         assert(c.positions['c:71'] and c.positions['c:71'].qty == 4, 'still held')
-        assert(printed[#printed]:find('did not sell'), printed[#printed])''')
+        assert(ForeverFlip.Log.last('trade'):find('did not sell'), ForeverFlip.Log.last())''')

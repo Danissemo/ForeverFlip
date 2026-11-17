@@ -23,12 +23,12 @@ class VendorConsistencyTests(unittest.TestCase):
         run(WOOL + '''UI.show('sell');UI.sellSelected=F.AH.bagItems()[1];UI.refreshSell()
         local row
         for _,r in ipairs(UI.sellTable.rows) do if r.key==key then row=r end end
-        assert(row and row.cols[4]:GetText():find('Vendor',1,true))
+        assert(row and row.cols[2]:GetText():find('Vendor',1,true))
+        F.Data.market(F.db,F.Engine.scope()).scannedAt=now -- the tooltip needs a scan of today (T31)
         tooltipLines={};GameTooltip.itemLink=link(3530)
         for _,fn in ipairs(tooltipCalls) do fn(GameTooltip) end
         local tip=table.concat(tooltipLines,' | ')
-        assert(tip:find('Best: sell to a vendor',1,true) and not tip:find('Best: post on the auction house',1,true))
-        assert(tip:find('Auction at market price, after fees',1,true))
+        assert(tip:find('Recommendation = |cffffd100Vendor at',1,true) and not tip:find('Auction at',1,true),tip)
         assert(UI.sellBox.full():find('Vendor pays',1,true) and #T.vendorSellList()==1)
         ''')
 
@@ -130,7 +130,7 @@ local d=F.Deals.get('c:11')
 
     def test_a_short_offer_is_not_bought_by_the_run_or_buy_next(self):
         run(self.OFFER + '''money=1000; F.Deals.fitWallet(d)
-        assert(#F.Trade.runTargets()==0, 'Buy all to vendor skips it')
+        assert(#F.Trade.runTargets()==0, 'Buy first skips it')
         assert(F.Deals.best()==nil, 'Buy next skips it')''')
 
 

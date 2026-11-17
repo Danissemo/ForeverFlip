@@ -44,6 +44,24 @@ T.prices['c:10'] = { at = now, rows = { { unit = 150, qty = 100 } } }
 '''
 
 
+class BoughtWayTests(unittest.TestCase):
+    """Stock bought through Deals for the auction house keeps that way: Best does not take it over."""
+
+    def test_a_deals_purchase_keeps_its_way_until_old_and_unfit(self):
+        run(BASE + '''addItem(71, 'Murloc Fin', 28, 'commodity'); market('c:71', 25); putBag(0, 1, 71, 1)
+        assert(T.sellWay('c:71', 71) == 'vendor', 'Best alone: the merchant pays more')
+        local p = F.Data.addPosition(c, 'c:71', 'Murloc Fin', 1, 10, 'flip', 30, now, nil, 'addon', nil, 'median')
+        assert(p.strategy == 'median' and p.bought == now)
+        local lot = c.lots[#c.lots]
+        assert(lot.strategy == 'median', 'the lot keeps its strategy for the journal')
+        local way, _, _, _, chosen, strategy = T.sellWay('c:71', 71)
+        assert(way == 'auction' and not chosen and strategy == 'median', tostring(way))
+        p.bought = now - (T.KEEP_DAYS + 1) * 86400
+        assert(T.sellWay('c:71', 71) == 'vendor', 'held long and the auction house stopped paying')
+        T.setRouteChoice('c:71', 'auction')
+        assert(select(5, T.sellWay('c:71', 71)), 'the player still decides')''')
+
+
 class VendorStockTests(unittest.TestCase):
     """V4-a, V4-c: vendor-deal stock is only the units bought, also in a stack of looted ones."""
 
@@ -120,7 +138,7 @@ class GearSaleTests(unittest.TestCase):
         assert(T.sellAllToVendor() == 0 and T.sellUnusableGear() == 0, 'one merchant sale at a time')
         for _ = 1, 100 do run(0.1); if not T.sellingToVendor() then break end end
         assert(#soldToVendor == listed and #T.unusableGearList() == 0, #soldToVendor .. ' of ' .. listed)
-        assert(printed[#printed]:find('sold ' .. listed .. ' pieces of gear', 1, true), printed[#printed])''')
+        assert(ForeverFlip.Log.last('trade'):find('sold ' .. listed .. ' pieces of gear', 1, true), ForeverFlip.Log.last())''')
 
 
 class LateVendorAnswerTests(unittest.TestCase):
@@ -130,7 +148,7 @@ class LateVendorAnswerTests(unittest.TestCase):
         run(SLOW + '''now = now + 0.2; T.stepVendor()
         assert(not T.vendorJob and sent == 1, 'not sent again')
         assert(c.stats['c:71'].sold == 1 and not c.positions['c:71'], 'booked as sold')
-        assert(printed[#printed]:find('sold 1 stacks', 1, true), tostring(printed[#printed]))''')
+        assert(ForeverFlip.Log.last('trade'):find('sold 1 stacks', 1, true), tostring(ForeverFlip.Log.last()))''')
 
     def test_when_the_merchant_closes(self):
         run(SLOW + '''MerchantFrame:Hide(); T.stepVendor()

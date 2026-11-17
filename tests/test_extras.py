@@ -13,7 +13,7 @@ class ApiTests(unittest.TestCase):
     def test_undercut_scan_notification_uses_selected_locale(self):
         run(EXTRA + '''F.Locale.apply('uk');F.Trade.fightCount=function() return 1 end
         F.Trade.toldFights=nil;F.Trade.afterScan()
-        assert(printed[#printed]:find(F.Locale.text('%d of your auctions were undercut and are worth answering: Selling, Undercuts.'):format(1),1,true))
+        assert(ForeverFlip.Log.last('trade'):find(F.Locale.text('%d of your auctions were undercut and are worth answering: Selling, Undercuts.'):format(1),1,true))
         ''')
 
     def test_cheapest_today_does_not_return_yesterdays_price(self):

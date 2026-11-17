@@ -1,4 +1,4 @@
-"""Buy all to vendor: every vendor deal bought click after click, each checked just before."""
+"""Buy first (To vendor): the top row of the table as sorted, one lot per click, each checked just before."""
 import unittest
 
 from test_addon import SETUP, run
@@ -45,7 +45,7 @@ class BuyRunTests(unittest.TestCase):
         T.runStop(); assert(not T.run)''')
 
     def test_the_page_button_says_what_the_next_click_does(self):
-        run(RUN + '''assert(UI.runButton:IsShown() and UI.runButton:GetText():find('Buy all to vendor'))
+        run(RUN + '''assert(UI.runButton:IsShown() and UI.runButton:GetText():find('Buy first'))
         UI.runButton:Click(); answer(); run(0.1); UI.refresh()
         assert(UI.runButton:GetText():find('Buy next'), UI.runButton:GetText())
         assert(UI.runStop:IsShown())
@@ -102,6 +102,21 @@ class VendorClickPriorityTests(unittest.TestCase):
         assert(targets[1].key == 'i:30', '500 profit from one auction beats 400 commodity and 20 item profit')
         assert(targets[2].key == 'c:10')
         assert(T.runTargets(true)[1].key == 'i:30')''')
+
+    def test_buy_first_takes_the_top_row_as_the_table_is_sorted(self):
+        run(PRIORITY + '''local UI = F.UI
+        D.replace({
+            deal('i:20', 'item', 1000, {{unit=100, qty=1, auctionID=101}}, now),
+            deal('i:30', 'item', 1000, {{unit=500, qty=1, auctionID=102}}, now)
+        }, F.Engine.scope())
+        UI.dealSort, UI.dealDescending, UI.dealPage = 5, false, 1; UI.refresh()
+        assert(UI.dealView().rows[1].key == 'i:20' and T.runTargets(true)[1].key == 'i:20', 'cheapest cost on top')
+        UI.dealSort, UI.dealDescending, UI.dealPage = 5, true, 1; UI.refresh()
+        assert(UI.dealView().rows[1].key == 'i:30' and T.runTargets(true)[1].key == 'i:30', 'dearest cost on top')
+        assert(T.runClick() and T.op.key == 'i:30' and T.op.auctionID == 102, 'the top row is bought')
+        local n = 0
+        for _, c in ipairs(calls) do if c[1] == 'PlaceBid' then n = n + 1 end end
+        assert(n == 1, 'one click buys one lot, not the whole list')''')
 
     def test_commodity_priority_uses_affordable_units_after_wallet_shrinks(self):
         run(PRIORITY + '''D.replace({

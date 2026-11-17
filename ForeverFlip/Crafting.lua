@@ -54,19 +54,7 @@ end
 -- spell book is asked as well whenever the page is drawn (a recipe's ID is its spell's; C.learnedMap).
 -- No answer from either reads as "not known": a failure never hides a recipe the character can craft.
 local function knowsSpell(id)
-    local S = C_SpellBook
-    local known = S and S.IsSpellKnown
-    if not known and not S then
-        known = IsSpellKnown -- the deprecated fallback, only without the namespace
-    end
-    if not known then
-        return nil
-    end
-    local ok, has = pcall(known, id)
-    if ok and type(has) == "boolean" then
-        return has
-    end
-    return nil
+    return F.Compat.spellKnown(id)
 end
 
 local function learned(id)
@@ -179,10 +167,7 @@ end
 -- The auction price of an item: a fresh check (Check all on this page) before the scan's usual price.
 -- Gear is kept under its name (F.AH.keyFor; nil until the game has loaded the item).
 local function usual(history, id)
-    local key = F.AH.keyFor(id)
-    local h = key and history[key]
-    local live = key and F.Trade.freshCheapest(key)
-    return live or (h and F.Market.usual(h)) or nil, h
+    return F.Deals.priceOf(F.AH.keyFor(id), history)
 end
 
 -- Keys of every material and product of the saved recipes (what Check all reads on this page).
@@ -236,16 +221,20 @@ function C.profits(countUnlearned)
                 end
                 cost = cost + unit * m[2]
             end
-            local row = { id = id, name = r.name, out = r.out, n = r.n, missing = missing }
+            local row = { id = id, name = r.name, out = r.out, n = r.n, missing = missing, reagents = r.r }
             if not missing then
                 local price, h = usual(history, r.out)
                 local vendor = F.AH.vendorPrice(r.out)
-                local auction, perDay
+                local auction, perDay, deposit
+                local key = F.AH.keyFor(r.out)
                 if price then
                     local s = F.Market.saleability(h, price, now)
                     perDay = s.known and s.perDay or nil
-                    local d = F.Market.duration(F.AH.keyFor(r.out), r.n, price)
-                    auction = F.Market.net(price, r.n) - F.Market.postDeposit(r.out, nil, r.n, d)
+                    local kind = key and U.parseKey(key)
+                    local left, _, paid = F.Market.auctionNet(r.out, kind and kind.kind, key, price, r.n)
+                    auction, deposit = left, paid
+                    -- Sure of selling one craft's products at the usual price (as Selling's).
+                    row.sure = key and F.Deals.sureAt(key, price, r.n) or nil
                 end
                 local vendorValue = vendor and vendor * r.n or nil
                 if auction and (not vendorValue or auction > vendorValue) then
@@ -253,7 +242,28 @@ function C.profits(countUnlearned)
                 elseif vendorValue then
                     row.value, row.route = vendorValue, "vendor"
                 end
-                row.cost, row.perDay = math.floor(cost), perDay
+                -- The same rule as Selling's Best (Trade.sellWay): when both routes pass their
+                -- thresholds, F.Market.routeVerdict decides, or leaves it open ("undecided").
+                if auction and vendorValue then
+                    local n = math.max(1, r.n or 1)
+                    local routes = F.Market.sellRoutes({
+                        cost = cost / n,
+                        vendor = vendor,
+                        post = price,
+                        net = auction / n,
+                        lost = deposit / n,
+                    }, n, F.db.settings)
+                    local quality = key and F.Deals.qualityAt(key, price, now)
+                    local verdict = F.Market.routeVerdict(routes, {
+                        sure = row.sure,
+                        reliable = quality and quality.reliable,
+                    }, F.db.settings)
+                    if verdict then
+                        row.route = verdict.way
+                        row.value = verdict.way == "vendor" and vendorValue or auction
+                    end
+                end
+                row.cost, row.perDay, row.key = math.floor(cost), perDay, key
                 row.profit = row.value and row.value - row.cost or nil
             end
             row.learned = learnedMap[id] ~= false
@@ -270,17 +280,33 @@ function C.profits(countUnlearned)
     return out
 end
 
+-- T21: a saved recipe was cast (a recipe's ID is its spell's). Materials the player holds as
+-- positions (bought on the auction house) carry their cost to the product as a chain
+-- (F.Data.convert); materials not held are not counted. Nothing when no material is held.
+function C.onCast(spellID)
+    local r = spellID and recipes()[spellID]
+    if type(r) ~= "table" or type(r.r) ~= "table" or not r.out then
+        return nil
+    end
+    local char = F.Data.char(F.db, F.Engine.owner())
+    local inputs = {}
+    for _, m in ipairs(r.r) do
+        local key = F.AH.keyFor(m[1])
+        if key and char.positions[key] then
+            inputs[#inputs + 1] = { key = key, qty = m[2] or 1 }
+        end
+    end
+    local out = F.AH.keyFor(r.out)
+    if #inputs == 0 or not out then
+        return nil
+    end
+    return F.Data.convert(char, "craft", inputs, { { key = out, name = r.name, qty = r.n or 1 } }, F.Engine.clock())
+end
+
 -- Units of an item the player already has, in the bags and the bank (the bank as last seen);
 -- `bagsOnly`: in the bags.
 function C.have(id, bagsOnly)
-    -- The documented form takes the item as ItemInfo (an ID is accepted); the bare GetItemCount is
-    -- its deprecated fallback, kept for a client that does not have C_Item.
-    local count = C_Item and C_Item.GetItemCount or GetItemCount
-    if not count then
-        return 0
-    end
-    local ok, n = pcall(count, id, not bagsOnly)
-    return ok and U.finite(n) and n or 0
+    return F.Compat.itemCount(id, not bagsOnly)
 end
 
 -- How many crafts of a recipe are worth making now, and what to buy for them. Crafts are added one
@@ -296,7 +322,7 @@ end
 -- buys exactly the lots that keep the crafts paying.
 -- { crafts, limit, perDay, value, cost, profit, materials = { { id, key, name, per, held, buy,
 -- maxPrice, spend, estimated } } }, or nil and a reason ("missing", "unknown").
-C.PLAN_RETURN = 0.05
+C.PLAN_RETURN = U.TUNING.planReturn
 C.PLAN_MAX = 100
 C.PLAN_DAYS = 1
 

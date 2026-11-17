@@ -40,13 +40,16 @@ class VendorPriceTests(unittest.TestCase):
         local d = F.Merchant.differences()
         assert(#d == 1 and d[1].id == 10 and d[1].seen == 75 and d[1].client == 100)''')
 
-    def test_damaged_gear_does_not_lower_the_learned_price(self):
-        run(SETUP + BUYBACK + '''buyback = { { 20, 1070, 1 } }; F.Merchant.learnBuyback()
-        buyback = { { 20, 500, 1 } }; F.Merchant.learnBuyback()
-        assert(F.AH.vendorPrice(20) == 1070, 'a damaged sword sold for less')
-        addItem(20, 'Northern Shortsword', 900, 'gear')  -- a patch changed the price
-        F.Merchant.learnBuyback()
-        assert(F.AH.vendorPrice(20) == 500, F.AH.vendorPrice(20))''')
+    def test_worn_gear_keeps_the_client_price(self):
+        run(SETUP + BUYBACK + '''local client = F.AH.clientVendorPrice(20)
+        buyback = { { 20, math.floor(client / 2), 1 } }; F.Merchant.learnBuyback()
+        local p, how = F.AH.vendorPrice(20, true)
+        assert(p == client and how == 'client', 'a worn sword sold for less: ' .. tostring(p))''')
+
+    def test_the_client_price_is_exact_when_a_merchant_paid_the_same(self):
+        run(SETUP + BUYBACK + '''buyback = { { 10, 400, 4 } }; F.Merchant.learnBuyback()
+        local p, how = F.AH.vendorPrice(10, true)
+        assert(p == 100 and how == 'client', how)''')
 
     def test_a_learned_lower_price_removes_a_vendor_deal(self):
         run(SETUP + BUYBACK + '''buyback = { { 10, 50, 1 } }; F.Merchant.learnBuyback()
@@ -365,13 +368,13 @@ class OtherTests(unittest.TestCase):
         UI.show('bids')
         local deals = UI.categories[1]
         assert(deals.selected:IsShown(), 'bids belong to Deals')
-        assert(#deals.subs == 4)
+        assert(#deals.subs == 5)
         local shown, current = 0, nil
         for _, b in ipairs(deals.subs) do
             if b:IsShown() then shown = shown + 1 end
             if b.id == 'bids' then current = b end
         end
-        assert(shown == 4 and current.selected:IsShown(), 'the pages open under Deals, the open one marked')
+        assert(shown == 5 and current.selected:IsShown(), 'the pages open under Deals, the open one marked')
         UI.show('deals:shop')
         assert(UI.categories[2].group.label == 'Shopping list' and UI.categories[2].selected:IsShown(), 'list deals sit with the list')
         assert(UI.section == 'shop' and #UI.categories[2].subs == 2, 'shopping list and live deals share one panel')
@@ -619,20 +622,21 @@ class TooltipTests(unittest.TestCase):
         F.Data.addPosition(c, 'c:10', 'Linen Cloth', 4, 200, 'flip', 100, now)
         F.Trade.owned = { { key = 'c:10', qty = 2, price = 80, sold = false } }
         GameTooltip.itemLink = link(10)""")
-        self.assertIn('ForeverFlip  Alliance AH', text)
+        self.assertIn('FOREVER FLIP: ALLIANCE AH', text)
         self.assertIn('You hold = 4, paid 50c each', text)
         self.assertIn('On sale by you = 2 at 80c', text)
         self.assertIn('Yours', text)
-        self.assertIn('Vendor pays', text)
-        self.assertNotIn('= -', text.split('You get each')[1].split('##')[0], 'cloth posted as a stack does not lose to deposits')
+        self.assertIn('Vendor price', text)
+        self.assertNotIn('= -', text.split('Recommendation')[1].split('##')[0], 'cloth posted as a stack does not lose to deposits')
 
     def test_an_item_without_history_still_shows_stock_and_vendor(self):
         text = self.lines("""local F = ForeverFlip
         local c = F.Data.char(F.db, F.Engine.owner())
         F.Data.addPosition(c, 'i:30', 'Linen Bag', 1, 1000, 'other', nil, now)
+        F.Data.market(F.db, F.Engine.scope()).scannedAt = now -- a scan of today, no history for this item
         GameTooltip.itemLink = link(30)""")
         self.assertIn('You hold = 1', text)
-        self.assertIn('Best: sell to a vendor', text)
+        self.assertIn('Recommendation = Vendor at', text)
 
     def test_sales_not_measured_yet_are_said_so(self):
         text = self.lines("""fullScan(); GameTooltip.itemLink = link(10)""")

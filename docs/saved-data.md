@@ -13,6 +13,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 
 | Field | Type | Meaning |
 |---|---|---|
+| `schemaVersion` | number | How many of `Data.MIGRATIONS` have run (`2`). A file from a newer ForeverFlip is left as it is. |
 | `salesModel` | number | Sales-estimation model (`4`). Older derived sales/flow/pending values and daily sold counts are reset once; prices, positions and journals are retained. |
 | `vendorMarginReset` | boolean | The one-time default vendor-margin migration has run. |
 | `settings` | table | User settings, see below. |
@@ -31,6 +32,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `deposits` | table | `deposits[itemID][duration]` = deposit per unit the game charged for the last post of an item; `deposits[itemID].neutral[duration]` the same at a neutral house. |
 | `sharedSeen` | table | `sharedSeen["<scope>@<time>"]` = when a shared scan was merged, so each one is merged once (kept 7 days). |
 | `hiddenSell` | table | `hiddenSell[key]` = name of an item hidden from the Sell page and the posting queues. |
+| `routeChoice` | table, made when first needed | `routeChoice[key]` = `"auction"` or `"vendor"`: the route the player chose for an item both routes pay for (Best "AH / V"). Without one the item stays off the merchant's list. |
 | `lastPosted` | table | `lastPosted[key]` = the last unit price the player posted the item at. |
 | `rules` | table | `rules[key]` = posting rule `{ min, normal, max, keep }` (all optional; money in copper). |
 | `fights` | table | Per-item undercut/repost observations used by selling advice. |
@@ -47,7 +49,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | Field | Default | Meaning |
 |---|---|---|
 | `language` | `nil` | `"en"`, `"uk"` or `nil` (follow the game client). |
-| `vendorMinProfit` | `10` | Minimum profit of a vendor deal. |
+| `vendorMinProfit` | `10` | Minimum profit of a vendor deal, per unit. |
 | `minProfit` | `100` | Minimum profit of a resale. |
 | `minROI` | `0.2` | Minimum resale return (profit / cost). |
 | `spendShare` | `0.8` | Share of the gold on hand one deal may use. |
@@ -90,11 +92,11 @@ Missing settings are filled in with these defaults at load.
 
 | Field | Meaning |
 |---|---|
-| `scan` | The last scan of the item: `{ at, market, above = {4} }`. `market` is the usual price, `above[i]` the units listed at or above `LEVELS[i] × market`. |
+| `scan` | The last scan of the item: `{ at, market, above = {4}, low }`. `market` is the usual price, `above[i]` the units listed at or above `LEVELS[i] × market`, `low` the cheapest unit of that scan (the market reference's "now"). |
 | `flow` | Sales between scans: `{ hours, sold = {4}, pairs, at, market, watched }`. These are decayed sums with a 2-day half-life. `pairs` is capped at 99; `watched` counts the hours watched since the last sale, without decay. |
 | `units` | Units listed in the last scan. |
 | `hits` | Decaying count of scans in which the item was near a deal (sniper score). |
-| `days` | Up to 14 daily records `{ d = day number, min = cheapest unit price, m = usual price, n = units listed, s = units sold }`. Present only for items traded often enough. |
+| `days` | Up to 14 daily records `{ d = day number, min = cheapest unit price, m = usual price, n = units listed, s = units sold, lm, lmin, cm, cmin }`. `m`/`min` combine every source; `lm`/`lmin` come from own full scans only and `cm`/`cmin` from shared (community) scans only, for the market reference. Present only for items traded often enough. |
 | `lots` | The item's lots of the last scan as text, `"price:count:band,..."` in scan order (up to 300), for lot-by-lot sales tracking. |
 | `lotsAt` | Time of the scan `lots` comes from. |
 | `lotOwners` | Parallel comma-separated seller tags for `lots`; tags avoid storing seller names. |

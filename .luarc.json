@@ -16,7 +16,9 @@
     "AuxForeverAPI",
     "ForeverFlipAPI",
     "ForeverFlipRaw",
-    "ForeverFlipShared"
+    "ForeverFlipShared",
+    "FCF_OpenNewWindow",
+    "FCF_SelectDockFrame"
   ],
   "workspace.ignoreDir": [
     ".git",

@@ -51,6 +51,8 @@ from ffscan import scope_file  # noqa: E402
 from game_location import locate_game, GameNotFound, AmbiguousGame  # noqa: E402
 import github_login  # noqa: E402
 import addon_update  # noqa: E402
+import profiles  # noqa: E402
+import self_update  # noqa: E402
 
 VERSION = "2.1.0-beta.2"
 DEFAULT_REPO = "Danissemo/ForeverFlip-Data"
@@ -191,13 +193,28 @@ def package(scan: ffscan.RawScan) -> tuple[bytes, dict[str, str]]:
     return packed, parts
 
 
-def issue_body(scan: ffscan.RawScan, digest: str, gist_id: str) -> str:
+def client_line(game: pathlib.Path | None) -> str:
+    """"wowf 1.60.1.70938": the game the scan comes from, so the data repository keeps markets of
+    other clients apart. Empty when the client cannot be read."""
+    if game is None:
+        return ""
+    try:
+        info = profiles.client_info(game) or {}
+    except (OSError, ValueError):
+        return ""
+    product = re.sub(r"[^A-Za-z0-9_.-]", "", str(info.get("product") or ""))
+    version = re.sub(r"[^0-9.]", "", str(info.get("version") or ""))
+    return f"{product} {version}".strip() if product else ""
+
+
+def issue_body(scan: ffscan.RawScan, digest: str, gist_id: str, client: str = "") -> str:
     when = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(scan.at))
     return (f"A full auction house scan shared by ForeverFlip Sync. It is checked, archived and this issue is "
             f"closed automatically.\n\n"
             f"Taken {when}, {len(scan.rows)} auctions.\n\n"
             f"```\nscope: {scan.scope}\ntime: {scan.at}\nauctions: {len(scan.rows)}\nseal: {scan.seal}\n"
-            f"sha256: {digest}\ngist: {gist_id}\nhelper: {VERSION}\n```\n")
+            f"sha256: {digest}\ngist: {gist_id}\nhelper: {VERSION}\n"
+            + (f"client: {client}\n" if client else "") + "```\n")
 
 
 def shareable_scans(game: pathlib.Path, state: dict, paths=None):
@@ -227,19 +244,30 @@ def shareable_scans(game: pathlib.Path, state: dict, paths=None):
             yield scan, ident, when
 
 
+def scan_time(ident: str) -> int:
+    try:
+        return int(ident.rsplit("@", 1)[1])
+    except (IndexError, ValueError):
+        return 0
+
+
 def mark_uploaded(state: dict, ident: str) -> None:
+    """Remembers a shared scan; the newest 500 are kept. They are ordered by the time of the scan:
+    sorted as text, the realms late in the alphabet pushed out the newest scans of the others."""
     done = set(state.setdefault("uploaded", []))
     done.add(ident)
-    state["uploaded"] = sorted(done)[-500:]
+    state["uploaded"] = sorted(done, key=lambda i: (scan_time(i), i))[-500:]
+    state.setdefault("exchange", {})["shared_at"] = int(time.time())
 
 
 def upload_new_scans(game: pathlib.Path, hub: GitHub, state: dict, paths=None, checkpoint=None) -> None:
+    client = client_line(game)
     for scan, ident, when in shareable_scans(game, state, paths):
         packed, parts = package(scan)
         digest = hashlib.sha256(packed).hexdigest()
         gist = hub.create_gist(f"ForeverFlip scan of {scan.scope}, {when}", parts)
         try:
-            issue = hub.create_issue(f"Scan upload: {scan.scope} {scan.at}", issue_body(scan, digest, gist["id"]))
+            issue = hub.create_issue(f"Scan upload: {scan.scope} {scan.at}", issue_body(scan, digest, gist["id"], client))
         except (urllib.error.URLError, OSError):
             try:
                 hub.delete_gist(gist["id"])
@@ -254,23 +282,63 @@ def upload_new_scans(game: pathlib.Path, hub: GitHub, state: dict, paths=None, c
             f"{len(packed) // 1024} KB (issue #{issue['number']}).")
 
 
+def upload_outcome(answer: str) -> str:
+    """The data repository's answer in one word: published, waiting (for a confirming scan of
+    another player), refused or closed."""
+    text = answer.lower()
+    if "refused" in text:
+        return "refused"
+    if "published in the community prices now" in text:
+        return "published"
+    if "as soon as" in text or "confirm" in text:
+        return "waiting"
+    return "closed"
+
+
+def remember_outcome(state: dict, ident: str, outcome: str, answer: str) -> None:
+    results = state.setdefault("results", {})
+    results.pop(ident, None)
+    results[ident] = {"outcome": outcome, "at": int(time.time()), "answer": answer[:300]}
+    while len(results) > 100:
+        del results[next(iter(results))]
+
+
 def follow_uploads(hub: GitHub, state: dict) -> None:
-    """Reports what the data repository decided and deletes the gists it has read."""
+    """Reports what the data repository decided and deletes the gists it has read.
+
+    One upload that cannot be followed no longer stops the others, nor the new uploads after it:
+    an issue that is gone (deleted or moved: 404/410) is dropped, any other failure keeps the
+    upload waiting for the next pass. Before, one such issue failed every pass (follow_uploads
+    runs before upload_new_scans), and no new scan was shared again."""
     waiting = []
     for item in state.get("pending", []):
         if not item.get("issue"):
             continue  # nothing to follow without an issue
-        issue = hub.issue(item["issue"])
-        if issue["state"] != "closed":
+        try:
+            issue = hub.issue(item["issue"])
+            if issue["state"] != "closed":
+                waiting.append(item)
+                continue
+            answer = hub.last_comment(item["issue"]) or issue.get("state_reason") or "closed"
+        except urllib.error.HTTPError as exc:
+            if exc.code in (404, 410):
+                log(f"Scan {item['scan']}: its issue #{item['issue']} is gone; it is not followed any more.")
+                remember_outcome(state, item["scan"], "closed", f"issue #{item['issue']} is gone")
+                continue
             waiting.append(item)
+            log(f"Scan {item['scan']}: cannot read issue #{item['issue']} now ({describe(exc)}).")
             continue
-        answer = hub.last_comment(item["issue"]) or issue.get("state_reason") or "closed"
+        except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as exc:
+            waiting.append(item)
+            log(f"Scan {item['scan']}: cannot read issue #{item['issue']} now ({describe(exc)}).")
+            continue
         log(f"Scan {item['scan']}: {answer}")
+        remember_outcome(state, item["scan"], upload_outcome(answer), answer)
         try:
             hub.delete_gist(item["gist"])
-        except urllib.error.HTTPError as exc:
-            if exc.code != 404:
-                raise
+        except (urllib.error.URLError, OSError) as exc:
+            if not (isinstance(exc, urllib.error.HTTPError) and exc.code == 404):
+                log(f"Could not delete the gist of {item['scan']} ({describe(exc)}); delete it on GitHub if it stays.")
     state["pending"] = waiting
 
 
@@ -285,9 +353,49 @@ def my_scopes(game: pathlib.Path) -> set[str]:
     return scopes
 
 
-def download_shared(game: pathlib.Path, repo: str, uploaded: list[str] | None = None) -> int:
+def fetch_status(repo: str) -> dict | None:
+    """shared/status.json of the data repository (aggregate.write_status), or None when it has none
+    yet or it cannot be read: then the summaries are used as before."""
+    url = RAW_URL.format(repo=repo, file="status.json")
+    req = urllib.request.Request(url, headers={"User-Agent": f"ForeverFlipSync/{VERSION}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            status = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+    except ValueError:
+        return None
+    return status if isinstance(status, dict) and isinstance(status.get("markets"), dict) else None
+
+
+def download_shared(game: pathlib.Path, repo: str, uploaded: list[str] | None = None,
+                    report: dict | None = None) -> int:
+    """Writes the community summaries of the player's auction houses into ForeverFlip_Shared.
+    `report` receives {scope: {scans, own, latest}}: own counts the player's own shared scans,
+    which the addon skips (they are in its history already). With the data repository's status.json
+    it also gets published_at (when the repository last published a scan of it), checked_at and,
+    when the community price is not reliable yet, reason; such a market's summaries are withheld."""
     texts = []
+    mine = set(uploaded or [])
+    status = fetch_status(repo)
+    markets = (status or {}).get("markets", {})
+    for_addon = {}
     for scope in sorted(my_scopes(game)):
+        market = markets.get(scope)
+        if status is not None:
+            extra = {"checked_at": status.get("checked_at"),
+                     "published_at": (market or {}).get("published_at"),
+                     "reason": (market or {}).get("reason") if market else "no scan of it is published yet"}
+            for_addon[scope] = extra
+            if market is None or not market.get("reliable"):
+                if report is not None:
+                    report[scope] = {"scans": 0, "own": 0, "latest": (market or {}).get("latest_published"),
+                                     **extra}
+                continue
+        else:
+            extra = {}
         url = RAW_URL.format(repo=repo, file=urllib.parse.quote(scope_file(scope)))
         req = urllib.request.Request(url, headers={"User-Agent": f"ForeverFlipSync/{VERSION}"})
         try:
@@ -295,14 +403,26 @@ def download_shared(game: pathlib.Path, repo: str, uploaded: list[str] | None = 
                 body = resp.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
+                if report is not None:
+                    report[scope] = {"scans": 0, "own": 0, "latest": None, **extra}
                 continue
             raise
-        texts += [line for line in body.splitlines() if line.startswith("FF1|")]
+        lines = [line for line in body.splitlines() if line.startswith("FF1|")]
+        texts += lines
+        if report is not None:
+            times = []
+            for line in lines:
+                try:
+                    times.append(int(line.split("|")[2], 36))
+                except (IndexError, ValueError):
+                    pass
+            own = sum(1 for at in times if f"{scope}@{at}" in mine)
+            report[scope] = {"scans": len(lines), "own": own, "latest": max(times) if times else None, **extra}
     folder = game / "Interface" / "AddOns" / "ForeverFlip_Shared"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "ForeverFlip_Shared.toc").write_text(ffscan.SHARED_TOC, encoding="utf-8")
     tmp = folder / "Data.lua.tmp"
-    tmp.write_text(ffscan.lua_data_file(texts, time.time(), uploaded), encoding="utf-8")
+    tmp.write_text(ffscan.lua_data_file(texts, time.time(), uploaded, for_addon or None), encoding="utf-8")
     shutil.move(str(tmp), str(folder / "Data.lua"))
     return len(texts)
 
@@ -310,29 +430,48 @@ def download_shared(game: pathlib.Path, repo: str, uploaded: list[str] | None = 
 # --- Addon updates ---------------------------------------------------------------------------------
 
 def addon_settings(config: dict) -> tuple[bool, bool]:
-    """(install updates automatically, beta tester)."""
+    """(install updates automatically, beta tester as chosen; addon_update.channel adds the
+    automatic choice from the installed build)."""
     return bool(config.get("update_addon", True)), bool(config.get("beta", False))
 
 
 def check_addon(game: pathlib.Path, config: dict) -> dict:
-    """{installed, release (the newer release or None), development (a checkout, never replaced)}."""
-    _, beta = addon_settings(config)
-    releases = addon_update.fetch_releases(config.get("addon_repo") or ADDON_REPO, f"ForeverFlipSync/{VERSION}")
+    """{installed, release (the newer release or None), development (a checkout, never replaced),
+    beta, beta_auto (the beta was chosen from the installed build, not by the player)}."""
     installed = addon_update.installed_version(game)
+    beta, auto = addon_update.channel(config, installed)
+    releases = addon_update.fetch_releases(config.get("addon_repo") or ADDON_REPO, f"ForeverFlipSync/{VERSION}")
     return {"installed": installed, "release": addon_update.newer(installed, releases, beta),
-            "development": addon_update.is_development_copy(game), "beta": beta}
+            "development": addon_update.is_development_copy(game), "beta": beta, "beta_auto": auto}
 
 
-def update_addon(game: pathlib.Path, release: dict) -> dict:
+def apply_beta_choice(config: dict, status: dict) -> bool:
+    """Keeps an automatic beta choice in the config, not marked as the player's; True if changed."""
+    if status.get("beta_auto") and not config.get("beta"):
+        config["beta"] = True
+        config["beta_by_user"] = False
+        return True
+    return False
+
+
+def update_addon(game: pathlib.Path, release: dict, backups: pathlib.Path | None = None) -> dict:
     """Installs `release`; returns what addon_update.install returns."""
     if addon_update.is_development_copy(game):
         raise addon_update.UpdateError("the installed addon is a development copy; it is not replaced")
-    result = addon_update.install(game, release, config_dir() / "addon-backups", f"ForeverFlipSync/{VERSION}")
+    backups = backups or config_dir() / "addon-backups"
+    result = addon_update.install(game, release, backups, f"ForeverFlipSync/{VERSION}")
     when = "restart the game (files were added or removed)" if result["restart"] else "use /reload in game"
     log(f"ForeverFlip updated from {result['previous'] or 'nothing'} to {result['version']}"
-        f"{' (beta)' if release.get('beta') else ''}: {when}. The previous version is kept in "
-        f"{config_dir() / 'addon-backups'}.")
+        f"{' (beta)' if release.get('beta') else ''}: {when}. The previous version is kept in {backups}.")
     return result
+
+
+def check_helper(config: dict, fetch=None, exe=None) -> dict:
+    """{current, release, frozen}: a newer ForeverFlip Sync for the chosen channel (self_update)."""
+    fetch = fetch or addon_update.fetch_releases
+    releases = fetch(config.get("addon_repo") or ADDON_REPO, f"ForeverFlipSync/{VERSION}")
+    exe = self_update.running_executable() if exe is None else exe
+    return self_update.check(releases, bool(config.get("beta")), VERSION, exe or None)
 
 
 def addon_pass(game: pathlib.Path, config: dict, install: bool | None = None) -> dict | None:
@@ -346,7 +485,9 @@ def addon_pass(game: pathlib.Path, config: dict, install: bool | None = None) ->
         log(f"ForeverFlip {release['version']} is out; this installation is a development copy and is left alone.")
         return status
     if automatic if install is None else install:
-        status["result"] = update_addon(game, release)
+        profile = profiles.find_install(config, game)
+        status["result"] = (update_addon(game, release, profiles.backups_folder(config_dir(), profile))
+                            if profile else update_addon(game, release))
         status["installed"], status["release"] = release["version"], None
     else:
         log(f"ForeverFlip {release['version']}{' (beta)' if release['beta'] else ''} is available: {release['page']}")
@@ -388,15 +529,78 @@ def run_once(game: pathlib.Path, repo: str, state: dict, token: str | None, uplo
                 "Community downloads still work.")
             state["warned"] = True
     count = None
+    exchange = state.setdefault("exchange", {})
     if download:
+        report = {}
         try:
-            count = download_shared(game, repo, state.get("uploaded", []))
+            count = download_shared(game, repo, state.get("uploaded", []), report=report)
             log(f"Community data: {count} scans ready. In game, use /reload to read updated prices.")
+            exchange["downloaded_at"] = int(time.time())
+            exchange["scopes"] = report
         except (urllib.error.URLError, OSError, ValueError) as exc:
             errors.append(f"Community download: {describe(exc)}")
     if errors:
+        exchange["error"], exchange["error_at"] = "; ".join(errors), int(time.time())
         raise SyncError("; ".join(errors))
+    if download or (upload and token):  # something was exchanged
+        exchange["ok_at"] = int(time.time())
+        exchange.pop("error", None)
     return count
+
+
+def _when(at) -> str:
+    return time.strftime("%d.%m %H:%M", time.localtime(at))
+
+
+def community_status(state: dict) -> list[str]:
+    """The real state of the community exchange, in lines for the window, keeping three things
+    apart: what this helper uploaded (and when), what the data repository published (and when), and
+    what was downloaded into the game (and when). Per auction house: its newest community scan or
+    "No community price yet" with the reason; shared scans still waiting for another player's
+    confirming scan."""
+    exchange = state.get("exchange") or {}
+    lines = []
+    ok_at, error_at = exchange.get("ok_at"), exchange.get("error_at") or 0
+    lines.append(f"Last exchange {_when(ok_at)}" if ok_at else "No successful exchange yet")
+    if exchange.get("error") and error_at >= (ok_at or 0):
+        lines.append(f"Last error {_when(error_at)}: {exchange['error']}")
+    if exchange.get("shared_at"):
+        lines.append(f"Uploaded: your last scan was sent {_when(exchange['shared_at'])}")
+    if exchange.get("downloaded_at"):
+        lines.append(f"Downloaded: community data written for the game {_when(exchange['downloaded_at'])} "
+                     f"(/reload in game to read it)")
+    newest_shared = {}
+    for ident in state.get("uploaded") or []:
+        scope, at = ident.rsplit("@", 1)[0], scan_time(ident)
+        newest_shared[scope] = max(newest_shared.get(scope, 0), at)
+    for scope, info in sorted((exchange.get("scopes") or {}).items()):
+        scans, own = info.get("scans") or 0, info.get("own") or 0
+        published = f", published {_when(info['published_at'])}" if info.get("published_at") else ""
+        if info.get("reason"):
+            lines.append(f"{scope}: No community price yet ({info['reason']}){published}")
+        elif not scans:
+            lines.append(f"{scope}: No community price yet (no scan of it is published)")
+        elif scans <= own:
+            lines.append(f"{scope}: No community price yet (only your own scans are published; "
+                         f"the addon has them already)")
+        elif info.get("latest"):
+            lines.append(f"{scope}: {scans} community scans, newest {_when(info['latest'])}{published}")
+        else:
+            lines.append(f"{scope}: {scans} community scans{published}")
+        mine = newest_shared.get(scope)
+        if mine and mine > (info.get("latest") or 0) and not info.get("reason"):
+            lines.append(f"{scope}: your scan of {_when(mine)} is uploaded, not published yet")
+    results = (state.get("results") or {}).values()
+    waiting = sum(1 for r in results if r.get("outcome") == "waiting")
+    if waiting:
+        lines.append(f"{waiting} shared scan(s) wait for another player's scan of the same auction house "
+                     f"to confirm them")
+    refused = sum(1 for r in results if r.get("outcome") == "refused")
+    if refused:
+        lines.append(f"{refused} shared scan(s) were refused (see the activity)")
+    if state.get("pending"):
+        lines.append(f"{len(state['pending'])} shared scan(s) are being checked by the data repository")
+    return lines
 
 
 class SyncSession:
@@ -448,7 +652,10 @@ class SyncSession:
             self.retry_at = 0
             self.next_follow = time.monotonic() + 60
             if download:
-                self.next_download = time.monotonic() + 15 * 60
+                # Just after an upload the data repository has not published it yet: look again soon
+                # instead of a quarter of an hour later.
+                soon = bool(self.state.get("pending"))
+                self.next_download = time.monotonic() + (3 if soon else 15) * 60
             return count
         finally:
             save_json(self.state_path, self.state)
@@ -522,6 +729,9 @@ def main(argv=None) -> int:
         config = {}
     if args.beta or args.no_beta:
         config["beta"] = bool(args.beta)
+        config["beta_by_user"] = True
+        save_json(folder / "config.json", config)
+    if profiles.migrate(config):
         save_json(folder / "config.json", config)
     if args.login:
         return console_login(config)
@@ -529,6 +739,8 @@ def main(argv=None) -> int:
         try:
             game = find_game(args.game or os.environ.get("FF_GAME") or config.get("game"))
             status = addon_pass(game, config, install=True)
+            if apply_beta_choice(config, status):
+                save_json(folder / "config.json", config)
         except (GameNotFound, AmbiguousGame, addon_update.UpdateError, urllib.error.URLError, OSError, ValueError) as exc:
             log(f"Addon update: {describe(exc)}.")
             return 1
@@ -550,10 +762,10 @@ def main(argv=None) -> int:
         log(str(exc))
         log('Use --game "<your Forever folder>" or start the desktop window to choose it.')
         return 1
-    config["game"] = str(game)
+    install = profiles.add_install(config, game)
     save_json(folder / "config.json", config)
     repo = args.repo or config.get("repo") or DEFAULT_REPO
-    state_path = folder / "state.json"
+    state_path = profiles.state_path(folder, install)
     state = load_json(state_path, {})
     if not isinstance(state, dict):
         state = {}

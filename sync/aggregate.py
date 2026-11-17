@@ -19,7 +19,22 @@ A scan is published (its summary added to `shared/<realm>-<faction>.txt`) once i
   shares at least half of its auctions. Only the items whose prices agree with that scan are
   published, so a lot added or changed by hand never reaches the summaries.
 
-A scan that finds no such scan within 24 hours stays in the archive, marked unconfirmed.
+A scan that finds no such scan within 24 hours stays in the archive, marked unconfirmed. The
+confirming scan must be independent: another uploader's copy of the same scan (same seal) never
+confirms it, and the same scan uploaded twice (same file, or same auction house, time and seal) is
+one observation, refused the second time.
+
+Markets are kept apart: a scan belongs to one auction house, "<realm>-<faction>" (the realm names
+the region, e.g. "CAMWOW EU4 Realm 3 PvE"; the faction is the auction house: Alliance, Horde or the
+Neutral one), and only to WoW Forever (product wowf). A scan whose header contradicts its auction
+house, whose issue names another house or time, whose client is not wowf, or whose house would
+share a summary file with another house is refused.
+
+Raw scans stay the primary source: an archived scan whose registry line was lost (a run that failed
+to push after archiving) is registered again from the archive (`reconcile_archive`). The summaries
+are computed from them separately, and `shared/status.json` tells per auction house when the data
+repository last checked it, the newest scan it holds, the newest one published, counts of every
+status and, when the community price cannot be trusted yet, why.
 
 Before a confirmed scan is published, its prices are compared with the community's history (the
 published summaries of the last 3 days): an item more than twice or less than half its usual price
@@ -27,6 +42,8 @@ there is left out, and a scan with more than a quarter of its compared items out
 published at all ("disputed").
 
 Usage (in the workflow): python aggregate.py --data <data repository checkout>
+Locally, without changing anything on GitHub: python aggregate.py --data <copy> --dry-run
+(reads issues and archives, writes only into the copy; archiving, comments and closing are skipped).
 Environment: GITHUB_TOKEN, GITHUB_REPOSITORY.
 """
 
@@ -70,6 +87,10 @@ HISTORY_DAYS = 3  # summaries the prices of a new scan are compared with
 HISTORY_RATIO = 2.0  # a usual price more than twice or less than half the community's is out of line
 HISTORY_MIN_ITEMS = 20  # items in common needed to judge a whole scan
 HISTORY_MAX_OFF = 0.25  # share of out-of-line items that disputes a whole scan
+PRODUCT = "wowf"  # WoW Forever: scans of any other client are another market
+FRESH = ffscan.MAX_AGE  # published scans older than this give no community price
+MIN_OBSERVATIONS = 2  # published scans (server snapshots) within FRESH needed for a price
+STATUS_FORMAT = 1
 
 
 
@@ -123,6 +144,21 @@ class Hub:
             if exc.code != 422:  # already archived
                 raise
 
+    def raw_releases(self, since: float) -> list[dict]:
+        """The archive releases raw-YYYY-MM-DD of the days from `since` on."""
+        first = time.strftime("%Y-%m-%d", time.gmtime(since))
+        out, page = [], 1
+        while True:
+            batch = self.json("GET", f"/repos/{self.repo}/releases?per_page=100&page={page}")
+            out += [r for r in batch if re.fullmatch(r"raw-\d{4}-\d{2}-\d{2}", r.get("tag_name", ""))
+                    and r["tag_name"][4:] >= first]
+            if len(batch) < 100:
+                return out
+            page += 1
+
+    def asset_bytes(self, asset) -> bytes:
+        return self.call("GET", asset["url"], accept="application/octet-stream")
+
     def download_archived(self, tag, name) -> bytes:
         for asset in self.assets(self.release(tag)):
             if asset["name"] == name:
@@ -155,6 +191,33 @@ class Hub:
         return calendar.timegm(time.strptime(user["created_at"], "%Y-%m-%dT%H:%M:%SZ"))
 
 
+class DryHub(Hub):
+    """Reads GitHub like Hub and changes nothing there: no release, archive, comment or closing.
+    For checking the pipeline locally against a copy of the data repository."""
+
+    def __init__(self, repo: str, token: str):
+        super().__init__(repo, token)
+        self.skipped: list[str] = []
+
+    def release(self, tag, create_body=None):
+        try:
+            return super().release(tag, None)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+        self.skipped.append(f"create release {tag}")
+        return {"id": None, "tag_name": tag, "upload_url": ""}
+
+    def upload(self, release, name, data):
+        self.skipped.append(f"archive {name}")
+
+    def comment(self, number, text):
+        self.skipped.append(f"comment #{number}: {text[:80]}")
+
+    def close(self, number, completed):
+        self.skipped.append(f"close #{number}")
+
+
 # --- Registry ------------------------------------------------------------------------------------
 
 def load_registry(data: pathlib.Path) -> list[dict]:
@@ -181,7 +244,8 @@ def load_uploaders(data: pathlib.Path) -> dict:
 # --- Uploads -------------------------------------------------------------------------------------
 
 def parse_issue(body: str) -> dict:
-    fields = dict(re.findall(r"^(scope|time|auctions|seal|sha256|gist|helper): *(.+?) *$", body or "", re.M))
+    fields = dict(re.findall(r"^(scope|time|auctions|seal|sha256|gist|helper|client): *(.+?) *$", body or "",
+                             re.M))
     if not re.fullmatch(r"[0-9a-f]{20,40}", fields.get("gist", "")):
         raise ValueError("the issue does not name a gist")
     if not re.fullmatch(r"[0-9a-f]{64}", fields.get("sha256", "")):
@@ -225,10 +289,32 @@ def archive_name(scan: ffscan.RawScan, uploader: str) -> str:
     return f"{safe(scan.realm)}_{safe(scan.faction)}_{scan.at}_{safe(uploader)}.ffr.gz"
 
 
+def market_problem(scan: ffscan.RawScan, fields: dict, entries: list[dict]) -> str | None:
+    """Why the scan cannot be filed under its market, or None. The market is the auction house
+    "<realm>-<faction>" of WoW Forever; the issue, the file's header and the summary file must agree."""
+    if scan.faction not in ("Alliance", "Horde", "Neutral") or not scan.realm.strip() \
+            or scan.scope != f"{scan.realm}-{scan.faction}":
+        return "the auction house in the scan does not match its realm and faction (wrong market id)"
+    if fields.get("scope") is not None and fields["scope"] != scan.scope:
+        return "the issue names another auction house than the scan (wrong market id)"
+    if fields.get("time") is not None and fields["time"] != str(scan.at):
+        return "the issue names another time than the scan"
+    product = (fields.get("client") or "").split(" ")[0]
+    if product and product != PRODUCT:
+        return f"the scan comes from another game ({product}), not WoW Forever"
+    other = next((e["scope"] for e in entries if e["scope"] != scan.scope
+                  and scope_file(e["scope"]) == scope_file(scan.scope)), None)
+    if other:
+        return f"the auction house name collides with {other!r}"
+    return None
+
+
 def limits(entries: list[dict], uploader: str, scan: ffscan.RawScan, digest: str, now: float) -> str | None:
     mine = [e for e in entries if e["uploader"].lower() == uploader.lower()]
     if any(e["sha256"] == digest for e in entries):
         return "this scan was uploaded already"
+    if any(e["scope"] == scan.scope and e["at"] == scan.at and e.get("seal") == scan.seal for e in entries):
+        return "this scan was uploaded already (the same scan counts once)"
     if sum(1 for e in mine if now - e["received"] < 86400) >= MAX_PER_DAY:
         return f"more than {MAX_PER_DAY} uploads in 24 hours"
     if any(e["scope"] == scan.scope and abs(e["at"] - scan.at) < MIN_GAP for e in mine):
@@ -253,11 +339,14 @@ def accept_upload(hub: Hub, issue: dict, entries: list[dict], uploaders: dict, n
         scan = ffscan.decode_raw(gzip.decompress(packed).decode("utf-8"))
     except (OSError, EOFError, UnicodeDecodeError, zlib.error) as exc:
         raise ValueError("the file is not a gzip-compressed scan") from exc
-    why = ffscan.check(scan, now) or limits(entries, author, scan, digest, now)
+    why = (ffscan.check(scan, now) or market_problem(scan, fields, entries)
+           or limits(entries, author, scan, digest, now))
     if why:
         raise ValueError(why)
     entry = archive_scan(hub, scan, packed, digest, author, now, "trusted" if trusted else "pending")
     entry["issue"] = issue["number"]
+    if fields.get("client"):
+        entry["client"] = fields["client"][:40]
     return entry, scan
 
 
@@ -383,16 +472,17 @@ def add_summary(shared: pathlib.Path, scope: str, at: int, items: dict) -> bool:
     return True
 
 
-def publish(shared: pathlib.Path, entry: dict, scan: ffscan.RawScan, keys: set[str] | None) -> None:
+def publish(shared: pathlib.Path, entry: dict, scan: ffscan.RawScan, keys: set[str] | None) -> bool:
+    """Adds the scan's summary (only `keys` when given); True when the summary file changed."""
     items = ffscan.summarize(scan)
     if keys is not None:
         items = {k: v for k, v in items.items() if k in keys}
     entry["items"] = len(items)
-    if items:
-        add_summary(shared, scan.scope, scan.at, items)
+    return bool(items) and add_summary(shared, scan.scope, scan.at, items)
 
 
-def confirm_pending(entries: list[dict], load, shared: pathlib.Path, now: float) -> list[str]:
+def confirm_pending(entries: list[dict], load, shared: pathlib.Path, now: float,
+                    published: dict | None = None) -> list[str]:
     """Compares waiting scans with the new scans of other uploaders. `load(entry)` returns a scan."""
     report = []
     for entry in entries:
@@ -401,6 +491,7 @@ def confirm_pending(entries: list[dict], load, shared: pathlib.Path, now: float)
         peers = [e for e in entries
                  if e is not entry and e["scope"] == entry["scope"] and e["status"] != "refused"
                  and e["uploader"].lower() != entry["uploader"].lower()
+                 and (e.get("seal") is None or e.get("seal") != entry.get("seal"))
                  and abs(e["at"] - entry["at"]) <= PEER_WINDOW and e["name"] not in entry["compared"]]
         keys: set[str] = set()
         scan = None
@@ -421,7 +512,8 @@ def confirm_pending(entries: list[dict], load, shared: pathlib.Path, now: float)
                 continue
             keys -= off
             entry["status"] = "confirmed"
-            publish(shared, entry, scan, keys)
+            if publish(shared, entry, scan, keys) and published is not None:
+                published[entry["scope"]] = int(now)
             report.append(f"confirmed {entry['name']} by {', '.join(entry['peers'])}: {entry['items']} items")
         elif now - entry["received"] > WAIT:
             entry["status"] = "unconfirmed"
@@ -440,6 +532,115 @@ def write_index(shared: pathlib.Path) -> None:
     (shared / "index.json").write_text(json.dumps(index, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def reconcile_archive(hub, entries: list[dict], uploaders: dict, shared: pathlib.Path, now: float,
+                      loaded: dict, published: dict) -> list[str]:
+    """Registers archived scans that have no registry line. A run archived them and closed their
+    issues, then failed to push the registry (its checkout was older than main): the scans were in
+    the archive and nowhere else. Only this workflow writes the archive, so the file names (house,
+    time, uploader) are the ones it gave; the scan is checked again all the same."""
+    if not hasattr(hub, "raw_releases"):
+        return []
+    known = {(e["archive"], e["name"]) for e in entries}
+    report = []
+    for release in hub.raw_releases(now - FRESH - 86400):
+        tag = release["tag_name"]
+        for asset in hub.assets(release):
+            name = asset["name"]
+            m = re.fullmatch(r".+_\d+_([A-Za-z0-9-]+)\.ffr\.gz", name)
+            if (tag, name) in known or not m:
+                continue
+            uploader = m.group(1)
+            if uploader.lower() in uploaders["banned"]:
+                continue
+            packed = hub.asset_bytes(asset)
+            try:
+                scan = ffscan.decode_raw(gzip.decompress(packed).decode("utf-8"))
+            except (OSError, EOFError, UnicodeDecodeError, zlib.error, ValueError) as exc:
+                report.append(f"archive {tag}/{name} unreadable: {exc}")
+                continue
+            digest = hashlib.sha256(packed).hexdigest()
+            # It was accepted when it arrived: only its age is not held against it now.
+            why = (ffscan.check(scan, scan.at + 60) or market_problem(scan, {}, entries)
+                   or (None if archive_name(scan, uploader) == name else "its name does not match the scan"))
+            if not why and any(e["sha256"] == digest or (e["scope"] == scan.scope and e["at"] == scan.at
+                                                          and e.get("seal") == scan.seal) for e in entries):
+                why = "the same scan is registered already"
+            if why:
+                report.append(f"archive {tag}/{name} not registered: {why}")
+                continue
+            trusted = uploader.lower() in uploaders["trusted"]
+            entry = {
+                "name": name, "archive": tag, "scope": scan.scope, "at": scan.at, "uploader": uploader,
+                "auctions": len(scan.rows), "seal": scan.seal, "sha256": digest, "addon": scan.addon,
+                "issue": None, "received": int(now), "status": "trusted" if trusted else "pending",
+                "peers": [], "compared": [], "items": 0, "recovered": True,
+            }
+            entries.append(entry)
+            known.add((tag, name))
+            loaded[name] = scan
+            if trusted and now - scan.at <= FRESH and publish(shared, entry, scan, None):
+                published[scan.scope] = int(now)
+            report.append(f"recovered {tag}/{name} from the archive ({entry['status']})")
+    return report
+
+
+def write_status(shared: pathlib.Path, entries: list[dict], now: float, published: dict) -> dict:
+    """shared/status.json: per auction house what the data repository holds and publishes, so the
+    helper and the addon can tell an upload, a publication and a download apart, and say why there
+    is no community price when there is none."""
+    path = shared / "status.json"
+    try:
+        previous = json.loads(path.read_text(encoding="utf-8"))
+        before = previous.get("markets", {})
+    except (OSError, ValueError, AttributeError):
+        previous, before = None, {}
+    summaries = {}
+    for text_path in sorted(shared.glob("*.txt")):
+        lines = [line for line in text_path.read_text(encoding="utf-8").splitlines() if line.startswith("FF1|")]
+        if lines:
+            scope = re.sub(r"%([0-9A-Fa-f]{2})", lambda m: chr(int(m.group(1), 16)), lines[0].split("|")[1])
+            summaries[scope] = (text_path.name, sorted(int(line.split("|")[2], 36) for line in lines))
+    markets = {}
+    for scope in sorted({e["scope"] for e in entries} | set(summaries)):
+        mine = [e for e in entries if e["scope"] == scope]
+        counts = Counter(e["status"] for e in mine)
+        file, times = summaries.get(scope, (scope_file(scope), []))
+        recent = [t for t in times if now - t <= FRESH]
+        if not times:
+            waiting = counts.get("pending", 0)
+            reason = "no scan is published yet" + (
+                f"; {waiting} wait for another player's scan to confirm them" if waiting else "")
+        elif not recent:
+            reason = "the newest published scan is more than 7 days old"
+        elif len(recent) < MIN_OBSERVATIONS:
+            reason = f"only {len(recent)} published scan in the last 7 days, {MIN_OBSERVATIONS} needed"
+        else:
+            reason = None
+        published_at = published.get(scope) or (before.get(scope) or {}).get("published_at")
+        if published_at is None and times:
+            published_at = max((e["received"] for e in mine if e["at"] in times), default=None)
+        markets[scope] = {
+            "file": file,
+            "product": PRODUCT,
+            "latest_scan": max((e["at"] for e in mine if e["status"] != "refused"), default=None),
+            "latest_published": times[-1] if times else None,
+            "published_at": published_at,
+            "published": len(times),
+            "recent": len(recent),
+            "registered": len(mine),
+            "statuses": dict(sorted(counts.items())),
+            "uploaders": len({e["uploader"].lower() for e in mine if e["status"] in ("trusted", "confirmed")}),
+            "reliable": reason is None,
+            "reason": reason,
+        }
+    if previous and previous.get("format") == STATUS_FORMAT and before == markets:
+        return previous  # nothing changed: no commit every half hour just for the time
+    status = {"format": STATUS_FORMAT, "checked_at": int(now), "min_observations": MIN_OBSERVATIONS,
+              "markets": markets}
+    path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return status
+
+
 STATUS_TEXT = {
     "trusted": "It is published in the community prices now.",
     "pending": "It is published as soon as a scan of another player, taken within 3 hours, confirms it "
@@ -455,6 +656,7 @@ def process(hub, data: pathlib.Path, now: float, defer_completion: bool = False)
     loaded: dict[str, ffscan.RawScan] = {}
     report = []
     accepted = []
+    published: dict[str, int] = {}
     registered = {entry["issue"]: entry for entry in entries if entry.get("issue") is not None}
 
     def load(entry):
@@ -484,14 +686,16 @@ def process(hub, data: pathlib.Path, now: float, defer_completion: bool = False)
             continue
         entries.append(entry)
         loaded[entry["name"]] = scan
-        if entry["status"] == "trusted":
-            publish(shared, entry, scan, None)
+        if entry["status"] == "trusted" and publish(shared, entry, scan, None):
+            published[entry["scope"]] = int(now)
         report.append(f"archived #{number} as {entry['archive']}/{entry['name']} ({entry['status']})")
         accepted.append(entry)
 
-    report += confirm_pending(entries, load, shared, now)
+    report += reconcile_archive(hub, entries, uploaders, shared, now, loaded, published)
+    report += confirm_pending(entries, load, shared, now, published)
     save_registry(data, entries)
     write_index(shared)
+    write_status(shared, entries, now, published)
     # Workflows defer completion until the generated files have been pushed.
     if not defer_completion:
         report += acknowledge_entries(hub, accepted)
@@ -530,13 +734,19 @@ def main() -> None:
                       help="keep accepted issues open until registry and summaries are committed and pushed")
     mode.add_argument("--complete-only", action="store_true",
                       help="acknowledge registered open issues without processing uploads or changing data")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="change nothing on GitHub (no archive, comment or closing); write only into --data")
     args = parser.parse_args()
-    hub = Hub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
+    hub = (DryHub if args.dry_run else Hub)(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
     data = pathlib.Path(args.data)
-    report = (complete_registered(hub, data) if args.complete_only
-              else process(hub, data, time.time(), defer_completion=args.defer_completion))
+    if args.complete_only:
+        report = [] if args.dry_run else complete_registered(hub, data)
+    else:
+        report = process(hub, data, time.time(), defer_completion=args.defer_completion or args.dry_run)
     for line in report:
         print(line)
+    for line in getattr(hub, "skipped", []):
+        print(f"dry run, skipped: {line}")
 
 
 if __name__ == "__main__":

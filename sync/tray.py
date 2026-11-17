@@ -23,21 +23,37 @@ def available() -> bool:
 
 
 class Tray:
-    def __init__(self, icon_path: pathlib.Path, send):
-        self.icon_path, self.send = icon_path, send
+    def __init__(self, icon_path, send):
+        """`icon_path`: one image file or several to try in turn (the first that opens is used)."""
+        paths = [icon_path] if isinstance(icon_path, (str, pathlib.Path)) else list(icon_path)
+        self.icon_paths, self.send = [pathlib.Path(p) for p in paths], send
         self.icon = None
         self.told = False  # the "still running" notice is shown once a session
 
     def image(self):
-        try:
-            return Image.open(self.icon_path)
-        except (OSError, ValueError):
-            return Image.new('RGB', (64, 64), (38, 117, 241))
+        for path in self.icon_paths:
+            try:
+                image = Image.open(path)
+                image.load()
+                return image
+            except (OSError, ValueError):
+                continue
+        return Image.new('RGB', (64, 64), (38, 117, 241))
 
-    def show(self, notice: str | None = None):
-        """Puts the icon in the notification area (once)."""
-        if not available() or self.icon is not None:
-            return
+    def show(self, notice: str | None = None) -> bool:
+        """Puts the icon in the notification area (once); False when there is no icon to show, so the
+        caller does not hide its window with nothing left to bring it back."""
+        if not available():
+            return False
+        if self.icon is not None:
+            return True
+        try:
+            return self._start(notice)
+        except Exception:  # no notification area backend: the window must stay reachable
+            self.icon = None
+            return False
+
+    def _start(self, notice):
         menu = pystray.Menu(
             pystray.MenuItem('Open ForeverFlip Sync', lambda: self.send('open'), default=True),
             pystray.MenuItem('Sync now', lambda: self.send('sync')),
@@ -57,8 +73,13 @@ class Tray:
                         icon.notify(notice, 'ForeverFlip Sync')
                     except Exception:  # a notice is a courtesy; the icon works without it
                         pass
-            icon.run(setup=ready)
+            try:
+                icon.run(setup=ready)
+            except Exception:
+                if self.icon is icon:
+                    self.icon = None
         threading.Thread(target=run, name='tray', daemon=True).start()
+        return True
 
     def title(self, text: str):
         """The tooltip of the icon: the current status."""

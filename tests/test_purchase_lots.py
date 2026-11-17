@@ -131,7 +131,15 @@ class PurchaseLotTests(unittest.TestCase):
         UI.show('journal:flip'); UI.refresh(); assert(shown() == 1, shown())
         UI.show('journal:vendor'); UI.refresh(); assert(shown() == 1)
         UI.show('journal:bid'); UI.refresh(); assert(shown() == 1)
-        assert(UI.groupOf('journal:bid').label == 'Analytics')''')
+        assert(UI.groupOf('journal:bid').label == 'Analytics')
+        F.Data.addPosition(c, 'c:10', 'Linen Cloth', 3, 60, 'flip', nil, now, nil, 'addon', nil, 'median')
+        F.Data.addPosition(c, 'i:32', 'Bolt', 1, 0, 'flip', nil, now, nil, 'craft', 1)
+        F.Data.addPosition(c, 'c:11', 'Dust', 2, 0, 'flip', nil, now, nil, 'disenchant', 2)
+        UI.show('journal:median'); UI.refresh(); assert(shown() == 1, 'market reset: ' .. shown())
+        UI.show('journal:flip'); UI.refresh(); assert(shown() == 1, 'not with resale: ' .. shown())
+        UI.show('journal:craft'); UI.refresh(); assert(shown() == 1, 'crafting: ' .. shown())
+        UI.show('journal:disenchant'); UI.refresh(); assert(shown() == 1, 'disenchant: ' .. shown())
+        UI.show('journal:all'); UI.refresh(); assert(shown() == 6, shown())''')
 
 
     def test_different_purchase_methods_keep_separate_lots(self):

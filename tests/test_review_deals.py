@@ -359,7 +359,7 @@ class PendingTests(unittest.TestCase):
 
 
 class StopTests(unittest.TestCase):
-    """V18-d, V27-e: Stop ends the own-auction checks and Buy all to vendor."""
+    """V18-d, V27-e: Stop ends the own-auction checks and the Buy first run."""
 
     def test_stop_ends_the_own_auction_checks(self):
         run(BASE + '''owned = {}

@@ -73,8 +73,26 @@ def fetch_releases(repo: str, agent: str, token: str | None = None) -> list[dict
         return json.loads(resp.read().decode("utf-8"))
 
 
-def candidates(releases: list[dict], beta: bool) -> list[dict]:
-    """Usable releases, newest first: {version, tag, beta, asset, url, size, sha256, notes, page}."""
+def channel(config: dict, installed: str | None) -> tuple[bool, bool]:
+    """(beta tester, chosen automatically). A choice the player made (the switch, --beta or --no-beta)
+    always wins. Without one, an installed beta build makes the player a beta tester: the beta is
+    what they run, and the stable channel would offer nothing newer until the next stable release.
+    The automatic choice only ever switches the beta on. Configs older than the "beta_by_user" flag
+    stored "beta" only when a switch was used; a saved True is taken as the player's choice, a saved
+    False (also the old default) is not."""
+    by_user = config.get("beta_by_user")
+    if by_user is None:
+        by_user = config.get("beta") is True
+    if by_user:
+        return bool(config.get("beta")), False
+    if installed and is_beta(installed):
+        return True, not config.get("beta")
+    return bool(config.get("beta", False)), False
+
+
+def candidates(releases: list[dict], beta: bool, asset_name=None) -> list[dict]:
+    """Usable releases, newest first: {version, tag, beta, asset, url, size, sha256, notes, page}.
+    `asset_name(version)` names the file wanted from each release (the addon's zip by default)."""
     out = []
     for r in releases:
         tag = str(r.get("tag_name") or "")
@@ -84,7 +102,7 @@ def candidates(releases: list[dict], beta: bool) -> list[dict]:
         pre = bool(r.get("prerelease")) or is_beta(version)
         if pre and not beta:
             continue
-        name = f"{ADDON}-{version}.zip"
+        name = asset_name(version) if asset_name else f"{ADDON}-{version}.zip"
         asset = next((a for a in r.get("assets") or [] if a.get("name") == name), None)
         if not asset:
             continue

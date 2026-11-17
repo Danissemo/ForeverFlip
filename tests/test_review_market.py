@@ -257,9 +257,16 @@ class SniperGateTests(unittest.TestCase):
         AuctionHouseFrame.BrowseResultsFrame=CreateFrame('Frame');F.UI.frame:Hide()
         run(2)
         assert(not lastCall('RequestMoreBrowseResults'),'the next page would replace the Buy tab')
+        -- The round gave way for good: the browse list may hold the player's own search by now,
+        -- and its next page would change it. A new round starts once the page is left.
+        assert(not Sn.query,'the paged round is given up')
+        local n=#calls
         AuctionHouseFrame.BrowseResultsFrame:Hide()
-        run(0.5)
-        assert(lastCall('RequestMoreBrowseResults'),'it comes once the page is left')''')
+        run(3)
+        assert(not lastCall('RequestMoreBrowseResults'),'no next page of an old answer')
+        local again=false
+        for i=n+1,#calls do again=again or calls[i][1]=='SendBrowseQuery' or calls[i][1]=='SearchForItemKeys' end
+        assert(again,'the sniper goes on once the page is left')''')
 
 
 class SniperThresholdTests(unittest.TestCase):

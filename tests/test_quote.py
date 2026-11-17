@@ -29,15 +29,16 @@ class QuoteTests(unittest.TestCase):
         tooltipLines = {}
         GameTooltip.itemLink = link(30)
         for _, fn in ipairs(tooltipCalls) do fn(GameTooltip) end
-        return r.cols[4]:GetText() .. ' @@ ' .. table.concat(tooltipLines, ' ## ') .. ' @@ ' .. UI.sellText:GetText()
-            .. ' @@ ' .. U.money(q.post) .. ' @@ ' .. U.money(q.net)""".replace('U.', 'F.Util.'))
-        best, tip, sell, post, net = (plain(x) for x in out.split(' @@ '))
-        self.assertIn(post, best, 'Best column shows the post price')
-        self.assertIn('Post at', tip)
-        self.assertIn(post, tip.split('Post at')[1].split('##')[0], 'tooltip posts at the same price')
-        self.assertIn(net, tip, 'tooltip shows what it brings')
+        return r.cols[2]:GetText() .. ' @@ ' .. table.concat(tooltipLines, ' ## ') .. ' @@ ' .. UI.sellText:GetText()
+            .. ' @@ ' .. U.money(q.post) .. ' @@ ' .. U.money(q.net)
+            .. ' @@ ' .. r.cols[3]:GetText() .. ' @@ ' .. U.money(q.profit)""".replace('U.', 'F.Util.'))
+        best, tip, sell, post, net, profit, expected = (plain(x) for x in out.split(' @@ '))
+        self.assertEqual(best, 'AH', 'Best column names the route')
+        self.assertEqual(profit, post, 'Sells at column shows the price the box gets')
+        self.assertIn('Sells at', tip)
+        self.assertIn(post, tip.split('Sells at')[1].split('##')[0], 'tooltip posts at the same price')
+        self.assertIn(post, tip.split('Recommendation')[1].split('##')[0], 'tooltip names the price to post')
         self.assertIn(net, sell, 'Sell page shows what it brings')
-        self.assertIn('Profit each', tip)
 
     def test_deposit_comes_back_with_a_sale(self):
         run(self.SETUP + """F.Data.char(F.db, F.Engine.owner()).rates = { ['linen bag'] = { sold = 10, failed = 0 } }

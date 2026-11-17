@@ -8,6 +8,406 @@ All notable changes are listed here. The format follows
 ## [Unreleased]
 
 
+## [3.0.0] - 2026-11-17
+
+The first full release after the 2.x betas. Resale and Market reset are separate strategies again,
+each priced from the market's own sales: Resale buys only what sells in a day at the price where
+Sure expects the most money. One Sure and one sell price across Deals, Bids, My items and the item
+tooltip, with Est./day and Sure for gear seen too rarely to measure. The full scan is about twice
+as fast and records every item it sees; Check all asks the server once for a whole page. The
+tooltip has a new layout with a market reference, a production chain and a price chart, and Sync
+now restores the scans the history lacks. Settings, Analytics → My results, sounds, window size
+and Reset all data are new.
+
+### Added
+
+- **Bids has a Sure column**: 100% for a lot a merchant pays its worth for, otherwise how sure the
+  resale at the usual price is, as on the Deals pages.
+- **Check Sure on Bids and on Market reset**, as on Resale: type a sell price, see Sure, sales a
+  day and profit at it, Reset brings the own figures back. Market reset lost its Per item / Per day
+  / % of gold boxes; those limits stay on Settings → General.
+- **My items shows Sure for gear with no sales of its own**, from the item's other endings, greyed
+  with "~", as on the Deals pages.
+- **Gear seen too rarely for any estimate** (no sales of its own, no other ending sold) now takes
+  Est./day and Sure from gear of about the same usual price, greyed with "~"; the Risk line says so.
+- **Sounds for a sale and an outbid** (Settings → Automation → Notices, both on by default): a coin
+  sound when one of your auctions sells, an alarm when a bid of yours is outbid. Several sales in a
+  few seconds make one sound, not a chorus; the deal sound works as before.
+- **Window size** (Settings → Display): 90%, 100% or 110%. Smaller fits more rows in the lists on a
+  small screen; the window stays in its place in the auction house. Reset settings brings 100% back.
+- **The Data page says what is saved**: prices of how many items on this auction house and on all of
+  them, journal entries, items in stock, when the last full scan was, and whether the last logout
+  had to leave old prices out to keep the saved file loadable.
+- **Analytics → My results**: every item that earned or lost in the chosen period (day, week, month)
+  with its profit, money in, units sold and return on what it cost, best first. The daily chart and
+  top three already said how the period went; this says which items made it.
+- **`tools/savedata.py`** keeps copies of the saved data outside the game (`backup [label]`, `list`,
+  `restore <name>`). A copy inside the game is not possible: the saved file is already close to
+  what the client reads back. Restore refuses while the game runs and copies what is there first.
+
+- **Settings has seven pages.** General keeps the numbers (profit, money, Limits) and gains the
+  **Market reset** limits and the **auction duration**, the same settings as on the Deals and
+  Selling pages. **Automation** holds what runs by itself and the notices, **Display** the tooltip
+  and Buy tab marks, *Learned recipes only* and the language, and **Data** what ForeverFlip learned
+  (shown in full, no longer behind a hover) and the two resets. Each option says what it does
+  under its name.
+- **Reset settings** (Settings > Data): every setting back as on a new profile, the Careful preset
+  and nothing running by itself; prices, sales, journals, the language and key bindings stay.
+- **Market reset** (was Under market) is now its own strategy, not a second Resale: it buys every
+  lot listed under the price it relists at, or nothing, so the relist is the cheapest left with no
+  competition below. Resale still buys only part of the lots, up to a higher price that stays.
+  The page's table is no longer dim, its text no longer overlaps, and the useless checkbox is gone.
+- **The purchase strategy is kept.** A lot bought on Deals → Resale, Market reset, Bids or To vendor
+  remembers its strategy; Selling → My items sells it that way and Best no longer overrides it. Only
+  after 14 days, when the original route no longer pays, does Best decide again. The same lot may
+  be offered on several Deals tabs, each with its own strategy.
+- **Journal and Profit follow the strategies**: All / Resale / Market reset / Bids / To vendor /
+  Crafting / Disenchant, in the order of the Deals tabs, and a purchase says what it was meant for
+  (a market reset, disenchanting, the shopping list).
+- **Crafting shows Sure** after Est./day when the product goes to the auction house, and **Best**
+  replaces "Sell to": the route is chosen by the same rule as on My items (AH, Vendor, or AH / V
+  when it is a close call).
+
+- **Reset all data.** Settings → Messages → Saved data (or `/ff reset`) forgets every price, sale,
+  journal, position and the shopping list after a confirmation, keeps your settings and reloads:
+  a clean start to learn the market anew.
+- **Check Sure on My items works as on Deals → Resale**: the price to check has its own box beside
+  the button (Enter checks too), so the posting price stays as it was, and the item's row shows Sure
+  at that price with the price in blue.
+
+- **Stop quick scan.** While a quick scan runs, the scan button reads Stop quick scan; what it
+  read is kept.
+- **All shows a lot that pays both ways**: Deals → All adds a green "+ vendor" or "+ resale" after
+  the name when the same lot is also on the other page.
+- **Why that resale price.** Hovering a Resale lot says why the sell price is what it is: just under
+  the next lot still on sale, what buyers really paid lately (the median asking price rarely sells),
+  or just under the usual price. The tooltip shows a **Sales reach** line when real sales stay well
+  under the usual price, which is why Resale can sell lower than the tooltip's median.
+- **Quick scan while the Full scan waits.** The server allows a full scan once in 15 minutes;
+  in between, the scan button offers **Quick scan**: one browse of the whole house (the way TSM
+  reads it), the cheapest price of each item recorded and the likely deals checked, at most three
+  minutes. The status line counts the items read and the ones left to check. The lowest price in
+  the tooltip is the newer of the Full scan's and the Quick scan's.
+- **The item tooltip in a new layout**: FOREVER FLIP and the house, then **Selling** (vendor,
+  lowest and median AH price, craft and disenchant values with what they bring at today's lowest
+  prices, best and worst time to buy, Recommendation, with "A or B" when two routes are within 3%),
+  **Demand** (your last scan, sales a day, recent sales, Sure at the post price) and
+  **References** (community data, 14-day median / mean, trend 3d / 7d / 14d).
+- **Messages in their own chat tab** instead of a separate window.
+
+- **Sure and Est./day now say how much they can be trusted.** They are measured from the raw
+  scans again (scan pairs, lot sizes, disappearances), each with 80% limits and the sample behind
+  it. Below the threshold the number is replaced by **No reliable data** and the reason (too few
+  scan pairs or hours, old data, measured by an older version). The first login after the update
+  rebuilds the statistics in the background (the Full scan button says so) and keeps the old ones
+  for 7 days; `/ff stats rollback` restores them. Items with no raw scan keep their values, marked
+  as measured by an older version. Analytics shows how often your posts really sold against what
+  Sure predicted, once there are enough of them.
+- **Below usual price**, a second resale strategy, on by default: lots under the item's usual price
+  (its median of the last 7 days), relisted at it, with their own limits (per item, per day, half of
+  your gold), the same buy confirmation and price checks, and the risk on every deal. Items without
+  reliable sales data are shown grey with "few sales data" and buy at most a day of sales (one unit
+  while none is measured), so the page is usable before the sales are measured. An empty page says
+  why: off, no sales measured yet, or what stopped the last scan's items, the most common first,
+  with the gold left for today. A dev build that saved it off at 20% moves to the new defaults once.
+- **Production chain** in the item tooltip: auction (after the cut, with Sure), vendor, disenchant
+  and craft into a learned recipe, best first.
+- **Journal chains**: a held item you craft or disenchant carries its cost into the products, and
+  the lot's history shows what the products brought and the chain's profit.
+- **Price chart** in the item history: 14 days of the usual and cheapest price plus scan points,
+  gaps shown as gaps.
+- **Log window**: ForeverFlip's messages go to its own window instead of the general chat; errors
+  still echo to chat and a sound can mark them (both settings).
+- **Crafting section** with Crafting and Disenchant pages. Disenchant left the settings, and the
+  page says why it is off when it is. The crafting tooltip looks like the item tooltip.
+- **Today** period in Analytics; **Check Sure** with your own price on For sale, and **Reset**.
+- **The sniper keeps out of your way in the Buy tab.** A search of your own, or an open purchase
+  page, stops and pauses it (it used to take over your search and page through it, changing the
+  list as you read); it resumes after a minute of quiet or on ForeverFlip's page.
+- **Market reference** in the item tooltip and history: your scans and community scans side by
+  side (median, mean, days, last seen), the 3/7/14-day trend and an undervalued note that needs
+  enough data. Undermine Exchange has no documented API for WoW Forever, so it is not used.
+- **Community status you can trust**: Sync tells uploaded, published and downloaded apart with
+  their times, and the addon says **No community price yet** and why.
+- Auction and vendor are judged apart: **Best** shows AH / V, and a deal can be either.
+
+### Changed
+
+- **The item tooltip is easier to read.** Every name is on the left and its figures on the right
+  (ages and notes in grey beside the value). The vendor price is for the whole stack, as the game's
+  Sell Price line, with the price of one in grey. The recommendation is one short line, *Auction at
+  5s 48c* or *Vendor at 75c*; the reason under it appears only when another route pays nearly as
+  much. Sure on the Demand line has the colours of the auction house window.
+- **Choose AH and Choose vendor** on Selling → My items show their whole names again: after the
+  short labels (AH / Vendor) were used once, the full ones stayed cut to the old width.
+- The status summary under the menu keeps only the lines that fit: with Analytics and its views
+  open it no longer runs under the money and out of the window.
+- *Usual price* and *Posts sold* are a little wider, so their Ukrainian names are no longer cut.
+- **Column headers agree across the windows.** One name for one thing (*Buy at* in the Journal,
+  *Cheapest other* on Undercuts, *Cheapest* on the shopping list), the same widths for Qty (50),
+  Sure (60) and Best (70, left-aligned, as it holds a word), and the shopping list loses its
+  *Source/status* column, which repeated Status. Ukrainian headers that were cut short got shorter
+  names (*Шанс*, *Нова ставка*, *Днів продажу*, *Продаж/д*) or wider columns; a header that still
+  does not fit names its column in full when hovered.
+- **One rule for the most to pay.** Bids, Sniper, Disenchant and vendor deals share
+  `Market.maxBuy`: a disenchant purchase now needs the minimum return as well as the minimum
+  profit, so thin disenchant deals are no longer offered.
+- **Disenchant against selling.** Gear whose vendor price or auction price (after the cut and the
+  deposit) brings as much as disenchanting is no longer a disenchant deal.
+- Colours: one shade per meaning; the slightly different oranges and greys are now one each.
+- **Deals tabs in the order** All / Resale / Market reset / Bids / To vendor.
+- **My items**: Qty and Sure are written in full (the room comes from Name), the buttons sit in
+  even rows, the "*" after AH / Vendor is gone, and Choose AH / Choose vendor appear only for a
+  really disputed item. Reset now also forgets your AH / Vendor choice.
+- **Undercuts** shows every column title (the room comes from Name); **My auctions**' last column is
+  simply **Time**.
+
+- **Fresh data is "still being learned", not "not sold".** An item watched for less than an hour of
+  full scans that has not been seen sold yet is counted as still being learned on the empty Resale
+  page. Before, a new profile or a reset read as if nothing in the house sold.
+- **My items → For sale reads at a glance**: Best names only the route (AH, Vendor or AH / V), a new
+  Profit column says what it brings for the units held (both sums while you still have to choose),
+  and Sure is shown only for the auction house, since a vendor buys at once. Listed is gone. An item
+  waiting for your route says so in red in Note, and its hover explains that a vendor will not be
+  offered it until you choose. The buttons now run Hide, Rule, Choose AH, Choose vendor, then the
+  Check Sure box, Check Sure and Reset; Reset also undoes the route chosen for an AH / V item.
+- **For sale fits its columns**: Cost each is gone, Profit of an AH / V item reads just "N / N"
+  (auction house first), and Note says a short red **Choose** (its hover explains the choice). The
+  buttons spread over the whole width, scroll bar included, in four groups: Hide and Rule, Choose AH
+  and Choose vendor, the Check Sure box with its button, and Reset at the right edge.
+- **Below usual price is now Under market, and it offers something from the first scan.** It needed
+  3 days of prices per item, so on a fresh profile it said "19464 have fewer than 3 days of prices"
+  and stayed empty. With fewer days, the lowest of what is known (the days there are, the last usual
+  price, the measured market price) is the target, and such finds are shown grey (few data) and buy
+  at most a day of sales. The 7-day median takes over once there are 3 days.
+
+- **Best stops asking when the answer is plain.** When both the auction house and a vendor pay,
+  Best no longer always reads AH / V: a vendor that pays no less than the auction house's profit
+  wins, and so does a vendor when the auction house, counting the chance it does not sell, would add
+  under 10%. The auction house wins when it should bring clearly more and nothing makes it doubtful,
+  or when it is doubtful but the vendor pays under half of it. Only a doubtful auction house (Sure
+  under 50%, too few sales seen, or rivals answering undercuts) with a fair vendor price is left to
+  the player, and the Why line names the doubts.
+
+- **Settings → Sharing → Status in two even columns**: the labels in one column, one fact a line
+  beside them, so nothing wraps under a label any more.
+- **The full scan reads the house about twice as fast.** Reading the 200 000-odd auctions the
+  server sends takes 12 ms a frame instead of 6, and a click or a price check slows it to 6 ms
+  instead of 2 (a purchase still to 2). The frame rate drops a little while the list is read; every
+  auction is still read.
+- **Full scans finish sooner.** While the server prepares the answer (2 to 10 minutes), the data of
+  every item this house listed before is loaded, so far fewer rows wait for item data once the list
+  arrives. Auctions of items the server no longer has are given up at once instead of holding the
+  end of the scan back by 30 seconds; their lots are not counted as sold.
+
+- **Save in Settings is off when there is nothing to save.** It turns on once a box is changed
+  and says "Nothing to save" on hover otherwise; check boxes and presets are saved at once.
+- **Vendor price is the game's Sell Price, without a "confirm" note.** It is the same figure the
+  tooltip's Sell Price line shows, and merchants paid exactly it for 113 of 115 items sold by hand
+  (the other two were worn gear). The note asking to sell one to a merchant first is gone, and so is
+  the `*` on vendor deals, unless the safety margin is set. A merchant paying a different price for a
+  non-gear item still replaces it, with a note on the tooltip.
+- **One Sure, and it means something.** Rivals who undercut later used to count as whole lots in
+  front of yours for two days: a busy ore selling about 290 a day showed Sure 0% at every price.
+  Now they take a share of the buyers, at most half. The tooltip, Deals and Selling → My items ask
+  Sure for the same units (what you would sell) at the same price, so the item shows one number.
+- **No auction recommendation that will not sell.** The tooltip ranks the auction house by what it
+  likely brings (net × Sure); under Sure 10% it is never the recommendation, and with no other
+  route the tooltip says to hold. The line names the price to post ("Auction house at 1g 99s, after
+  the cut"), so the sum on the right is clearly what you get after the cut.
+- **Fewer numbers.** Est./day and Sure lost their 80% ranges; Est./day shows whole units from 10 up.
+- **Price without an AH check undercuts today's cheapest lot** of the full scan instead of posting
+  above it at the usual price.
+- **One sell price, with its reason.** The tooltip's recommendation, the Sell page's suggested
+  price and the Resale exit used three different rules (the median asking price, the cheapest
+  seller, what buyers paid), so one item showed 1g34, 1g22 and 69s. Now all three use one rule:
+  one step under the cheapest other lot, never above what buyers really paid. The tooltip says why
+  under the recommendation, and when the item is a Resale deal it recommends the deal's price.
+- **Deal now sits inside Selling** in the tooltip, right after the recommendation.
+- **The vendor price note** says what it is: the client's price, confirmed only after you sell one
+  to a merchant. Wowhead shows the same client figure; the Forever server sometimes pays less.
+- **An empty full scan says why**: the server answers a full scan only once in 15 minutes and
+  returns nothing in between; the message says so and points at Quick scan instead of "try again
+  later". The button does not offer a Full scan within 15 minutes of the last one.
+- **Full scan and Check all are lighter**: the raw-scan hash is about a quarter faster and the
+  finish step checks the clock after every item, so it stops for a frame on time.
+- **Selling → My items**: Check Sure sits with the price it checks, the Sure column is shown, and
+  **AH / V** (both routes pass) stays off the vendor list until you choose. A lower price gives a
+  higher Sure, never a lower one.
+- **Crafting is called Professions**; ForeverFlip's AH tab comes before TSM's; the Disenchant deals
+  checkbox is gone (the Disenchant page says when it is off); the Sharing page is shorter;
+  Analytics Overview has no stray "..", and Lost most is the size of the lines around it; button
+  labels fit their buttons.
+
+- **Check all on your own auctions is fast when nobody else sells**: an item seen alone at the
+  scan (under 2 hours) is answered from it at once, marked *as of the scan*; a silent search is not
+  tried twice in one run (30 items: 3 minutes → under 2 seconds with a recent scan). **Search**
+  checks one auction for real.
+- **Settings**: General and Safety are one page, the limits in a **Limits** section. The
+  ForeverFlip tab no longer sits on TSM's. The price settings explain themselves on hover.
+- The Shopping list footer is smaller and the list shows 15 rows; tables show more rows; KPI money
+  is shortened to fit.
+
+- **Item tooltips go quiet when the auction scan data are a day old.** Fresh data come either way,
+  and either is enough: a complete Full scan in the game, or a scan of the house brought by the
+  Sync helper (Sync stays optional). Once the newest of them is 24 hours old, or there are none,
+  ForeverFlip's block in an item tooltip is replaced by a warning with its age and both ways out:
+  a Full scan, or Sync and then `/reload`. Prices, Sure, sales, advice and Best were all read from
+  those data and were shown as if current. Running Sync without it bringing a newer scan does not
+  reset the time. The game's own lines and other addons' lines stay.
+- **New profiles start on the Careful preset**, and Careful's vendor deal minimum is now 15c (it
+  was 50c, which hid most vendor deals, the ones with no resale risk). Existing profiles keep every
+  value they have.
+- **Full scan is greyed out while a press would only fail**: during the cooldown (with its
+  countdown, as before), while a purchase, post or search is on the wire, and while the server
+  says it is busy. The click still checks again before sending.
+- **To vendor's button is Buy first** and buys the top row of the table as it is sorted now, after
+  checking that lot again; it was "Buy all to vendor" and took its own order.
+- **Money keeps two digits after the largest coin** in every table and line (1g 05s, 26s 00c), so
+  columns line up and 26s 0c is not read as 26s and 0 gold.
+- **The item tooltip's deal line says what its Sure is for**: "Sure 26% to sell all 15 at 75c".
+  The Demand section's Sure is for one unit at the post price; both read just "Sure" before and
+  looked like the same number shown twice.
+- **Hovering an item row in a table shows the item tooltip only.** The seven lines under it (Qty,
+  Buy at, Sells at, Profit, Est/day, Sure, Status) repeated the row's own columns.
+- Wording and fit: a sold auction reads **sold**; the Analytics tabs are **Cheaper** and
+  **Dearer**; the third Market column is **Cheapest** (or **Best time** on the timing tabs) and
+  wide enough for its money; **Sells/day**; the learned professions text sits a line higher and
+  its button fits its label.
+
+### Changed
+
+- **My items shows Sells at instead of Profit**: the price one unit sells for on the route in
+  Best (the auction price the Price each box gets, or what a vendor pays; both while you choose).
+  The profit is still on hover and in the text below.
+- **Resale and Market reset are two different strategies again.** Both sold at the price buyers
+  paid lately, so the pages showed the same deals. Market reset buys every lot under the median
+  and sells at the median. Resale buys up to a lot and picks its Sells at from the sales: one step
+  under the next lot left, or what buyers really paid, whichever Sure expects to bring more money,
+  so it sells at a price people buy at rather than just under a rival. It buys only as many as
+  Est./day says sell there in a day. Stock either one bought is posted at that price on Selling.
+
+### Fixed
+
+- **Sync did not bring your own scans back**: the helper's data skipped every scan you had uploaded
+  yourself, since it was in your history already. After Reset all data (or on another computer) it
+  is not, and References showed one day of prices and no trend. What decides now is the scan's
+  house and time, not who made it: a scan your history does not hold is merged (your own as your
+  prices, so the 14-day median and the trends come back at the next login), and one it holds is
+  skipped. Every full scan you make is remembered for this, so the helper never brings it twice.
+  Your own scans still do not count as community data.
+- **Empty tooltip on gear seen once**: an item with a single lot on the auction never got a
+  history, so its tooltip showed only the vendor price. The full scan now records every item it
+  sees, and gear with no data of its own shows the price of its other versions, an estimate of
+  sales per day and Sure taken from them or from gear of about the same price.
+- **The list tooltip and the bag tooltip disagreed**: hovering a stack in My items now prices the
+  whole stack, the same as the bag does.
+- **Check all took minutes** (35 deals: 8 checked after two minutes). It now asks for the lowest
+  price of every item in one query first: a deal whose item nobody sells any more, or whose lowest
+  price is at or above what the deal sells for, is settled from that answer at once. Those were the
+  searches the server never answers, each waited 5 seconds and was sent once more at the end. The
+  log says how long each Check all took (`Check all: N items in S s`).
+- **Market reset and Resale showed "-" for Est./day and Sure** on a gear ending with no sales data
+  of its own (a new "of the Owl" of an item seen often). They are now estimated from the item's
+  other endings, each at its own usual price, and shown greyed with "~"; the Risk line says so.
+- **Tooltips no longer block clicks** on table rows: the cells only show the tooltip and let the
+  click through to the row.
+- **Tooltips are no longer cut off at the right**: a long line wraps instead of running past the
+  edge (item tooltip, Selling, Crafting, Deals).
+
+- **Checking the bags no longer hangs on items nobody sells.** WoW Forever does not answer an exact
+  search for an item without lots, so each such item waited up to 30 seconds and was then searched a
+  second time (36 items took 2–3 minutes). A full scan up to 2 hours old now says which items nobody
+  sells (also after a /reload), an unanswered bag search is not sent again, and one bag item waits
+  at most 12 seconds.
+- **No empty rows on For sale after the check.** An item without a price of the last scan takes its
+  older market data (days, sales between scans, prices buyers paid), then the usual price of other
+  versions of the item, before the cost or vendor guess. A row with only a guess shows its likely
+  route greyed with "?" (AH? or Vendor?) and a "~" profit; the merchant's list and Post AH-worthy
+  still never act on a guess.
+- **A resale below the usual price riding with another deal is no longer confused with the price of
+  a deal of its own** (both were `median`): the scan's save and the merge of a vendor deal with a
+  resale no longer fail on it.
+
+- **The saved data can no longer grow past what the game can read.** The client reads the saved
+  file with Lua 5.1, which accepts at most 262 143 distinct values. At about 260 000 the file
+  failed to load ("constant table overflow" in `Logs\FrameXML.log`), the addon started empty and
+  the next logout wrote the empty data over it. That wiped the sales history of 26 000 items and
+  the journal, and Resale fell from about 30 deals to 3 because nothing looked like it was selling.
+  At logout the estimates in the item histories (hours, rates, weekday factors) now keep four
+  significant digits, which cuts the real file of that day from 259 000 to 173 000 values. If the
+  file would still hold more than 200 000, the items seen longest ago are dropped (never the ones
+  the player holds or has listed), and the log says so at the next login.
+- **No false "empty list" before a full scan.** The server first clears the list and sends the
+  auctions 10-15 seconds later; the scan gave up on the cleared list, said the server refused it,
+  and then read the real answer as another addon's scan. It now keeps waiting and reports a refusal
+  only when the list stays empty for a minute.
+- **One quick-scan row per piece of gear.** The browse gives one lowest price an item, whatever
+  its ending; it was listed under every ending the history knows, so one cheap Giant Club showed as
+  13 identical rows. Now one row, the ending whose deal pays least, and every ending is still
+  checked.
+- **The quick scan froze the game and crawled.** Every page copied the whole result list twice, and
+  each page's candidates were checked before the next page was asked for. A page now reads only
+  the rows it brought, and the candidates are checked after the last page.
+- **The vendor minimum profit was applied to the whole deal**, so a stack of 7c-a-unit lots passed
+  a 15c minimum. It is per unit now.
+- **Deals lost their checked status within a minute**: the sniper re-queued them after 60 seconds.
+  A checked deal now stays ready for 5 minutes, unless a cheaper lot shows up; background
+  re-checks no longer flip it to queued.
+- **The tooltip's Sure range could raise a Lua error**: its cache key left out the lot sizes the
+  value depends on, so it read an entry that was never written. One key now serves both.
+- **A quick scan on a house with no saved Full scan** would not check what it found and gave up
+  after three minutes; it now checks its candidates there too.
+- **The tooltip's recommendation disagreed with Best** below your minimum price: it used the net at
+  your price, Best the net at the market's.
+
+### Development
+
+- The mock measures text when a test asks (`measureText`, 6 px a letter), and a test checks that
+  every fixed column's name fits its width in English and Ukrainian on every page.
+- The unification review is carried out: `Market.thresholds` / `maxBuy` / `unitNet` /
+  `auctionNet`, `Deals.priceOf` / `usualOf`, `F.STRATEGIES` (Deals pages, Journal views, Selling
+  note), `UI.C` / `UI.paint`, `UI.pct` / `UI.pctText`, `UI.tip`, `UI.ROUTE` and the option-line
+  helpers shared by the item and My auctions tooltips, `Disenchant.sellValue`, and `Util.TUNING`
+  for the fixed judgements.
+- `UI.tipPair` (a two-column tooltip line that wraps when long) replaces direct `AddDoubleLine`;
+  `UI.routeLabel` is the Best label for My items and Crafting; `Trade.boughtWay` / `T.KEEP_DAYS`
+  keep a purchase's strategy (`lot.strategy`, `position.strategy`); `Crafting.profits` decides the
+  route with `Market.sellRoutes` + `Market.routeVerdict`. `docs/unification-review.md` lists what is
+  still not unified. Tests: BoughtWayTests in `test_review_trade_b`, journal and purchase views.
+
+- `Market.postPrice` (the one sell price and its reason), `Trade.postLimit`, `UI.priceWhy`;
+  deals keep `exitWhy`. Tests: `test_one_price`.
+- `AH.browseAnswer(updated, added)` reads one browse event once (the ADDED payload, or the whole
+  list for UPDATED); `Sniper.onResults(first, rows, whole)` takes its rows; `Sniper.stopQuick()`.
+  The mock fires ADDED with its payload. New tests: pages before checks, stopping a quick scan,
+  the 5-minute hold, the per-unit vendor minimum, the All marker, the resale why line.
+
+- `Sniper.quick`/`startQuick`/`canQuick`, `Sniper.lows` and `Sniper.low(id)` (per house);
+  `UI.lowestFor`, `UI.craftRoutes`, `UI.disenchantLow`. New `test_tooltip_layout`; quick-scan tests
+  in `test_fast_sniper`.
+- `Scan.canStart()` runs the same checks as `Scan.start()` without sending or spending the
+  stuck-throttle allowance; the Full scan button follows it.
+- Each market keeps `scannedAt`, the end of its last complete full scan (older data fall back to
+  `peak.at`), and `syncScanAt`, the time of the newest scan of the house that Sync brought and the
+  history took (merged now, or at an earlier login). `UI.scanDataAt()` is the newer of the two.
+- The presets moved to `Data.PRESETS`; `Data.open` applies Careful only when no saved file exists.
+  The test runtime sets Balanced, the values the existing tests were written for.
+- New test modules: `test_scan_button_state`, `test_new_profile_preset`, `test_stale_tooltip`.
+- Statistics are versioned (`STATS_VERSION`), merged per item with a 7-day backup
+  (`Data.commitStats`/`rollbackStats`); the model is described in `docs/analytics-model.md`.
+- `Engine.scope()` and `Engine.hardcore()` are cached until the realm, house or rules change; they
+  were rebuilt on every frame and hover.
+- ForeverFlip Sync: beta channel detected from the installed TOC, several installs (profiles),
+  self-update from GitHub releases checked by SHA-256, real community exchange status.
+- The addon is reorganised into layers: `Compat.lua` (capabilities and C_* wrappers), Market
+  reading the game only through `Market.env`, services reaching the screen through
+  `Engine.emit/listen`, `UI.lua` split into page files, and `schemaVersion` with ordered
+  migrations in `Data.open`.
+- Community aggregator: archive recovery, duplicate and wrong-market refusals,
+  `shared/status.json`; the data workflow checks out `main` and retries its push.
+
+
 ## [2.3.0-beta.1] - 2026-11-15
 
 Crafting plans profitable batches and their material purchases; Selling explains its Best route.
@@ -1237,7 +1637,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v2.3.0-beta.1...HEAD
+[Unreleased]: ../../compare/v3.0.0...HEAD
+[3.0.0]: ../../compare/v2.3.0-beta.1...v3.0.0
 [2.3.0-beta.1]: ../../compare/v2.2.0-beta.2...v2.3.0-beta.1
 [2.2.0-beta.2]: ../../compare/v2.2.0-beta.1...v2.2.0-beta.2
 [2.2.0-beta.1]: ../../compare/v2.1.0-beta.2...v2.2.0-beta.1

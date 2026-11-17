@@ -56,7 +56,8 @@ class ScanTrackingTests(unittest.TestCase):
         assert(h.pending and M.demandAt(h,60,now).sold==0,'suspect, not sold yet')
         scan()
         assert(h.sales and h.sales.pairs==2,'lot sales recorded')
-        local d=M.demandAt(h,60,now);assert(d.perDay>0 and d.sold==5,d.sold)
+        -- T32: a whole lot that vanished is half a sale in the estimate (M.LOT_WEIGHT), all 5 units seen
+        local d=M.demandAt(h,60,now);assert(d.perDay>0 and d.units==5 and d.sold==2.5,d.sold)
         assert(h.days[#h.days].s==5 and h.days[#h.days].n>0)
         assert(not h.pending)''')
 
@@ -98,7 +99,7 @@ class ScanTrackingTests(unittest.TestCase):
         now=now+901;F.db.lastScan=0;fullScan()
         now=now+901;F.db.lastScan=0;fullScan() -- still gone: the suspects are sales
         local h=F.Data.market(F.db,F.Engine.scope()).history['i:30']
-        assert(h and h.sales and F.Market.demandAt(h,30000,now).sold==2 and not h.lots and not h.pending)''')
+        assert(h and h.sales and F.Market.demandAt(h,30000,now).units==2 and F.Market.demandAt(h,30000,now).sold==1 and not h.lots and not h.pending)''')
 
     def test_history_keeps_fourteen_days(self):
         run(SCANS + '''for i=1,20 do now=now+86400;F.db.lastScan=0;fullScan() end

@@ -141,28 +141,56 @@ function DE.outcomes(quality, level, classID)
 end
 
 function DE.canDisenchant()
-    -- C_SpellBook first: the bare IsPlayerSpell/IsSpellKnown are the deprecated fallbacks the client
-    -- installs only while `loadDeprecationFallbacks` is on, and they mean the same thing.
-    local known = C_SpellBook and C_SpellBook.IsSpellKnown
-    if known then
-        local ok, has = pcall(known, DE.SPELL, Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player)
-        return ok and has or false
-    end
-    if IsPlayerSpell then
-        local ok, has = pcall(IsPlayerSpell, DE.SPELL)
-        if ok and has then
-            return true
-        end
-    end
-    if IsSpellKnown then
-        local ok, has = pcall(IsSpellKnown, DE.SPELL)
-        return ok and has or false
-    end
-    return false
+    return F.Compat.playerSpell(DE.SPELL)
 end
 
 function DE.active()
-    return F.db and F.db.settings.disenchant and DE.canDisenchant() or false
+    -- No switch any more: a character who knows Disenchant always gets the deals on their page.
+    return F.db and DE.canDisenchant() or false
+end
+
+-- Why no disenchant deal can be found, the first that applies (nil: they can be, there is just none
+-- right now): "unlearned" (this character does not know Disenchant), "noscan" (no full scan of
+-- this house yet) or "noprices" (no material has a usual price yet).
+DE.MATERIALS = {
+    STRANGE,
+    SOUL,
+    VISION,
+    DREAM,
+    ILLUSION,
+    LESSER_MAGIC,
+    GREATER_MAGIC,
+    LESSER_ASTRAL,
+    GREATER_ASTRAL,
+    LESSER_MYSTIC,
+    GREATER_MYSTIC,
+    LESSER_NETHER,
+    GREATER_NETHER,
+    LESSER_ETERNAL,
+    GREATER_ETERNAL,
+    SMALL_GLIMMERING,
+    LARGE_GLIMMERING,
+    SMALL_GLOWING,
+    LARGE_GLOWING,
+    SMALL_RADIANT,
+    LARGE_RADIANT,
+    SMALL_BRILLIANT,
+    LARGE_BRILLIANT,
+    NEXUS,
+}
+function DE.status(scanned)
+    if not DE.canDisenchant() then
+        return "unlearned"
+    elseif not scanned then
+        return "noscan"
+    end
+    local history = F.Data.market(F.db, F.Engine.scope()).history
+    for _, id in ipairs(DE.MATERIALS) do
+        if U.finite(DE.materialPrice(history, id)) then
+            return nil
+        end
+    end
+    return "noprices"
 end
 
 -- Three lesser essences make one greater and a greater splits into three lesser, so neither is
@@ -180,9 +208,13 @@ local ESSENCE_PAIRS = {
     [GREATER_ETERNAL] = { LESSER_ETERNAL, 3 },
 }
 
+-- Materials are commodities, older scans kept some as items: the key the history holds.
 local function usualOf(history, id)
-    local h = history[U.key("commodity", id)] or history[U.key("item", id)]
-    return h and F.Market.usual(h)
+    local key = U.key("commodity", id)
+    if not history[key] and history[U.key("item", id)] then
+        key = U.key("item", id)
+    end
+    return (F.Deals.priceOf(key, history))
 end
 
 -- The usual price of a disenchanting material, an essence at most what its other form allows.
@@ -220,17 +252,39 @@ function DE.value(id)
     return math.floor(total)
 end
 
--- A disenchant deal from gear listings sorted cheapest first: every lot below the value minus the
--- minimum profit, within the budget. Gear is bought one auction per click.
-function DE.evaluate(rows, id, budget)
+-- What one unit of the item brings sold as it is, by the route rule of Selling (Market.sellRoutes
+-- at no cost): the vendor price, or the usual price after the cut and the deposit, the better one.
+-- nil when neither is known.
+function DE.sellValue(id, kind, key, vendor, usual)
+    local q = { vendor = vendor }
+    if U.finite(usual) and usual > 0 then
+        local unit = F.Market.unitNet(id, kind, key, usual)
+        q.post, q.net, q.lost = usual, unit, F.Market.net(usual, 1) - unit
+    end
+    local routes = F.Market.sellRoutes(q, 1, F.db.settings)
+    local best
+    for _, r in pairs({ routes.vendor, routes.auction }) do
+        if not best or r.profit > best then
+            best = r.profit
+        end
+    end
+    return best
+end
+
+-- A disenchant deal from gear listings sorted cheapest first: every lot at most F.Market.maxBuy of
+-- the value (minimum profit and return, as Bids), within the budget. Gear is bought one auction per
+-- click. `keep` (DE.sellValue): when selling the item as it is brings as much, disenchanting it is
+-- no deal.
+function DE.evaluate(rows, id, budget, keep)
     local value = DE.value(id)
-    if not value or value <= 0 then
+    if not value or value <= 0 or U.finite(keep) and keep >= value then
         return nil
     end
-    local minProfit = F.db.settings.minProfit or 100
+    local minProfit = F.Market.thresholds(F.db.settings).minProfit
+    local most = F.Market.maxBuy(value, "disenchant", F.db.settings) or 0
     local qty, cost, profit, used = 0, 0, 0, {}
     for _, r in ipairs(rows) do
-        if r.unit > value - minProfit then
+        if r.unit > most then
             break
         end
         local take = r.qty
@@ -266,26 +320,25 @@ end
 -- item whose data is not loaded yet) can be the target, and two different ones leave it unknown,
 -- so nothing is learned rather than the loot booked into another item's band.
 local function lockedItem()
-    local container = C_Container
-    if not container or not container.GetContainerNumSlots or not container.GetContainerItemInfo then
+    if not F.Compat.caps.container then
         return nil
     end
-    local found
+    local found, foundLink
     for bag = 0, 4 do
-        for slot = 1, (container.GetContainerNumSlots(bag) or 0) do
-            local info = container.GetContainerItemInfo(bag, slot)
+        for slot = 1, F.Compat.bagSlots(bag) do
+            local info = F.Compat.bagItem(bag, slot)
             if type(info) == "table" and info.isLocked and info.itemID then
                 local _, _, quality, _, _, _, _, _, _, _, _, classID = U.itemInfo(info.itemID)
                 if quality == nil or (U.finite(quality) and quality >= 2 and (classID == 2 or classID == 4)) then
                     if found and found ~= info.itemID then
                         return nil
                     end
-                    found = info.itemID
+                    found, foundLink = info.itemID, info.hyperlink
                 end
             end
         end
     end
-    return found
+    return found, foundLink
 end
 
 -- UNIT_SPELLCAST_START notes the item and the cast; _INTERRUPTED and _FAILED of that same cast
@@ -298,8 +351,8 @@ function DE.onCast(event, unit, castGUID, spellID)
     end
     local c = DE.casting
     if event == "UNIT_SPELLCAST_START" then
-        local id = lockedItem()
-        DE.casting = id and { id = id, at = F.Engine.clock(), guid = castGUID } or nil
+        local id, link = lockedItem()
+        DE.casting = id and { id = id, link = link, at = F.Engine.clock(), guid = castGUID } or nil
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         if c and (not c.guid or c.guid == castGUID) then
             c.done = true
@@ -338,5 +391,30 @@ function DE.onLoot()
     for id, quantity in pairs(got) do
         seen[id] = (seen[id] or 0) + quantity
     end
+    DE.chain(c, got)
     return true
+end
+
+-- T21: an item bought for disenchanting (a held position) and disenchanted: the materials carry
+-- its cost as a chain (F.Data.convert), shared by their prices. Nothing for an item not held.
+function DE.chain(c, got)
+    local key = F.AH.keyFor(c.id, c.link)
+    local char = F.Data.char(F.db, F.Engine.owner())
+    if not key or not char.positions[key] then
+        return nil
+    end
+    local history = F.Data.market(F.db, F.Engine.scope()).history
+    local outputs = {}
+    for id, quantity in pairs(got) do
+        outputs[#outputs + 1] = {
+            key = F.AH.keyFor(id),
+            name = U.itemInfo(id),
+            qty = quantity,
+            value = DE.materialPrice(history, id),
+        }
+    end
+    table.sort(outputs, function(a, b)
+        return tostring(a.key) < tostring(b.key)
+    end)
+    return F.Data.convert(char, "disenchant", { { key = key, qty = 1 } }, outputs, F.Engine.clock())
 end

@@ -256,20 +256,24 @@ function A.clientVendorPrice(id)
 end
 
 -- What a merchant pays for one, and how it is known:
---  "seen"     a merchant paid it (buyback list), the most reliable;
---  "estimate" the client's price less the safety margin (setting vendorMargin, percent), used for
---             deals, because the server may pay less than the client says;
---  "client"   the client's price as it is (raw = true: deposits and totals).
+--  "client"   the client's item data (the game's own "Sell Price" line): what merchants pay. Of 115
+--             items sold by hand and read back from the buyback list (17 November), 113 were paid
+--             exactly this, and the other two were worn gear, which pays less for its wear;
+--  "seen"     a merchant paid a different price for a non-gear item (buyback list): the server's
+--             own price, used from then on. Gear keeps the client's price (a lower price seen is
+--             wear), unless the client has none;
+--  "estimate" the client's price less the safety margin (setting vendorMargin, percent, 0 by
+--             default), for deals.
 -- nil when the vendor does not buy the item or its data has not loaded.
 function A.vendorPrice(id, raw)
     local seen = F.db and F.db.vendorSeen and F.db.vendorSeen[id]
-    if type(seen) == "table" and U.finite(seen.p) then
+    local price = A.clientVendorPrice(id)
+    if type(seen) == "table" and U.finite(seen.p) and (not price or (seen.p ~= price and A.kindOf(id) ~= "gear")) then
         if seen.p <= 0 then
             return nil, "seen"
         end
         return seen.p, "seen"
     end
-    local price = A.clientVendorPrice(id)
     if not price then
         return nil
     end
@@ -386,6 +390,10 @@ function A.replicateMark()
 end
 -- One auction of the full scan: buyout is for the whole stack. With `raw`, also every field as the
 -- server sent it (second result), read before the game has loaded the item too.
+-- The raw fields are one table, filled again for each row: they are read once, as the row is read
+-- (F.Raw.capture turns them into a line at once), and a new table for each of 290 000 rows was work
+-- for the garbage collector.
+local rawFields = {}
 local function replicateRead(i, raw)
     local _, _, count, _, _, _, _, minBid, increment, buyout, bidAmount, _, _, owner, _, _, id, complete =
         AH.GetReplicateItemInfo(i)
@@ -418,16 +426,9 @@ local function replicateRead(i, raw)
     if not raw then
         return row
     end
-    local fields = {
-        id = id,
-        count = count,
-        buyout = buyout,
-        minBid = minBid,
-        bid = bidAmount,
-        band = band,
-        own = A.isPlayer(owner),
-        link = link,
-    }
+    local fields = rawFields
+    fields.id, fields.count, fields.buyout, fields.minBid = id, count, buyout, minBid
+    fields.bid, fields.band, fields.own, fields.link = bidAmount, band, A.isPlayer(owner), link
     return row, fields
 end
 function A.replicateRow(i)
@@ -435,7 +436,8 @@ function A.replicateRow(i)
 end
 
 -- Every field of a full-scan auction, also before the game has loaded the item (raw scans), and the
--- auction as A.replicateRow reads it, from one read: read for each separately, every row of a scan
+-- auction as A.replicateRow reads it, from one read. The fields table is filled again by the next
+-- call: use it before reading another row: read for each separately, every row of a scan
 -- (up to 290 000) asked the client six times.
 function A.replicateRaw(i)
     local row, raw = replicateRead(i, true)
@@ -453,12 +455,22 @@ local function sorts()
     SORTS = SORTS or { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
     return SORTS
 end
+-- A.ownSearch marks ForeverFlip's own item searches for the hooks (A.hookBrowse): only searches
+-- nobody here sent are the player's.
+local function ownSearch(fn, ...)
+    A.ownSearch = true
+    local ok, err = pcall(fn, ...)
+    A.ownSearch = false
+    if not ok then
+        error(err, 0)
+    end
+end
 function A.search(item)
     A.noteItemSearch(plainKey(item.id))
     if item.kind == "gear" and AH.SendSellSearchQuery then
-        AH.SendSellSearchQuery(plainKey(item.id), sorts(), true)
+        ownSearch(AH.SendSellSearchQuery, plainKey(item.id), sorts(), true)
     else
-        AH.SendSearchQuery(plainKey(item.id), sorts(), true)
+        ownSearch(AH.SendSearchQuery, plainKey(item.id), sorts(), true)
     end
 end
 
@@ -502,15 +514,34 @@ end
 
 -- Browse queries ForeverFlip did not send (the game's Buy tab, another addon) replace the results:
 -- a gear search waiting for its own answer is told (Deals.onForeignBrowse).
+--
+-- A search ForeverFlip did not send while its own page is hidden is the player's, in the game's Buy
+-- tab: background work (the sniper, automatic checks) gives way to it (A.playerUse). The hooks only
+-- listen (hooksecurefunc); nothing of the game's call is changed.
 function A.hookBrowse()
     if A.browseHooked or not hooksecurefunc or not AH.SendBrowseQuery then
         return
     end
     A.browseHooked = true
+    local function player()
+        if A.ownBrowse or A.ownSearch then
+            return
+        end
+        if F.Engine.screen().shown then
+            return -- ForeverFlip's page is shown, not the Buy tab: another addon searched
+        end
+        A.playerAt = F.Engine.clock()
+        if F.Sniper and F.Sniper.onPlayerQuery then
+            F.Sniper.onPlayerQuery()
+        end
+    end
     for _, name in ipairs({ "SendSearchQuery", "SendSellSearchQuery" }) do
         if AH[name] then
             hooksecurefunc(AH, name, function(itemKey)
                 A.noteItemSearch(itemKey)
+                if name == "SendSearchQuery" then
+                    player()
+                end
             end)
         end
     end
@@ -521,9 +552,19 @@ function A.hookBrowse()
                 if not A.ownBrowse then
                     A.foreignAt = F.Engine.clock()
                     F.Deals.onForeignBrowse()
+                    player()
                 end
             end)
         end
+    end
+    -- The Buy tab's favorites list: ForeverFlip never asks for it.
+    if AH.SearchForFavorites then
+        hooksecurefunc(AH, "SearchForFavorites", function()
+            learnedRows = 0
+            A.foreignAt = F.Engine.clock()
+            F.Deals.onForeignBrowse()
+            player()
+        end)
     end
 end
 -- True when somebody else sent a browse a moment ago: its answer may still be on the way, and would
@@ -707,19 +748,62 @@ end
 
 -- The game's own Buy, Sell or Auctions page is shown: the player works there, and a search sent
 -- now would replace what that page shows. Background searches wait meanwhile.
-local NATIVE = { "BrowseResultsFrame", "ItemBuyFrame", "CommoditiesBuyFrame", "ItemSellFrame", "CommoditiesSellFrame" }
-function A.nativeShown()
-    local f = AuctionHouseFrame
-    if not f or not f.IsShown or not f:IsShown() then
-        return false
+--
+-- That check alone was not enough: it looks only at the moment a query is sent. A query sent a
+-- moment before the player opened the Buy tab took the player's own browse answer for its own and
+-- asked for its next pages, and nothing knew the player had searched. Now the player's searches are
+-- heard too (A.hookBrowse): for A.PLAYER_IDLE seconds after one, background work waits, unless
+-- ForeverFlip's own page is shown or the game's pages read as left. Pages are only read through the
+-- widget API (IsShown); nothing is called on or written into them.
+A.PLAYER_IDLE = 60
+local PURCHASE = { "ItemBuyFrame", "CommoditiesBuyFrame", "BuyDialog" }
+local SELL = { "ItemSellFrame", "CommoditiesSellFrame" }
+local function page(name)
+    local p = rawget(AuctionHouseFrame, name)
+    if type(p) == "table" and p.IsShown then
+        return p
     end
-    for _, name in ipairs(NATIVE) do
-        local page = rawget(f, name)
-        if type(page) == "table" and page.IsShown and page:IsShown() then
+end
+local function anyShown(names)
+    for _, name in ipairs(names) do
+        local p = page(name)
+        if p and p:IsShown() then
             return true
         end
     end
     return false
+end
+-- Why the player's use of the game's own pages holds background work, or nil: "purchase" (an item
+-- or commodity purchase page or its confirmation), "buy" (the Buy tab's list, or a search of the
+-- player's within A.PLAYER_IDLE seconds), "sell" (the game's Sell page).
+function A.playerUse()
+    local f = AuctionHouseFrame
+    if not f or not f.IsShown or not f:IsShown() then
+        return nil
+    end
+    if anyShown(PURCHASE) then
+        return "purchase"
+    end
+    local browse = page("BrowseResultsFrame")
+    if browse and browse:IsShown() then
+        return "buy"
+    end
+    if anyShown(SELL) then
+        return "sell"
+    end
+    if A.playerAt and F.Engine.clock() - A.playerAt < A.PLAYER_IDLE then
+        if F.Engine.screen().shown then
+            return nil -- back on ForeverFlip's page
+        end
+        if browse then
+            return nil -- the Buy tab reads as hidden: the player left it
+        end
+        return "buy"
+    end
+    return nil
+end
+function A.nativeShown()
+    return A.playerUse() ~= nil
 end
 
 -- The item-key versions of `id` in the browse results so far. With `name` (an ending), versions
@@ -748,7 +832,7 @@ end
 -- Step 2: one exact version, and its next page.
 function A.searchKey(key)
     A.noteItemSearch(key)
-    AH.SendSearchQuery(key, sorts(), true)
+    ownSearch(AH.SendSearchQuery, key, sorts(), true)
 end
 function A.moreKey(key)
     AH.RequestMoreItemSearchResults(key)
@@ -833,13 +917,12 @@ function A.searchKeys(ids)
         error(err, 0)
     end
 end
--- Every result row so far: { id, minPrice, qty, containsOwnerItem }. The lowest price of an item may
+-- Browse result rows as { id, minPrice, qty, containsOwnerItem }. The lowest price of an item may
 -- be a bid, or the price of the player's own lot (containsOwnerItem: the item has one listed).
-function A.browseResults()
+function A.browseRows(results)
     local out = {}
-    local ok, results = pcall(AH.GetBrowseResults)
-    for _, r in ipairs(ok and results or {}) do
-        if r.itemKey and (r.minPrice or 0) > 0 and (r.totalQuantity or 0) > 0 then
+    for _, r in ipairs(type(results) == "table" and results or {}) do
+        if type(r) == "table" and r.itemKey and (r.minPrice or 0) > 0 and (r.totalQuantity or 0) > 0 then
             out[#out + 1] = {
                 id = r.itemKey.itemID,
                 minPrice = r.minPrice,
@@ -849,6 +932,43 @@ function A.browseResults()
         end
     end
     return out
+end
+
+-- Every result row so far (A.browseRows).
+function A.browseResults()
+    local ok, results = pcall(AH.GetBrowseResults)
+    return A.browseRows(ok and results)
+end
+
+-- One browse answer event, read once: the rows it brought (A.browseRows), their item-key versions
+-- learned. ADDED carries only the rows it added (its payload, addedBrowseResults); UPDATED is a
+-- new list, read whole. Reading the whole list on every page, twice (keys, then the sniper),
+-- copied up to 8,000 rows per page of a whole-house browse: the quick scan froze the game.
+-- Returns the rows and true when they are the whole list (UPDATED, or no payload).
+function A.browseAnswer(updated, added)
+    local new, whole
+    if not updated and type(added) == "table" then
+        new = added
+        learnedRows = learnedRows + #added
+    else
+        local ok, results = pcall(AH.GetBrowseResults)
+        results = ok and type(results) == "table" and results or {}
+        if updated or #results < learnedRows then
+            learnedRows = 0
+        end
+        whole = learnedRows == 0
+        new = {}
+        for i = learnedRows + 1, #results do
+            new[#new + 1] = results[i]
+        end
+        learnedRows = #results
+    end
+    if F.db then
+        for _, r in ipairs(new) do
+            A.rememberKey(type(r) == "table" and r.itemKey)
+        end
+    end
+    return A.browseRows(new), whole
 end
 
 -- Auctions of an exact item search that take a bid: { auctionID, bid = next bid, qty }.

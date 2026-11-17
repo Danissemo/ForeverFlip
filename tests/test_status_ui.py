@@ -173,7 +173,8 @@ class SaleabilityTableTests(unittest.TestCase):
         runtime().execute(SALEABILITY + '''
         UI.selected='c:50';UI.refreshDeals()
         local detail=UI.dealText:GetText()
-        assert(detail:find('a day at'),detail)
+        -- T32: c:50 knows only lots that disappeared: no number, the reason instead.
+        assert(detail:find('No reliable data',1,true) and detail:find('only lots that disappeared',1,true),detail)
         assert(detail:find('data 4.0 h old',1,true) and detail:find('old data'),detail)
         assert(not detail:find('999'),'cached deal rate must not claim current sales')
         UI.selected='c:30';UI.refreshDeals();assert(UI.dealText:GetText():find('unavailable'))

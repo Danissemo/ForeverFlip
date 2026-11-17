@@ -58,6 +58,71 @@ class RecoveryTests(unittest.TestCase):
         assert(S.listedUnits('c:41') == nil, 'the unread item is not known as unlisted')''')
 
 
+class MissingItemTests(unittest.TestCase):
+    """Rows of items the server does not have are given up at once, not after S.RECOVER."""
+
+    def test_waiting_rows_of_a_failed_item_are_given_up_at_once(self):
+        run(BASE + '''toRecovery()
+        items[40].cached = true
+        fire('ITEM_DATA_LOAD_RESULT', 41, false)
+        local start = now
+        while S.busy() do run(0.05) end
+        assert(now - start < 5, 'no 30 second wait: ' .. (now - start))
+        assert(S.last.skipped == 400 and S.listedUnits('c:40') == 60000)
+        assert(S.last.unread[41], 'its lots are not taken for sales')
+        assert(S.listedUnits('c:41') == nil)''')
+
+    def test_rows_of_an_item_that_failed_before_are_not_held(self):
+        run(BASE + '''items[40].cached = true
+        fire('ITEM_DATA_LOAD_RESULT', 41, false)
+        assert(S.start()); fire('REPLICATE_ITEM_LIST_UPDATE')
+        local start = now
+        while S.busy() do run(0.05) end
+        assert(now - start < 5, 'nothing waited for: ' .. (now - start))
+        assert(S.last.skipped == 400 and S.last.unread[41])''')
+
+    def test_an_item_the_game_still_knows_is_waited_for(self):
+        # A failed load alone is not trusted when DoesItemExistByID says the item exists.
+        run(BASE + '''C_Item.DoesItemExistByID = function() return true end
+        toRecovery()
+        items[40].cached = true
+        fire('ITEM_DATA_LOAD_RESULT', 41, false)
+        local start = now
+        while S.busy() do run(0.05) end
+        assert(now - start >= S.RECOVER - 1, 'the usual wait: ' .. (now - start))''')
+
+    def test_a_later_successful_load_clears_the_mark(self):
+        run(BASE + '''fire('ITEM_DATA_LOAD_RESULT', 41, false)
+        fire('ITEM_DATA_LOAD_RESULT', 41, true)
+        toRecovery()
+        items[40].cached = true
+        run(5); items[41].cached = true
+        while S.busy() do run(0.05) end
+        assert(S.last.skipped == 0, 'every row read: ' .. S.last.skipped)''')
+
+
+class PrefetchTests(unittest.TestCase):
+    """While the full scan's answer is awaited, items this house listed before are loaded."""
+
+    def test_known_items_are_asked_for_during_the_wait(self):
+        run(SETUP + '''local F, S = ForeverFlip, ForeverFlip.Scan
+        addItem(40, 'Wool Cloth', 33, 'commodity'); addItem(41, 'Silk Cloth', 150, 'commodity')
+        items[40].cached, items[41].cached = false, true
+        local history = F.Data.market(F.db, F.Engine.scope()).history
+        history['c:40'], history['c:41'], history['i:42'] = {}, {}, {}
+        for id = 1000, 1999 do history['i:' .. id] = {} end
+        S.PREFETCH, F.AH.ITEM_IN_FLIGHT = 300, 5000 -- the mock never answers: no cap on unanswered requests
+        for k in pairs(requestedItems) do requestedItems[k] = nil end
+        assert(S.start())
+        run(2)
+        assert(S.job and S.job.state == 'waiting', 'still waiting for the answer')
+        local asked = {}
+        for _, id in ipairs(requestedItems) do asked[id] = (asked[id] or 0) + 1 end
+        assert(asked[40] == 1 and asked[42] == 1 and asked[1999] == 1, 'uncached items asked for once')
+        assert(not asked[41], 'a cached item is not asked for')
+        assert(S.job.prefetched, 'the whole list went in a few frames')''')
+
+
 class ItemRequestTests(unittest.TestCase):
     """Item data requests follow the game's answers: a batch every 0.1 s while places are free."""
 

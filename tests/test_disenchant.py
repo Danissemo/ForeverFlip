@@ -48,3 +48,27 @@ class CanDisenchantTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SellOrDisenchantTests(unittest.TestCase):
+    """The Disenchant page judges the item by the route rule of Selling: when selling it as it is
+    brings as much as disenchanting it, there is no disenchant deal."""
+
+    BASE = SETUP + '''local DE = ForeverFlip.Disenchant
+    DE.value = function() return 50000 end
+    local rows = { { unit = 10000, qty = 1, auctionID = 1 } }
+    '''
+
+    def test_a_better_vendor_price_means_no_deal(self):
+        run(self.BASE + '''assert(DE.sellValue(20, 'gear', 'g:20', 60000, nil) == 60000)
+        assert(DE.evaluate(rows, 20, 10000000, DE.sellValue(20, 'gear', 'g:20', 60000, nil)) == nil)''')
+
+    def test_selling_for_less_leaves_the_deal(self):
+        run(self.BASE + '''local keep = DE.sellValue(20, 'gear', 'g:20', 100, nil)
+        assert(keep == 100)
+        local d = DE.evaluate(rows, 20, 10000000, keep)
+        assert(d and d.mode == 'disenchant' and d.qty == 1, 'disenchanting pays more than selling')''')
+
+    def test_the_auction_route_counts_after_the_cut(self):
+        run(self.BASE + '''local keep = DE.sellValue(20, 'gear', 'g:20', nil, 52000)
+        assert(keep and keep < 52000 and keep > 0, 'the usual price less the cut and the deposit')''')

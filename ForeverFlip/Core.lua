@@ -48,6 +48,12 @@ end
 
 -- Hardcore realms have their own economy: their prices are kept apart (TSM does the same, with
 -- the same game rule check).
+-- T30: E.scope() is asked many times a frame (every deal's Sure, every refresh, every tooltip).
+-- The realm's rules do not change while the game runs, so the answer of C_GameRules is kept for
+-- the same C_GameRules table, and the scope string is built again only when one of its parts
+-- (realm name, hardcore, open house, faction) differs. E.counts tells how often each was built.
+E.counts = { scope = 0, scopeBuilt = 0, hardcoreAsked = 0 }
+local hcFor, hcRule, hcActive
 function E.hardcore()
     if not (C_GameRules and C_GameRules.IsGameRuleActive and Enum and Enum.GameRule) then
         return false
@@ -56,8 +62,13 @@ function E.hardcore()
     if rule == nil then
         return false
     end
+    if hcFor == C_GameRules and hcRule == rule then
+        return hcActive
+    end
+    E.counts.hardcoreAsked = E.counts.hardcoreAsked + 1
     local ok, active = pcall(C_GameRules.IsGameRuleActive, rule)
-    return ok and active == true
+    hcFor, hcRule, hcActive = C_GameRules, rule, ok and active == true
+    return hcActive
 end
 
 -- The realm part of a scope: the realm name, marked on hardcore realms.
@@ -67,8 +78,19 @@ end
 
 -- One auction house per realm and faction, plus the neutral house of the realm.
 E.house = nil -- "Neutral" while a neutral auction house is open
+local memo = {}
 function E.scope()
-    return E.realm() .. "-" .. tostring(E.house or UnitFactionGroup and UnitFactionGroup("player") or "?")
+    E.counts.scope = E.counts.scope + 1
+    local realm = GetRealmName and GetRealmName() or "?"
+    local hc = E.hardcore()
+    local side = E.house or UnitFactionGroup and UnitFactionGroup("player") or "?"
+    if memo.scope and memo.realm == realm and memo.hc == hc and memo.side == side then
+        return memo.scope
+    end
+    E.counts.scopeBuilt = E.counts.scopeBuilt + 1
+    memo.realm, memo.hc, memo.side = realm, hc, side
+    memo.scope = tostring(realm) .. (hc and " (HC)" or "") .. "-" .. tostring(side)
+    return memo.scope
 end
 
 -- The cut of an auction house: learned from sale invoices, else 5% (15% on a neutral house).
@@ -84,6 +106,47 @@ function E.applyCut()
     F.Market.CUT = E.cutFor(E.scope())
 end
 
+-- Market reads no game-facing module itself: what it needs from them is handed in here. Each
+-- accessor looks the module up when called, so a module replaced later (tests) is still the one used.
+function E.wireMarket()
+    F.Market.use({
+        kindOf = function(id)
+            return F.AH and F.AH.kindOf and F.AH.kindOf(id)
+        end,
+        vendorPrice = function(id, confirmed)
+            return F.AH.vendorPrice(id, confirmed)
+        end,
+        clientVendorPrice = function(id)
+            return F.AH.clientVendorPrice(id)
+        end,
+        depositFn = function(id, kind, d)
+            return F.AH.depositFn(id, kind, d)
+        end,
+        saleRate = function(name)
+            return F.Trade.rate(name)
+        end,
+        durationFor = function(key, qty, price)
+            return F.Trade and F.Trade.durationFor and F.Trade.durationFor(key, qty, price)
+        end,
+        durationHours = function(d)
+            return F.Trade.DURATION_HOURS and F.Trade.DURATION_HOURS[d]
+        end,
+        durationSetting = function()
+            return F.db and F.db.settings.duration
+        end,
+        canDisenchant = function()
+            return F.Disenchant.canDisenchant()
+        end,
+        disenchantValue = function(id)
+            return F.Disenchant.value(id)
+        end,
+        clock = function()
+            return F.Engine and F.Engine.clock and F.Engine.clock() or 0
+        end,
+    })
+end
+E.wireMarket()
+
 function E.owner()
     return tostring(GetRealmName and GetRealmName() or "?") .. "-" .. tostring(UnitName and UnitName("player") or "?")
 end
@@ -95,6 +158,38 @@ end
 
 function E.changed()
     E.dirty = true
+end
+
+-- Services tell the screen what happened (E.emit) instead of calling F.UI; the UI subscribes
+-- (E.listen). E.notify stays the status message. Listeners run in the caller's frame, under its
+-- error handler, in the order they subscribed.
+E.listeners = {}
+function E.listen(event, fn)
+    local list = E.listeners[event]
+    if not list then
+        list = {}
+        E.listeners[event] = list
+    end
+    list[#list + 1] = fn
+end
+
+function E.emit(event, ...)
+    local list = E.listeners[event]
+    if not list then
+        return
+    end
+    for i = 1, #list do
+        list[i](...)
+    end
+end
+
+-- What the screen shows, for services that pace their work by it, read when asked: { frame (the
+-- window exists), shown, section, filter, selected, selectedAt, buyHoverKey, vendorOrder }. The
+-- UI registers the reader (E.screenReader); without one nothing is shown. Read it, never keep it.
+local noScreen = { frame = false, shown = false }
+function E.screen()
+    local read = E.screenReader
+    return read and read() or noScreen
 end
 
 -- A hardware callback still sends protected actions itself. This only schedules immediate
@@ -110,9 +205,15 @@ function E.interacting()
 end
 
 -- Independent local jobs still advance while the server answers a click, with shorter slices.
-function E.workSlice(ms)
-    if E.interacting() or F.Trade.busy() or F.Deals.foreground() then
+-- A purchase always gets 2 ms. `soft`: the cap while the player only clicks or a price check is
+-- waited for (2 ms when not given); the full scan's reading keeps half its pace then instead of a
+-- sixth, and reading 200 000 auctions is what the player waits for.
+function E.workSlice(ms, soft)
+    if F.Trade.busy() then
         return math.min(ms, 2)
+    end
+    if E.interacting() or F.Deals.foreground() then
+        return math.min(ms, soft or 2)
     end
     return ms
 end
@@ -244,16 +345,17 @@ function E.onBlocked(event, addon, func)
         table.remove(F.db.blocked)
     end
     -- Told once for each function, and once in every session (a saved list of the last 10 must not
-    -- silence the chat line for the ones seen before): the player has to know while it happens.
+    -- silence the chat line for the ones seen before): the player has to know while it happens. It
+    -- reaches the general chat by the Errors box of Settings, Messages (on by default).
     E.blockedSeen = E.blockedSeen or {}
     if not E.blockedSeen[func] then
         E.blockedSeen[func] = true
-        print(
-            "|cffff4040ForeverFlip:|r "
-                .. string.format(
-                    F.Locale.text("the game blocked %s. Type /ff diag and send the lines to the developer."),
-                    func
-                )
+        F.Log.add(
+            "error",
+            string.format(
+                F.Locale.text("the game blocked %s. Type /ff diag and send the lines to the developer."),
+                func
+            )
         )
     end
 end
@@ -274,6 +376,14 @@ function E.handle(event, ...)
             F.Locale.apply(F.db.settings.language)
             if E.noSavedData and F.UI and F.UI.noSavedData then
                 F.UI.noSavedData()
+            end
+            F.Log.init()
+            local fit = F.db.fitDropped
+            if type(fit) == "table" then
+                F.db.fitDropped = nil
+                local text =
+                    "Saved data neared the client's limit: %d items not seen for the longest time were forgotten."
+                F.Log.add("info", string.format(F.Locale.text(text), tonumber(fit.items) or 0))
             end
             E.hookReplicate()
             F.AH.hookBrowse()
@@ -359,11 +469,10 @@ function E.handle(event, ...)
         -- Every browse answer teaches item-key versions (AH.learnKeys). A gear search browses for
         -- the item's versions; every other browse feeds the sniper. UPDATED brings a new list, read
         -- from its first row even when no browse sent through the hook (AH.hookBrowse) said so.
-        if F.AH.learnKeys then
-            F.AH.learnKeys(event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
-        end
-        if not F.Deals.onBrowse() then
-            F.Sniper.onResults(event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+        local updated = event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED"
+        local rows, whole = F.AH.browseAnswer(updated, ...)
+        if not F.Deals.onPreBrowse(rows, whole) and not F.Deals.onBrowse() then
+            F.Sniper.onResults(updated, rows, whole)
         end
     elseif event == "AUCTION_HOUSE_BROWSE_FAILURE" then
         if not F.Deals.onBrowseFailure() then
@@ -392,6 +501,8 @@ function E.handle(event, ...)
         local waited = ok and last and last.waitVendor and last.waitVendor[id]
         if ok then
             F.Scan.itemLoaded(id)
+        else
+            F.Scan.itemFailed(id) -- an item the server may not have: a scan stops waiting for it
         end
         if not waited then
             return
@@ -412,15 +523,26 @@ function E.handle(event, ...)
         F.Analytics.recordGold()
         if event == "PLAYER_ENTERING_WORLD" then
             F.Trade.repairInvoices()
+            F.Log.entered()
         end
         if event == "PLAYER_ENTERING_WORLD" and not F.Share.joined then
             -- The game joins its own channels first; joining ours a few seconds later keeps their order.
             F.Share.later(8, F.Share.join, "join")
         end
     elseif event == "PLAYER_LOGOUT" then
+        if F.resetPending then
+            -- The player asked for a clean start (F.resetAll): only the settings are written.
+            ForeverFlipData, ForeverFlipRaw = F.Data.reset(F.db), nil
+            return
+        end
         F.Analytics.recordGold()
         -- Saves checks and vendor deals found since the scan (SavedVariables are written next).
         F.Scan.save()
+        -- Last: a file the client cannot read loses everything at the next logout (D.fitSave).
+        local ok, count, dropped = pcall(F.Data.fitSave, F.db, ForeverFlipRaw)
+        if ok and dropped > 0 then
+            F.db.fitDropped = { at = E.clock(), items = dropped, constants = count }
+        end
     elseif event == "MAIL_SHOW" or event == "MAIL_CLOSED" or event == "MAIL_INBOX_UPDATE" then
         if event ~= "MAIL_INBOX_UPDATE" then
             F.Mail.open = event == "MAIL_SHOW"
@@ -465,6 +587,9 @@ function E.handle(event, ...)
             return -- another unit's cast (registered for every unit without RegisterUnitEvent)
         end
         F.Disenchant.onCast(event, ...)
+        if event == "UNIT_SPELLCAST_SUCCEEDED" then
+            F.Crafting.onCast(select(3, ...))
+        end
     elseif event == "LOOT_OPENED" then
         F.Disenchant.onLoot()
     elseif event == "CHAT_MSG_CHANNEL_NOTICE" then
@@ -492,7 +617,7 @@ local function report(err)
         return
     end
     reported[err] = true
-    print("|cffff4040ForeverFlip error:|r " .. err)
+    F.Log.add("error", err)
     if F.db then
         F.db.errors = F.db.errors or {}
         table.insert(F.db.errors, 1, { at = E.clock(), version = F.version, message = err })
@@ -780,11 +905,41 @@ function E.auxPrice(id)
     end
 end
 
+-- A slash command's answer: in the chat (the player asked for it) and in the message window.
+local function say(text)
+    F.Log.add("info", text, { chat = true, raw = true })
+end
+
 SLASH_FOREVERFLIP1 = "/ff"
 SLASH_FOREVERFLIP2 = "/foreverflip"
 SlashCmdList.FOREVERFLIP = function(msg)
     msg = string.lower(msg or "")
     local L = F.Locale.text
+    if msg == "log" then
+        -- ForeverFlip's chat tab (errors, deals, trade and scan notes), made again if it was closed.
+        F.Log.show()
+        return
+    end
+    if msg == "reset" then
+        -- Everything saved goes, the settings stay: asked first (UI.confirmReset).
+        if F.UI and F.UI.confirmReset then
+            F.UI.confirmReset()
+        end
+        return
+    end
+    if msg == "stats rollback" then
+        -- T32: the sales statistics of this house as they were before the last rebuild (kept a week).
+        if F.Scan.rebuilding() then
+            say("ForeverFlip: " .. L("The sales statistics are being rebuilt: try again once it ends."))
+        elseif F.db and F.Data.rollbackStats(F.Data.market(F.db, E.scope())) then
+            F.Deals.sureCache = {}
+            say("ForeverFlip: " .. L("Sales statistics of this auction house are back as before the rebuild."))
+            E.changed()
+        else
+            say("ForeverFlip: " .. L("No earlier sales statistics are kept for this auction house."))
+        end
+        return
+    end
     if msg == "dump" then
         -- The auction house window frame by frame, in a box to copy (open it on the Buy tab).
         if F.UI and F.UI.showDump then
@@ -795,19 +950,19 @@ SlashCmdList.FOREVERFLIP = function(msg)
     if msg == "look" then
         -- The auction house's own category button, layer by layer, against ForeverFlip's.
         for _, line in ipairs(F.UI.lookReport()) do
-            print("ForeverFlip look: " .. line)
+            say("ForeverFlip look: " .. line)
         end
         return
     end
     if msg == "diag" then
         local blocked = F.db and type(F.db.blocked) == "table" and F.db.blocked or {}
         if #blocked == 0 then
-            print("ForeverFlip: " .. L("No blocked action recorded."))
+            say("ForeverFlip: " .. L("No blocked action recorded."))
         end
         for _, b in ipairs(blocked) do
             -- The whole line goes to the developer, so its English words are translated; the event's
             -- name and the function name that the game gave are left as they are.
-            print(
+            say(
                 string.format(
                     "ForeverFlip %s: %s %s, %s ago; %s",
                     tostring(b.version),
@@ -820,11 +975,11 @@ SlashCmdList.FOREVERFLIP = function(msg)
         end
         local last = F.Scan.last
         if not last then
-            print("ForeverFlip: " .. L("No full scan yet."))
+            say("ForeverFlip: " .. L("No full scan yet."))
             return
         end
         local s = last.stats
-        print(
+        say(
             string.format(
                 "ForeverFlip %s: %d auctions, %d read, %d skipped, %d own; %d items, vendor price known %d, below vendor %d, collecting sales data %d; deals %d",
                 F.version,
@@ -845,7 +1000,7 @@ SlashCmdList.FOREVERFLIP = function(msg)
             if i > 5 then
                 break
             end
-            print(
+            say(
                 string.format(
                     "  %s: %s%s, %d auctions in the list, after %d s",
                     date and date("%H:%M", e.at) or tostring(e.at),
@@ -861,9 +1016,9 @@ SlashCmdList.FOREVERFLIP = function(msg)
     if msg == "bags" then
         -- Why bag items are not on the Sell page (the auction house must be open).
         local missing = F.AH.bagReport()
-        print(string.format("ForeverFlip: " .. L("%d bag items are not on the Sell page."), #missing))
+        say(string.format("ForeverFlip: " .. L("%d bag items are not on the Sell page."), #missing))
         for i = 1, math.min(30, #missing) do
-            print("  " .. missing[i].link .. ": " .. missing[i].reason)
+            say("  " .. missing[i].link .. ": " .. missing[i].reason)
         end
         return
     end
@@ -876,7 +1031,7 @@ SlashCmdList.FOREVERFLIP = function(msg)
     if msg == "rescan" then
         -- After a scan the server never answered: allow the next request now.
         F.db.lastScan = 0
-        print("ForeverFlip: " .. L("the full scan can be requested again."))
+        say("ForeverFlip: " .. L("the full scan can be requested again."))
         return
     end
     if msg == "refused" or msg:match("^refused%s") then
@@ -891,7 +1046,7 @@ SlashCmdList.FOREVERFLIP = function(msg)
             for id in pairs(F.AH.refused or {}) do
                 F.AH.refused[id] = nil
             end
-            print(string.format("ForeverFlip: " .. L("%d merchant refusals forgotten."), count))
+            say(string.format("ForeverFlip: " .. L("%d merchant refusals forgotten."), count))
             F.Engine.changed()
             return
         end
@@ -900,22 +1055,26 @@ SlashCmdList.FOREVERFLIP = function(msg)
             list[#list + 1] = id
         end
         table.sort(list)
-        print(string.format("ForeverFlip: " .. L("%d items a merchant refused this session."), #list))
+        say(string.format("ForeverFlip: " .. L("%d items a merchant refused this session."), #list))
         for i = 1, math.min(20, #list) do
-            print("  " .. (U.itemInfo(list[i]) or "item") .. " (" .. list[i] .. ")")
+            say("  " .. (U.itemInfo(list[i]) or "item") .. " (" .. list[i] .. ")")
         end
         if #list > 0 then
-            print("ForeverFlip: " .. L("/ff refused clear forgets them."))
+            say("ForeverFlip: " .. L("/ff refused clear forgets them."))
         end
         return
     end
     local lang = msg:match("^lang%s+(%a+)$")
     if lang == "en" or lang == "uk" then
         F.db.settings.language = lang
-        print("ForeverFlip: /reload")
+        say("ForeverFlip: /reload")
         return
     end
-    print(
-        "ForeverFlip " .. F.version .. ": " .. L("open the auction house and use the ForeverFlip tab.") .. " /ff diag"
+    say(
+        "ForeverFlip "
+            .. F.version
+            .. ": "
+            .. L("open the auction house and use the ForeverFlip tab.")
+            .. " /ff log, /ff diag"
     )
 end

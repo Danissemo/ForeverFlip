@@ -29,6 +29,19 @@ D.MAX_SEARCH_TIME = 30
 -- give up sooner (they are sent once more at the end of the batch).
 D.ANSWER_WAIT = 10
 D.FAST_WAIT = 5
+-- Check all on a deal page first asks for the lowest price of every item in one query (as the
+-- sniper does, up to D.PRE_IDS items): an item nobody sells any more, or whose lowest price is at
+-- or above what the deal sells for, is settled from that answer. Each of those waited for an
+-- exact search the server never answers (WoW Forever), 35 deals took minutes. D.PRE_WAIT: seconds
+-- the answer is waited for; without it every item gets its exact search as before.
+D.PRE_IDS = 100
+D.PRE_WAIT = 4
+D.PRE_PAGES = 5
+-- Checking the bags (Check all on My items): a full scan up to this old stands for the searches of
+-- the items it did not see, and one item's search gets at most D.BAG_SEARCH_TIME seconds of waiting
+-- (a gear item with many remembered versions nobody sells waited 5 s for each, up to 30 s).
+D.BAG_SCAN_AGE = 2 * 3600
+D.BAG_SEARCH_TIME = 12
 
 local function clock()
     return F.Engine.clock()
@@ -94,6 +107,72 @@ function D.resaleCap(market, history)
     return market or cap
 end
 
+-- T25: what the resale below the median has spent today (its journal purchases).
+function D.medianSpent(now)
+    local today = math.floor((now or clock()) / 86400)
+    local spent = 0
+    for _, e in ipairs(F.Data.char(F.db, F.Engine.owner()).journal) do
+        if e.kind == "buy" and e.strategy == "median" and math.floor((e.at or 0) / 86400) == today then
+            spent = spent + (e.amount or 0)
+        end
+    end
+    return spent
+end
+
+-- T25: copper the resale below the median may still spend: the day's limit less today's
+-- purchases, its share of the money on hand and, with `key`, the item's limit less the stock of it.
+-- Never more than the ordinary budget (D.budget).
+function D.medianRoom(key, now)
+    local s = settings()
+    local wallet = F.Engine.wallet()
+    local room = math.min(
+        D.budget(),
+        math.floor((tonumber(s.medianDayGold) or 0) * 10000) - D.medianSpent(now),
+        math.floor(wallet * (tonumber(s.medianShare) or 0))
+    )
+    if key then
+        local p = F.Data.char(F.db, F.Engine.owner()).positions[key]
+        room = math.min(room, math.floor((tonumber(s.medianItemGold) or 0) * 10000) - (p and p.cost or 0))
+    end
+    return math.max(0, room)
+end
+
+-- The market reset is off when its share of the gold or its day's gold is 0 (it has no switch).
+function D.medianOff()
+    local s = settings()
+    return s.median == false or (tonumber(s.medianShare) or 0) <= 0 or (tonumber(s.medianDayGold) or 0) <= 0
+end
+
+-- T25: the market reset of a group (every lot under the usual price); nil and a reason.
+function D.evaluateMedian(g, history, now)
+    if D.medianOff() then
+        return nil, "off"
+    end
+    if F.Shopping.blocked(g.key) then
+        return nil, "blocked"
+    end
+    local room, held = itemRoom(g.key)
+    local cap, unsold = D.resaleCap(g.market, history)
+    if unsold then
+        return nil, "not_selling"
+    end
+    local duration = F.Market.duration(g.key, nil, cap)
+    -- The market reset relists at the median (Market.usualTarget) itself: capped by what buyers
+    -- paid (D.resaleCap) it sold where Resale does, and the two pages showed the same deals.
+    return F.Market.evaluateMedian(g.rows, {
+        kind = g.kind,
+        history = history,
+        now = now or clock(),
+        held = held,
+        budget = math.min(room, D.medianRoom(g.key, now)),
+        trust = D.trust(g.key, now),
+        depositVendor = F.AH.clientVendorPrice(g.id),
+        deposit = F.AH.depositFn(g.id, g.kind, duration),
+        duration = duration,
+        settings = settings(),
+    })
+end
+
 function D.evaluate(g, vendor, history, now)
     if F.Shopping.blocked(g.key) then
         return nil, "blocked"
@@ -115,6 +194,14 @@ function D.evaluate(g, vendor, history, now)
         history = history,
         market = cap,
         noResale = unsold,
+        -- The exit is the price the Sell page suggests (Market.postPrice, Trade.suggest).
+        usual = F.Market.usual(history) or g.market,
+        -- Resale picks its price by the sales seen (Market.evaluate): up to one step under the
+        -- cheapest lot left, down to what buyers really paid, whichever brings the most money
+        -- expected (Sure); it buys only what sells there in a day (Est./day).
+        saleCap = F.Market.saleCap(history),
+        limit = F.Trade.postLimit(F.Market.usual(history) or g.market),
+        undercut = F.Trade.undercut,
         now = now or clock(),
         settings = settings(),
     })
@@ -126,7 +213,8 @@ function D.evaluate(g, vendor, history, now)
         deal, reason = F.Shopping.evaluate(g.rows, g.key, D.budget()), nil
     end
     if not ordered and g.kind == "gear" and F.Disenchant.active() then
-        local de = F.Disenchant.evaluate(g.rows, g.id, D.budget())
+        local keep = F.Disenchant.sellValue(g.id, g.kind, g.key, vendor, F.Market.usual(history) or g.market)
+        local de = F.Disenchant.evaluate(g.rows, g.id, D.budget(), keep)
         -- A shopping deal counts one auction (the player wants the item), a disenchant deal every
         -- lot: their profits do not compare, and the shopping list wins as an order does.
         if de and (not deal or deal.mode ~= "shop" and de.profit > deal.profit) then
@@ -134,22 +222,84 @@ function D.evaluate(g, vendor, history, now)
         end
     end
     if deal then
-        deal.key, deal.kind, deal.id, deal.link = g.key, g.kind, g.id, g.link
-        deal.market, deal.vendor = g.market, vendor
-        if deal.mode == "vendor" then
-            deal.vendorHow = select(2, F.AH.vendorPrice(g.id))
-            -- A merchant has refused the item before (a poison's item data is priced by what it
-            -- costs, not by what a merchant pays). The refusal is for the session, so it must hold
-            -- every scan: a scan started before the refusal would put the deal back, and the list
-            -- would show it again with only a warning. It is dropped here, so no scan re-adds it.
-            deal.refused = F.AH.refusedByMerchant({ itemID = g.id })
-            if deal.refused then
+        -- The other route of the lot (Market.evaluate: resale and vendor are judged apart).
+        local alt = deal.alt
+        deal.alt = nil
+        local function finish(d)
+            d.key, d.kind, d.id, d.link = g.key, g.kind, g.id, g.link
+            d.market, d.vendor = g.market, vendor
+            if d.mode == "vendor" then
+                d.vendorHow = select(2, F.AH.vendorPrice(g.id))
+                -- A merchant has refused the item before (a poison's item data is priced by what it
+                -- costs, not by what a merchant pays). The refusal is for the session, so it must
+                -- hold every scan: a scan started before the refusal would put the deal back, and
+                -- the list would show it again with only a warning. It is dropped here, so no scan
+                -- re-adds it.
+                d.refused = F.AH.refusedByMerchant({ itemID = g.id })
+                if d.refused then
+                    return nil
+                end
+            end
+            d.found = now or clock()
+            return d
+        end
+        -- Only a resale and a vendor deal pair up; a shopping or disenchant deal stands alone.
+        if alt and not ((deal.mode == "flip" or deal.mode == "vendor") and alt.mode ~= deal.mode) then
+            alt = nil
+        end
+        alt = alt and finish(alt)
+        deal = finish(deal)
+        if not deal then
+            if not alt then
                 return nil, "refused"
             end
+            deal, alt = alt, nil
         end
-        deal.found = now or clock()
+        deal.alt = alt
     end
-    return deal, reason
+    -- T25: the resale below the median rides along as `median` (its own page), or is the deal
+    -- when the lot has no other. Its own reason is the third result: the scan counts them, so the
+    -- Market reset page says why it is empty.
+    local median, medianWhy = D.evaluateMedian(g, history, now)
+    if median then
+        median.key, median.kind, median.id, median.link = g.key, g.kind, g.id, g.link
+        median.market, median.vendor = g.market, vendor
+        median.found = now or clock()
+        if deal then
+            deal.median = median
+        else
+            deal, reason = median, nil
+        end
+    end
+    return deal, reason, medianWhy
+end
+
+-- The deal of one route: `mode` "flip" or "vendor" picks the resale or the vendor deal of a lot
+-- that pays both ways (d.alt); any other mode (or none) is the deal itself. nil when the lot has
+-- no such route.
+-- T25: mode "median" picks the resale below the median (d.median, or the deal itself). It is a
+-- resale (mode "flip") for buying and selling, but not on the Resale page.
+local function routeOf(x)
+    return x.strategy == "median" and "median" or x.mode
+end
+
+-- The resale below the usual price riding along with another deal (d.median), or nil. A median
+-- deal of its own carries its price under the same name (a number): not a deal.
+function D.medianOf(d)
+    return d and type(d.median) == "table" and d.median or nil
+end
+
+function D.route(d, mode)
+    if not d or not mode or mode == "all" or routeOf(d) == mode then
+        return d
+    end
+    if d.alt and routeOf(d.alt) == mode then
+        return d.alt
+    end
+    if mode == "median" and D.medianOf(d) then
+        return d.median
+    end
+    return nil
 end
 
 -- A merchant was sent the item and kept nothing: its vendor deals leave the list at once (the
@@ -158,8 +308,15 @@ function D.refused(id)
     local dropped = false
     for i = #D.list, 1, -1 do
         local d = D.list[i]
+        if d.id == id and d.alt and d.alt.mode == "vendor" then
+            d.alt, dropped = nil, true
+        end
         if d.mode == "vendor" and d.id == id then
-            table.remove(D.list, i)
+            if d.alt then
+                D.list[i], d.alt.alt = d.alt, nil
+            else
+                table.remove(D.list, i)
+            end
             dropped = true
         end
     end
@@ -182,19 +339,37 @@ function D.sure(d, now)
     if d.mode ~= "flip" or not U.finite(d.exit) then
         return nil
     end
-    local p = F.Data.char(F.db, F.Engine.owner()).positions[d.key]
-    return D.sureAt(d.key, d.exit, (d.qty or 1) + (p and p.qty or 0), now)
+    return D.sureAt(d.key, d.exit, D.sellQty(d), now)
+end
+
+-- The units a Sure is asked for, the same on the tooltip, the Deals page and Selling: a resale's
+-- units plus those of it already held; otherwise the units in the bags (at least one).
+function D.sellQty(d, key)
+    if d and d.mode == "flip" then
+        local p = F.Data.char(F.db, F.Engine.owner()).positions[d.key]
+        return (d.qty or 1) + (p and p.qty or 0)
+    end
+    local ok, n = pcall(F.Trade.bagCount, key or (d and d.key))
+    return math.max(1, ok and tonumber(n) or 1)
 end
 
 -- Sure of selling `qty` of an item at `price`, kept D.SURE_KEEP seconds for the same price,
 -- quantity and sales data (it changes with a scan; the tooltip and the deals share it). Each price
 -- and quantity has its own entry: the tooltip asks for one unit and for the deal's units of the
 -- same item, and one entry per item made each of them throw the other's away.
+-- The cache entry of a price and quantity: it changes with the sales data and with the lots of the
+-- last scan, which are the queue in front of the price (Market.listedBelow). D.sureRange reads the
+-- same entry.
+local function sureStamp(h, price, qty)
+    local data = type(h) == "table" and (h.sales and h.sales.at or h.flow and h.flow.at) or 0
+    local lots = type(h) == "table" and h.lotsAt or 0
+    return price .. ":" .. qty .. ":" .. tostring(data) .. ":" .. tostring(lots)
+end
+
 function D.sureAt(key, price, qty, now)
     now = now or clock()
     local h = F.Data.market(F.db, F.Engine.scope()).history[key]
-    local data = type(h) == "table" and (h.sales and h.sales.at or h.flow and h.flow.at) or 0
-    local stamp = price .. ":" .. qty .. ":" .. tostring(data)
+    local stamp = sureStamp(h, price, qty)
     local slots = D.sureCache[key]
     local c = slots and slots[stamp]
     if c and now - c.at < D.SURE_KEEP then
@@ -212,6 +387,195 @@ function D.sureAt(key, price, qty, now)
     end
     slots[stamp] = { at = now, sure = sure, parts = parts }
     return sure, parts
+end
+
+-- T32: Sure with its 80% limits (Market.sureLimits), kept in the same entry as the Sure of that
+-- price and quantity. Returns sure, low, high; nil when there is no Sure.
+function D.sureRange(key, price, qty, now)
+    now = now or clock()
+    local sure = D.sureAt(key, price, qty, now)
+    if not U.finite(sure) then
+        return nil
+    end
+    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
+    local c = D.sureCache[key][sureStamp(h, price, qty)]
+    if c.low == nil then
+        local _, low, high = F.Market.sureLimits(h, price, qty, now, D.trust(key, now))
+        c.low, c.high = low or sure, high or sure
+    end
+    return sure, c.low, c.high
+end
+
+-- Gear: an ending with no sales data of its own (a new "of the Owl" of an item seen often) is
+-- judged from the item's other endings. The keys of each item ID are listed once per scan.
+local siblingIndex, siblingStamp, siblingOf
+local function siblingKeys(item)
+    local history = F.Data.market(F.db, F.Engine.scope()).history
+    local last = F.Scan.last
+    local stamp = last and last.at or 0
+    if siblingOf ~= history or siblingStamp ~= stamp then
+        siblingIndex, siblingStamp, siblingOf = {}, stamp, history
+        for k in pairs(history) do
+            local id = type(k) == "string" and k:match("^g:(%d+):")
+            if id then
+                id = tonumber(id)
+                local list = siblingIndex[id] or {}
+                list[#list + 1] = k
+                siblingIndex[id] = list
+            end
+        end
+    end
+    return siblingIndex[item.id], history
+end
+
+-- Est./day and Sure of a gear ending from the item's other endings, each at its own usual price:
+-- { perDay (the endings' average), sure (their median), n (endings counted) }, or nil (not gear,
+-- or no other ending with sales data). An approximation: the pages show it greyed with "~".
+D.siblingCache = {}
+function D.siblingEstimate(key, qty, now)
+    local item = U.parseKey(key)
+    if not item or item.kind ~= "gear" or not F.db then
+        return nil
+    end
+    now = now or clock()
+    qty = math.max(1, qty or 1)
+    local c = D.siblingCache[key .. ":" .. qty]
+    if c and now - c.at < D.SURE_KEEP then
+        return c.value or nil
+    end
+    local keys, history = siblingKeys(item)
+    local perDay, n, sures = 0, 0, {}
+    for _, k in ipairs(keys or {}) do
+        local h = k ~= key and history[k]
+        local price = h and F.Market.usual(h)
+        if U.finite(price) and price > 0 then
+            local s = F.Market.saleability(h, price, now)
+            if s.known and U.finite(s.perDay) then
+                perDay, n = perDay + s.perDay, n + 1
+                local sure = F.Market.confidence(h, price, qty, now)
+                if U.finite(sure) then
+                    sures[#sures + 1] = sure
+                end
+            end
+        end
+    end
+    local value = false
+    if n > 0 then
+        table.sort(sures)
+        value = { perDay = perDay / n, sure = sures[math.ceil(#sures / 2)], n = n }
+    else
+        local h = history[key]
+        local price = h and F.Market.usual(h)
+        value = U.finite(price) and price > 0 and D.peerEstimate(price, qty, now) or false
+    end
+    D.siblingCache[key .. ":" .. qty] = { at = now, value = value }
+    return value or nil
+end
+
+-- Gear with no ending of its own sold either (one seen once, nothing alike): judged from gear of
+-- about the same usual price (D.PEER_BAND: within a factor of 2), at most D.PEER_SAMPLE of them,
+-- once per scan and price band. { perDay, sure, n, peers = true }, or nil (none with sales data).
+D.PEER_SAMPLE = 200
+local peerBands, peerStamp, peerOf = {}, nil, nil
+function D.peerEstimate(price, qty, now)
+    local history = F.Data.market(F.db, F.Engine.scope()).history
+    local last = F.Scan.last
+    local stamp = last and last.at or 0
+    if peerOf ~= history or peerStamp ~= stamp then
+        peerBands, peerStamp, peerOf = {}, stamp, history
+    end
+    local band = math.floor(math.log(price) / math.log(2) + 0.5)
+    local slot = band .. ":" .. qty
+    if peerBands[slot] == nil then
+        local low, high = 2 ^ (band - 1), 2 ^ (band + 1)
+        local perDay, n, sures = 0, 0, {}
+        for k, h in pairs(history) do
+            if n >= D.PEER_SAMPLE then
+                break
+            end
+            if type(k) == "string" and k:sub(1, 2) == "g:" then
+                local usual = F.Market.usual(h)
+                if U.finite(usual) and usual >= low and usual <= high then
+                    local sale = F.Market.saleability(h, usual, now)
+                    if sale.known and U.finite(sale.perDay) then
+                        perDay, n = perDay + sale.perDay, n + 1
+                        local sure = F.Market.confidence(h, usual, qty, now)
+                        if U.finite(sure) then
+                            sures[#sures + 1] = sure
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(sures)
+        peerBands[slot] = n > 0 and { perDay = perDay / n, sure = sures[math.ceil(#sures / 2)], n = n, peers = true }
+            or false
+    end
+    return peerBands[slot] or nil
+end
+
+-- T32: how good the sales sample of an item is at `price` (Market.quality).
+-- The usual price of an item (Market.usual of its history) and the history: the one reader of
+-- Trade's floors and the pages. `history` defaults to the scope's.
+function D.usualOf(key, history)
+    history = history or F.Data.market(F.db, F.Engine.scope()).history
+    local h = key and history[key]
+    return h and F.Market.usual(h) or nil, h
+end
+
+-- The price an item sells for now: a fresh check (Check all, Trade.freshCheapest) before the
+-- usual price. What Crafting and Disenchant value products and materials at.
+function D.priceOf(key, history)
+    local usual, h = D.usualOf(key, history)
+    local live = key and F.Trade.freshCheapest(key)
+    return live or usual, h
+end
+
+function D.qualityAt(key, price, now)
+    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
+    return F.Market.quality(h, price, now or clock())
+end
+
+-- A sell price of the player's own, checked ("Check Sure" on Deals -> Resale and Selling -> My
+-- items): Sure, the units sold a day and the money at that price. Nothing is stored and the market
+-- data stays as it is. `cost` is what the units cost (nil: unknown, no profit), `risk` the
+-- deposits expected to be lost, `held` units of it already in the bags (they sell first, as in
+-- D.sure). `thin`: the sales seen are too few to judge the price, and the page says so.
+function D.checkAt(key, price, qty, cost, risk, held, now)
+    if not key or not U.finite(price) or price <= 0 then
+        return nil
+    end
+    now = now or clock()
+    qty = math.max(1, math.floor(qty or 1))
+    local h = F.Data.market(F.db, F.Engine.scope()).history[key]
+    local sure, parts = D.sureAt(key, price, qty + (held or 0), now)
+    local sale = F.Market.saleability(h, price, now)
+    local out = { key = key, price = price, qty = qty, sure = sure, parts = parts, sale = sale }
+    out.net = F.Market.net(price, qty)
+    if U.finite(cost) then
+        out.cost = cost
+        out.profit = out.net - cost - (risk or 0)
+        out.roi = cost > 0 and out.profit / cost or nil
+    end
+    out.thin = not U.finite(sure) or not sale.known or (sale.pairs or 0) < 2
+    -- T32: the sample behind the figures and their 80% limits.
+    out.quality = D.qualityAt(key, price, now)
+    if U.finite(sure) then
+        local _, low, high = D.sureRange(key, price, qty + (held or 0), now)
+        out.sureLow, out.sureHigh = low, high
+    end
+    return out
+end
+
+-- The same check for a resale deal: its units, its cost and the deposits it already counts.
+function D.checkDeal(d, price, now)
+    if not d or d.mode ~= "flip" then
+        return nil
+    end
+    local qty = d.qty or 1
+    local risk = U.finite(d.exit) and math.max(0, F.Market.net(d.exit, qty) - d.cost - d.profit) or 0
+    local p = F.Data.char(F.db, F.Engine.owner()).positions[d.key]
+    return D.checkAt(d.key, price, qty, d.cost, risk, p and p.qty or 0, now)
 end
 
 local function order(a, b)
@@ -264,6 +628,78 @@ function D.add(deal, scope)
     F.Engine.changed()
 end
 
+-- A quick scan's find, listed at once (the player saw nothing until the whole house was read and
+-- every candidate checked, minutes later): the deal its lowest price makes of one unit, the only
+-- unit the browse vouches for. It is marked `quick` (Status: from quick scan) until its exact check
+-- replaces or removes it; buying checks it first like any deal of a scan. A deal checked a moment
+-- ago is kept.
+local function foundDeal(key, price, now)
+    local old = D.get(key)
+    if old and old.verified and now - old.verified < D.FRESH then
+        return nil
+    end
+    local item = U.parseKey(key)
+    if not item then
+        return nil
+    end
+    local history = F.Data.market(F.db, D.scope).history[key]
+    local g = {
+        key = key,
+        kind = item.kind,
+        id = item.id,
+        rows = { { unit = price, qty = 1 } },
+        market = old and old.market or (history and history.scan and history.scan.market),
+        link = old and old.link,
+    }
+    local ok, deal = pcall(D.evaluate, g, F.AH.vendorPrice(item.id), history, now)
+    if not ok or not deal then
+        return nil
+    end
+    deal.quick, deal.found = true, now
+    if deal.alt then
+        deal.alt.quick, deal.alt.found = true, now
+    end
+    if D.medianOf(deal) then
+        deal.median.quick, deal.median.found = true, now
+    end
+    return deal
+end
+
+-- Returns the key listed, or nil. `keys`: one key, or the keys of every ending of one piece of gear
+-- the browse priced together. The browse gives one lowest price an item, whatever its ending: listed
+-- under each ending, one cheap Giant Club made 13 identical rows (seen in game). One row then, the
+-- ending whose deal pays least (the lot may be any of them), and an unchecked find of another
+-- ending of the item leaves the list.
+function D.addFound(keys, price, now)
+    if not D.scope or D.scope ~= F.Engine.scope() then
+        return nil
+    end
+    now = now or clock()
+    if type(keys) ~= "table" then
+        keys = { keys }
+    end
+    local best
+    for _, key in ipairs(keys) do
+        local deal = foundDeal(key, price, now)
+        if deal and (not best or (deal.profit or 0) < (best.profit or 0)) then
+            best = deal
+        end
+    end
+    if not best then
+        return nil
+    end
+    if #keys > 1 then
+        for i = #D.list, 1, -1 do
+            local d = D.list[i]
+            if d.quick and not d.verified and d.id == best.id and d.key ~= best.key then
+                table.remove(D.list, i)
+            end
+        end
+    end
+    D.add(best, D.scope)
+    return best.key
+end
+
 function D.remove(key)
     for i, d in ipairs(D.list) do
         if d.key == key then
@@ -274,10 +710,16 @@ function D.remove(key)
     end
 end
 
-function D.get(key)
+-- The deal of an item. A lot that pays both ways has one entry (the better route) with the other
+-- as d.alt: `mode` asks for a route, else the route of the Deals page shown (D.view, set by the
+-- UI), so selecting, checking and buying on the To vendor page act on the vendor deal. A lot
+-- without that route returns its deal as it is.
+D.view = nil
+function D.get(key, mode)
+    mode = mode or D.view
     for _, d in ipairs(D.list) do
         if d.key == key then
-            return d
+            return D.route(d, mode) or d
         end
     end
 end
@@ -285,9 +727,11 @@ end
 function D.visible(filter)
     local out = {}
     for _, d in ipairs(D.list) do
-        -- Deals of the last scan stay listed until the next one; buying checks them first.
-        if not filter or filter == "all" or d.mode == filter then
-            out[#out + 1] = d
+        -- Deals of the last scan stay listed until the next one; buying checks them first. A lot
+        -- that pays both ways is listed on the Resale and the To vendor page, each with its route.
+        local shown = D.route(d, filter)
+        if shown then
+            out[#out + 1] = shown
         end
     end
     return out
@@ -330,8 +774,8 @@ function D.buyHolding(key)
     if clock() < (D.holdUntil or 0) or F.Trade.run then
         return true
     end
-    local ui = F.UI
-    if not ui or not ui.frame or not ui.frame:IsShown() or ui.section ~= "deals" then
+    local ui = F.Engine.screen()
+    if not ui.frame or not ui.shown or ui.section ~= "deals" then
         return false
     end
     if key ~= nil and key == ui.selected then
@@ -356,8 +800,8 @@ function D.batchPaused()
     if F.AH.nativeShown and F.AH.nativeShown() then
         return true
     end
-    local ui = F.UI
-    if not ui or not ui.frame or not ui.frame:IsShown() then
+    local ui = F.Engine.screen()
+    if not ui.frame or not ui.shown then
         return false
     end
     -- Only checks of other pages rest there: the selling pages' own checks (Bags, My auctions,
@@ -375,10 +819,10 @@ function D.holding()
         return true
     end
     if clock() < (D.holdUntil or 0) or F.Trade.run then
-        return true -- a click found the way busy, or Buy all to vendor runs
+        return true -- a click found the way busy, or a Buy first run is on
     end
-    local ui = F.UI
-    if not ui or not ui.frame or not ui.frame:IsShown() then
+    local ui = F.Engine.screen()
+    if not ui.frame or not ui.shown then
         return false
     end
     -- The Undercuts page too: its answers cancel auctions, and a cancel sent while a search of
@@ -390,7 +834,7 @@ function D.holding()
 end
 
 -- What may be spent now: the money in the bags, and no more than what is left of this visit's
--- spending limit (Settings) when one is set. The Buy button, Buy next and Buy all to vendor shrink a
+-- spending limit (Settings) when one is set. The Buy button, Buy next and Buy first shrink a
 -- vendor deal to the same amount; T.overLimit stays the last guard of a purchase.
 local function spendable()
     local budget = F.Engine.wallet()
@@ -509,7 +953,7 @@ end
 
 -- The player's own click (r.click: asked or promoted while Engine.interacting, half a second after a
 -- button, a row or a key binding). Only such a request goes while a full scan waits for its answer:
--- the preparation on Buy hover and the frame step of Buy all to vendor ask with the same priority
+-- the preparation on Buy hover and the frame step of Buy first ask with the same priority
 -- without a click, and their searches kept the scan's answer from coming.
 local function isClick(r)
     return r.click and priority(r) == 0 or false
@@ -635,6 +1079,7 @@ local function startRequest(r)
     if
         D.clearing
         or D.search
+        or D.pre
         or (priority(r) > 0 and D.buyHolding(r.key))
         or not F.AH.isOpen()
         or F.Trade.busy()
@@ -834,6 +1279,23 @@ local function onlyYours(key)
         and not (d and (d.verified or 0) >= since)
         and not (check and (check.at or 0) >= since and type(check.rows) == "table" and #check.rows > 0)
 end
+D.onlyYours = onlyYours
+
+-- T10: an item the player has listed whose search went unanswered, and that the last full scan (of
+-- any age) saw no other seller of. On WoW Forever that silence is the usual answer for "nobody else
+-- sells it"; sending it once more in the same batch only doubled the wait (30 items: 6 minutes).
+-- Such a key is reported once as "no answer" instead of retried. It is never taken as "cheapest".
+local function silentOwn(key)
+    if not F.Trade.alone(key, math.huge) then
+        return false
+    end
+    for _, a in ipairs(F.Trade.owned or {}) do
+        if a.key == key and not a.sold then
+            return true
+        end
+    end
+    return false
+end
 
 local function cheaper(a, b)
     return a.unit < b.unit
@@ -858,7 +1320,11 @@ local function timeoutSearch(s)
         finishSearch(found, false)
         return
     end
+    -- The server never answered (not dropped, not an error): a bag check takes it as nobody
+    -- selling the item and does not send it again (startBatch).
+    D.silentKey = s.key
     finishSearch(nil, false)
+    D.silentKey = nil
 end
 
 -- The next item-key version of a gear search, or the end of it with every version's rows.
@@ -971,6 +1437,37 @@ function D.onForeignBrowse()
     if s and s.phase == "browse" then
         s.foreign = true
     end
+    if D.pre then
+        D.pre.foreign = true
+    end
+end
+
+-- The answer of Check all's first query (D.PRE_IDS), page by page. Returns true when it was its.
+function D.onPreBrowse(rows, whole)
+    local pre = D.pre
+    if not pre or pre.full then
+        return false
+    end
+    if whole or not rows then
+        pre.rows = rows or F.AH.browseResults()
+    else
+        for _, r in ipairs(rows) do
+            pre.rows[#pre.rows + 1] = r
+        end
+    end
+    pre.answered = true
+    if F.AH.browseFull() then
+        pre.full = true
+    elseif pre.pages < D.PRE_PAGES then
+        pre.pages = pre.pages + 1
+        pcall(F.AH.browseMore)
+    end
+    return true
+end
+
+-- A query of Check all is on the way: exact searches and the sniper wait for it (a few seconds).
+function D.preFlight()
+    return D.pre ~= nil
 end
 
 function D.onBrowseFailure()
@@ -1194,7 +1691,7 @@ end
 
 -- Stops all of it at once (the Stop button): queued and running searches are dropped (an answer
 -- still on its way is ignored), the full scan is stopped, the sniper's round ends, a merchant sale
--- stops after what was sent, Buy all to vendor ends. Settings stay as they are.
+-- stops after what was sent, a Buy first run ends. Settings stay as they are.
 function D.stopAll()
     D.clear()
     D.holdUntil = nil
@@ -1267,7 +1764,8 @@ function D.startBatch(scope, keys, mode)
         keySet = seen,
     }
     D.batch = batch
-    local function send(key)
+    batch.startAt = clock()
+    local function send(key, settled)
         local finished = false
         local function complete(_, rows, completeRows)
             if finished then
@@ -1276,8 +1774,10 @@ function D.startBatch(scope, keys, mode)
             finished = true
             -- A price check is answered by the cheapest lots (the search is sorted by price); a
             -- deal check needs the whole list of the item.
-            local success = rows ~= nil and (completeRows or (mode == false and #rows > 0))
-            if verifyDeals then
+            local success = settled ~= nil or rows ~= nil and (completeRows or (mode == false and #rows > 0))
+            if settled == "price" then
+                D.remove(key) -- the lowest price is at or above what the deal sells for
+            elseif verifyDeals then
                 local ok, err = pcall(D.verifyCallback, key, rows, completeRows)
                 if not ok then
                     F.Engine.report(err)
@@ -1288,12 +1788,32 @@ function D.startBatch(scope, keys, mode)
             if not success then
                 batch.failed = batch.failed + 1
                 batch.failedKeys[#batch.failedKeys + 1] = key
+                -- Silence on a bag check is the server's "nobody sells it": not sent again.
+                if mode == false and rows == nil and ((scope == "sell" and D.silentKey == key) or silentOwn(key)) then
+                    batch.noRetry = batch.noRetry or {}
+                    batch.noRetry[key] = true
+                end
             end
+            -- The searches without an answer are sent once more (from the next frame): a dropped or
+            -- slow answer usually comes the second time. Not the silent ones of the player's own
+            -- items (silentOwn): those are reported once.
+            local again = {}
             if batch.done >= batch.total and batch.failed > 0 and not batch.retried and D.batch == batch then
-                -- The searches without an answer are sent once more (from the next frame): a
-                -- dropped or slow answer usually comes the second time.
-                batch.retried, batch.retryKeys = true, batch.failedKeys
-                batch.done, batch.failed, batch.failedKeys = batch.done - #batch.retryKeys, 0, {}
+                for _, k in ipairs(batch.failedKeys) do
+                    if not (batch.noRetry and batch.noRetry[k]) then
+                        again[#again + 1] = k
+                    end
+                end
+            end
+            if #again > 0 then
+                local kept = {}
+                for _, k in ipairs(batch.failedKeys) do
+                    if batch.noRetry and batch.noRetry[k] then
+                        kept[#kept + 1] = k
+                    end
+                end
+                batch.retried, batch.retryKeys = true, again
+                batch.done, batch.failed, batch.failedKeys = batch.done - #again, #kept, kept
             else
                 -- Searches the scan or a busy game held back are still this batch's work.
                 local held = batch.heldKeys and #batch.heldKeys > 0
@@ -1301,13 +1821,35 @@ function D.startBatch(scope, keys, mode)
                 if not batch.active and batch.failed > 0 then
                     D.reportUnanswered(batch)
                 end
+                if not batch.active then
+                    D.reportBatchTime(batch)
+                end
             end
             F.Engine.changed()
         end
+        -- Settled by Check all's first query (D.PRE_IDS): nobody sells the item, or its lowest price
+        -- leaves the deal no profit.
+        if settled then
+            batch.settled = (batch.settled or 0) + 1
+            complete(key, settled == "absent" and {} or nil, settled == "absent")
+            return
+        end
         -- A price check of an item a fresh full scan saw no lot of: nobody else sells it, and the
-        -- server would not answer the search (WoW Forever).
-        if mode == false and F.Scan.notListed(key) then
+        -- server would not answer the search (WoW Forever). Checking the bags trusts a scan up to
+        -- D.BAG_SCAN_AGE old: each such item waited for that silence, 36 items took minutes.
+        if mode == false and F.Scan.notListed(key, scope == "sell" and D.BAG_SCAN_AGE or nil) then
             F.Trade.prices[key] = { rows = {}, at = F.Engine.clock() }
+            complete(key, {}, true)
+            return
+        end
+        -- T10: Check all on My auctions. An item of the player's that the last full scan (up to
+        -- D.ALONE_AGE old) saw no other seller of, and no check since saw one of: its search would
+        -- wait D.FAST_WAIT for an answer WoW Forever never sends. Answered at once as "only
+        -- yours as of the scan" (asOf); the page says how old that is and a Search button sends a
+        -- real search for one item. Only this page: Undercuts and buying always search.
+        if mode == false and scope == "auctions" and onlyYours(key) then
+            local last = F.Scan.last
+            F.Trade.prices[key] = { rows = {}, at = F.Engine.clock(), asOf = last and last.at }
             complete(key, {}, true)
             return
         end
@@ -1348,6 +1890,10 @@ function D.startBatch(scope, keys, mode)
             pcall(F.AH.keyInfoReady, item, cached and cached[1])
         end
     end
+    if verifyDeals and #snapshot > 1 and D.startPre(batch) then
+        F.Engine.changed()
+        return #snapshot
+    end
     for _, key in ipairs(snapshot) do
         if D.batch ~= batch then
             break -- a synchronous close can cancel the whole batch while sending its first key
@@ -1358,11 +1904,130 @@ function D.startBatch(scope, keys, mode)
     return #snapshot
 end
 
+-- Check all's first query: the lowest price of every item of the batch at once. Sent only when it
+-- can go now; otherwise every item gets its exact search as before.
+function D.startPre(batch)
+    if
+        D.pre
+        or D.search
+        or not F.AH.ready()
+        or F.Scan.blocking()
+        or F.Trade.busy()
+        or F.Sniper.inFlight()
+        or (F.AH.nativeShown and F.AH.nativeShown())
+    then
+        return false
+    end
+    local ids, idSet = {}, {}
+    for _, key in ipairs(batch.keys) do
+        local item = U.parseKey(key)
+        if item and not idSet[item.id] and #ids < D.PRE_IDS then
+            idSet[item.id] = true
+            ids[#ids + 1] = item.id
+        end
+    end
+    local pre = { batch = batch, ids = ids, idSet = idSet, rows = {}, pages = 0, at = clock() }
+    D.pre = pre
+    if not pcall(F.AH.searchKeys, ids) then
+        D.pre = nil
+        return false
+    end
+    if D.pre == pre then
+        batch.pre = pre
+    end
+    -- An answer inside the call (D.onPreBrowse) may have finished it already.
+    D.preStep(batch)
+    return true
+end
+
+-- Called every frame while the first query waits: once it is answered (or D.PRE_WAIT passed),
+-- each item is settled from it or gets its exact search.
+function D.preStep(batch)
+    local pre = batch.pre
+    if not pre then
+        return false
+    end
+    if not pre.full and clock() - pre.at < D.PRE_WAIT and D.pre == pre then
+        return true
+    end
+    if D.pre == pre then
+        D.pre = nil
+    end
+    batch.pre = nil
+    local trusted = pre.full and not pre.foreign
+    local low = {}
+    for _, r in ipairs(pre.answered and F.AH.browseRows and pre.rows or {}) do
+        local id = r.itemKey and r.itemKey.itemID or r.id
+        local price = r.minPrice
+        if id and pre.idSet[id] and U.finite(price) and (r.totalQuantity or r.qty or 0) > 0 then
+            low[id] = math.min(low[id] or price, price)
+        end
+    end
+    batch.preAnswered = pre.answered or false
+    for _, key in ipairs(batch.keys) do
+        if D.batch ~= batch then
+            return true
+        end
+        local item = U.parseKey(key)
+        local settled
+        if trusted and item and pre.idSet[item.id] then
+            local price = low[item.id]
+            if not price then
+                settled = "absent"
+            elseif item.kind ~= "item" then
+                -- Gear and commodities: the browse price is one unit's (an item stack's is not).
+                local d = D.get(key)
+                local function above(x)
+                    return x ~= nil and U.finite(x.exit) and x.exit > 0 and price >= x.exit
+                end
+                if above(d) and (not d.alt or above(d.alt)) then
+                    settled = "price"
+                end
+            end
+        end
+        batch.send(key, settled)
+    end
+    F.Engine.changed()
+    return true
+end
+
+-- How long Check all took, in the log: the measure the 30 seconds are judged by in the game.
+function D.reportBatchTime(batch)
+    if batch.timeReported or not batch.startAt then
+        return
+    end
+    batch.timeReported = true
+    local seconds = clock() - batch.startAt
+    D.lastBatch = {
+        scope = batch.scope,
+        total = batch.total,
+        seconds = seconds,
+        settled = batch.settled or 0,
+        failed = batch.failed,
+    }
+    F.Log.add(
+        "scan",
+        string.format(
+            F.Locale.text("Check all: %d items in %d s (%d settled by one query, %d without an answer)."),
+            batch.total,
+            math.floor(seconds + 0.5),
+            batch.settled or 0,
+            batch.failed
+        )
+    )
+end
+
 -- Sends the searches a batch could not start yet (the full scan was waiting for its answer, or the
 -- game was busy), and the second try of its unanswered ones. Called every frame.
 function D.batchRetry()
     local batch = D.batch
+    if D.pre and (D.pre.batch ~= batch or not F.AH.isOpen()) then
+        D.pre = nil -- its batch ended or was cancelled: nothing waits for the answer
+    end
     if not batch or not F.AH.isOpen() then
+        return
+    end
+    if batch.pre and D.preStep(batch) and batch.pre then
         return
     end
     -- Held searches first: the player's Check all should start the moment the scan settles, not
@@ -1400,14 +2065,14 @@ function D.reportUnanswered(batch)
         names[#names + 1] = name
     end
     batch.unanswered = names
-    print(
-        "ForeverFlip: "
-            .. string.format(
-                F.Locale.text(
-                    "no answer for: %s. Either nobody else sells them, or the server did not answer their search: the next check searches them by name."
-                ),
-                table.concat(names, ", ")
-            )
+    F.Log.add(
+        "scan",
+        string.format(
+            F.Locale.text(
+                "no answer for: %s. Either nobody else sells them, or the server did not answer their search: the next check searches them by name."
+            ),
+            table.concat(names, ", ")
+        )
     )
 end
 
@@ -1471,6 +2136,12 @@ function D.afterPurchase(op)
     local live = D.get(op.key)
     if live then
         live.verified = verified
+        if live.alt then
+            live.alt.verified = verified
+        end
+        if D.medianOf(live) then
+            live.median.verified = verified
+        end
     end
     if bucket then
         D.verify(op.key)
@@ -1505,6 +2176,12 @@ function D.verifyCallback(k, rows, complete, callback)
         if live then
             live.verified = clock()
             live.rows = rows
+            if live.alt then
+                live.alt.verified, live.alt.rows = live.verified, rows
+            end
+            if D.medianOf(live) then
+                live.median.verified, live.median.rows = live.verified, rows
+            end
             D.add(live, D.scope)
             D.alert(live)
         else
@@ -1529,7 +2206,9 @@ function D.step()
             s.waited = (s.waited or 0) + math.max(0, t - (s.budgetAt or t))
         end
         s.budgetAt = t
-        if (s.waited or 0) >= D.MAX_SEARCH_TIME then
+        local batch = D.batch
+        local bag = batch and batch.active and batch.scope == "sell" and batch.keySet and batch.keySet[s.key]
+        if (s.waited or 0) >= (bag and D.BAG_SEARCH_TIME or D.MAX_SEARCH_TIME) then
             timeoutSearch(s)
             s = nil
         end
@@ -1640,12 +2319,17 @@ end
 -- hot items from the last full scan, with at most one search per second.
 function D.snipe()
     local hot = F.Scan.hot
-    if not F.db.settings.sniper or not D.scope then
+    if not (F.db.settings.sniper or F.Sniper.quick) or not D.scope then
         return false
     end
     -- The throttle is only looked at (AH.available): with a stuck throttle AH.ready lets one message
     -- through, and taking it here left none for the search itself, nor for the Buy button.
     if F.Sniper.active() then
+        -- A quick scan checks its candidates once every page is read (Sniper.step).
+        local quick = F.Sniper.quick
+        if quick and not quick.done and not F.db.settings.sniper then
+            return false
+        end
         -- Fast sniper: exact checks of the candidates its browse rounds found.
         if precise() - (D.lastRequest or -10) < 0.4 or not F.AH.available() then
             return false
@@ -1669,7 +2353,7 @@ function D.snipe()
     D.snipeIndex = (D.snipeIndex or 0) % #hot + 1
     local key = hot[D.snipeIndex]
     local d = D.get(key)
-    if d and d.verified and clock() - d.verified < 60 then
+    if d and d.verified and clock() - d.verified < D.FRESH then
         return false
     end
     if D.request(key, D.verifyCallback, "sniper") then
@@ -1700,16 +2384,14 @@ function D.alert(d)
         U.money(d.profit),
         L(d.mode == "vendor" and "vendor" or "resale")
     )
-    if PlaySound then
-        pcall(PlaySound, SOUNDKIT and SOUNDKIT.AUCTION_WINDOW_OPEN or 5274)
-    end
+    F.Log.sound("deal")
     if FlashClientIcon then
         pcall(FlashClientIcon)
     end
     if UIErrorsFrame and UIErrorsFrame.AddMessage then
         UIErrorsFrame:AddMessage(msg, 1, 0.82, 0)
     end
-    print(msg)
+    F.Log.add("deal", msg)
     return true
 end
 

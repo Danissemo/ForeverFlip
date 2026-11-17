@@ -211,7 +211,8 @@ class LargeScanTests(unittest.TestCase):
         per_frame_ms = took / frames * 1000
         print(f'\n100 000 auctions: {frames} frames, {took:.1f} s, {per_frame_ms:.2f} ms of work per frame')
         self.assertEqual(lua.eval('ForeverFlip.Scan.last.total'), 100000)
-        self.assertLess(per_frame_ms, 12, 'no frame does much more than the 6 ms budget')
+        budget = lua.eval('ForeverFlip.Scan.READ_MS')
+        self.assertLess(per_frame_ms, budget * 1.5, f'no frame does much more than the {budget} ms budget')
 
 
 if __name__ == '__main__':

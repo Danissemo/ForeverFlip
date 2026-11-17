@@ -267,6 +267,17 @@ local function house(scope)
     return realm == F.Engine.realm() and SIDES[side] == true
 end
 
+-- The scans the history holds, by "<scope>@<time>" (db.sharedSeen): the player's own full scans and
+-- every scan merged. A scan is merged when the history lacks it, whoever made it, and never twice.
+-- Kept for S.MAX_AGE, the age past which no scan is merged.
+function S.hold(scope, at)
+    if not F.db or not scope or not U.finite(at) then
+        return
+    end
+    F.db.sharedSeen = type(F.db.sharedSeen) == "table" and F.db.sharedSeen or {}
+    F.db.sharedSeen[scope .. "@" .. at] = F.Engine.clock()
+end
+
 -- Merging in steps: S.mergeBegin checks the scan (realm, age, seen before), S.mergeSome merges its
 -- items (until `done()`), S.mergeEnd records it. S.merge does it all at once.
 function S.mergeBegin(snap, from, how)
@@ -302,6 +313,9 @@ function S.mergeBegin(snap, from, how)
         snap = snap,
         from = from,
         how = how,
+        -- The player's own scan, uploaded by the helper and brought back by it (Raw.importCommunity):
+        -- its prices are the player's (lm/lmin), and it is no community price.
+        own = from == "own",
         now = now,
         history = F.Data.market(F.db, snap.scope).history,
         day = math.floor(snap.at / 86400),
@@ -349,17 +363,17 @@ function S.mergeSome(ctx, done)
                 history[it.key] = h
             end
             if current then
-                if type(h.shared) ~= "table" or snap.at > (h.shared.at or 0) then
+                if not ctx.own and (type(h.shared) ~= "table" or snap.at > (h.shared.at or 0)) then
                     h.shared = { at = snap.at, m = current.m, min = current.min, n = current.n, from = from }
                 end
-                S.mergeDay(h, day, current)
+                S.mergeDay(h, day, current, ctx.own)
                 if (current.n or 0) >= 10 or h.t then
                     F.Market.recordTiming(h, current.m, snap.at)
                 end
             end
             -- Earlier days of the sender's history: every full scan of theirs is in them.
             for _, d in ipairs(days) do
-                S.mergeDay(h, day - d.o, d)
+                S.mergeDay(h, day - d.o, d, ctx.own)
             end
             ctx.merged = ctx.merged + 1
         end
@@ -372,6 +386,13 @@ end
 
 function S.mergeEnd(ctx)
     local snap, merged = ctx.snap, ctx.merged
+    if ctx.own then
+        if F.Analytics then
+            F.Analytics.invalidate()
+        end
+        F.Engine.changed()
+        return merged
+    end
     table.insert(
         S.received,
         1,
@@ -401,8 +422,10 @@ function S.merge(snap, from, how)
     return S.mergeEnd(ctx)
 end
 
--- The item's record of `day`, kept in day order (at most F.Scan.DAYS records).
-function S.mergeDay(h, day, it)
+-- The item's record of `day`, kept in day order (at most F.Scan.DAYS records). `own`: the prices are
+-- the player's own (lm/lmin), not the community's (cm/cmin).
+function S.mergeDay(h, day, it, own)
+    local fm, fmin = own and "lm" or "cm", own and "lmin" or "cmin"
     h.days = type(h.days) == "table" and h.days or {}
     for _, d in ipairs(h.days) do
         if d.d == day then
@@ -411,6 +434,11 @@ function S.mergeDay(h, day, it)
             end
             d.m = d.m or it.m
             d.n = d.n or it.n
+            -- T24: the day's prices from shared scans alone (own scans write lm/lmin).
+            if it.min and (not d[fmin] or it.min < d[fmin]) then
+                d[fmin] = it.min
+            end
+            d[fm] = d[fm] or it.m
             -- Units seen sold that day: the larger count (both saw the same market).
             if U.finite(it.s) and it.s > (d.s or 0) then
                 d.s = it.s
@@ -425,11 +453,15 @@ function S.mergeDay(h, day, it)
             break
         end
     end
-    table.insert(
-        h.days,
-        pos,
-        { d = day, min = it.min, m = it.m, n = it.n, s = U.finite(it.s) and it.s > 0 and it.s or nil }
-    )
+    local rec = {
+        d = day,
+        min = it.min,
+        m = it.m,
+        n = it.n,
+        s = U.finite(it.s) and it.s > 0 and it.s or nil,
+    }
+    rec[fm], rec[fmin] = it.m, it.min
+    table.insert(h.days, pos, rec)
     while #h.days > F.Scan.DAYS do
         table.remove(h.days, 1)
     end

@@ -19,6 +19,9 @@ def runtime(open_ah=True):
     # Vendor prices in the tests are what merchants really pay; the safety margin for unconfirmed
     # prices has its own tests (test_forever12.py).
     lua.execute("ForeverFlip.db.settings.vendorMargin=0")
+    # A new profile starts on Careful (test_new_profile_preset.py); the tests were written for the
+    # Balanced thresholds, which are the defaults every existing profile has.
+    lua.execute("for k,v in pairs(ForeverFlip.Data.PRESETS.balanced) do ForeverFlip.db.settings[k]=v end")
     # Money as letters (1g 20s 5c): the texts compared in the tests; the coins have their own test.
     lua.execute("ForeverFlip.Util.coins=false")
     if open_ah:
@@ -105,6 +108,15 @@ class ScanTests(unittest.TestCase):
         local last=ForeverFlip.Scan.last;assert(last.own==1 and last.stats.items==4 and last.stats.belowVendor==3)
         local h=ForeverFlip.Data.market(ForeverFlip.db,ForeverFlip.Engine.scope()).history
         assert(h['c:10'] and h['c:10'].scan.market)''')
+
+    def test_an_item_listed_once_gets_a_history_too(self):
+        run(SETUP + '''addAuction(20,900,1,'Seller','Northern Shortsword of the Owl')
+        fullScan()
+        local U=ForeverFlip.Util
+        local h=ForeverFlip.Data.market(ForeverFlip.db,ForeverFlip.Engine.scope()).history
+        local owl=h[U.key('gear',20,'Northern Shortsword of the Owl')]
+        assert(owl and owl.scan and owl.scan.market==900,'one lot of gear is priced and tracked')
+        assert(h['i:30'],'a single item too')''')
 
     def test_scan_respects_the_15_minute_cooldown(self):
         run(SETUP + '''fullScan();local ok,why=ForeverFlip.Scan.start();assert(not ok and why=='cooldown')
@@ -465,7 +477,7 @@ class FeatureTests(unittest.TestCase):
         ForeverFlip.UI.mailButton:Click();for _=1,40 do run(0.1) end
         assert(#mailTaken==3 and not ForeverFlip.Mail.job,#mailTaken)
         assert(#inbox==2 and inbox[1].sender=='Friend' and inbox[2].cod==100,'player mail and COD stay')
-        local said=false;for _,l in ipairs(printed) do said=said or l:find('auction mail taken') end;assert(said)''')
+        local said=false;for _,e in ipairs(ForeverFlip.Log.history) do said=said or e.text:find('auction mail taken') end;assert(said)''')
 
     def test_mail_run_stops_when_bags_are_full_or_mailbox_closes(self):
         run('''inbox={{subject='Auction won: A',items=1,invoice='buyer'},{subject='Auction won: B',items=1,invoice='buyer'}}
@@ -510,7 +522,7 @@ class FeatureTests(unittest.TestCase):
         local h=ForeverFlip.Data.market(ForeverFlip.db,ForeverFlip.Engine.scope()).history['c:10']
         assert(h.days and #h.days==1 and h.days[1].min==60)
         assert(#tooltipCalls==1);GameTooltip.itemLink=link(10)
-        tooltipCalls[1](GameTooltip);assert(#tooltipLines>=2 and tooltipLines[1]:find('ForeverFlip'))
+        tooltipCalls[1](GameTooltip);assert(#tooltipLines>=2 and tooltipLines[1]:find('FOREVER FLIP'))
         ForeverFlip.db.settings.tooltipPrices=false;tooltipLines={};tooltipCalls[1](GameTooltip);assert(#tooltipLines==0)''')
 
 
@@ -622,8 +634,9 @@ class TimingTests(unittest.TestCase):
         assert(m.cheapNow[1] and m.cheapNow[1].key=='c:10')
         local UI=ForeverFlip.UI;UI.show('analytics');UI.viewButtons.cheapNow:Click()
         assert(UI.marketTable.rows[1].cols[3]:GetText()=='-20%')
+        ForeverFlip.Data.market(ForeverFlip.db,ForeverFlip.Engine.scope()).scannedAt=now -- the tooltip needs a scan of today (T31)
         GameTooltip.itemLink=link(10);tooltipLines={};tooltipCalls[1](GameTooltip)
-        local found=false;for _,l in ipairs(tooltipLines) do found=found or l:find('dearest') end;assert(found)''')
+        local found=false;for _,l in ipairs(tooltipLines) do found=found or l:find('Worst time for buy') end;assert(found)''')
 
 
     def test_sell_page_hints_a_dearer_time(self):

@@ -12,7 +12,7 @@ local EMPTY = '|cff1eff00|Hitem:20::|h[]|h|r'
 '''
 
 MAIL = BASE + '''local function said(text)
-    for _, l in ipairs(printed) do if l:find(text, 1, true) then return true end end
+    for _, e in ipairs(F.Log.history) do if e.text:find(text, 1, true) then return true end end
     return false
 end
 local function summary(gold, items)
@@ -198,7 +198,7 @@ class MailTests(unittest.TestCase):
         MailFrame:Show(); fire('MAIL_SHOW'); F.Mail.start()
         for _ = 1, 80 do run(0.1) end
         assert(#inbox == 0 and F.Engine.message == 'mail_done', #inbox .. ' left: ' .. tostring(F.Engine.message))
-        assert(said(summary(8 * 1900, 0)), printed[#printed])''')
+        assert(said(summary(8 * 1900, 0)), tostring(F.Log.last()))''')
 
     def test_a_mail_the_game_refuses_is_neither_counted_nor_booked(self):
         run(MAIL + '''inbox = { { sender = 'Auction House', subject = 'Auction expired: Linen Bag', items = 1 } }

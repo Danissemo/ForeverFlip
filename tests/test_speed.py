@@ -117,7 +117,9 @@ class SellingPagesAndHoverTests(unittest.TestCase):
         assert(D.batchPaused(), 'a check of deals still rests there')
         D.batch = nil''')
 
-    def test_hovering_a_row_shows_every_column_in_full(self):
+    def test_hovering_an_item_row_shows_the_item_tooltip_without_the_columns(self):
+        # T17: the columns are on screen already; repeating Qty, Buy at, Profit, Sure and Status
+        # under the item tooltip only made it longer.
         run(SETUP + '''local F, D, UI = ForeverFlip, ForeverFlip.Deals, ForeverFlip.UI
         fullScan(); UI.show('deals'); UI.refresh()
         local r = UI.dealTable.rows[1]
@@ -127,7 +129,7 @@ class SellingPagesAndHoverTests(unittest.TestCase):
         GameTooltip.AddDoubleLine = function(_, left, right) lines[#lines + 1] = left .. '=' .. right end
         r.scripts.OnEnter(r)
         local all = table.concat(lines, ' | ')
-        assert(all:find('Status=') and all:find('Profit='), all)''')
+        assert(not all:find('Status=') and not all:find('Profit='), all)''')
 
     def test_hovering_the_status_shows_it_in_full(self):
         run(SETUP + '''local F, UI = ForeverFlip, ForeverFlip.UI
@@ -149,7 +151,7 @@ class AuctionTotalTests(unittest.TestCase):
         U = F.Util; U.coins = false
         UI.show('auctions'); UI.refresh()
         local line = UI.auctionTotal:GetText():gsub('|c%x%x%x%x%x%x%x%x', ''):gsub('|r', '')
-        assert(line:find('Total on sale: 1g 84s') and line:find('6s 0c pending'), line)
+        assert(line:find('Total on sale: 1g 84s') and line:find('6s 00c pending'), line)
         assert(not UI.auctionText:GetText():find('Check prices'), UI.auctionText:GetText())''')
 
 
