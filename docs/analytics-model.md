@@ -1,9 +1,12 @@
 # Sales model: Sure, Est./day, and how they are rebuilt (T32)
 
 What the two numbers a resale rests on are made of, which biases were proven in them, what was
-changed, and how the derived statistics are rebuilt from the raw scans. Code: `Market.lua`
-(formulas, no game API), `Scan.lua` (lot tracking, rebuild job), `Data.lua` (versions, backup,
-rollback), `Raw.lua` (raw scan reader). Tests: `tests/test_analytics_model.py`.
+changed, and how the derived statistics are rebuilt from raw scans. Implementation:
+[`ForeverFlip/Modules/Market.lua`](../ForeverFlip/Modules/Market.lua) (pure formulas),
+[`ForeverFlip/Modules/Scan.lua`](../ForeverFlip/Modules/Scan.lua) (lot tracking and rebuild),
+[`ForeverFlip/Core/Data.lua`](../ForeverFlip/Core/Data.lua) (versions, backups and rollback),
+[`ForeverFlip/Core/Raw.lua`](../ForeverFlip/Core/Raw.lua) (raw scan reader).
+Tests: [`tests/test_analytics_model.py`](../tests/test_analytics_model.py).
 
 ## 1. Inputs
 
