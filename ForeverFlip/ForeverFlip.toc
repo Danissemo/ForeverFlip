@@ -1,4 +1,4 @@
-## Interface: 16001
+## Interface: 16001, 120105
 ## Title: ForeverFlip
 ## Notes: Auction house trading assistant: finds lots below vendor price or far below the next seller, verifies them live and helps buy, post and track profit.
 ## Author: ForeverFlip contributors
@@ -18,35 +18,35 @@
 ## OptionalDeps: LibAHTab, auxForever, ForeverFlip_Shared
 ## SavedVariables: ForeverFlipData, ForeverFlipRaw
 
-Util.lua
-Compat.lua
-Locale.lua
-Log.lua
-Market.lua
-Data.lua
-Shopping.lua
-AH.lua
-Scan.lua
-Deals.lua
-Sniper.lua
-Trade.lua
-Mail.lua
-Analytics.lua
-Merchant.lua
-Disenchant.lua
-Crafting.lua
-Bids.lua
-Share.lua
-Raw.lua
-Core.lua
-UI.lua
-UIDeals.lua
-UISelling.lua
-UIAnalytics.lua
-UICrafting.lua
-UIJournal.lua
-UISettings.lua
-UIStatus.lua
-UITab.lua
-UITooltip.lua
-UIMerchant.lua
+Core\Util.lua
+Core\Compat.lua
+Locale\Locale.lua
+Core\Log.lua
+Modules\Market.lua
+Core\Data.lua
+Modules\Shopping.lua
+Modules\AH.lua
+Modules\Scan.lua
+Modules\Deals.lua
+Modules\Sniper.lua
+Modules\Trade.lua
+Modules\Mail.lua
+Modules\Analytics.lua
+Modules\Merchant.lua
+Modules\Disenchant.lua
+Modules\Crafting.lua
+Modules\Bids.lua
+Modules\Share.lua
+Core\Raw.lua
+Core\Core.lua
+UI\UI.lua
+UI\UIDeals.lua
+UI\UISelling.lua
+UI\UIAnalytics.lua
+UI\UICrafting.lua
+UI\UIJournal.lua
+UI\UISettings.lua
+UI\UIStatus.lua
+UI\UITab.lua
+UI\UITooltip.lua
+UI\UIMerchant.lua

@@ -34,7 +34,8 @@ function print(...)
 end
 ERR_AUCTION_WON_S = "You won an auction for %s"
 ERR_AUCTION_SOLD_S = "A buyer has been found for your auction of %s."
-Enum = { AuctionHouseSortOrder = { Price = 0 } }
+-- ForeverExperiencePreset exists only on the WoW Forever client (Compat.caps.forever): its faction houses.
+Enum = { AuctionHouseSortOrder = { Price = 0 }, ForeverExperiencePreset = { Classic = 0, Enhanced = 1 } }
 SlashCmdList = {}
 sounds, flashes, screen = 0, 0, {}
 SOUNDKIT = { AUCTION_WINDOW_OPEN = 5274 }

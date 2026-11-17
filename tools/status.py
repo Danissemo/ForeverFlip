@@ -51,7 +51,7 @@ def main() -> int:
 
     version = "?"
     try:
-        with open("ForeverFlip/Util.lua", encoding="utf-8") as source:
+        with open("ForeverFlip/Core/Util.lua", encoding="utf-8") as source:
             for line in source:
                 if line.startswith("F.version = "):
                     version = line.split('"')[1]

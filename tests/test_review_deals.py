@@ -288,11 +288,84 @@ class GearVersionTimeoutTests(unittest.TestCase):
         local got = check()
         assert(got and got.rows and #got.rows == 1 and not got.complete, 'found, but maybe not the cheapest')''')
 
+    def test_a_silent_version_is_asked_once_more_and_the_walk_goes_on(self):
+        run(GEAR_VERSIONS + '''T.owned = {}
+        byVersion[2][1].containsOwnerItem = nil
+        local sent, search = 0, F.AH.searchKey
+        F.AH.searchKey = function(key)
+            local r = search(key)
+            if key.itemSuffix == 2 then
+                sent = sent + 1
+                if sent == 2 then fire('ITEM_SEARCH_RESULTS_UPDATED', key) end -- answered the second time
+            end
+            return r
+        end
+        local got = check()
+        F.AH.searchKey = search
+        assert(sent == 2, 'asked twice: ' .. sent)
+        assert(got and got.rows and #got.rows == 2 and got.complete, got and tostring(got.complete))''')
+
     def test_rows_found_are_never_answered_as_nobody_else_sells_it(self):
         run(GEAR_VERSIONS + '''own()
         S.last.listed[healing] = nil -- the scan saw no other seller: one listed since, under s=1
         local got = check()
         assert(got and got.rows and #got.rows == 1, got and got.rows and #got.rows)''')
+
+
+class VersionPriceTests(unittest.TestCase):
+    """A deal check of gear searches only the versions priced within the deal's reach."""
+
+    SETUP = GEAR_VERSIONS + """T.owned = {}
+    local list = {}
+    for i = 1, 6 do list[i] = { l = 18, s = i } end
+    F.db.itemKeys = { [20] = { at = now, list = list } }
+    local get = D.get
+    D.get = function(k) if k == healing then return { exit = 500 } end return get(k) end
+    local asked = 0
+    F.AH.searchVersions = function(keys) asked = #keys end
+    F.AH.browseFull = function() return true end
+    D.dealCheckNext = true
+    D.enqueue(healing, function() end, nil, true)
+    D.dealCheckNext = nil
+    for _ = 1, 20 do if D.search and D.search.key == healing then break end run(0.05) end
+    assert(D.search and D.search.phase == 'prices' and asked == 6, 'priced first: ' .. asked)
+    """
+
+    def test_only_the_versions_within_reach_are_searched(self):
+        run(self.SETUP + """F.AH.versionPrices = function() return { ['18:1'] = 400, ['18:4'] = 900, ['18:5'] = 590 } end
+        D.onBrowse()
+        local s = D.search
+        assert(s.phase == 'keys' and #s.keys == 2 and s.keys[1].itemSuffix == 1 and s.keys[2].itemSuffix == 5, #s.keys)""")
+
+    def test_without_a_price_answer_every_version_is_searched(self):
+        run(self.SETUP + """run(D.VERSION_WAIT + 1)
+        local s = D.search
+        assert(s and s.key == healing and s.phase == 'keys' and #s.keys == 6, s and s.phase)""")
+
+    def test_a_price_check_reads_only_the_versions_listed(self):
+        # My auctions' Check prices of a ring of 35 versions went through all of them, 25 s.
+        run(GEAR_VERSIONS + """T.owned = {}
+        local list = {}
+        for i = 1, 6 do list[i] = { l = 18, s = i } end
+        F.db.itemKeys = { [20] = { at = now, list = list } }
+        local asked = 0
+        F.AH.searchVersions = function(keys) asked = #keys end
+        F.AH.browseFull = function() return true end
+        local got
+        D.enqueue(healing, function(_, rows) got = rows end, nil, true)
+        for _ = 1, 20 do if D.search and D.search.key == healing then break end run(0.05) end
+        assert(D.search and D.search.phase == 'prices' and asked == 6, 'priced first: ' .. asked)
+        F.AH.versionPrices = function() return { ['18:2'] = 99999, ['18:3'] = 700 } end
+        D.onBrowse()
+        local s = D.search
+        assert(s.phase == 'keys' and #s.keys == 2 and s.keys[1].itemSuffix == 2, #s.keys)
+        -- Asked again when no version of it is listed: answered at once, nothing searched.
+        F.AH.versionPrices = function() return { ['18:9'] = 700 } end
+        local keys = {}
+        for i = 1, 6 do keys[i] = { itemID = 20, itemLevel = 18, itemSuffix = i } end
+        s.phase, s.keys, s.keyIndex, s.pruned = 'prices', keys, 0, nil
+        D.onBrowse()
+        assert(got and #got == 0, 'none of its versions listed: nobody sells it')""")
 
 
 class SureCacheTests(unittest.TestCase):

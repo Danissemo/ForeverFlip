@@ -44,6 +44,29 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(result, '- Stable.\n')
 
 
+class ReleaseCommandTests(unittest.TestCase):
+    """`devflow.py release` turns the Unreleased notes into the version's section."""
+
+    TEXT = ('# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- A fix.\n\n## [3.0.0] - 2026-11-17\n\nold\n\n'
+            '[Unreleased]: ../../compare/v3.0.0...HEAD\n[3.0.0]: ../../compare/v2.3.0-beta.1...v3.0.0\n')
+
+    def test_the_unreleased_notes_become_the_version_and_the_links_follow(self):
+        flow = tool('devflow')
+        self.assertEqual(flow.unreleased(self.TEXT), '### Fixed\n\n- A fix.')
+        text = flow.stamp_changelog(self.TEXT, '3.1.0', '3.0.0', '2026-12-01')
+        self.assertEqual(flow.unreleased(text), '')
+        self.assertIn('## [Unreleased]\n\n## [3.1.0] - 2026-12-01\n\n### Fixed\n\n- A fix.', text)
+        self.assertIn('[Unreleased]: ../../compare/v3.1.0...HEAD\n'
+                      '[3.1.0]: ../../compare/v3.0.0...v3.1.0\n[3.0.0]:', text)
+        notes = tool('release_notes').render(text, '3.1.0', 'Danissemo/ForeverFlip')
+        self.assertEqual(notes, '### Fixed\n\n- A fix.\n')
+
+    def test_versions_are_ordered_with_betas_before_their_release(self):
+        key = tool('devflow').version_key
+        order = ['3.0.0', '3.1.0-beta.1', '3.1.0-beta.2', '3.1.0-beta.10', '3.1.0', '3.1.1', '4.0.0']
+        self.assertEqual(sorted(order, key=key), order)
+
+
 class PackageTests(unittest.TestCase):
     def test_archive_contains_current_version_and_every_runtime_file(self):
         build = tool('build')
@@ -55,8 +78,10 @@ class PackageTests(unittest.TestCase):
                 names = set(package.namelist())
                 self.assertIn('ForeverFlip/Bindings.xml', names)
                 self.assertIn('ForeverFlip/LICENSE', names)
-                for name in ['ForeverFlip.toc'] + files:
+                for name in ['ForeverFlip.toc'] + [f.replace('\\', '/') for f in files]:
                     self.assertEqual(package.read('ForeverFlip/' + name), (ROOT / 'ForeverFlip' / name).read_bytes())
+                for name in ('README.md', 'CHANGELOG.md'):
+                    self.assertEqual(package.read('ForeverFlip/' + name), (ROOT / name).read_bytes())
                 self.assertFalse(any(name.startswith(('tests/', 'tools/')) for name in names))
                 self.assertIn(('## Version: ' + version).encode(), package.read('ForeverFlip/ForeverFlip.toc'))
                 self.assertIn('ForeverFlip/Media/Logo.tga', names, 'the AddOns list icon is packaged')

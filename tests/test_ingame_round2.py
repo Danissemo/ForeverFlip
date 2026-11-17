@@ -29,11 +29,13 @@ class OwnAuctionTests(unittest.TestCase):
         owned={{auctionID=6,itemKey={itemID=30},quantity=1,buyoutAmount=25000,status=0}}
         fire('OWNED_AUCTIONS_UPDATED');assert(T.ownedStatus(T.owned[1])~='alone','another seller lists it')''')
 
-    def test_no_answer_is_shown(self):
+    def test_silence_on_an_own_auction_is_nobody_else_selling(self):
+        # WoW Forever does not answer a search of an item nobody else sells: the player's auction
+        # is shown as the only one, not as "no answer" (an in-game report).
         run(SETUP + '''local F=ForeverFlip;local T=F.Trade;fullScan();F.Scan.last.groups=nil -- the search path
         owned={{auctionID=6,itemKey={itemID=30},quantity=1,buyoutAmount=25000,status=0}}
         fire('OWNED_AUCTIONS_UPDATED');T.checkOwned();run(0.1);assert(F.Deals.search);run(11)
-        assert(T.ownedStatus(T.owned[1])=='no_answer')''')
+        assert(T.ownedStatus(T.owned[1])=='alone', tostring(T.ownedStatus(T.owned[1])))''')
 
     def test_page_shows_only_yours(self):
         run(OWN + '''UI.show('auctions');UI.refresh()

@@ -228,7 +228,7 @@ class BidCheckTests(unittest.TestCase):
 
 class MessageTests(unittest.TestCase):
     def test_every_status_message_is_translated(self):
-        source = (pathlib.Path(__file__).resolve().parent.parent / 'ForeverFlip' / 'UI.lua').read_text(encoding='utf-8')
+        source = (pathlib.Path(__file__).resolve().parent.parent / 'ForeverFlip' / 'UI' / 'UI.lua').read_text(encoding='utf-8')
         block = re.search(r'^local MESSAGES = \{\n(.*?)^\}', source, re.S | re.M).group(1)
         messages = dict(re.findall(r'^    (\w+) = "((?:[^"\\]|\\.)*)",', block, re.M))
         self.assertIn('not_number', messages)

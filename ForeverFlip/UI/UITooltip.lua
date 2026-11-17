@@ -139,6 +139,245 @@ function UI.staleData(now)
     return nil
 end
 
+-- The rules around ForeverFlip's part of a tooltip: "=== FOREVER FLIP: <HOUSE> ===" above and
+-- "=== X ===" below, so it stands apart from the game's lines and other addons'. Both are centred:
+-- ForeverFlip's lines are collected first (UI.tipRecorder), then each rule gets as many "=" on
+-- either side as make it as wide as the widest line of the tooltip (the game's lines read through
+-- the widget API, ours measured on a hidden font string of our own). Without a measure (no font)
+-- the fixed counts below are used.
+UI.TIP_RULE = string.rep("=", 11)
+UI.TIP_END = string.rep("=", 19) .. " X " .. string.rep("=", 18)
+UI.TIP_RULE_MIN = 3 -- "=" on each side at least
+UI.TIP_PAIR_GAP = 40 -- pixels between the two halves of a double line (TextRight is anchored 40 px
+-- after TextLeft in SharedTooltipTemplates.xml)
+UI.TIP_WIDTH_MAX = 420 -- a game line wider than this is wrapping text, not a width to match
+
+-- A stand-in tooltip that only records AddLine and AddDoubleLine, to be replayed on the real one.
+function UI.tipRecorder()
+    local r = { calls = {} }
+    function r.AddLine(self, ...)
+        self.calls[#self.calls + 1] = { "AddLine", n = select("#", ...), ... }
+    end
+    function r.AddDoubleLine(self, ...)
+        self.calls[#self.calls + 1] = { "AddDoubleLine", n = select("#", ...), ... }
+    end
+    return r
+end
+
+-- The width of a text in the tooltip's font, nil without a measure.
+function UI.tipTextWidth(text)
+    if not UI.tipMeter then
+        local frame = CreateFrame("Frame")
+        frame:Hide()
+        UI.tipMeter = frame:CreateFontString(nil, "OVERLAY", "GameTooltipText")
+    end
+    local meter = UI.tipMeter
+    meter:SetText(text or "")
+    local w = meter.GetUnboundedStringWidth and meter:GetUnboundedStringWidth() or meter:GetStringWidth()
+    if not U.finite(w) then
+        return nil
+    end
+    -- A coin icon is written "|T...:0:0:2:0|t": moved 2 px right, which the measure of a hidden
+    -- string leaves out. A price line has up to three of them: the rules came out a sign short.
+    for x in tostring(text or ""):gmatch("|T[^|]-:%-?%d+:%-?%d+:(%-?%d+):%-?%d+|t") do
+        w = w + math.max(0, tonumber(x) or 0)
+    end
+    return w
+end
+
+-- The widest line already in the tooltip (the game's), read through the widget API only.
+local function shownWidth(tooltip)
+    local name = tooltip.GetName and tooltip:GetName()
+    local count = tooltip.NumLines and tooltip:NumLines()
+    local widest = 0
+    if type(name) ~= "string" or type(count) ~= "number" then
+        return widest
+    end
+    for i = 1, count do
+        local left, right = _G[name .. "TextLeft" .. i], _G[name .. "TextRight" .. i]
+        local w = 0
+        -- A wrapping line (an item's "Use:" text) reports its unwrapped width and takes whatever
+        -- width the tooltip gets: it must not decide the width, or the rules stretch it across
+        -- the screen. The same for any line wider than a tooltip ever is.
+        local wraps = left and left.CanWordWrap and left:CanWordWrap()
+        if left and left:IsShown() and not wraps then
+            w = tonumber(left:GetStringWidth()) or 0
+        end
+        if not wraps and right and right:IsShown() and (right:GetText() or "") ~= "" then
+            w = w + UI.TIP_PAIR_GAP + (tonumber(right:GetStringWidth()) or 0)
+        end
+        if w <= UI.TIP_WIDTH_MAX then
+            widest = math.max(widest, w)
+        end
+    end
+    return widest
+end
+
+-- A rule: `middle` between "=" signs, as near `target` pixels as the font allows. Signs come in
+-- whole widths: the same count on both sides moved the width two signs at a time, so the header and
+-- the footer ("X" is narrower than the house name) came out up to a sign apart. Now the right side
+-- may hold one sign more than the left, and up to UI.TIP_RULE_PAD spaces around the middle take
+-- up what a sign cannot. Returns the "=" on the left and right, the spaces before and after the
+-- middle, and the width it measures.
+UI.TIP_RULE_PAD = 4
+local fits = {}
+local function rule(middle, target, eq)
+    local id = (UI.tipFont or "") .. "@" .. middle .. "@" .. math.floor(target * 4 + 0.5)
+    local f = fits[id]
+    if f then
+        return f[1], f[2], f[3], f[4], f[5]
+    end
+    local plain = UI.tipTextWidth(middle) or 0
+    local min = 2 * UI.TIP_RULE_MIN
+    local base = math.max(min, math.floor((target - plain) / eq))
+    local best, gap
+    -- Fewer spaces first: they fill only what the signs leave.
+    for pad = 0, UI.TIP_RULE_PAD do
+        for n = math.max(min, base - 2), base + 2 do
+            local l = math.floor(n / 2)
+            local before = math.floor(pad / 2)
+            local text = string.rep("=", l)
+                .. string.rep(" ", before)
+                .. middle
+                .. string.rep(" ", pad - before)
+                .. string.rep("=", n - l)
+            local w = UI.tipTextWidth(text) or 0
+            if not gap or math.abs(w - target) < gap - 0.01 then
+                best, gap = { l, n - l, before, pad - before, w }, math.abs(w - target)
+            end
+        end
+    end
+    fits[id] = best
+    return best[1], best[2], best[3], best[4], best[5]
+end
+
+-- The measure takes the font the tooltip's own lines are drawn in, read through the widget API:
+-- measured in the font object GameTooltipText, "=", spaces and letters kept other proportions than
+-- in the game's lines, and the header and the X line came out a sign apart however they were fitted.
+local function lineOf(tooltip, i)
+    local name = tooltip.GetName and tooltip:GetName()
+    return type(name) == "string" and _G[name .. "TextLeft" .. i] or nil
+end
+local function useFontOf(tooltip)
+    local line = lineOf(tooltip, 2)
+    if not (line and line.GetFont) then
+        return
+    end
+    local ok, font, size, flags = pcall(line.GetFont, line)
+    if not ok or type(font) ~= "string" or type(size) ~= "number" then
+        return
+    end
+    UI.tipTextWidth("") -- the meter exists
+    local id = font .. ":" .. size .. ":" .. tostring(flags or "")
+    if UI.tipFont ~= id and pcall(UI.tipMeter.SetFont, UI.tipMeter, font, size, flags) then
+        UI.tipFont = id
+    end
+end
+-- The drawn width of the tooltip's last line, or nil.
+local function lastWidth(tooltip)
+    local n = tooltip.NumLines and tooltip:NumLines()
+    local line = type(n) == "number" and lineOf(tooltip, n)
+    local w = line and line.GetStringWidth and line:GetStringWidth()
+    return U.finite(w) and w or nil
+end
+
+-- How much wider than the header, against the meter, the game draws the X line in the tooltip's
+-- font: learned from each tooltip drawn (the widths read back through the widget API) and kept
+-- per font between sessions. 0 until a tooltip was drawn.
+UI.TIP_SKEW_MAX = 20
+function UI.tipSkew()
+    local skews = F.db and F.db.tipSkew
+    local v = type(skews) == "table" and skews[UI.tipFont or ""]
+    return U.finite(v) and v or 0
+end
+function UI.learnTipSkew(seen)
+    if not (F.db and U.finite(seen)) or math.abs(seen) > UI.TIP_SKEW_MAX then
+        return
+    end
+    if type(F.db.tipSkew) ~= "table" then
+        F.db.tipSkew = {}
+    end
+    local font = UI.tipFont or ""
+    local old = F.db.tipSkew[font]
+    -- Smoothed: one tooltip's rounding does not move the next one's rule.
+    F.db.tipSkew[font] = U.finite(old) and old * 0.7 + seen * 0.3 or seen
+end
+
+-- Writes ForeverFlip's block into the tooltip: the header, the recorded lines, the footer.
+function UI.tipBlock(tooltip, calls, house, colour)
+    local head = " FOREVER FLIP: " .. house:upper() .. " "
+    local width
+    useFontOf(tooltip)
+    local eq = UI.tipTextWidth("=")
+    if eq and eq > 0 then
+        width = shownWidth(tooltip)
+        for _, c in ipairs(calls) do
+            local w
+            if c[1] == "AddDoubleLine" then
+                w = (UI.tipTextWidth(c[2]) or 0) + UI.TIP_PAIR_GAP + (UI.tipTextWidth(c[3]) or 0)
+            elseif not c[6] then -- a wrapped line takes the width it is given
+                w = UI.tipTextWidth(c[2]) or 0
+            end
+            width = math.max(width, w or 0)
+        end
+        local headPlain = UI.tipTextWidth(head) or 0
+        width = math.max(width, headPlain + 2 * UI.TIP_RULE_MIN * eq)
+    end
+    local bottom = UI.TIP_END
+    local hl, hr, hb, ha = 11, 11, 0, 0
+    if width then
+        -- Both rules aimed at the lines' width; then both at the wider of the two, so neither
+        -- stands out past the other.
+        local w1, w2
+        hl, hr, hb, ha, w1 = rule(head, width, eq)
+        local fl, fr, fb, fa
+        fl, fr, fb, fa, w2 = rule(" X ", width, eq)
+        local target = math.max(w1, w2)
+        -- The game draws the X line wider than the meter says, by more than the header (5 to 6
+        -- px in FRIZQT 12, in the trace): the difference learned from the tooltips drawn before
+        -- is taken off the X line's aim.
+        local skew = UI.tipSkew()
+        hl, hr, hb, ha, w1 = rule(head, target, eq)
+        fl, fr, fb, fa, w2 = rule(" X ", target - skew, eq)
+        UI.tipFit = { head = w1, foot = w2, skew = skew }
+        bottom = string.rep("=", fl) .. string.rep(" ", fb) .. " X " .. string.rep(" ", fa) .. string.rep("=", fr)
+    end
+    tooltip:AddLine(
+        UI.C.gold
+            .. string.rep("=", hl)
+            .. string.rep(" ", hb)
+            .. " FOREVER FLIP:|r |cff"
+            .. (colour or "ffffff")
+            .. house:upper()
+            .. "|r "
+            .. string.rep(" ", ha)
+            .. UI.C.gold
+            .. string.rep("=", hr)
+            .. "|r"
+    )
+    local drawnHead = lastWidth(tooltip)
+    for _, c in ipairs(calls) do
+        tooltip[c[1]](tooltip, unpack(c, 2, c.n + 1))
+    end
+    tooltip:AddLine(UI.C.gold .. bottom .. "|r")
+    local fit, drawnFoot = width and UI.tipFit, lastWidth(tooltip)
+    if fit and drawnHead and drawnFoot then
+        UI.learnTipSkew((drawnFoot - fit.foot) - (drawnHead - fit.head))
+        -- DEV: what the meter expected against what the game drew, header and X line.
+        F.Log.trace(
+            "tooltip.rules",
+            "font %s: header %.1f drawn %.1f, X line %.1f drawn %.1f, skew %.1f",
+            tostring(UI.tipFont),
+            fit.head,
+            drawnHead,
+            fit.foot,
+            drawnFoot,
+            fit.skew
+        )
+    end
+    tooltip:Show()
+end
+
 local function staleWarning(tooltip, at)
     local orange = function(text)
         tooltip:AddLine("  " .. text, 1, 0.6, 0.3, true)
@@ -485,7 +724,11 @@ local function tooltipLines(tooltip, data)
         return
     end
     local _, link = tooltip:GetItem()
-    local id = link and tonumber(link:match("item:(%d+)"))
+    -- Retail 12 hides some tooltips' items (in combat, among others): a secret link cannot be read.
+    if F.Compat.secret(link) or type(link) ~= "string" then
+        return
+    end
+    local id = tonumber(link:match("item:(%d+)"))
     local key = id and F.AH.keyFor(id, link)
     if not key then
         return
@@ -510,6 +753,9 @@ local function tooltipLines(tooltip, data)
         staleWarning(tooltip, stale or nil)
         return
     end
+    -- The lines are collected first and written by UI.tipBlock, between rules sized to them.
+    local target = tooltip
+    tooltip = UI.tipRecorder()
     local function section(title)
         tooltip:AddLine(UI.C.head .. L(title) .. "|r")
     end
@@ -525,7 +771,6 @@ local function tooltipLines(tooltip, data)
         tipLine(tooltip, "  " .. L(label), right, 0.85, 0.85, 0.85)
     end
     local house, colour = UI.houseName()
-    tooltip:AddLine(UI.C.gold .. "FOREVER FLIP:|r |cff" .. (colour or "ffffff") .. house:upper() .. "|r")
 
     section("Selling")
     local vendor, vendorHow = advice and advice.vendor, advice and advice.vendorHow
@@ -801,7 +1046,7 @@ local function tooltipLines(tooltip, data)
             )
         end
     end
-    tooltip:Show()
+    UI.tipBlock(target, tooltip.calls, house, colour)
 end
 
 function UI.tooltips()

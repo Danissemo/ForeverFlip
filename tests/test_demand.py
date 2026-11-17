@@ -2,7 +2,7 @@
 
 import unittest
 
-from test_addon import ADDON, lupa
+from test_addon import lupa, source
 
 
 class FlowFallbackTests(unittest.TestCase):
@@ -10,7 +10,7 @@ class FlowFallbackTests(unittest.TestCase):
     def setUp(self):
         self.lua = lupa.LuaRuntime(unpack_returned_tuples=True)
         for name in ('Util.lua', 'Market.lua'):
-            self.lua.execute((ADDON / name).read_text(encoding='utf-8'))
+            self.lua.execute(source(name).read_text(encoding='utf-8'))
         self.assertIsNotNone(
             self.lua.eval('ForeverFlip.Market.saleability'),
             'missing saleability API: unknown demand must not look like observed zero',
@@ -119,7 +119,7 @@ class ConfirmedSaleabilityTests(unittest.TestCase):
     def setUp(self):
         self.lua = lupa.LuaRuntime(unpack_returned_tuples=True)
         for name in ('Util.lua', 'Market.lua'):
-            self.lua.execute((ADDON / name).read_text(encoding='utf-8'))
+            self.lua.execute(source(name).read_text(encoding='utf-8'))
         self.lua.execute("""
         function observedSales(hours, soldAtPrice, pairs, at)
             local history={}

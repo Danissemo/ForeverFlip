@@ -93,6 +93,36 @@ class ResultsViewTests(unittest.TestCase):
         assert(h[2]:GetText() == 'Usual price', 'the market lists get their names back')''')
 
 
+class ViewButtonsTests(unittest.TestCase):
+    def test_the_list_buttons_share_the_row_and_stay_inside_it(self):
+        run(BASE + r'''UI.show('analytics')
+        local row, n = UI.viewRow, 0
+        for _, b in pairs(UI.viewButtons) do
+            n = n + 1
+            b.SetWidth = function(s, w) rawset(s, 'testWidth', w) end
+            b.GetWidth = function(s) return rawget(s, 'testWidth') or 0 end
+        end
+        assert(n == 7, n)
+        row.GetWidth = function() return 600 end
+        UI.layoutViewButtons()
+        local w = UI.viewButtons.results:GetWidth()
+        assert(w > 60, w)
+        assert(6 + n * w + (n - 1) * UI.VIEW_GAP <= 600 - 6, 'the last button ends inside the row')''')
+
+
+class NameFlickerTests(unittest.TestCase):
+    def test_a_row_keeps_its_name_while_the_item_reloads(self):
+        run(BASE + r'''local nameOf = UI.shared.nameOf
+        local first = nameOf('c:10')
+        assert(F.Util.linkName(first) == 'Linen Cloth', first)
+        local info = F.Compat.itemInfo
+        F.Compat.itemInfo = function() return nil end   -- dropped from the client's cache
+        assert(nameOf('c:10') == first, nameOf('c:10'))
+        assert(nameOf('c:10', '|cff1eff00|Hitem:10::|h[]|h|r') == first, 'an empty link keeps it too')
+        assert(nameOf('c:99999') == 'item:99999', 'never seen: the id')
+        F.Compat.itemInfo = info''')
+
+
 class MenuSummaryTests(unittest.TestCase):
     def test_a_long_menu_leaves_the_summary_only_the_lines_that_fit(self):
         run(BASE + r'''UI.leftPanel.GetHeight = function() return 480 end
@@ -108,6 +138,14 @@ class MenuSummaryTests(unittest.TestCase):
         UI.leftPanel.GetHeight = function() return 480 end
         UI.show('deals')
         assert(UI.summary:IsShown(), 'it comes back with the room')''')
+
+    def test_the_summary_grows_back_when_the_panel_does_without_a_page_change(self):
+        run(BASE + r'''UI.leftPanel.GetHeight = function() return 300 end
+        UI.show('deals')
+        local short = UI.summaryLines
+        UI.leftPanel.GetHeight = function() return 480 end -- the window laid out after
+        UI.refresh()
+        assert(UI.summaryLines > short, short .. ' -> ' .. UI.summaryLines)''')
 
 
 class ChooseButtonTests(unittest.TestCase):

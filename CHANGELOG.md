@@ -7,6 +7,115 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The addon says when a newer ForeverFlip is out.** The game gives addons no internet, so the
+  ForeverFlip Sync helper writes the newest release of your channel (stable, or beta if you are a
+  beta tester) into the community data. At login the chat names the new version, and the status
+  line and the sharing page of Settings show it until you update. Needs Sync running; nothing is
+  said when your version is the newest.
+- **Every auction house has its own prices and header.** Alliance, Horde, the neutral goblin houses
+  (15% cut) and the hardcore realms' houses are kept apart; connected realms share one house, so a
+  scan shared from a connected realm joins yours. The tooltip opens with
+  `=========== FOREVER FLIP: ALLIANCE AH ===========` (Horde, Neutral, Server) and closes with a
+  `=== X ===` rule, so it is clear where ForeverFlip's part ends.
+- **Retail support**: on Retail one house serves both factions, shown as SERVER AH; the TOC lists
+  the Retail interface (120105) next to WoW Forever's 16001. Item tooltips the game keeps secret
+  (Retail 12, in combat) are left alone instead of raising an error.
+- **A trace of what the addon does**, to find what makes it hang: every search, check and slow
+  moment with its time and reason, kept in the saved data (`ForeverFlipData.trace`, `traceStats`,
+  `traceSlow`). `/ff trace` shows it, Settings → Messages → Developer turns it on or off, shows and
+  clears it.
+- **DEV mode** (Settings → Messages → Developer, or `/ff dev`): every click, check box, page and
+  game event goes into the trace with how long it took. Off by default; a slow action is traced
+  either way.
+
+### Fixed
+
+- **Check prices on My auctions no longer hangs on gear with many versions.** A ring known in 35
+  item-key versions was searched one version after another, 25 seconds on "checking...", though
+  only one of them had lots. Every gear check with four or more remembered versions now asks their
+  prices in one query first and reads only the versions that are listed; with none of them listed
+  the item is answered as nobody else selling it.
+- **The merchant tab's offers stay on their own lines.** "Vendor … · AH …" with large prices ran
+  onto a second line, over the profit line and the next offer. A line that does not fit beside the
+  Buy button now leaves out its labels ("36 40 -> 46 00", "+2 95 · ~1.1/day").
+- **Check all no longer stands still** ("Checking Bags: 14/15" for good): after 45 seconds without
+  progress, and with nothing you do holding it (a scan, a purchase, a post), the item it waits for
+  is given up as "no answer" and the rest go on. The trace says what held it.
+- **Bulk buttons go down the list as you sorted it**: Check all, Post all, Post AH-worthy, Post
+  next, Check prices, Cancel next undercut and the undercut answers take the top row first, on
+  every page, in the order shown now.
+- **Auto duration picks shorter posts where they save deposits.** It now counts how often the item
+  is undercut (an undercut lot stops selling, so a long post mostly waits behind a cheaper one) and
+  the item's own posts that sold against those that expired. Posts remember the duration they went
+  for, and the duration tooltip on the Sell page says where the estimate came from.
+- **The tooltip's header and footer sit centred across the tooltip again.** An item's long "Use:"
+  text no longer stretches them across the screen, and both rules now reach the right edge: a
+  two-column line was counted 20 px narrower than the game draws it (the game puts 40 px between
+  the columns), and the "=" count was rounded down. The whole rule is now measured and "=" added on
+  both sides until it reaches the widest line.
+- **No more "no answer" on My auctions** when nobody else sells the item: the auction house's
+  silence about it means your auction is alone, and it says so.
+- **The tooltip rules reach the end of the price lines.** A coin icon sits 2 px to the right of
+  where a measure puts it, and a price line has up to three: the rules came out a sign short. The
+  icons' shift is counted, and a rule now stops within half a sign of the widest line.
+- **Item names no longer blink to "item:12047"** while a quick scan checks its finds: when the
+  game drops an item from its cache for a moment, the row keeps the name it showed.
+- **Check all goes strictly top to bottom.** An item whose search got no answer is sent again at
+  once, before the next row; it used to wait for the end of the batch, so a row above the one being
+  checked kept its scan status and looked skipped.
+- **Gear with many versions no longer hangs Check all.** One version of an item the server did not
+  answer ended the whole search, and the check started over from the first of its 23 versions:
+  Nomad Trousers stood on "checking..." for half a minute. Now that one version is asked once more
+  and the versions already read are kept.
+- **The tooltip's header and footer are the same width.** Each had the same number of "=" on both
+  sides, so its width moved two signs at a time, and the "X" line could stand a sign out past the
+  header. Now one side may hold a sign more, and a few spaces around the middle take up the rest.
+  The widths are measured in the font the tooltip's own lines are drawn in, not in a font object of
+  the same name that kept "=", spaces and letters in other proportions. In DEV mode the trace keeps
+  the expected and the drawn width of both lines (`tooltip.rules`). That trace showed the game
+  drawing the "X" line 5 to 6 px wider than measured while the header came out as measured, so the
+  addon now learns that difference from the tooltips it has drawn (per font, kept in the saved
+  data as `tipSkew`) and aims the "X" line short by it.
+- **The summary under the menu is no longer cut short.** Its lines were counted once, when a page
+  was opened; if the window was still being laid out, only four lines fit and the sniper's figures
+  were gone until another page was opened. They are counted again at every refresh now.
+- **Quick scan works with the sniper on.** While the full scan waited its 15 minutes, the button
+  only counted down whenever the sniper ran, so Quick scan could not be pressed. Now it reads one
+  whole round of its own and lists what it finds, and the sniper goes on afterwards. Switching the
+  sniper off no longer cuts a quick scan short.
+- **Check all reads gear much faster.** Each version of an item waited for the auction house's
+  throttle, so a piece of gear with 30 versions took about 20 seconds. Check all now asks the
+  lowest price of all versions in one query and reads only those that could change the deal; if
+  that answer does not come, every version is read as before.
+- **Analytics: the list buttons stay inside the window.** The seven buttons above the list (Bargains
+  … My results) share the row's width instead of a fixed 96 px each, which pushed My results past
+  the edge.
+- **Analytics: Today's chart goes hour by hour** instead of one block filling the chart; 7 and 30
+  days stay a bar a day.
+- **After a buy out on Undercuts the row says "bought"** instead of a grey "wait", and the price is
+  checked again, so the next answer comes from the new market.
+
+### Changed
+
+- **The addon's files are sorted into folders**: `Core`, `Locale`, `Modules`, `UI`, as other addons
+  do. Nothing about the speed changes; the game loads the same files in the same order. Because
+  files moved, the game needs a full restart after the update, not a `/reload`. The zip now
+  carries `README.md` and `CHANGELOG.md` next to the licence.
+
+### Development
+
+- DEV mode also traces every status message, and the posting buttons trace each item they post,
+  hold or wait for (post.go, post.held, post.wait), next to every click and its time: "the button
+  did nothing" can be read from the trace.
+
+- **`python tools/devflow.py release X.Y.Z`** makes a release in one step: commits what is pending
+  (documentation too), writes the version into the TOC, `Core/Util.lua` and this changelog, checks
+  the package builds, commits, tags and pushes; GitHub Actions publishes it. It asks to type the
+  version again first.
+- The trace records why the Undercuts buttons are disabled (`fight.buttons`, DEV mode) and what
+  an own auction's silent search was (`owned.silent`).
 
 ## [3.0.0] - 2026-11-17
 

@@ -1076,6 +1076,7 @@ function UI.refreshDeals()
         return av < bv
     end)
     view.setSort(UI.dealSort, UI.dealDescending)
+    UI.dealSorted = list -- Check all goes down the page as sorted (UI.order)
     -- Buy first takes the top row of the To vendor table as it is sorted now (F.Trade.runTargets).
     if vendor then
         local order = {}

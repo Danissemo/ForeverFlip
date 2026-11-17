@@ -23,6 +23,10 @@ local NEUTRAL_MAPS = {
 }
 local NEUTRAL_TOWNS = { ["booty bay"] = true, ["gadgetzan"] = true, ["everlook"] = true }
 function E.detectHouse()
+    -- One house for both factions (Retail): no neutral house to tell apart.
+    if not F.Compat.caps.factionHouses then
+        return nil
+    end
     -- The auctioneer tells it best: the auctioneers of Alliance and Horde towns belong to their
     -- faction, the goblins of the neutral houses to none. The zone is only the fallback.
     if UnitExists and UnitFactionGroup and UnitExists("npc") then
@@ -76,14 +80,51 @@ function E.realm()
     return tostring(GetRealmName and GetRealmName() or "?") .. (E.hardcore() and " (HC)" or "")
 end
 
--- One auction house per realm and faction, plus the neutral house of the realm.
+-- The auction houses of a realm, by the side part of their scope:
+--   "Alliance", "Horde"  a faction's own house (WoW Forever)
+--   "Neutral"            a goblin town's house, shared by both factions, 15% cut (WoW Forever)
+--   "Server"             the one house of both factions (Retail, C.caps.factionHouses off)
+-- Connected realms share their houses: Share takes their scans as the player's realm's own.
+E.SIDES = { Alliance = true, Horde = true, Neutral = true, Server = true }
 E.house = nil -- "Neutral" while a neutral auction house is open
+
+-- The house the player's own faction trades at, when no neutral house is open.
+function E.homeSide()
+    if not F.Compat.caps.factionHouses then
+        return "Server"
+    end
+    local faction = UnitFactionGroup and UnitFactionGroup("player")
+    return (faction == "Alliance" or faction == "Horde") and faction or "?"
+end
+
+-- The side of the open (or, closed, the player's usual) auction house.
+function E.side()
+    return E.house or E.homeSide()
+end
+
+-- Whether a realm name (a scope's realm part, " (HC)" included) is the player's realm or one
+-- connected to it, on the same ruleset: their auction houses are the same.
+function E.sameHouseRealm(realm)
+    if type(realm) ~= "string" then
+        return false
+    end
+    if realm == E.realm() then
+        return true
+    end
+    local name, hc = realm:match("^(.-)( %(HC%))$")
+    name = name or realm
+    if (hc ~= nil) ~= E.hardcore() then
+        return false
+    end
+    return F.Compat.connectedRealms()[F.Compat.realmKey(name)] == true
+end
+
 local memo = {}
 function E.scope()
     E.counts.scope = E.counts.scope + 1
     local realm = GetRealmName and GetRealmName() or "?"
     local hc = E.hardcore()
-    local side = E.house or UnitFactionGroup and UnitFactionGroup("player") or "?"
+    local side = E.side()
     if memo.scope and memo.realm == realm and memo.hc == hc and memo.side == side then
         return memo.scope
     end
@@ -152,6 +193,9 @@ function E.owner()
 end
 
 function E.notify(message)
+    if message ~= nil and F.Log and F.Log.dev and F.Log.dev() then
+        F.Log.trace("notify", "%s", tostring(message))
+    end
     E.message, E.messageAt = message, E.clock()
     E.changed()
 end
@@ -360,7 +404,39 @@ function E.onBlocked(event, addon, func)
     end
 end
 
+-- Events whose arguments are chat text or noise: the trace gets only their name.
+E.TRACE_NAME_ONLY = {
+    CHAT_MSG_SYSTEM = true,
+    CHAT_MSG_ADDON = true,
+    CHAT_MSG_CHANNEL_NOTICE = true,
+    ADDON_LOADED = true,
+}
+
+-- An event's first arguments for the trace, each cut short; a value that cannot be read (a secret
+-- value on Retail) is written as "?".
+local function traceArgs(event, ...)
+    if E.TRACE_NAME_ONLY[event] then
+        return ""
+    end
+    local out = {}
+    for i = 1, math.min(3, select("#", ...)) do
+        local v = select(i, ...)
+        local ok, text = pcall(tostring, v)
+        if not ok or (F.Compat and F.Compat.secret(v)) then
+            text = "?"
+        end
+        if type(v) == "table" then
+            text = "table"
+        end
+        out[#out + 1] = string.sub(text, 1, 60)
+    end
+    return table.concat(out, " ")
+end
+
 function E.handle(event, ...)
+    if F.Log.dev() and (event ~= "ADDON_LOADED" or ... == "ForeverFlip") then
+        F.Log.trace("event", "%s %s", event, traceArgs(event, ...))
+    end
     if event == "ADDON_ACTION_FORBIDDEN" or event == "ADDON_ACTION_BLOCKED" then
         E.onBlocked(event, ...)
         return
@@ -391,6 +467,7 @@ function E.handle(event, ...)
             F.Mail.hook()
             F.Share.register()
             F.Raw.importCommunity()
+            F.Raw.announceUpdate()
             F.Raw.prune()
             F.Bids.prune()
             if F.UI and F.UI.tooltips then
@@ -659,10 +736,19 @@ end
 local paint, marks, tick = 0, 0, 0
 -- Each part of the frame update runs on its own: an error in one (reported once) does not stop the
 -- others, nor the window from being redrawn.
+-- A part slower than F.Log.SLOW_MS is traced (a frame the game waited for): its name and time.
 local function part(name, fn, ...)
+    local t0 = F.Log.ms()
     local ok, err = pcall(fn, ...)
     if not ok then
         report(name .. ": " .. tostring(err))
+    end
+    local spent = F.Log.ms() - t0
+    if spent >= F.Log.SLOW_MS then
+        F.Log.stat("slowframe." .. name .. ".ms", spent)
+        F.Log.trace("slowframe", "%s %.0f ms", name, spent)
+    elseif F.Log.dev() then
+        F.Log.stat("part." .. name .. ".ms", spent)
     end
 end
 
@@ -954,6 +1040,20 @@ SlashCmdList.FOREVERFLIP = function(msg)
         end
         return
     end
+    if msg == "dev" then
+        say("ForeverFlip: " .. F.Log.traceCommand("dev")[1])
+        if F.UI and F.UI.refreshMessages then
+            F.UI.refreshMessages()
+        end
+        return
+    end
+    if msg == "trace" or msg:match("^trace%s") then
+        -- The saved timeline and times of searches, checks and slow frames (Log.trace).
+        for _, line in ipairs(F.Log.traceCommand(msg:match("^trace%s+(.-)%s*$"))) do
+            say(line)
+        end
+        return
+    end
     if msg == "diag" then
         local blocked = F.db and type(F.db.blocked) == "table" and F.db.blocked or {}
         if #blocked == 0 then
@@ -1075,6 +1175,6 @@ SlashCmdList.FOREVERFLIP = function(msg)
             .. F.version
             .. ": "
             .. L("open the auction house and use the ForeverFlip tab.")
-            .. " /ff log, /ff diag"
+            .. " /ff log, /ff diag, /ff trace"
     )
 end

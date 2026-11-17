@@ -2,18 +2,15 @@
 screen only through Engine (emit / listen / screen), client differences live in Compat, and the
 saved data carries a schema version with ordered migrations."""
 
-import pathlib
 import re
 import unittest
 
-from test_addon import SETUP, run
-
-ADDON = pathlib.Path(__file__).resolve().parent.parent / 'ForeverFlip'
+from test_addon import SETUP, run, source
 
 
 def code(name):
     # The source without its comments, for checks of what a file calls.
-    text = (ADDON / name).read_text(encoding='utf-8')
+    text = source(name).read_text(encoding='utf-8')
     return re.sub(r'--[^\n]*', '', text)
 
 

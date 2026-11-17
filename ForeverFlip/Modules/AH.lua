@@ -917,6 +917,31 @@ function A.searchKeys(ids)
         error(err, 0)
     end
 end
+-- One query for the lowest price of each item-key version of a gear item (its answer is a browse
+-- answer: A.versionPrices reads it).
+function A.searchVersions(keys)
+    learnedRows = 0
+    A.ownBrowse = true
+    local ok, err = pcall(AH.SearchForItemKeys, keys, sorts())
+    A.ownBrowse = false
+    if not ok then
+        error(err, 0)
+    end
+end
+-- The lowest price of each version of item `id` in the browse results: "level:suffix" -> copper.
+-- It may be a bid, another ending's lot or the player's own: never above the lots of the version.
+function A.versionPrices(id)
+    local out = {}
+    local ok, results = pcall(AH.GetBrowseResults)
+    for _, r in ipairs(ok and type(results) == "table" and results or {}) do
+        local k = type(r) == "table" and r.itemKey
+        if type(k) == "table" and k.itemID == id and (r.minPrice or 0) > 0 then
+            local v = (k.itemLevel or 0) .. ":" .. (k.itemSuffix or 0)
+            out[v] = math.min(out[v] or math.huge, r.minPrice)
+        end
+    end
+    return out
+end
 -- Browse result rows as { id, minPrice, qty, containsOwnerItem }. The lowest price of an item may
 -- be a bid, or the price of the player's own lot (containsOwnerItem: the item has one listed).
 function A.browseRows(results)

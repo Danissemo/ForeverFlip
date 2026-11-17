@@ -90,9 +90,28 @@ function A.results(days, now)
             local at = e.at or 0
             return at >= start and at < stop and 1 or nil
         end
+        -- Today's chart is by the hour: 24 buckets from local midnight (a 25-hour day puts its
+        -- last hour into the 24th).
+        r.hours = {}
+        for h = 1, 24 do
+            r.hours[h] = {
+                hour = h - 1,
+                profit = 0,
+                earned = 0,
+                spent = 0,
+                sales = 0,
+                buys = 0,
+                cost = 0,
+                wins = 0,
+                vendor = 0,
+                auction = 0,
+            }
+        end
         for _, e in ipairs(c.journal) do
             if dayIndex(e) then
                 addEntry(r, e)
+                local h = math.min(24, math.max(1, math.floor(((e.at or 0) - start) / 3600) + 1))
+                addEntry(r.hours[h], e)
             end
         end
         r.days[1].profit, r.days[1].earned, r.days[1].spent = r.profit, r.earned, r.spent

@@ -214,7 +214,7 @@ layers make a changed scan useless instead.
 
 | File | Role |
 |---|---|
-| `ForeverFlip/Raw.lua` | Captures and seals full scans into `ForeverFlipRaw`; imports `ForeverFlipShared` |
+| `ForeverFlip/Core/Raw.lua` | Captures and seals full scans into `ForeverFlipRaw`; imports `ForeverFlipShared` |
 | `sync/ffscan.py` | Formats: SavedVariables reader, FFR1 full scans, the seal, the checks, FF1 summaries, `Data.lua` |
 | `sync/foreverflip_sync.py` | Transfer engine, retry state and command-line entrypoint |
 | `sync/game_location.py` | Forever-specific validation and bounded installation discovery |

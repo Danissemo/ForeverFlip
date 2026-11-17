@@ -9,11 +9,16 @@ rules that keep the addon testable.
 ForeverFlip/            the addon, exactly as it is installed in Interface/AddOns
   ForeverFlip.toc       metadata and load order
   Bindings.xml          key bindings (loaded by the game automatically)
-  *.lua                 modules (see below)
+  Core/                 the base: Util, Compat, Log, Data, Raw, and Core (the wiring, loaded last)
+  Locale/               Locale.lua, the Ukrainian translation
+  Modules/              the maths and the services: Market, AH, Scan, Deals, Trade, ...
+  UI/                   the window, its pages and the tooltip
+  Media/                the logo
 tests/                  automated tests (Python + lupa running Lua 5.1)
   mock.lua              simulated WoW client and WoW Forever auction house
   test_*.py             test suites
-tools/build.py          checks and packages a release archive into dist/
+tools/build.py          checks and packages a release archive into dist/ (with LICENSE, README, CHANGELOG)
+tools/release_notes.py  the release notes of one version, from CHANGELOG.md (used by CI)
 tools/devflow.py        local flow: checks before a commit, install into the game and push after it
 .githooks/              the git hooks that call tools/devflow.py (git config core.hooksPath .githooks)
 sync/                   ForeverFlip Sync helper and the community data aggregator (Python)
@@ -23,7 +28,8 @@ docs/                   documentation
 
 ## Modules and load order
 
-The TOC loads the files in this order. Every module adds a table to the global `ForeverFlip`
+The TOC loads the files in this order (it writes their folders with the game's `\`,
+for example `Core\Util.lua`). Every module adds a table to the global `ForeverFlip`
 namespace, here written as `F`.
 
 | File | Namespace | Responsibility |
@@ -31,6 +37,7 @@ namespace, here written as `F`.
 | `Util.lua` | `F.Util` | Creates `ForeverFlip`, `F.version`, item keys, legal price steps, money formatting and parsing, safe `itemInfo`. |
 | `Compat.lua` | `F.Compat` | **Client capabilities:** `caps` (fullScan, commodities, replicateCooldown, spellBook, item, container, tradeSkill, merchantFrame, addonMessages; read live) and the wrappers whose calls differ between clients (spells, item info, item count and icon, bags, merchant items). The documented `C_*` function first, the bare deprecated global only when its namespace is missing. Never calls `C_AuctionHouse`, only asks whether its functions exist. |
 | `Locale.lua` | `F.Locale` | English is the code text; Ukrainian translation table; language selection. |
+| `Log.lua` | `F.Log` | Messages in the ForeverFlip chat tab, and the **trace** (`Log.trace`, `Log.stat`, `Log.action`): searches, checks, slow frames and actions with their times and reasons, kept in `ForeverFlipData.trace` / `traceStats` / `traceSlow` (`/ff trace`). DEV mode (`settings.dev`, `/ff dev`) also traces every click, check box, page and event. |
 | `Market.lua` | `F.Market` | **Pure maths:** price histogram, usual price, sales between scans, demand, time-of-week pattern, deposit, cut, break-even, deal evaluation, the Sure maths (`saleChances`, `expectedSold`; `Trade` keeps the names as aliases). Calls no game API and no game-facing module: what it needs from them (item kind, vendor price, deposit, sale rate, durations, disenchant value, clock) comes through `M.env`, which `Core` sets with `M.use` (`Engine.wireMarket`). Unwired, it answers with defaults. |
 | `Data.lua` | `F.Data` | SavedVariables layout and defaults; schema version and ordered migrations (`D.MIGRATIONS`, run in `Data.open`); per-market and per-character tables; positions, journal, item statistics. |
 | `Shopping.lua` | `F.Shopping` | Shopping list, ignored items, shopping deals. |
@@ -127,8 +134,11 @@ hard real-time deadlines. The normal dirty refresh remains limited to four times
 
 ### Scope and owner
 
-- `Engine.scope()` = `<realm>-<faction>` identifies an auction house (` (HC)` follows the realm on
-  hardcore realms). Scan history and deals are stored per scope.
+- `Engine.scope()` = `<realm>-<side>` identifies an auction house (` (HC)` follows the realm on
+  hardcore realms). The side is `Alliance`, `Horde`, `Neutral` (a goblin town's house, 15% cut) on
+  WoW Forever, `Server` on Retail, where one house serves both factions (`Compat.caps.factionHouses`
+  off). Connected realms share a house (`Engine.sameHouseRealm`): Share files their scans under the
+  player's own realm. Scan history and deals are stored per scope.
 - `Engine.owner()` = `<realm>-<character>` identifies a character. Positions, journal and
   statistics are stored per owner.
 
@@ -215,6 +225,14 @@ flight or queued and no candidate is waiting.
 
 Full-scan working groups expire after five minutes; the lightweight listed-unit snapshot remains
 available for its twenty-minute no-seller check. Market analytics refreshes its cache each minute.
+
+7. **Bulk buttons follow the list as shown.** Check all, Post all, Post AH-worthy, Post next, Check
+   prices and the undercut buttons take their items top to bottom in the order the player sorted
+   the page: tables keep their sorted rows (`t.sorted`), `UI.order(name)` gives their rank, the
+   services read it through `Engine.screen().order` and sort with `U.inOrder`.
+8. **Every hang leaves a trace.** A batch that stops making progress gives up its item after
+   `Deals.STALL_GIVEUP` seconds (`Deals.unstick`) and says what held it in the trace; a slow frame
+   or action is traced with its time whether or not DEV mode is on.
 
 ## Adding a feature
 

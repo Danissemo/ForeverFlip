@@ -51,7 +51,9 @@ local function checkRow(p, x, y, label, body, checked, onClick)
     box:SetSize(26, 26)
     box:SetPoint("TOPLEFT", p, "TOPLEFT", x - 4, y)
     box:SetChecked(checked)
-    box:SetScript("OnClick", onClick)
+    box:SetScript("OnClick", function(self, ...)
+        return F.Log.action("check " .. tostring(label) .. " " .. tostring(self:GetChecked()), onClick, self, ...)
+    end)
     local t = text(p, "GameFontHighlight")
     t:SetPoint("LEFT", box, "RIGHT", 2, 1)
     t:SetWordWrap(false)
@@ -159,6 +161,51 @@ function UI.createMessageSettings(p)
             F.db.settings.logSound = self:GetChecked() and true or false
         end
     )
+    -- Developer: the saved trace (Log.trace, /ff trace) and DEV mode, which adds every action.
+    local devY = -130 - #F.Log.ECHOED * 26 - 66
+    heading(p, "Developer", 12, devY)
+    UI.traceBox = checkRow(
+        p,
+        14,
+        devY - 22,
+        "Trace searches, checks and slow moments",
+        "Saves what each search and Check all waited for and every moment the game waited for ForeverFlip. /ff trace shows it; the whole trace is in the saved file.",
+        F.Log.tracing(),
+        function(self)
+            if self:GetChecked() then
+                F.db.settings.trace = nil
+            else
+                F.db.settings.trace = false
+            end
+            UI.refreshMessages()
+        end
+    )
+    UI.devBox = checkRow(
+        p,
+        14,
+        devY - 48,
+        "DEV: trace every action",
+        "Also saves every game event, click, opened page and the time of each part of a frame. For finding a freeze; the trace keeps the last 2000 lines.",
+        F.Log.dev(),
+        function(self)
+            F.db.settings.dev = self:GetChecked() and true or nil
+            if F.db.settings.dev then
+                F.db.settings.trace = nil
+            end
+            UI.refreshMessages()
+        end
+    )
+    UI.traceShowButton = button(p, "Show trace", 110, function()
+        for _, line in ipairs(F.Log.traceCommand("")) do
+            F.Log.add("info", line, { chat = true, raw = true })
+        end
+    end)
+    UI.traceShowButton:SetPoint("TOPLEFT", p, "TOPLEFT", 12, devY - 80)
+    UI.traceClearButton = button(p, "Clear trace", 110, function()
+        F.Log.clearTrace()
+        UI.refreshMessages()
+    end)
+    UI.traceClearButton:SetPoint("LEFT", UI.traceShowButton, "RIGHT", 6, 0)
     p:SetScript("OnShow", UI.refreshMessages)
 end
 
@@ -196,6 +243,8 @@ function UI.refreshMessages()
         box:SetChecked(F.Log.echoes(category))
     end
     UI.logSoundBox:SetChecked(F.Log.soundOn())
+    UI.traceBox:SetChecked(F.Log.tracing())
+    UI.devBox:SetChecked(F.Log.dev())
     UI.logTabState:SetText(
         F.Log.chatFrame() and L("The tab is open.") or UI.C.dim .. L("There is no ForeverFlip tab now.") .. "|r"
     )
@@ -745,6 +794,10 @@ end
 
 function UI.refreshShare()
     local groups = {}
+    local update = F.Raw.updateText()
+    if update then
+        groups[#groups + 1] = { "Update", { update } }
+    end
     local s = F.Share.sending
     if #F.Share.outbox > 0 and s then
         groups[#groups + 1] =

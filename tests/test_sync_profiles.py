@@ -100,6 +100,24 @@ class BetaChannelTests(unittest.TestCase):
         self.assertEqual(status['release']['version'], '2.3.0-beta.2')
         self.assertIsNone(chosen['release'], 'the player chose stable releases')
         self.assertFalse(chosen['beta_auto'])
+        self.assertIsNone(helper.LATEST[str(game)], 'no stable release: the addon is told of none')
+
+    def test_the_newest_release_reaches_the_addons_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = pathlib.Path(tmp)
+            folder = addon_update.addon_folder(game)
+            folder.mkdir(parents=True)
+            (folder / 'ForeverFlip.toc').write_text('## Interface: 16001\n## Version: 3.0.0\n', encoding='utf-8')
+            releases = [{'tag_name': 'v3.1.0', 'html_url': 'https://github.com/r/releases/tag/v3.1.0',
+                         'assets': [{'name': 'ForeverFlip-3.1.0.zip', 'browser_download_url': 'https://github.com/x'}]}]
+            original = addon_update.fetch_releases
+            addon_update.fetch_releases = lambda *a, **k: releases
+            try:
+                helper.check_addon(game, {})
+            finally:
+                addon_update.fetch_releases = original
+        self.assertEqual(helper.LATEST[str(game)],
+                         {'version': '3.1.0', 'beta': False, 'page': 'https://github.com/r/releases/tag/v3.1.0'})
 
 
 if __name__ == '__main__':

@@ -155,10 +155,27 @@ class FastSniperTests(unittest.TestCase):
         for _, r in ipairs(F.UI.dealTable.rows) do if r:IsShown() and r.key == 'c:10' then status = r.cols[7]:GetText() end end
         assert(status and status:find('ready'), tostring(status))''')
 
-    def test_quick_scan_is_not_offered_while_the_sniper_runs(self):
+    def test_quick_scan_runs_its_own_round_while_the_sniper_runs(self):
         lua = runtime()
         lua.execute(FAST + '''
-        assert(not Sn.canQuick() and not Sn.startQuick())''')
+        run(0.1);assert(Sn.query and Sn.query.kind=='browse','the sniper reads a round')
+        assert(Sn.canQuick() and Sn.startQuick(),'offered with the sniper on')
+        local guard=0
+        while Sn.quick do
+            if D.searching() then answer() elseif browsePendingNow() then browseAnswer() end
+            run(0.5);guard=guard+1;assert(guard<300,'quick scan never ended')
+        end
+        assert(Sn.rounds>=2,'the round under way, then its own: '..Sn.rounds)
+        assert(ForeverFlip.Engine.message=='quick_done',ForeverFlip.Engine.message)
+        assert(D.get('c:10'),'its find is listed')
+        assert(ForeverFlip.db.settings.sniper and Sn.active(),'the sniper goes on')''')
+
+    def test_switching_the_sniper_off_keeps_a_quick_scan(self):
+        lua = runtime()
+        lua.execute(FAST + '''
+        assert(Sn.startQuick())
+        D.setSniper(false)
+        assert(Sn.quick and Sn.active(),'the quick scan goes on')''')
 
     def test_a_round_reads_every_page_and_queues_a_cheap_item(self):
         lua = runtime()

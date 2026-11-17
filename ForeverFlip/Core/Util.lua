@@ -46,6 +46,75 @@ function U.secret(v)
     return issecretvalue ~= nil and issecretvalue(v) == true
 end
 
+-- "3.1.0" or "3.1.0-beta.2" as {major, minor, patch, stage, n}: alpha < beta < rc < the release.
+-- nil when the text is not a version.
+local STAGES = { alpha = 0, beta = 1, rc = 2, [""] = 3 }
+function U.parseVersion(text)
+    local a, b, c, rest = tostring(text or ""):match("^v?(%d+)%.(%d+)%.(%d+)(.*)$")
+    if not a then
+        return nil
+    end
+    local stage, n = "", 0
+    if rest ~= "" then
+        local s, num = rest:match("^%-(%a+)%.?(%d+)$")
+        if not s or not STAGES[s] then
+            return nil
+        end
+        stage, n = s, tonumber(num)
+    end
+    return { tonumber(a), tonumber(b), tonumber(c), STAGES[stage], n }
+end
+
+-- True when version `a` is newer than version `b` (false when either is not a version).
+function U.versionNewer(a, b)
+    local x, y = U.parseVersion(a), U.parseVersion(b)
+    if not x or not y then
+        return false
+    end
+    for i = 1, 5 do
+        if x[i] ~= y[i] then
+            return x[i] > y[i]
+        end
+    end
+    return false
+end
+
+-- A copy of `list` in the order of `rank` ({ [key] = row }, as Engine.screen().order gives it):
+-- what the player sees top to bottom first, the rest after it in the list's own order.
+-- `keyOf(entry)` gives an entry's key (entry.key when not given). Nil rank: the list as it is.
+function U.inOrder(list, rank, keyOf)
+    local out = {}
+    for i, e in ipairs(list or {}) do
+        out[i] = e
+    end
+    if type(rank) ~= "table" then
+        return out
+    end
+    local pos, rows = {}, {}
+    for i, e in ipairs(out) do
+        local key
+        if keyOf then
+            key = keyOf(e)
+        elseif type(e) == "table" then
+            key = e.key
+        else
+            key = e
+        end
+        pos[e], rows[e] = i, key ~= nil and rank[key] or nil
+    end
+    table.sort(out, function(a, b)
+        local ra, rb = rows[a], rows[b]
+        if ra and rb and ra ~= rb then
+            return ra < rb
+        end
+        if (ra == nil) ~= (rb == nil) then
+            return ra ~= nil
+        end
+        return pos[a] < pos[b]
+    end)
+    return out
+end
+
 function U.finite(n)
     return type(n) == "number" and n == n and n ~= math.huge and n ~= -math.huge
 end

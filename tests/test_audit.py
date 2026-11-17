@@ -511,6 +511,23 @@ class MerchantScrollTests(unittest.TestCase):
         view.buyWheel(nil, -1); view.buyWheel(nil, -1); view.buyWheel(nil, -1); view.buyWheel(nil, -1)
         assert(view.buyTitle:GetText():find('4%-7 / 7'), 'scrolled to the end: ' .. view.buyTitle:GetText())''')
 
+    def test_a_price_line_too_wide_for_the_row_drops_its_labels(self):
+        # Vendor 36s 40c · AH 46s 00c ran onto a second line, over the next offer.
+        run(BASE + '''measureText = true
+        local h = F.Data.market(F.db, F.Engine.scope()).history
+        addItem(601, 'Fine Light Crossbow', 5, 'commodity')
+        h['c:601'] = { scan = { at = now, market = 4600 }, flow = { hours = 20, sold = { 48, 48, 48, 48 }, pairs = 3, at = now, market = 4600 } }
+        merchantItems = { { id = 601, price = 3640 } }
+        MerchantFrame:Show(); fire('MERCHANT_SHOW'); UI.merchantTab:Click()
+        local row = UI.merchantView.rows[1]
+        assert(row:IsShown() and row.prices:GetText():find('Vendor', 1, true), row.prices:GetText())
+        assert(row.gain:GetText():find('each', 1, true), row.gain:GetText())
+        row.prices.GetWidth = function() return 60 end
+        row.gain.GetWidth = function() return 60 end
+        UI.merchant(true)
+        assert(not row.prices:GetText():find('Vendor', 1, true) and row.prices:GetText():find('->', 1, true), row.prices:GetText())
+        assert(not row.gain:GetText():find('each', 1, true) and row.gain:GetText():find('/day', 1, true), row.gain:GetText())''')
+
 
 class CoinTests(unittest.TestCase):
     def test_money_shows_coins_and_edit_boxes_get_plain_text(self):

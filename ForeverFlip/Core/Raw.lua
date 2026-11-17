@@ -109,6 +109,44 @@ function R.uploaded()
     return type(data) == "table" and type(data.uploaded) == "table" and data.uploaded or {}
 end
 
+-- The newest ForeverFlip release of the player's channel (stable or beta, as chosen in the helper),
+-- written by the helper: the addon has no internet of its own. {version, beta, page} when it is
+-- newer than this build, else nil.
+-- Data.lua is read once, at login: the answer is kept for the table it came from.
+local checked, newer
+function R.update()
+    local data = ForeverFlipShared
+    local latest = type(data) == "table" and type(data.latest) == "table" and data.latest or nil
+    if latest ~= checked then
+        checked, newer = latest, latest and U.versionNewer(latest.version, F.version) and latest or nil
+    end
+    return newer
+end
+
+-- The update in words, coloured; nil when there is none.
+function R.updateText()
+    local latest = R.update()
+    if not latest then
+        return nil
+    end
+    local L = F.Locale.text
+    return "|cff40ff40"
+        .. string.format(
+            L("ForeverFlip %s is out (you have %s): update it with the ForeverFlip Sync helper."),
+            tostring(latest.version) .. (latest.beta and L(" (beta)") or ""),
+            F.version
+        )
+        .. "|r"
+end
+
+-- Once at login: an update is said in the chat, so it is seen without opening any window.
+function R.announceUpdate()
+    local text = R.updateText()
+    if text then
+        F.Log.add("info", text, { chat = true })
+    end
+end
+
 function R.finish(j)
     if not j.raw then
         return

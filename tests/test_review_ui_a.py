@@ -229,6 +229,42 @@ class UndercutOrderTests(unittest.TestCase):
         assert(b:IsEnabled(), 'X selected: its order goes on')''')
 
 
+    def test_an_order_whose_check_got_no_answer_can_be_checked_again(self):
+        run(UNDERCUTS + r'''for n = 1, 4 do undercut(n, 901, 'Cloak') end
+        addAuction(901, 20000, 1, 'Rival'); addAuction(901, 20000, 1, 'Rival')
+        fire('OWNED_AUCTIONS_UPDATED')
+        UI.show('undercuts')
+        UI.fightNext:Click()
+        assert(T.fightOrder and T.fightOrder.auctionID == 101, 'the top row first')
+        run(60); UI.refresh() -- the check never answered
+        assert(not F.Deals.pending('i:901'))
+        assert(UI.fightNext:IsEnabled(), 'Answer next sends the check again')
+        for _, r in ipairs(shownRows(UI.undercutTable)) do if r.plan.auction.auctionID == 103 then r:Click() end end
+        UI.refresh()
+        assert(UI.fightButtons.buyout:IsEnabled(), 'buy out on another lot of the item carries the order on')
+        UI.fightNext:Click()
+        assert(F.Deals.pending('i:901') or (D.search and D.search.key == 'i:901'), 'checked again')''')
+
+
+    def test_an_order_that_ended_says_bought_and_buy_out_stays_open(self):
+        run(UNDERCUTS + r'''undercut(1, 901, 'Cloak')
+        addAuction(901, 20000, 1, 'Rival')
+        fire('OWNED_AUCTIONS_UPDATED')
+        UI.show('undercuts')
+        shownRows(UI.undercutTable)[1]:Click()
+        UI.fightButtons.buyout:Click()
+        assert(T.fightOrder, 'the buy-out runs')
+        run(60)
+        F.Shopping.orders['i:901'] = nil -- its units are bought
+        UI.refresh()
+        assert(not T.fightOrder)
+        local r = shownRows(UI.undercutTable)[1]
+        assert(r and r.cols[5]:GetText():find('bought', 1, true), r and r.cols[5]:GetText())
+        assert(F.Deals.pending('i:901') or (D.search and D.search.key == 'i:901'), 'checked again')
+        run(60); UI.refresh(); r:Click(); UI.refresh()
+        assert(UI.fightButtons.buyout:IsEnabled(), 'buy out can be chosen again')''')
+
+
 class MenuAndStatusTests(unittest.TestCase):
     def test_only_the_open_settings_page_is_highlighted(self):
         run(BASE + r'''local function lit()

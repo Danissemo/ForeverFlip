@@ -391,13 +391,20 @@ function UI.createSell(p)
         local item = UI.sellSelected
         local qty = item and tonumber(UI.sellQty:GetText())
         local price = item and U.parseMoney(UI.sellPrice:GetText())
-        local costs, choice, hours = nil, nil, nil
+        local costs, choice, hours, source, cuts = nil, nil, nil, nil, nil
         if item then
-            costs, choice, hours = F.Trade.durationCosts(item.key, qty or 1, price)
+            costs, choice, hours, source, cuts = F.Trade.durationCosts(item.key, qty or 1, price)
         end
         if costs then
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine(string.format(L("Expected to sell in about %.1f h."), hours), 0.8, 0.8, 0.8)
+            local from = source == "own posts" and L("From your own posts of it: sold against expired.")
+                or source == "own sales" and L("From your own sales of it.")
+                or L("From the market: the queue ahead of you and the sales an hour.")
+            GameTooltip:AddLine(from, 0.8, 0.8, 0.8, true)
+            if (cuts or 0) > 0 then
+                GameTooltip:AddLine(string.format(L("Undercut about every %.1f h."), 1 / cuts), 0.8, 0.8, 0.8)
+            end
             for d = 1, 3 do
                 local lost = costs[d] == math.huge and "-" or U.money(math.floor(costs[d] + 0.5))
                 UI.tipPair(
@@ -675,7 +682,9 @@ function UI.statusTargets()
     else
         return nil, keys, false
     end
-    return scope, keys, verifyDeals
+    -- Top to bottom as the page is sorted now; what the page does not show goes last.
+    local list = UI.section == "deals" and "deals" or UI.section
+    return scope, U.inOrder(keys, UI.order(list)), verifyDeals
 end
 
 function UI.checkStatuses()
@@ -988,7 +997,8 @@ function UI.refreshSell()
     for _, line in ipairs(verdict) do
         lines[#lines + 1] = line
     end
-    if both then
+    -- Both routes pay and the player decides (or decided): the sums of each (UI.choiceLines).
+    if open then
         for _, line in ipairs(UI.choiceLines(item, w)) do
             lines[#lines + 1] = line
         end
@@ -1477,8 +1487,14 @@ function UI.refreshUndercuts()
             local v = OPTION[plan.verdict]
             -- A running buy-out is not an advice any more: the decision is taken and the cheaper
             -- units are being bought. The row stays so the button can carry it on.
+            -- An auction the player chose to leave (wait, or a buy-out order that ended) is skipped
+            -- by Answer next until its prices change: it says so instead of its advice.
+            local left = F.Trade.waiting and F.Trade.waiting[a.auctionID] == plan.cheapest
+            local bought = left and F.Trade.waitWhy and F.Trade.waitWhy[a.auctionID] == "bought"
             r.cols[5]:SetText(
                 plan.ordering and (UI.C.info .. L("buy out running") .. "|r")
+                    or bought and (UI.C.dim .. L("bought") .. "|r")
+                    or left and (UI.C.dim .. L(OPTION.wait[2]) .. "|r")
                     or (v[1] .. L(v[2]) .. "|r" .. (plan.war and " " .. UI.C.bad .. "!|r" or ""))
             )
             if plan == selected then
@@ -1547,15 +1563,45 @@ function UI.refreshUndercuts()
         local o = selected and selected[id]
         local offers = o ~= nil and not o.blocked and (id == "wait" or F.Trade.wayReady())
         if job and id == "buyout" then
-            offers = selected ~= nil and selected.key == job.key and F.Trade.fightOrderReady()
+            offers = selected ~= nil and selected.key == job.key and F.Trade.fightOrderClickable()
         end
         b:SetEnabled(offers or false)
+    end
+    -- DEV log: why a way out cannot be clicked, once per change of the selection or of its state.
+    if selected then
+        local why = {}
+        for _, id in ipairs({ "wait", "undercut", "buyout", "raise", "vendor" }) do
+            local b, o = UI.fightButtons[id], selected[id]
+            if b and not b:IsEnabled() then
+                why[#why + 1] = id
+                    .. "="
+                    .. (o == nil and "not offered" or o.blocked and ("blocked " .. tostring(o.blocked)) or "way busy")
+            end
+        end
+        local state = tostring(selected.auction.auctionID) .. " " .. table.concat(why, ", ")
+        if state ~= UI.fightButtonsState then
+            UI.fightButtonsState = state
+            F.Log.trace(
+                "fight.buttons",
+                "%s auction %s disabled: %s; job %s, open %s, busy %s, posting %s, searching %s, sniper %s, throttle %s",
+                tostring(selected.key),
+                tostring(selected.auction.auctionID),
+                #why > 0 and table.concat(why, ", ") or "none",
+                job and tostring(job.key) or "-",
+                tostring(F.AH.isOpen()),
+                tostring(F.Trade.busy()),
+                tostring(F.Trade.postingNow()),
+                tostring(F.Deals.searching()),
+                tostring(F.Sniper.inFlight()),
+                tostring(not F.AH.ready(false))
+            )
+        end
     end
     UI.fightNext:SetText(L("Answer next") .. " (" .. act .. ")")
     UI.fightNext:SetEnabled(
         act > 0
             and (
-                F.Trade.fightOrderActive() and F.Trade.fightOrderReady()
+                F.Trade.fightOrderActive() and F.Trade.fightOrderClickable()
                 or not F.Trade.fightOrderActive() and F.Trade.wayReady()
             )
     )

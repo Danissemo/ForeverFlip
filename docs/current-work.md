@@ -163,7 +163,8 @@ addon calls (taint, a restriction type not checked); no → the server restricts
 
 - Work goes straight to `main`; the hooks test, install into `C:/World of Warcraft/_forever_` and
   push after every commit. `FF_NO_PUSH=1` and `FF_NO_INSTALL=1` skip one step for one commit.
-- Releases are manual: a tag pushed by hand, never by a hook.
+- Releases are started by hand: `tools/devflow.py release X.Y.Z` (asks to type the version
+  again) or a tag pushed by hand; never by a hook or a plain commit.
 - The game's client is 1.60.1.70938, Interface 16001. `C:\WOW\World of Warcraft\_retail_` is not
   the target.
 - ForeverFlip has a Sync helper (`sync/`, Python, standard library only) and a community aggregator;

@@ -17,6 +17,17 @@ local icon = S.icon
 local MERCHANT_SELL_ROWS, MERCHANT_BUY_ROWS = 5, 4
 local MERCHANT_BUY_HEIGHT = 44
 
+-- Sets one line of a buy row: `full` when it fits beside the Buy button, else `short` (a large
+-- price ran onto a second line, over the next row).
+local function fitLine(fs, full, short)
+    fs:SetText(full)
+    local room = fs:GetWidth() or 0
+    local need = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth() or 0
+    if room > 0 and need > room then
+        fs:SetText(short)
+    end
+end
+
 local function merchantRow(parent, y, withButton)
     local row = CreateFrame("Frame", nil, parent)
     row:SetHeight(withButton and 28 or 18)
@@ -81,10 +92,12 @@ local function merchantRow(parent, y, withButton)
         row.prices:SetPoint("TOPLEFT", row.text, "BOTTOMLEFT", 0, -1)
         row.prices:SetPoint("RIGHT", row.buy, "LEFT", -6, 0)
         row.prices:SetJustifyH("LEFT")
+        row.prices:SetWordWrap(false)
         row.gain = text(row, "GameFontHighlightSmall")
         row.gain:SetPoint("TOPLEFT", row.prices, "BOTTOMLEFT", 0, -1)
         row.gain:SetPoint("RIGHT", row.buy, "LEFT", -6, 0)
         row.gain:SetJustifyH("LEFT")
+        row.gain:SetWordWrap(false)
         local line = row:CreateTexture(nil, "ARTWORK")
         line:SetColorTexture(1, 0.82, 0, 0.12)
         line:SetHeight(1)
@@ -407,33 +420,23 @@ function UI.merchant(open)
             else
                 row.text:SetTextColor(1, 1, 1)
             end
-            row.prices:SetText(
+            local dot = " " .. UI.C.dim .. L("·") .. "|r "
+            fitLine(
+                row.prices,
                 UI.C.soft
                     .. L("Vendor")
                     .. "|r "
                     .. U.money(o.unit)
-                    .. "  "
-                    .. UI.C.dim
-                    .. L("·")
-                    .. "|r  "
+                    .. dot
                     .. UI.C.soft
                     .. L("AH")
                     .. "|r "
-                    .. U.money(o.exit)
+                    .. U.money(o.exit),
+                U.money(o.unit) .. " " .. UI.C.dim .. "->|r " .. U.money(o.exit)
             )
-            row.gain:SetText(
-                UI.C.good
-                    .. "+"
-                    .. U.money(math.floor(o.each))
-                    .. "|r "
-                    .. UI.C.soft
-                    .. L("each")
-                    .. "|r  "
-                    .. UI.C.dim
-                    .. L("·")
-                    .. "|r  "
-                    .. string.format("~%.1f/%s", o.perDay, L("day"))
-            )
+            local gain = UI.C.good .. "+" .. U.money(math.floor(o.each)) .. "|r"
+            local perDay = string.format("~%.1f/%s", o.perDay, L("day"))
+            fitLine(row.gain, gain .. " " .. UI.C.soft .. L("each") .. "|r" .. dot .. perDay, gain .. dot .. perDay)
             row.cost:SetText(L("Cost") .. ": " .. U.money(math.ceil(o.unit * o.qty)))
             row.buy.offer = o
             row.index, row.link = o.index, o.link

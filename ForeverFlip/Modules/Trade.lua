@@ -935,7 +935,7 @@ function T.freshCheapest(key)
     end
 end
 
-function T.checkPrice(key, callback, fast)
+function T.checkPrice(key, callback, fast, ahead)
     if not callback and not fast then
         return F.Deals.enqueue(key, rememberPrice, rememberPrice, fast)
     end
@@ -948,7 +948,7 @@ function T.checkPrice(key, callback, fast)
         if callback then
             callback(k, rows, complete)
         end
-    end, callback or rememberPrice, fast)
+    end, callback or rememberPrice, fast, ahead)
 end
 
 -- Posting rules -------------------------------------------------------------------------------------
@@ -1351,29 +1351,74 @@ function T.quote(key, id)
 end
 
 -- Posting duration (1 = 2 h, 2 = 8 h, 3 = 24 h). Setting 0 = automatic. A longer post costs a
--- larger deposit, which comes back with the sale and is lost only when the post expires; a post
--- that expires is posted again at the same duration. So each duration costs, per sale, the
--- deposits expected to be lost before it sells:
---   lost(d) = deposit(d) x q / (1 - q),   q = exp(-hours(d) / T)  (the chance it is not sold in time)
--- where T is the hours the lot is expected to take to sell. The cheapest duration wins; when a
--- longer one costs at most T.DURATION_SLACK of the sale more (or the deposits are equal, as with
--- the 1 silver minimum on WoW Forever), the longer one wins: fewer reposts, fewer chances to be
--- undercut while relisting. T comes from
---   * your own sales of the item, once 3 units were sold (days from purchase to sale, per unit), else
+-- larger deposit, which comes back with the sale and is lost when the post expires or is cancelled;
+-- a post that comes back is posted again at the same duration. So each duration costs, per sale,
+-- the deposits expected to be lost before it sells:
+--   lost(d) = deposit(d) x (1 - p) / p
+--   p = a / (a + b) x (1 - exp(-(a + b) x hours(d)))   (the chance it sells before it is undercut
+--                                                      or runs out)
+-- where a = 1 / T, T the hours the lot is expected to take to sell, and b the undercuts an hour the
+-- scans measured on the item (M.undercutRate): an undercut lot stops selling, so on a contested
+-- item a long post mostly buys a longer wait behind a cheaper one, and a shorter, cheaper post wins.
+-- The cheapest duration wins; when a longer one costs at most T.DURATION_SLACK of the sale more (or
+-- the deposits are equal, as with the 1 silver minimum on WoW Forever), the longer one wins: fewer
+-- reposts, fewer chances to be undercut while relisting. T comes from, first found:
+--   * your own posts of the item that came back resolved (T.ownOutcomes): units sold against units
+--     that expired, over the hours they were posted for, once T.OUTCOMES_MIN units resolved;
+--   * your own sales of the item, once 3 units were sold (days from purchase to sale, per unit);
 --   * the market: the units ahead of yours in the queue (other sellers' lots at or below your
 --     price, from a fresh check, else every unit the last scan listed) plus yours, over the units
 --     measured bought per day near that price.
--- 24 hours when the sales are not measured, measured from fewer than two pairs of scans, or older
--- than 3 hours. Deposits come from the game (commodities), from the last post of the item at that
--- duration, else from the vendor price at the Classic multiples 1, 2 and 4 (at least 1 silver).
+-- 24 hours when none is known: market sales not measured, measured from fewer than two pairs of
+-- scans, or older than 3 hours. Deposits come from the game (commodities), from the last post of the
+-- item at that duration, else from the vendor price at the Classic multiples 1, 2 and 4 (at least 1
+-- silver). The Sell page's duration tooltip shows the costs, T and the undercut rate.
 T.DURATION_HOURS = { 2, 8, 24 }
 T.DURATION_SLACK = 0.02
+T.OUTCOMES_MIN = 4 -- units of the item's own posts that sold or expired
+T.OUTCOMES_DAYS = 30
+
+-- The item's own posts, from the journal: units sold, units that expired, and the average hours
+-- they were posted for (24 for posts made before the duration was recorded), over the last
+-- T.OUTCOMES_DAYS days. Cancelled posts are left out: the player took them back (an undercut,
+-- counted by b), they neither sold nor ran out.
+function T.ownOutcomes(key)
+    local since = clock() - T.OUTCOMES_DAYS * 86400
+    local sold, expired, posted, hours, units = 0, 0, 0, 0, 0
+    for _, e in ipairs(char().journal) do
+        if e.key == key and (e.at or 0) >= since then
+            local n = tonumber(e.qty) or 0
+            if e.kind == "sell" then
+                sold = sold + n
+            elseif e.kind == "expired" then
+                expired = expired + (tonumber(e.lossQty) or n)
+            elseif e.kind == "post" then
+                posted, units = posted + 1, units + n
+                hours = hours + (tonumber(e.hours) or 24)
+            end
+        end
+    end
+    return {
+        sold = sold,
+        expired = expired,
+        hours = posted > 0 and hours / posted or 24,
+        lot = posted > 0 and units / posted or nil,
+    }
+end
 
 function T.expectedHours(key, qty, price)
     qty = qty or 1
+    local out = T.ownOutcomes(key)
+    if out.sold + out.expired >= T.OUTCOMES_MIN and out.expired > 0 then
+        -- The share of units that sold within their post (half a unit of prior each way) gives the
+        -- per-hour chance of a sale: 1 - share = exp(-hours / T).
+        local share = (out.sold + 0.5) / (out.sold + out.expired + 1)
+        local perLot = out.hours / -math.log(1 - share)
+        return perLot * math.max(1, qty / (out.lot or qty)), "own posts"
+    end
     local own = char().stats[key]
     if own and (own.sold or 0) >= 3 and U.finite(own.days) and own.days > 0 then
-        return own.days / own.sold * 24 * qty
+        return own.days / own.sold * 24 * qty, "own sales"
     end
     local usual, h = usualOf(key)
     local at = price or usual
@@ -1395,7 +1440,14 @@ function T.expectedHours(key, qty, price)
     else
         ahead = U.finite(h.units) and h.units or 0
     end
-    return (ahead + qty) / s.perDay * 24
+    return (ahead + qty) / s.perDay * 24, "market"
+end
+
+-- Undercuts an hour on the item's house (M.undercutRate), 0 when not measured.
+function T.undercutsPerHour(key)
+    local _, h = usualOf(key)
+    local cut = h and M.undercutRate(h)
+    return cut and U.finite(cut.perHour) and math.max(0, cut.perHour) or 0
 end
 
 -- The deposit of posting `qty` units of `key` for duration `d` (1 to 3).
@@ -1408,17 +1460,20 @@ function T.depositFor(key, qty, d)
     return M.postDeposit(item.id, item.kind, qty, d)
 end
 
--- Expected deposits lost per sale for each duration: { [d] = copper }, and the choice.
+-- Expected deposits lost per sale for each duration: { [d] = copper }, the choice, T in hours,
+-- where T came from ("own posts", "own sales", "market") and the undercuts an hour.
 function T.durationCosts(key, qty, price)
-    local hours = T.expectedHours(key, qty, price)
+    local hours, source = T.expectedHours(key, qty, price)
     if not hours then
         return nil, 3
     end
+    local a = 1 / math.max(hours, 0.01)
+    local b = T.undercutsPerHour(key)
     local costs, best = {}, nil
     for d = 1, 3 do
         local deposit = T.depositFor(key, qty or 1, d) or 0
-        local q = math.exp(-T.DURATION_HOURS[d] / math.max(hours, 0.01))
-        costs[d] = q >= 0.999 and math.huge or deposit * q / (1 - q)
+        local p = a / (a + b) * (1 - math.exp(-(a + b) * T.DURATION_HOURS[d]))
+        costs[d] = p <= 0.001 and math.huge or deposit * (1 - p) / p
         if not best or costs[d] < costs[best] then
             best = d
         end
@@ -1431,7 +1486,7 @@ function T.durationCosts(key, qty, price)
             break
         end
     end
-    return costs, choice, hours
+    return costs, choice, hours, source, b
 end
 
 function T.durationFor(key, qty, price)
@@ -1501,6 +1556,7 @@ function T.post(item, qty, price, duration)
         open = qty,
         auctions = item.kind == "commodity" and 1 or qty,
         deposit = T.depositFor(item.key, qty, duration),
+        hours = T.DURATION_HOURS[duration], -- what the post went for (T.ownOutcomes)
         scope = F.Engine.scope(), -- the house whose own-auction list holds its auctions (T.onOwned)
     }
     -- T32: the prediction at posting time, kept on the journal entry so Analytics can set it
@@ -1580,6 +1636,7 @@ function T.onAuctionCreated(auctionID)
             qty = l.qty,
             amount = l.price * l.qty,
             deposit = l.deposit,
+            hours = l.hours,
             sure = l.sure,
             perDay = l.perDay,
         })
@@ -1827,8 +1884,7 @@ local function learnCut(inv)
     end
     local ratio = inv.cut / inv.bid
     local realm = F.Engine.realm()
-    local scope = ratio > 0.1 and realm .. "-Neutral"
-        or realm .. "-" .. tostring(UnitFactionGroup and UnitFactionGroup("player") or "?")
+    local scope = realm .. "-" .. (ratio > 0.1 and "Neutral" or F.Engine.homeSide())
     F.db.cuts = F.db.cuts or {}
     local old = F.db.cuts[scope]
     F.db.cuts[scope] = U.finite(old) and old + (ratio - old) * 0.2 or ratio
@@ -2245,6 +2301,14 @@ local function postFirst(list, quantity)
             local check = T.prices[item.key]
             if not price and not (check and clock() - check.at <= 300) and not T.noSellers(item.key) then
                 waiting = true -- its search is on the way (readAhead)
+                F.Log.devTrace(
+                    "post.wait",
+                    "%s: no fresh price (%s, check %s, searching %s)",
+                    item.key,
+                    tostring(why),
+                    check and string.format("%.0fs old", clock() - check.at) or "none",
+                    tostring(F.Deals.pending(item.key) and true or false)
+                )
             else
                 if price and floor and price < floor then
                     if F.db.settings.belowMin == "hold" then
@@ -2255,8 +2319,10 @@ local function postFirst(list, quantity)
                 end
                 local qty = price and quantity(item) or 0
                 if qty >= 1 then
+                    F.Log.devTrace("post.go", "%s x%d at %s (%s)", item.key, qty, tostring(price), tostring(why))
                     return T.post(item, qty, price, T.durationFor(item.key, qty, price))
                 end
+                F.Log.devTrace("post.held", "%s: price %s (%s), qty %d", item.key, tostring(price), tostring(why), qty)
                 T.held[item.key] = true
             end
         end
@@ -2269,8 +2335,14 @@ local function postFirst(list, quantity)
     return false, "nothing_to_post"
 end
 
+-- The rank of the page's rows as the player sorted them (UI.order through Engine.screen), or nil.
+local function shownOrder(name)
+    local order = F.Engine.screen().order
+    return order and order(name) or nil
+end
+
 function T.postNext()
-    return postFirst(T.toPost(), function(item)
+    return postFirst(U.inOrder(T.toPost(), shownOrder("sell")), function(item)
         return math.min(F.AH.postCount(item), item.unposted)
     end)
 end
@@ -2487,7 +2559,7 @@ function T.bagCount(key)
 end
 
 function T.postAll(auctionOnly)
-    return postFirst(T.toPostAll(auctionOnly), function(item)
+    return postFirst(U.inOrder(T.toPostAll(auctionOnly), shownOrder("sell")), function(item)
         local rule = T.rule(item.key)
         local spare = T.bagCount(item.key) - (rule and rule.keep or 0)
         return math.min(F.AH.postCount(item), spare)
@@ -2516,7 +2588,9 @@ end
 -- One click cancels the next undercut auction; the item comes back by mail and is posted again
 -- from the Sell page (Post next bought / Post all).
 function T.cancelNextUndercut()
-    local a = T.undercutList()[1]
+    local a = U.inOrder(T.undercutList(), shownOrder("undercuts"), function(x)
+        return x.auctionID
+    end)[1]
     if not a then
         return false, "nothing_undercut"
     end
@@ -2560,7 +2634,7 @@ function T.checkOwned()
         return remaining
     end
     local seen, queue = {}, {}
-    for _, a in ipairs(T.owned) do
+    for _, a in ipairs(U.inOrder(T.owned, shownOrder("auctions"))) do
         if a.key and not a.sold and not seen[a.key] and not T.alone(a.key) then
             seen[a.key] = true
             queue[#queue + 1] = a.key
@@ -2572,7 +2646,12 @@ function T.checkOwned()
 end
 
 local function rememberOwnedPrice(key, rows)
-    rememberPrice(key, rows)
+    -- Silence on a search of an item the player sells is WoW Forever's answer for "nobody else
+    -- sells it" (T10): the auction is shown as the only one, never as "no answer".
+    if rows == nil then
+        F.Log.trace("owned.silent", "%s: no answer, taken as nobody else selling", tostring(key))
+    end
+    rememberPrice(key, rows or {})
     if T.checkingOwned then
         T.checkingOwned[key] = nil
     end
@@ -2998,9 +3077,22 @@ end
 function T.fightOrderActive()
     local job = T.fightOrder
     if job and not F.Shopping.orderEntry(job.key) then
+        -- The order is done (its units bought): Answer next leaves the auction until its prices
+        -- change, and a check of the item is sent so the row shows what is left after the buy,
+        -- not the lots just bought. The row says "bought", not "wait": the player did not choose
+        -- to wait, and every button stays usable on it.
         T.waiting = T.waiting or {}
         T.waiting[job.auctionID] = job.cheapest
+        T.waitWhy = T.waitWhy or {}
+        T.waitWhy[job.auctionID] = "bought"
         T.fightOrder = nil
+        F.Log.trace(
+            "fight.done",
+            "%s auction %s: order ended, checked again",
+            tostring(job.key),
+            tostring(job.auctionID)
+        )
+        T.checkPrice(job.key)
         job = nil
     end
     return job
@@ -3040,6 +3132,17 @@ function T.fightOrderReady()
     return T.readyToBuy(F.Deals.get(job.key))
 end
 
+-- Whether a click on the running order's button does something: buys when its check is ready, or
+-- sends the check again when the last one ended without a lot to buy (no answer, the lots gone).
+-- The button stayed disabled for good after such a check: nothing was pending, nothing ready.
+function T.fightOrderClickable()
+    local job = T.fightOrderActive()
+    if not job then
+        return false
+    end
+    return T.fightOrderReady() or not T.busy() and not F.Deals.pending(job.key) and T.wayReady()
+end
+
 function T.fightOrderClick()
     local job = T.fightOrderActive()
     if not job then
@@ -3051,6 +3154,7 @@ function T.fightOrderClick()
     end
     if not T.fightOrderReady() then
         if not T.busy() and not F.Deals.pending(job.key) then
+            F.Log.trace("fight.recheck", "%s auction %s", tostring(job.key), tostring(job.auctionID))
             F.Deals.verify(job.key)
         end
         return false, "run_checking"
@@ -3102,9 +3206,12 @@ function T.fight(plan, id)
     if not o or o.blocked then
         return false
     end
+    F.Log.trace("fight.click", "%s auction %s: %s", tostring(plan.key), tostring(plan.auction.auctionID), id)
     if id == "wait" then
         T.waiting = T.waiting or {}
         T.waiting[plan.auction.auctionID] = plan.cheapest
+        T.waitWhy = T.waitWhy or {}
+        T.waitWhy[plan.auction.auctionID] = nil
         F.Engine.changed()
         return true
     end
@@ -3141,7 +3248,10 @@ function T.fightNext()
     if T.fightOrderActive() then
         return T.fightOrderClick()
     end
-    for _, plan in ipairs(T.fightPlans()) do
+    local plans = U.inOrder(T.fightPlans(), shownOrder("undercuts"), function(plan)
+        return plan.auction.auctionID
+    end)
+    for _, plan in ipairs(plans) do
         local waited = T.waiting and T.waiting[plan.auction.auctionID] == plan.cheapest
         if
             plan.verdict ~= "wait"

@@ -136,6 +136,52 @@ class HelperFormatTests(unittest.TestCase):
                          'community')
 
 
+class UpdateNoticeTests(unittest.TestCase):
+    """The helper writes the newest release into the addon's data; the addon has no internet."""
+
+    def notice(self, version, beta=False):
+        lua = runtime()
+        lua.execute(SETUP)
+        lua.execute(ffscan.lua_data_file([], time.time(), [], None,
+                                         {'version': version, 'beta': beta, 'page': 'https://x'}))
+        lua.execute('ForeverFlip.Raw.announceUpdate()')
+        last = lua.eval('ForeverFlip.Log.history[#ForeverFlip.Log.history]')
+        return lua, last and last.text
+
+    def test_a_newer_release_is_said_in_the_chat_and_the_status(self):
+        lua, text = self.notice('99.0.0')
+        self.assertIn('ForeverFlip 99.0.0 is out', text)
+        self.assertEqual(lua.eval('ForeverFlip.Raw.update().version'), '99.0.0')
+        self.assertIn('Update 99.0.0 available', lua.eval('ForeverFlip.UI.updateNote()'))
+
+    def test_the_same_or_an_older_release_says_nothing(self):
+        for version in ('3.0.0', '2.9.9', '3.0.0-beta.4', 'junk'):
+            with self.subTest(version=version):
+                lua, text = self.notice(version)
+                self.assertNotIn('is out', text or '')
+                self.assertIsNone(lua.eval('ForeverFlip.Raw.update()'))
+
+    def test_versions_compare_by_stage(self):
+        lua = runtime()
+        lua.execute(SETUP)
+        newer = lua.eval('ForeverFlip.Util.versionNewer')
+        self.assertTrue(newer('3.0.1', '3.0.0'))
+        self.assertTrue(newer('3.1.0-beta.1', '3.0.0'))
+        self.assertTrue(newer('3.1.0', '3.1.0-rc.1'))
+        self.assertTrue(newer('3.1.0-rc.1', '3.1.0-beta.9'))
+        self.assertTrue(newer('3.1.0-beta.10', '3.1.0-beta.9'))
+        self.assertFalse(newer('3.1.0-beta.1', '3.1.0'))
+        self.assertFalse(newer('3.0.0', '3.0.0'))
+        self.assertFalse(newer('3.1.0-beta', '3.0.0'), 'a stage without its number is no version (as in Sync)')
+
+    def test_the_data_file_without_a_release_still_reads(self):
+        lua = runtime()
+        lua.execute(SETUP)
+        lua.execute(ffscan.lua_data_file([], time.time(), ['a@1'], {'R-A': {'checked_at': 5}}))
+        self.assertIsNone(lua.eval('ForeverFlip.Raw.update()'))
+        self.assertTrue(lua.eval("ForeverFlipShared.uploaded['a@1']"))
+
+
 class SealTests(unittest.TestCase):
     def saved(self):
         lua = runtime()

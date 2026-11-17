@@ -1,7 +1,8 @@
 -- Capability adapters: what this client offers (C.caps) and the calls that differ between clients,
 -- in one place. The documented C_* function is asked first; a bare deprecated global only when its
 -- namespace is missing (the client installs those only while `loadDeprecationFallbacks` is on).
--- WoW Forever (Interface 16001) is the only verified target. Compat never calls C_AuctionHouse:
+-- WoW Forever (Interface 16001) is the verified target; Retail (12.x) is supported by the same
+-- checks: what differs is asked of the API (C.caps), never of a version number. Compat never calls C_AuctionHouse:
 -- it only reports whether its functions exist; AH.lua is the only file that calls them.
 local F = ForeverFlip
 local U = F.Util
@@ -56,6 +57,19 @@ local CHECKS = {
     addonMessages = function()
         return has(C_ChatInfo, "SendAddonMessage")
     end,
+    -- The WoW Forever client: its experience presets (Classic / Enhanced) exist on no other client.
+    forever = function()
+        return (Enum and Enum.ForeverExperiencePreset ~= nil) or has(C_GameRules, "GetForeverExperiencePreset")
+    end,
+    -- Alliance, Horde and the neutral goblin houses each keep their own auctions (WoW Forever).
+    -- Without it (Retail) one auction house serves both factions of the realm: the server's house.
+    factionHouses = function()
+        return C.caps.forever
+    end,
+    -- Secret values (Retail 12): some answers, a tooltip's item in combat among them, cannot be read.
+    secrets = function()
+        return type(issecretvalue) == "function"
+    end,
 }
 C.caps = setmetatable({}, {
     __index = function(_, name)
@@ -65,6 +79,47 @@ C.caps = setmetatable({}, {
         end
     end,
 })
+
+-- Whether `v` is a secret value the addon may not read (only clients with secret values have any).
+function C.secret(v)
+    if type(issecretvalue) ~= "function" then
+        return false
+    end
+    local ok, s = pcall(issecretvalue, v)
+    return not ok or s == true
+end
+
+-- Realms -------------------------------------------------------------------------------------------
+-- A realm name as the game compares them: no spaces or hyphens, case ignored ("Argent Dawn" and
+-- "ArgentDawn" are one realm).
+function C.realmKey(name)
+    if type(name) ~= "string" then
+        return nil
+    end
+    return (name:gsub("[%s%-']", ""):lower())
+end
+
+-- The realms connected to the player's: they share one auction house. Keys as C.realmKey, the
+-- player's own realm included; just the own realm without the connected-realm list.
+function C.connectedRealms()
+    local set = {}
+    local own = C.realmKey(GetRealmName and GetRealmName())
+    if own then
+        set[own] = true
+    end
+    if type(GetAutoCompleteRealms) == "function" then
+        local ok, list = pcall(GetAutoCompleteRealms)
+        if ok and type(list) == "table" then
+            for _, name in ipairs(list) do
+                local key = C.realmKey(name)
+                if key then
+                    set[key] = true
+                end
+            end
+        end
+    end
+    return set
+end
 
 -- Spells ------------------------------------------------------------------------------------------
 -- Whether the character knows spell `id`: true, false, or nil when no answer (Crafting: a recipe's

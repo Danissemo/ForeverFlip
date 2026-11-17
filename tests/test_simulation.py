@@ -112,13 +112,11 @@ class SimulationTests(unittest.TestCase):
 def fresh_runtime(saved_lua=None, open_ah=True):
     """A client after /reload: the addon files load again and read the saved data written as text."""
     import lupa.lua51 as lupa
-    from test_addon import ADDON
+    from test_addon import toc_files
     lua = lupa.LuaRuntime(unpack_returned_tuples=True)
     lua.execute((HERE / 'mock.lua').read_text(encoding='utf-8'))
-    for line in (ADDON / 'ForeverFlip.toc').read_text(encoding='utf-8').splitlines():
-        line = line.strip()
-        if line.endswith('.lua'):
-            lua.execute((ADDON / line).read_text(encoding='utf-8'))
+    for path in toc_files():
+        lua.execute(path.read_text(encoding='utf-8'))
     if saved_lua:
         lua.execute(saved_lua)
     lua.execute("fire('ADDON_LOADED','ForeverFlip')")

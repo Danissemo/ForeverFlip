@@ -87,7 +87,7 @@ class StatusBatchTests(unittest.TestCase):
         run(0.1);assert(D.search and sends()==101)
         ''')
 
-    def test_dropped_key_uses_backoff_then_succeeds_on_the_batch_second_pass(self):
+    def test_dropped_key_uses_backoff_then_succeeds_on_its_second_try_before_the_next_row(self):
         run(BATCH + '''D.startBatch('sell',{keys[1],keys[2]},false)
         for attempt=1,3 do
             assert(D.search);D.onDropped()
@@ -97,11 +97,11 @@ class StatusBatchTests(unittest.TestCase):
             end
         end
         local done,total,active,failed=D.batchProgress()
-        assert(done==1 and total==2 and active and failed==1)
-        run(0.5);assert(D.search.key==keys[2]);answer()
+        assert(done==0 and total==2 and active and failed==0,'the dropped key is sent again at once')
+        run(2.5);assert(D.search and D.search.key==keys[1],'top to bottom: before the next row');answer()
         done,total,active,failed=D.batchProgress()
-        assert(done==1 and total==2 and active and failed==0,'the dropped key gets a second try')
-        run(1.1);assert(D.search and D.search.key==keys[1]);answer()
+        assert(done==1 and total==2 and active and failed==0)
+        run(1.1);assert(D.search and D.search.key==keys[2]);answer()
         done,total,active,failed=D.batchProgress()
         assert(done==2 and total==2 and not active and failed==0 and sends()==5)
         ''')

@@ -107,6 +107,41 @@ class DurationTests(unittest.TestCase):
         assert(T.expectedHours('c:10',1,150)==48,'own sales: two days each')
         assert(T.durationFor('c:10',1,150)==2,'slow by own sales, dear 24 hours: 8 hours')""")
 
+    def test_a_contested_item_posts_short(self):
+        run(self.AUTO + """-- deposits at the usual multiples: 24 hours win while nobody undercuts
+        F.AH.resetDeposits();C_AuctionHouse.CalculateCommodityDeposit=function(_,d) return ({10000,20000,40000})[d] end
+        assert(T.durationFor('c:10',units(20),150)==3)
+        -- undercut every half hour or so: a long post waits behind cheaper lots, its deposit is lost
+        h.sales.cuts=48
+        local costs,choice,_,_,b=T.durationCosts('c:10',units(20),150)
+        assert(b>1 and choice==1,choice..' '..costs[1]..' '..costs[2]..' '..costs[3])
+        -- a rare undercut changes nothing
+        h.sales.cuts=1
+        assert(T.durationFor('c:10',units(20),150)==3)""")
+
+    def test_own_posts_that_expired_decide(self):
+        run(self.AUTO + """F.AH.resetDeposits();C_AuctionHouse.CalculateCommodityDeposit=function(_,d) return ({100,100,100000})[d] end
+        local c=F.Data.char(F.db,F.Engine.owner())
+        for i=1,8 do c.journal[#c.journal+1]={at=now-i*3600,kind='post',key='c:10',qty=1,hours=24} end
+        for i=1,2 do c.journal[#c.journal+1]={at=now-i*60,kind='sell',key='c:10',qty=1} end
+        for i=1,6 do c.journal[#c.journal+1]={at=now-i*60,kind='expired',key='c:10',qty=1,lossQty=1} end
+        local o=T.ownOutcomes('c:10');assert(o.sold==2 and o.expired==6 and o.hours==24 and o.lot==1)
+        local hours,source=T.expectedHours('c:10',1,150)
+        assert(source=='own posts' and hours>60 and hours<90,tostring(hours))
+        assert(T.durationFor('c:10',1,150)==2,'most posts came back: no dear 24-hour deposit')
+        -- outcomes older than a month say nothing
+        for _,e in ipairs(c.journal) do e.at=now-40*86400 end
+        assert(select(2,T.expectedHours('c:10',1,150))=='market')""")
+
+    def test_a_post_remembers_its_duration(self):
+        run(SELL + """F.db.settings.duration=2
+        putBag(0,1,30,1);run(0.1)
+        local item;for _,b in ipairs(F.AH.bagItems()) do if b.key=='i:30' then item=b end end
+        assert(item and T.post(item,1,50000,2))
+        fire('AUCTION_HOUSE_AUCTION_CREATED',77)
+        local c=F.Data.char(F.db,F.Engine.owner());local e=c.journal[#c.journal]
+        assert(e.kind=='post' and e.key=='i:30' and e.hours==8,tostring(e.kind)..' '..tostring(e.hours))""")
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -35,6 +35,25 @@ class TodayTests(unittest.TestCase):
         local later = A.results(1, stop + 1)
         assert(later.profit == 0 and later.sales == 0, later.profit)''')
 
+    def test_today_is_split_by_the_hour_for_the_chart(self):
+        run(BASE + '''local start = A.dayStart(now)
+        sell(start + 60, 300, 'c:20')            -- 00:01
+        sell(start + 3 * 3600 + 5, 200, 'c:30')  -- 03:00
+        sell(start + 3 * 3600 + 900, 100, 'c:30')
+        local r = A.results(1, now)
+        assert(#r.hours == 24 and r.hours[1].hour == 0 and r.hours[24].hour == 23)
+        assert(r.hours[1].profit == 300 and r.hours[4].profit == 300 and r.hours[2].profit == 0,
+            r.hours[1].profit .. ' ' .. r.hours[4].profit)
+        local sum = 0
+        for _, h in ipairs(r.hours) do sum = sum + h.profit end
+        assert(sum == r.profit, 'the hours add up to the day')
+        UI = ForeverFlip.UI
+        UI.show('analytics'); UI.analyticsDays = 1; UI.refreshAnalytics()
+        local shown = 0
+        for _, bar in ipairs(UI.bars) do if bar:IsShown() then shown = shown + 1 end end
+        assert(shown == 24, 'a bar an hour, not one block: ' .. shown)
+        assert(A.results(7, now).hours == nil, 'longer periods stay a bar a day')''')
+
     def test_the_local_day_is_not_the_utc_day(self):
         # A player three hours east of UTC: their midnight is 21:00 UTC of the day before.
         run(BASE + '''date = function(fmt, t)
@@ -54,7 +73,7 @@ class TodayTests(unittest.TestCase):
         UI.show('analytics'); UI.periodButtons[1]:Click()
         assert(UI.analyticsDays == 1 and #UI.bars >= 1 and UI.bars[1]:IsShown())
         assert(UI.resultsHead:GetText():find('today', 1, true), UI.resultsHead:GetText())
-        assert(UI.chartTitle:GetText() == 'Profit today', UI.chartTitle:GetText())
+        assert(UI.chartTitle:GetText() == 'Profit today, by hour', UI.chartTitle:GetText())
         assert(not UI.periodButtons[1]:IsEnabled() and UI.periodButtons[7]:IsEnabled())''')
 
 

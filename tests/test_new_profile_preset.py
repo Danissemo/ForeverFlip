@@ -4,16 +4,14 @@ import unittest
 
 import lupa.lua51 as lupa
 
-from test_addon import ADDON, HERE
+from test_addon import HERE, toc_files
 
 
 def load(saved):
     lua = lupa.LuaRuntime(unpack_returned_tuples=True)
     lua.execute((HERE / 'mock.lua').read_text(encoding='utf-8'))
-    for line in (ADDON / 'ForeverFlip.toc').read_text(encoding='utf-8').splitlines():
-        line = line.strip()
-        if line.endswith('.lua'):
-            lua.execute((ADDON / line).read_text(encoding='utf-8'))
+    for path in toc_files():
+        lua.execute(path.read_text(encoding='utf-8'))
     lua.execute(saved)
     lua.execute("fire('ADDON_LOADED','ForeverFlip')")
     return lua

@@ -122,6 +122,30 @@ local MARKET_VIEWS = {
         "What each item earned or lost in the period chosen above: profit, money in, units sold and return.",
     },
 }
+-- The list buttons share the row's width: seven at a fixed 96 px ran past the window's edge.
+UI.VIEW_GAP = 3
+function UI.layoutViewButtons()
+    local row = UI.viewRow
+    if not row then
+        return
+    end
+    local total = tonumber(row.GetWidth and row:GetWidth() or 0) or 0
+    local n = #MARKET_VIEWS
+    local width = 96
+    if total > 0 then
+        width = math.floor((total - 12 - UI.VIEW_GAP * (n - 1)) / n)
+    end
+    for i, v in ipairs(MARKET_VIEWS) do
+        local b = UI.viewButtons[v[1]]
+        b:ClearAllPoints()
+        b:SetWidth(width)
+        b:SetPoint("LEFT", row, "LEFT", 6 + (i - 1) * (width + UI.VIEW_GAP), 0)
+        if b.fitLabel then
+            b:fitLabel()
+        end
+    end
+end
+
 -- The column names of the market lists and of My results (the table is the same).
 local MARKET_HEADERS = { "Usual price", "Cheapest", "Change", "Sells/day" }
 local RESULT_HEADERS = { "Profit", "Earned", "Sold", "Return" }
@@ -227,14 +251,15 @@ function UI.createAnalytics(p)
     views:SetPoint("TOPRIGHT", top, "BOTTOMRIGHT", 0, 0)
     views:SetHeight(26)
     UI.viewButtons = {}
-    for i, v in ipairs(MARKET_VIEWS) do
-        local b = button(views, v[2], 96, function()
+    UI.viewRow = views
+    for _, v in ipairs(MARKET_VIEWS) do
+        UI.viewButtons[v[1]] = button(views, v[2], 96, function()
             UI.marketView = v[1]
             UI.refresh()
         end)
-        b:SetPoint("LEFT", views, "LEFT", 6 + (i - 1) * 99, 0)
-        UI.viewButtons[v[1]] = b
     end
+    views:SetScript("OnSizeChanged", UI.layoutViewButtons)
+    UI.layoutViewButtons()
     local list = CreateFrame("Frame", nil, p)
     list:SetPoint("TOPLEFT", views, "BOTTOMLEFT", 0, 0)
     list:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 0, 22)
@@ -508,11 +533,15 @@ function UI.refreshAnalytics()
         UI.fitText(pair.value, pairsText[id][2], W - 100, 2, nil, true)
     end
     -- Chart.
-    UI.chartTitle:SetText(days == 1 and L("Profit today") or string.format(L("Profit a day, last %d days"), days))
+    UI.chartTitle:SetText(
+        days == 1 and L("Profit today, by hour") or string.format(L("Profit a day, last %d days"), days)
+    )
+    -- Today: a bar an hour (one bar for the whole day filled the chart); longer periods: a bar a day.
+    local series = days == 1 and r.hours or r.days
     -- The zero line sits where the gains and losses of the period split the height, so the bars
     -- use all of it.
     local up, down = 0, 0
-    for _, d in ipairs(r.days) do
+    for _, d in ipairs(series) do
         up, down = math.max(up, d.profit), math.max(down, -d.profit)
     end
     local height = (UI.chart.GetHeight and UI.chart:GetHeight() or 0)
@@ -524,8 +553,8 @@ function UI.refreshAnalytics()
     UI.chartZero:SetPoint("BOTTOMRIGHT", UI.chart, "BOTTOMRIGHT", 0, zeroY)
     local chartWidth = (UI.chart.GetWidth and UI.chart:GetWidth() or 0)
     chartWidth = chartWidth > 20 and chartWidth or 300
-    local width = math.floor(chartWidth / #r.days)
-    for i, d in ipairs(r.days) do
+    local width = math.floor(chartWidth / #series)
+    for i, d in ipairs(series) do
         local bar = UI.bars[i]
         if not bar then
             bar = UI.chart:CreateTexture(nil, "ARTWORK")
@@ -544,7 +573,7 @@ function UI.refreshAnalytics()
         end
         bar:Show()
     end
-    for i = #r.days + 1, #UI.bars do
+    for i = #series + 1, #UI.bars do
         UI.bars[i]:Hide()
     end
     -- Market lists.

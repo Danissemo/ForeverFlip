@@ -26,7 +26,9 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ADDON = ROOT / "ForeverFlip"
 TOC = ADDON / "ForeverFlip.toc"
-EXTRA_FILES = [ROOT / "LICENSE"]
+# The player's documents travel in the addon folder too, as other addons ship theirs.
+EXTRA_FILES = [ROOT / "LICENSE", ROOT / "README.md", ROOT / "CHANGELOG.md"]
+UTIL = ADDON / "Core" / "Util.lua"
 
 
 def fail(message: str) -> None:
@@ -48,7 +50,8 @@ def read_toc() -> tuple[str, list[str]]:
             continue
         if line.startswith("#"):
             continue
-        files.append(line)
+        # The TOC writes folders with the game's "\\"; the archive and the file system take "/".
+        files.append(line.replace("\\", "/"))
     if not version:
         fail("the TOC has no '## Version:' line")
     return version, files
@@ -59,13 +62,14 @@ def check_sources(version: str, files: list[str]) -> None:
         if not (ADDON / name).is_file():
             fail(f"the TOC lists {name}, which does not exist")
     listed = {name.lower() for name in files}
-    for path in ADDON.glob("*.lua"):
-        if path.name.lower() not in listed:
-            fail(f"{path.name} is not listed in the TOC")
-    util = (ADDON / "Util.lua").read_text(encoding="utf-8")
+    for path in ADDON.rglob("*.lua"):
+        rel = path.relative_to(ADDON).as_posix()
+        if rel.lower() not in listed:
+            fail(f"{rel} is not listed in the TOC")
+    util = UTIL.read_text(encoding="utf-8")
     match = re.search(r'F\.version\s*=\s*"([^"]+)"', util)
     if not match or match.group(1) != version:
-        fail(f"F.version in Util.lua does not match the TOC version {version}")
+        fail(f"F.version in Core/Util.lua does not match the TOC version {version}")
 
 
 def run_tests() -> None:

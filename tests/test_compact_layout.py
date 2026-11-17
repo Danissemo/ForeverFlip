@@ -8,7 +8,7 @@ from test_addon import SETUP, run
 
 # UI.lua and its page files (UI*.lua): the window's whole source.
 ADDON = Path(__file__).resolve().parent.parent / 'ForeverFlip'
-UI = ''.join(path.read_text(encoding='utf-8') for path in sorted(ADDON.glob('UI*.lua')))
+UI = ''.join(path.read_text(encoding='utf-8') for path in sorted((ADDON / 'UI').glob('*.lua')))
 PAGE = 432  # height of a page (the Crafting page's note: 432 - 108 = 324 = 24 + 15 x 20)
 HEADER, ROW = 24, 20
 

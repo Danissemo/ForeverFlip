@@ -91,18 +91,26 @@ If you add a game API call, add a fake for it to `mock.lua`, based on behaviour 
 
 ## Releasing
 
-1. Update the version in **both** `ForeverFlip/ForeverFlip.toc` (`## Version:`) and
-   `ForeverFlip/Util.lua` (`F.version`). The build fails if they differ.
-2. Move the `Unreleased` notes in `CHANGELOG.md` under a new `## [x.y.z] - YYYY-MM-DD` heading.
-   Update the version in `docs/testing.md` and its cards, then rebuild the tester workbook with
+1. Write the notes under `## [Unreleased]` in `CHANGELOG.md`. For a beta, also update the version in
+   `docs/testing.md` and its cards, then rebuild the tester workbook with
    `python tools/make_tester_workbook.py` (a test fails while it is out of date).
-3. Go through the [in-game checklist](docs/testing.md#in-game-checklist).
-4. Commit, then tag and push:
+2. Go through the [in-game checklist](docs/testing.md#in-game-checklist).
+3. Run the release command with the new version:
 
    ```bash
-   git tag v1.2.3
-   git push origin v1.2.3
+   python tools/devflow.py release 1.2.3
    ```
+
+   It says what it will do and asks you to type the version again. Then it commits whatever is
+   pending (documentation too; `-m "text"` gives that commit its message), writes the version into
+   `ForeverFlip/ForeverFlip.toc` and `ForeverFlip/Core/Util.lua`, turns the `Unreleased` notes into
+   a `## [1.2.3] - YYYY-MM-DD` section with its compare link, checks that the package builds,
+   commits `Release 1.2.3` (the hooks test, install and push `main`), tags `v1.2.3` and pushes the
+   tag. It stops before changing anything when the version is not newer than the current one, the
+   tag exists, the notes are empty, or GitHub has commits this copy lacks.
+
+By hand, the same is: the version in both files (the build fails if they differ), the changelog
+heading, a commit, then `git tag v1.2.3` and `git push origin v1.2.3`.
 
 For a beta, set the version to `x.y.z-beta.N` in both files, give it its own dated changelog
 section and tag `vx.y.z-beta.N`. The workflow publishes it as a pre-release, using that exact

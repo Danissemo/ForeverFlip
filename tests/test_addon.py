@@ -7,14 +7,25 @@ HERE = pathlib.Path(__file__).resolve().parent
 ADDON = HERE.parent / 'ForeverFlip'
 
 
+def toc_files():
+    """The Lua files the TOC loads, in its order (the TOC writes its paths with the game's "\\")."""
+    toc = (ADDON / 'ForeverFlip.toc').read_text(encoding='utf-8')
+    return [ADDON / line.strip().replace('\\', '/') for line in toc.splitlines()
+            if line.strip().endswith('.lua') and not line.startswith('#')]
+
+
+def source(name):
+    """An addon file by its name, in whichever folder it sits (Core/Util.lua: 'Util.lua')."""
+    found = [p for p in ADDON.rglob(name) if p.is_file()]
+    assert len(found) == 1, (name, found)
+    return found[0]
+
+
 def runtime(open_ah=True):
     lua = lupa.LuaRuntime(unpack_returned_tuples=True)
     lua.execute((HERE / 'mock.lua').read_text(encoding='utf-8'))
-    toc = (ADDON / 'ForeverFlip.toc').read_text(encoding='utf-8')
-    for line in toc.splitlines():
-        line = line.strip()
-        if line.endswith('.lua'):
-            lua.execute((ADDON / line).read_text(encoding='utf-8'))
+    for path in toc_files():
+        lua.execute(path.read_text(encoding='utf-8'))
     lua.execute("fire('ADDON_LOADED','ForeverFlip')")
     # Vendor prices in the tests are what merchants really pay; the safety margin for unconfirmed
     # prices has its own tests (test_forever12.py).

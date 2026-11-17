@@ -259,13 +259,21 @@ local function realmOf(scope)
     return scope:match("^(.*)%-([^%-]+)$")
 end
 
-local SIDES = { Alliance = true, Horde = true, Neutral = true }
--- One of the auction houses of the player's realm. Any other text would be a market table that is
--- kept forever (only the scanned house is tidied).
+-- One of the auction houses of the player's realm, or of a realm connected to it (they share
+-- their houses). Any other text would be a market table that is kept forever (only the scanned
+-- house is tidied).
 local function house(scope)
     local realm, side = realmOf(scope)
-    return realm == F.Engine.realm() and SIDES[side] == true
+    return F.Engine.sameHouseRealm(realm) and F.Engine.SIDES[side] == true
 end
+
+-- The same house under the player's own realm name: a connected realm's scan goes to the market
+-- table the player's scans fill.
+local function ownScope(scope)
+    local _, side = realmOf(scope)
+    return F.Engine.realm() .. "-" .. tostring(side)
+end
+S.ownScope = ownScope
 
 -- The scans the history holds, by "<scope>@<time>" (db.sharedSeen): the player's own full scans and
 -- every scan merged. A scan is merged when the history lacks it, whoever made it, and never twice.
@@ -285,12 +293,13 @@ function S.mergeBegin(snap, from, how)
         return nil, "invalid"
     end
     local now = F.Engine.clock()
-    if realmOf(snap.scope) ~= F.Engine.realm() then
+    if not F.Engine.sameHouseRealm((realmOf(snap.scope))) then
         return nil, "other_realm"
     end
     if not house(snap.scope) then
         return nil, "share_invalid"
     end
+    snap.scope = ownScope(snap.scope)
     if now - snap.at > S.MAX_AGE or snap.at > now + S.FUTURE then
         return nil, "old"
     end
@@ -966,10 +975,11 @@ function S.onControl(text, sender)
     if kind == "!Q" then
         local scope, at = unesc(fields[2] or ""), S.dec(fields[3] or "")
         local last = F.Scan.last
-        if not at or not last or last.scope ~= scope or not last.at or last.at <= at + S.SAME_SCAN then
+        -- A connected realm's player asks for the same house under the name of his realm.
+        if not at or not last or not house(scope) or last.scope ~= ownScope(scope) then
             return
         end
-        if now - last.at > S.MAX_AGE then
+        if not last.at or last.at <= at + S.SAME_SCAN or now - last.at > S.MAX_AGE then
             return
         end
         -- Wait a moment: someone else may announce the same or a newer scan first.
@@ -981,8 +991,10 @@ function S.onControl(text, sender)
         if not at or not house(scope) or at > now + S.FUTURE or now - at > S.MAX_AGE then
             return
         end
-        S.heard[scope] = math.max(S.heard[scope] or 0, at)
-        if not F.db.settings.shareReceive or scope ~= F.Engine.scope() or at <= S.newest(scope) + S.SAME_SCAN then
+        -- Kept under the player's own realm name: a connected realm's scan is of the same house.
+        local own = ownScope(scope)
+        S.heard[own] = math.max(S.heard[own] or 0, at)
+        if not F.db.settings.shareReceive or own ~= F.Engine.scope() or at <= S.newest(own) + S.SAME_SCAN then
             return
         end
         local ask = name .. "@" .. at

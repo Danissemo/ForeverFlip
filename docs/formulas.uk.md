@@ -1366,26 +1366,26 @@ quantity = entry.qty або 0
 
 | Файл | Визначальні функції / дані | Розділи звіту |
 |---|---|---|
-| [ForeverFlip/Util.lua](C:/FF/development/foreverflip/ForeverFlip/Util.lua) | `U.stepDown`, `U.stepUp`, `U.below`, `U.money`, `U.parseMoney` | 0.1–0.2 |
-| [ForeverFlip/Market.lua](C:/FF/development/foreverflip/ForeverFlip/Market.lua) | `M.bucketValue`, `M.usual`, `M.recordFlow`, `M.recordSales`, `M.demandAt`, `M.saleability`, `M.salePrice`, `M.saleCap`, `M.saleEvidence`, `M.confidence`, `M.timing`, `M.advice`, `M.depositRisk`, `M.net`, `M.breakEven`, `M.evaluate` | 0, 2, 5, 6, 8, 12 |
-| [ForeverFlip/Data.lua](C:/FF/development/foreverflip/ForeverFlip/Data.lua) | `D.DEFAULTS`, `addDay`, `D.addPosition`, `D.takePosition`, `D.sale`, `D.addCost`, `shareLoss` | 6.1, 6.7–6.9, 7 |
-| [ForeverFlip/Shopping.lua](C:/FF/development/foreverflip/ForeverFlip/Shopping.lua) | `S.add`, `S.evaluate`, `S.bought` | 3.1, 4.3 |
-| [ForeverFlip/AH.lua](C:/FF/development/foreverflip/ForeverFlip/AH.lua) | `A.vendorPrice`, `A.depositFn`, `A.learnDeposit`, `A.postCount`, `A.bidRows` | 0.4, 2.4, 2.6, 5.5 |
-| [ForeverFlip/Scan.lua](C:/FF/development/foreverflip/ForeverFlip/Scan.lua) | `S.window`, `S.cooldown`, `S.trackLots`, обробка груп і `h.hits` | 0.5–0.6, 1 |
-| [ForeverFlip/Deals.lua](C:/FF/development/foreverflip/ForeverFlip/Deals.lua) | `D.budget`, `itemRoom`, `D.trust`, `D.resaleCap`, `D.sure`, `D.fitWallet`, `D.alert` | 0.7, 2, 12.3 |
-| [ForeverFlip/Sniper.lua](C:/FF/development/foreverflip/ForeverFlip/Sniper.lua) | `exitOf`, `S.threshold`, `S.judge` | 1.3 |
-| [ForeverFlip/Trade.lua](C:/FF/development/foreverflip/ForeverFlip/Trade.lua) | `T.undercut`, `T.floorFor`, `T.quote`, `T.expectedHours`, `T.durationCosts`, `T.rate`, `T.saleChances`, `T.expectedSold`, `T.fightPlan`, `T.itemStats`, `T.vendorSellList`, `T.summary` | 0.3, 0.7–0.8, 2.7, 5–6, 9–10 |
-| [ForeverFlip/Mail.lua](C:/FF/development/foreverflip/ForeverFlip/Mail.lua) | `Mail.count`, `Mail.record` | 10 |
-| [ForeverFlip/Analytics.lua](C:/FF/development/foreverflip/ForeverFlip/Analytics.lua) | `A.results`, `rowOf`, `collect`, `A.realm`, `A.csv` | 6.1–6.6, 13.1 |
-| [ForeverFlip/Merchant.lua](C:/FF/development/foreverflip/ForeverFlip/Merchant.lua) | `V.offers`, `V.buy`, `V.settle`, `V.watchBuyback`, `V.learnBuyback` | 9 |
-| [ForeverFlip/Disenchant.lua](C:/FF/development/foreverflip/ForeverFlip/Disenchant.lua) | `UNCOMMON`, `RARE`, `DE.outcomes`, `DE.materialPrice`, `DE.value`, `DE.evaluate` | 2.5, 11.2–11.3 |
-| [ForeverFlip/Crafting.lua](C:/FF/development/foreverflip/ForeverFlip/Crafting.lua) | `C.learn`, `C.materialCost`, `C.profits`, `C.plan`, `C.shopMaterials` | 4, 11.1 |
-| [ForeverFlip/Bids.lua](C:/FF/development/foreverflip/ForeverFlip/Bids.lua) | `B.value`, `B.finish`, `B.read`, `B.maxBid`, `B.mine` | 2.6, 3.2 |
-| [ForeverFlip/Share.lua](C:/FF/development/foreverflip/ForeverFlip/Share.lua) | `S.mergeBegin`, `S.mergeSome`, `S.mergeDay`, `S.send`, побудова повідомлення | 7.4, 13.2 |
-| [ForeverFlip/Raw.lua](C:/FF/development/foreverflip/ForeverFlip/Raw.lua) | `R.saved`, `R.sharedSummary` | Лічильники спільних даних, 7.4 |
-| [ForeverFlip/Core.lua](C:/FF/development/foreverflip/ForeverFlip/Core.lua) | `E.cutFor`, `E.applyCut` | 0.3 |
-| [ForeverFlip/UI.lua](C:/FF/development/foreverflip/ForeverFlip/UI.lua) | `UI.GROUPS`, усі `UI.refresh*`, `UI.lotRow`, `UI.showHistory`, `UI.bestTooltip`, `tooltipLines` | Структура вікон, відображення й округлення |
-| [ForeverFlip/Locale.lua](C:/FF/development/foreverflip/ForeverFlip/Locale.lua), `ForeverFlip/Bindings.xml` | Локалізація та прив’язки клавіш | Нових розрахунків не додають |
+| [ForeverFlip/Core/Util.lua](C:/FF/development/foreverflip/ForeverFlip/Core/Util.lua) | `U.stepDown`, `U.stepUp`, `U.below`, `U.money`, `U.parseMoney` | 0.1–0.2 |
+| [ForeverFlip/Modules/Market.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Market.lua) | `M.bucketValue`, `M.usual`, `M.recordFlow`, `M.recordSales`, `M.demandAt`, `M.saleability`, `M.salePrice`, `M.saleCap`, `M.saleEvidence`, `M.confidence`, `M.timing`, `M.advice`, `M.depositRisk`, `M.net`, `M.breakEven`, `M.evaluate` | 0, 2, 5, 6, 8, 12 |
+| [ForeverFlip/Core/Data.lua](C:/FF/development/foreverflip/ForeverFlip/Core/Data.lua) | `D.DEFAULTS`, `addDay`, `D.addPosition`, `D.takePosition`, `D.sale`, `D.addCost`, `shareLoss` | 6.1, 6.7–6.9, 7 |
+| [ForeverFlip/Modules/Shopping.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Shopping.lua) | `S.add`, `S.evaluate`, `S.bought` | 3.1, 4.3 |
+| [ForeverFlip/Modules/AH.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/AH.lua) | `A.vendorPrice`, `A.depositFn`, `A.learnDeposit`, `A.postCount`, `A.bidRows` | 0.4, 2.4, 2.6, 5.5 |
+| [ForeverFlip/Modules/Scan.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Scan.lua) | `S.window`, `S.cooldown`, `S.trackLots`, обробка груп і `h.hits` | 0.5–0.6, 1 |
+| [ForeverFlip/Modules/Deals.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Deals.lua) | `D.budget`, `itemRoom`, `D.trust`, `D.resaleCap`, `D.sure`, `D.fitWallet`, `D.alert` | 0.7, 2, 12.3 |
+| [ForeverFlip/Modules/Sniper.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Sniper.lua) | `exitOf`, `S.threshold`, `S.judge` | 1.3 |
+| [ForeverFlip/Modules/Trade.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Trade.lua) | `T.undercut`, `T.floorFor`, `T.quote`, `T.expectedHours`, `T.durationCosts`, `T.rate`, `T.saleChances`, `T.expectedSold`, `T.fightPlan`, `T.itemStats`, `T.vendorSellList`, `T.summary` | 0.3, 0.7–0.8, 2.7, 5–6, 9–10 |
+| [ForeverFlip/Modules/Mail.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Mail.lua) | `Mail.count`, `Mail.record` | 10 |
+| [ForeverFlip/Modules/Analytics.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Analytics.lua) | `A.results`, `rowOf`, `collect`, `A.realm`, `A.csv` | 6.1–6.6, 13.1 |
+| [ForeverFlip/Modules/Merchant.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Merchant.lua) | `V.offers`, `V.buy`, `V.settle`, `V.watchBuyback`, `V.learnBuyback` | 9 |
+| [ForeverFlip/Modules/Disenchant.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Disenchant.lua) | `UNCOMMON`, `RARE`, `DE.outcomes`, `DE.materialPrice`, `DE.value`, `DE.evaluate` | 2.5, 11.2–11.3 |
+| [ForeverFlip/Modules/Crafting.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Crafting.lua) | `C.learn`, `C.materialCost`, `C.profits`, `C.plan`, `C.shopMaterials` | 4, 11.1 |
+| [ForeverFlip/Modules/Bids.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Bids.lua) | `B.value`, `B.finish`, `B.read`, `B.maxBid`, `B.mine` | 2.6, 3.2 |
+| [ForeverFlip/Modules/Share.lua](C:/FF/development/foreverflip/ForeverFlip/Modules/Share.lua) | `S.mergeBegin`, `S.mergeSome`, `S.mergeDay`, `S.send`, побудова повідомлення | 7.4, 13.2 |
+| [ForeverFlip/Core/Raw.lua](C:/FF/development/foreverflip/ForeverFlip/Core/Raw.lua) | `R.saved`, `R.sharedSummary` | Лічильники спільних даних, 7.4 |
+| [ForeverFlip/Core/Core.lua](C:/FF/development/foreverflip/ForeverFlip/Core/Core.lua) | `E.cutFor`, `E.applyCut` | 0.3 |
+| [ForeverFlip/UI/UI.lua](C:/FF/development/foreverflip/ForeverFlip/UI/UI.lua) | `UI.GROUPS`, усі `UI.refresh*`, `UI.lotRow`, `UI.showHistory`, `UI.bestTooltip`, `tooltipLines` | Структура вікон, відображення й округлення |
+| [ForeverFlip/Locale/Locale.lua](C:/FF/development/foreverflip/ForeverFlip/Locale/Locale.lua), `ForeverFlip/Bindings.xml` | Локалізація та прив’язки клавіш | Нових розрахунків не додають |
 
 Перевірка навігації: 6 основних груп; «Угоди» — 4 сторінки; «Список покупок» — 2; «Крафт» — 1; «Продаж» — 3; «Аналітика» — 3 з 4 фільтрами журналу; «Налаштування» — 4. Також враховано історію цін, торговця, пошту, професію, підказки, позначки купівлі, сповіщення, експорт, імпорт і діагностику.
 

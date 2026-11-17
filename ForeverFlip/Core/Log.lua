@@ -122,6 +122,10 @@ function Log.add(category, text, opts)
         end
     end
     Log.append(entry)
+    -- A slash command's answer (raw) is not traced: /ff trace would copy the trace into itself.
+    if not opts.raw then
+        Log.trace("log." .. category, "%s", text)
+    end
     if F.Engine and F.Engine.changed then
         F.Engine.changed()
     end
@@ -255,4 +259,232 @@ function Log.entered()
             end
         end, "logtab")
     end
+end
+
+-- Trace ---------------------------------------------------------------------------------------------
+-- A saved timeline of what the addon does, read afterwards to find why something took long: game
+-- events, searches (sent, held back and by what, answered, timed out), Check all batches and their
+-- stalls, frame parts slower than Log.SLOW_MS, and the messages above. Saved in ForeverFlipData:
+--   trace       the last Log.TRACE_KEEP lines, plain strings "MM-DD HH:MM:SS t=<GetTime> event ...";
+--               a line repeated within 5 seconds counts up (xN) instead of adding one
+--   traceStats  { [kind] = { n, total, max, maxAt } }: running times in milliseconds or seconds
+--               (the kind says which), e.g. search.ms, wait.throttle.ms, part.Scan.step.ms
+--   traceSlow   the Log.SLOW_KEEP slowest searches: { ms, key, name, why, at }
+-- settings.trace = false turns it off (/ff trace off). Kinds are a fixed set; keys go only into
+-- lines and traceSlow, so the saved file stays small.
+Log.TRACE_KEEP = 2000
+Log.SLOW_MS = 50
+Log.SLOW_KEEP = 25
+Log.REPEAT_TRACE = 5
+
+-- Milliseconds of a precise clock (debugprofilestop, else GetTime).
+function Log.ms()
+    if debugprofilestop then
+        return debugprofilestop()
+    end
+    return (GetTime and GetTime() or clock()) * 1000
+end
+
+function Log.tracing()
+    local s = settings()
+    return type(F.db) == "table" and not (s and s.trace == false)
+end
+
+-- DEV mode (Settings > Messages, /ff dev): every event, click, page and frame part is traced
+-- with its time, not only searches, checks and slow frames.
+function Log.dev()
+    local s = settings()
+    return Log.tracing() and s ~= nil and s.dev == true
+end
+
+-- Runs fn(...) and traces it as `what` with its time: always when it took Log.SLOW_MS or more
+-- (the game waited for it), every time in DEV mode. Returns what fn returned.
+-- A trace for repairs (each click, status message, posting decision): only in DEV mode.
+function Log.devTrace(event, fmt, ...)
+    if Log.dev() then
+        Log.trace(event, fmt, ...)
+    end
+end
+
+local function finishAction(what, start, ...)
+    local spent = Log.ms() - start
+    if spent >= Log.SLOW_MS then
+        Log.stat("slowaction.ms", spent)
+        Log.trace("slowaction", "%s %.0f ms", what, spent)
+    elseif Log.dev() then
+        Log.trace("action", "%s %.0f ms", what, spent)
+    end
+    return ...
+end
+
+function Log.action(what, fn, ...)
+    if not Log.tracing() then
+        return fn(...)
+    end
+    return finishAction(what, Log.ms(), fn(...))
+end
+
+local traceLast -- { text, line, count, at } of the newest line, for counting repeats
+
+function Log.trace(event, fmt, ...)
+    if not Log.tracing() then
+        return
+    end
+    local text = tostring(event)
+    if fmt ~= nil then
+        local ok, s = pcall(string.format, fmt, ...)
+        text = text .. " " .. (ok and s or tostring(fmt))
+    end
+    local db = F.db
+    if type(db.trace) ~= "table" then
+        db.trace = {}
+    end
+    local list = db.trace
+    local now = clock()
+    local last = traceLast
+    if last and last.text == text and now - last.at <= Log.REPEAT_TRACE and list[#list] == last.line then
+        last.count, last.at = last.count + 1, now
+        last.line = last.base .. string.format(" (x%d)", last.count)
+        list[#list] = last.line
+        return
+    end
+    local stamp = date and date("%m-%d %H:%M:%S", now) or tostring(now)
+    local base = string.format("%s t=%.3f %s", stamp, GetTime and GetTime() or now, text)
+    traceLast = { text = text, base = base, line = base, count = 1, at = now }
+    list[#list + 1] = base
+    local extra = #list - Log.TRACE_KEEP
+    if extra > 0 then
+        -- One cut for many lines: table.remove from the front moves the whole list each time.
+        local kept = {}
+        for i = extra + 1, #list do
+            kept[#kept + 1] = list[i]
+        end
+        db.trace = kept
+    end
+end
+
+-- Adds one measurement of `kind` to the running statistics.
+function Log.stat(kind, value)
+    if not Log.tracing() or type(value) ~= "number" or value ~= value then
+        return
+    end
+    local db = F.db
+    if type(db.traceStats) ~= "table" then
+        db.traceStats = {}
+    end
+    local s = db.traceStats[kind]
+    if type(s) ~= "table" then
+        s = { n = 0, total = 0, max = 0 }
+        db.traceStats[kind] = s
+    end
+    s.n, s.total = s.n + 1, s.total + value
+    if value > s.max then
+        s.max, s.maxAt = value, clock()
+    end
+end
+
+-- Remembers a slow search among the Log.SLOW_KEEP slowest: `ms`, its key and why it took long.
+function Log.slow(ms, key, why)
+    if not Log.tracing() then
+        return
+    end
+    local db = F.db
+    if type(db.traceSlow) ~= "table" then
+        db.traceSlow = {}
+    end
+    local list = db.traceSlow
+    local smallest = list[#list]
+    if #list >= Log.SLOW_KEEP and smallest and smallest.ms >= ms then
+        return
+    end
+    local item = F.Util and F.Util.parseKey and F.Util.parseKey(key)
+    local name = item and F.Compat and F.Compat.itemInfo(item.id)
+    list[#list + 1] = { ms = math.floor(ms + 0.5), key = key, name = name, why = why, at = clock() }
+    table.sort(list, function(a, b)
+        return a.ms > b.ms
+    end)
+    while #list > Log.SLOW_KEEP do
+        list[#list] = nil
+    end
+end
+
+function Log.clearTrace()
+    if type(F.db) == "table" then
+        F.db.trace, F.db.traceStats, F.db.traceSlow = {}, {}, {}
+    end
+    traceLast = nil
+end
+
+-- The statistics as lines, the kind with the most time first.
+function Log.statLines()
+    local out = {}
+    local stats = type(F.db) == "table" and type(F.db.traceStats) == "table" and F.db.traceStats or {}
+    local kinds = {}
+    for kind in pairs(stats) do
+        kinds[#kinds + 1] = kind
+    end
+    table.sort(kinds, function(a, b)
+        return stats[a].total > stats[b].total
+    end)
+    for _, kind in ipairs(kinds) do
+        local s = stats[kind]
+        out[#out + 1] = string.format(
+            "%s: %d times, average %.1f, longest %.1f, total %.0f",
+            kind,
+            s.n,
+            s.n > 0 and s.total / s.n or 0,
+            s.max,
+            s.total
+        )
+    end
+    return out
+end
+
+-- /ff trace [stats|slow|clear|on|off|<lines>]: the answer, as lines for the chat.
+function Log.traceCommand(arg)
+    local L = F.Locale.text
+    local db = F.db
+    arg = arg or ""
+    if arg == "clear" then
+        Log.clearTrace()
+        return { L("Trace cleared.") }
+    end
+    if arg == "on" or arg == "off" then
+        if arg == "off" then
+            db.settings.trace = false
+        else
+            db.settings.trace = nil
+        end
+        return { arg == "off" and L("Trace off.") or L("Trace on.") }
+    end
+    if arg == "dev" then
+        db.settings.dev = not db.settings.dev or nil
+        return { db.settings.dev and L("DEV mode on: every action is traced.") or L("DEV mode off.") }
+    end
+    local out = {}
+    if arg == "stats" or arg == "" then
+        out[#out + 1] = L("Times (ms unless the kind says s):")
+        for _, line in ipairs(Log.statLines()) do
+            out[#out + 1] = "  " .. line
+        end
+    end
+    if arg == "slow" or arg == "" then
+        out[#out + 1] = L("Slowest searches:")
+        for i, s in ipairs(type(db.traceSlow) == "table" and db.traceSlow or {}) do
+            if i > 10 then
+                break
+            end
+            out[#out + 1] = string.format("  %d ms %s %s: %s", s.ms, s.name or "", s.key or "", s.why or "")
+        end
+    end
+    local count = tonumber(arg) or (arg == "" and 20 or 0)
+    local list = type(db.trace) == "table" and db.trace or {}
+    if count > 0 then
+        out[#out + 1] =
+            string.format(L("Last %d of %d trace lines (all are in the saved file):"), math.min(count, #list), #list)
+        for i = math.max(1, #list - count + 1), #list do
+            out[#out + 1] = "  " .. list[i]
+        end
+    end
+    return out
 end

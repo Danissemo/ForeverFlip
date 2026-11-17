@@ -422,7 +422,8 @@ def download_shared(game: pathlib.Path, repo: str, uploaded: list[str] | None = 
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "ForeverFlip_Shared.toc").write_text(ffscan.SHARED_TOC, encoding="utf-8")
     tmp = folder / "Data.lua.tmp"
-    tmp.write_text(ffscan.lua_data_file(texts, time.time(), uploaded, for_addon or None), encoding="utf-8")
+    tmp.write_text(ffscan.lua_data_file(texts, time.time(), uploaded, for_addon or None, LATEST.get(str(game))),
+                   encoding="utf-8")
     shutil.move(str(tmp), str(folder / "Data.lua"))
     return len(texts)
 
@@ -435,12 +436,20 @@ def addon_settings(config: dict) -> tuple[bool, bool]:
     return bool(config.get("update_addon", True)), bool(config.get("beta", False))
 
 
+# The newest release of the player's channel per game folder (each installation has its own build and
+# so its own channel), from the last update check: download_shared writes it into that game's addon
+# data, so the addon can show that an update is out (it has no internet).
+LATEST: dict = {}
+
+
 def check_addon(game: pathlib.Path, config: dict) -> dict:
     """{installed, release (the newer release or None), development (a checkout, never replaced),
     beta, beta_auto (the beta was chosen from the installed build, not by the player)}."""
     installed = addon_update.installed_version(game)
     beta, auto = addon_update.channel(config, installed)
     releases = addon_update.fetch_releases(config.get("addon_repo") or ADDON_REPO, f"ForeverFlipSync/{VERSION}")
+    found = addon_update.candidates(releases, beta)
+    LATEST[str(game)] = {key: found[0][key] for key in ("version", "beta", "page")} if found else None
     return {"installed": installed, "release": addon_update.newer(installed, releases, beta),
             "development": addon_update.is_development_copy(game), "beta": beta, "beta_auto": auto}
 
@@ -532,6 +541,13 @@ def run_once(game: pathlib.Path, repo: str, state: dict, token: str | None, uplo
     exchange = state.setdefault("exchange", {})
     if download:
         report = {}
+        if config is not None and str(game) not in LATEST:
+            # The update check runs beside the first download (the window starts both): without its
+            # answer this Data.lua would lose the release the addon is to name.
+            try:
+                check_addon(game, config)
+            except (addon_update.UpdateError, urllib.error.URLError, OSError, ValueError):
+                pass
         try:
             count = download_shared(game, repo, state.get("uploaded", []), report=report)
             log(f"Community data: {count} scans ready. In game, use /reload to read updated prices.")

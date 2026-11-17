@@ -34,6 +34,14 @@ local BATCH_SCOPES = {
     crafting = "Crafting",
 }
 
+-- A newer ForeverFlip, from the helper's data (Raw.update): put before the idle status line, which
+-- does not wrap and is cut at its end.
+function UI.updateNote()
+    local latest = F.Raw.update()
+    return latest and ("|cff40ff40" .. string.format(L("Update %s available"), tostring(latest.version)) .. "|r · ")
+        or ""
+end
+
 function UI.refreshStatus()
     UI.refreshHouse()
     UI.sniperButton:SetText(L(F.db.settings.sniper and "Sniper: ON" or "Sniper: OFF"))
@@ -181,23 +189,30 @@ function UI.refreshStatus()
         UI.status:SetText(string.format(L("Checking deals on the auction house: %d / %d"), checked, all))
     elseif F.Scan.last then
         UI.status:SetText(
-            string.format(L("Deals: %d · checked: %d · from the scan %s"), all, checked, UI.age(F.Scan.last.at))
+            UI.updateNote()
+                .. string.format(
+                    L("Deals: %d · checked: %d · from the scan %s"),
+                    all,
+                    checked,
+                    UI.age(F.Scan.last.at)
+                )
         )
     else
-        UI.status:SetText(L("Press Full scan to read the whole auction house."))
+        UI.status:SetText(UI.updateNote() .. L("Press Full scan to read the whole auction house."))
     end
 end
 
--- The open auction house in short, and its colour: Alliance blue, Horde red, neutral gold.
+-- The open auction house in short, and its colour: Alliance blue, Horde red, neutral gold, the
+-- server's house of both factions (Retail) white.
+local HOUSES = {
+    Neutral = { "Neutral AH, 15% cut", "ffd100" },
+    Server = { "Server AH", "ffffff" },
+    Horde = { "Horde AH", "ff5050" },
+    Alliance = { "Alliance AH", "4fa3ff" },
+}
 function UI.houseName()
-    if F.Engine.house == "Neutral" then
-        return L("Neutral AH, 15% cut"), "ffd100"
-    end
-    local faction = UnitFactionGroup and UnitFactionGroup("player")
-    if faction == "Horde" then
-        return L("Horde AH"), "ff5050"
-    end
-    return L("Alliance AH"), "4fa3ff"
+    local h = HOUSES[F.Engine.side()] or HOUSES.Alliance
+    return L(h[1]), h[2]
 end
 
 -- The house name sits in the middle of the auction house's bottom bar, right of the money display.
@@ -267,6 +282,7 @@ function UI.houseLine()
 end
 
 function UI.refreshSummary()
+    UI.fitSummary()
     local last = F.Scan.last
     if not last then
         UI.summary:SetText(UI.houseLine())

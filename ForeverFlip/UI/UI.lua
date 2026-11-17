@@ -69,7 +69,71 @@ F.Engine.screenReader = function()
     screen.shown = f and f.IsShown and f:IsShown() and true or false
     screen.section, screen.filter, screen.selected = UI.section, UI.filter, UI.selected
     screen.selectedAt, screen.buyHoverKey, screen.vendorOrder = UI.selectedAt, UI.buyHoverKey, UI.vendorOrder
+    screen.order = UI.order
     return screen
+end
+
+-- Every bulk button (Check all, Post all, Post AH-worthy, Post next bought, Check prices, Answer
+-- next, Cancel next undercut) works down its list as the player sorted it, top to bottom. A page's
+-- list: the table that shows it, and the keys of one row (an item key; an auction's ID as well, for
+-- the buttons that act per auction; a recipe's product and its materials).
+local ORDER_TABLES = {
+    sell = "sellTable",
+    auctions = "auctionTable",
+    undercuts = "undercutTable",
+    shop = "shopTable",
+    bids = "bidTable",
+    crafting = "craftTable",
+    journal = "lotTable",
+}
+local ORDER_KEYS = {
+    auctions = function(a)
+        return { a.key, a.auctionID }
+    end,
+    undercuts = function(plan)
+        local a = plan.auction or {}
+        return { a.key, a.auctionID }
+    end,
+    crafting = function(e)
+        local keys = { e.out and F.AH.keyFor(e.out) }
+        for _, m in ipairs(e.reagents or {}) do
+            keys[#keys + 1] = F.AH.keyFor(m[1])
+        end
+        return keys
+    end,
+}
+local orderCache = {}
+-- { [key] = row } of the list `name` (deals, sell, auctions, undercuts, shop, bids, crafting,
+-- journal) as last drawn; nil before the page was drawn.
+function UI.order(name)
+    local list
+    if name == "deals" then
+        list = UI.dealSorted
+    else
+        local t = ORDER_TABLES[name] and UI[ORDER_TABLES[name]]
+        list = t and t.sorted
+    end
+    if type(list) ~= "table" then
+        return nil
+    end
+    local cached = orderCache[name]
+    if cached and cached.list == list then
+        return cached.rank
+    end
+    local rank, n = {}, 0
+    local keysOf = ORDER_KEYS[name]
+    for _, e in ipairs(list) do
+        local keys = keysOf and keysOf(e) or { e.key }
+        for i = 1, table.maxn(keys) do
+            local k = keys[i]
+            if k ~= nil and rank[k] == nil then
+                n = n + 1
+                rank[k] = n
+            end
+        end
+    end
+    orderCache[name] = { list = list, rank = rank }
+    return rank
 end
 F.Engine.listen("select", function(key)
     UI.selected = key
@@ -294,9 +358,9 @@ local function button(parent, label, width, onClick)
     -- button takes the wider of the two, so a translation never overflows.
     UI.fitButton(b, width or 110)
     UI.keepLabelInside(b)
-    b:SetScript("OnClick", function(...)
+    b:SetScript("OnClick", function(self, ...)
         F.Engine.input()
-        return onClick(...)
+        return F.Log.action("click " .. tostring(self:GetText() or label), onClick, self, ...)
     end)
     return b
 end
@@ -821,16 +885,26 @@ local function icon(id)
     return F.Compat.itemIcon(id)
 end
 
+-- The last name a row showed, per key. While a quick scan checks its finds the client drops items
+-- from its cache and loads them again: their names were "item:12047" for a moment, then came back.
+UI.shownNames = {}
+
 local function nameOf(key, link)
     -- A link with an empty name (the item not loaded yet) would show as "|...".
     local shown = U.linkName(link)
     if shown and shown ~= "" then
+        UI.shownNames[key] = link
         return link
     end
     local item = U.parseKey(key)
     if item then
         local name, itemLink = U.itemInfo(item.id)
-        return itemLink or name or ("item:" .. item.id)
+        local found = itemLink or name
+        if found and U.linkName(found) ~= "" then
+            UI.shownNames[key] = found
+            return found
+        end
+        return UI.shownNames[key] or ("item:" .. item.id)
     end
     return key
 end
@@ -1289,6 +1363,7 @@ local function table_(parent, columns, rows, onClick, onSort)
         for i, e in ipairs(list) do
             out[i] = e
         end
+        t.sorted = out -- the whole list as shown, for the bulk buttons (UI.order)
         if not index then
             return t.window(out)
         end
@@ -1318,6 +1393,7 @@ local function table_(parent, columns, rows, onClick, onSort)
             end
             return va < vb
         end)
+        t.sorted = out
         return t.window(out)
     end
     -- The part of a sorted list the rows show, from the scroll offset; the first header counts.
@@ -1832,11 +1908,19 @@ function UI.layoutMenu(group, id)
     UI.summary:ClearAllPoints()
     UI.summary:SetPoint("TOPLEFT", left, "TOPLEFT", 9, y - 8)
     UI.summary:SetPoint("TOPRIGHT", left, "TOPRIGHT", -4, y - 8)
-    -- A long menu (Analytics with its views open) leaves less room: the summary keeps only the
-    -- lines that fit above the money at the bottom, or none, rather than run out of the window.
-    local height = left:GetHeight()
+    UI.summaryTop = y - 8
+    UI.fitSummary()
+end
+
+-- A long menu (Analytics with its views open) leaves less room: the summary keeps only the lines
+-- that fit above the money at the bottom, or none, rather than run out of the window. Asked again
+-- at each refresh of the summary: the panel measured while the window was still being laid out
+-- was short, and the summary stayed cut to four lines until another page was opened.
+function UI.fitSummary()
+    local left, top = UI.leftPanel, UI.summaryTop
+    local height = left and top and left:GetHeight()
     if type(height) == "number" and height > 0 then
-        local lines = math.floor((height + y - 8 - UI.SUMMARY_BOTTOM) / UI.SUMMARY_LINE)
+        local lines = math.floor((height + top - UI.SUMMARY_BOTTOM) / UI.SUMMARY_LINE)
         UI.summaryLines = math.max(0, lines)
         if lines >= 1 then
             UI.summary:SetMaxLines(lines)
@@ -1864,6 +1948,9 @@ function UI.show(id)
     -- The Safety page joined General (its Limits section); a saved page or an old link still opens.
     if id == "settings:safety" then
         id = "settings"
+    end
+    if F.Log.dev() then
+        F.Log.trace("show", "%s", tostring(id))
     end
     local page, filter = id:match("^(%a+):?(%a*)$")
     if not page or not UI.pages[page] then

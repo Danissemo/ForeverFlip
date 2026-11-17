@@ -52,14 +52,14 @@ function S.active()
     return F.db and (F.db.settings.sniper or S.quick ~= nil) and S.supported() or false
 end
 
--- A quick scan can start: the game offers browse queries, the auction house is open, and neither
--- the sniper (which already browses) nor a full scan runs.
+-- A quick scan can start: the game offers browse queries, the auction house is open, and no full
+-- scan runs. With the sniper on too: the quick scan then reads one whole round of its own and lists
+-- what it finds, which the sniper's rounds do not (it only checks its candidates).
 function S.canQuick()
     return F.db ~= nil
         and S.supported()
         and F.AH.isOpen()
         and not S.quick
-        and not F.db.settings.sniper
         and not F.Scan.busy()
         and not F.Scan.rebuilding()
 end
@@ -68,7 +68,9 @@ function S.startQuick()
     if not S.canQuick() then
         return false
     end
-    S.quick = { at = now(), items = S.items, found = S.found }
+    -- A round of the sniper already under way began before the quick scan: the quick scan's own
+    -- round is the next one, sent right after it (S.onResults).
+    S.quick = { at = now(), items = S.items, found = S.found, after = S.query }
     -- Deals check candidates for the house of its list; with no saved scan here there is none
     -- yet, and the candidates would wait until the quick scan gave up.
     if not F.Deals.scope then
@@ -610,7 +612,10 @@ function S.onResults(first, rows, whole)
     if q.kind == "browse" then
         S.rounds = S.rounds + 1
         S.nextRound = now() + S.PAUSE
-        if S.quick then
+        if S.quick and S.quick.after == q then
+            S.quick.after = nil
+            S.nextRound = now() -- the sniper's round ended: the quick scan's own goes next
+        elseif S.quick then
             -- Read: its candidates are checked next (S.step ends it), with time of their own.
             S.quick.done, S.quick.at = true, now()
         end

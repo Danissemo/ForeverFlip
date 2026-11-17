@@ -21,7 +21,16 @@ Other commands:
     python tools/devflow.py stop      for an AI assistant's "stop" hook: refuses to stop while
                                       changes are not committed, pushes what is not pushed yet
 
-Releases stay manual: a tag (`git push origin vX.Y.Z`) is never pushed by this script.
+    python tools/devflow.py release X.Y.Z [-m text] [--yes]  a release in one step: commits what
+                                      is pending (documentation too; -m gives its message), writes
+                                      the version into the TOC, Core/Util.lua and CHANGELOG.md
+                                      (the [Unreleased] notes become the version's section),
+                                      checks the package builds, commits "Release X.Y.Z", tags
+                                      vX.Y.Z and pushes main and the tag. GitHub Actions then
+                                      publishes the release with those notes. It asks to type the
+                                      version again first (--yes skips that). X.Y.Z-beta.N is a beta.
+
+Only `release` pushes a tag, and only after the version is typed again; commits and hooks never do.
 
 The whole suite takes about a minute, so the hooks and a quick loop run `test` the same way: one
 process per module in parallel (FF_JOBS, default: the processors, at most 8). A module that fails
@@ -39,9 +48,11 @@ Settings (environment variables or `git config`):
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -56,6 +67,7 @@ GAME_PATHS = [
     r"D:\World of Warcraft\_forever_",
 ]
 STYLUA_PATHS = [r"C:\FF\.tools\stylua\stylua.exe"]
+PAPERS = ("LICENSE", "README.md", "CHANGELOG.md")
 CODE = ("ForeverFlip/", "sync/", "tests/", "tools/", ".stylua.toml", "requirements-dev.txt")
 
 
@@ -261,11 +273,14 @@ def install() -> int:
         if not dst.exists() or dst.read_bytes() != src.read_bytes():
             shutil.copy2(src, dst)
             copied += 1
-    shutil.copy2(ROOT / "LICENSE", target / "LICENSE")
+    # The player's papers travel with the addon, as in the release zip (tools/build.py).
+    papers = {pathlib.Path(name) for name in PAPERS}
+    for name in PAPERS:
+        shutil.copy2(ROOT / name, target / name)
     removed = 0
     for p in sorted(target.rglob("*"), reverse=True):
         rel = p.relative_to(target)
-        if p.is_file() and rel not in wanted and rel != pathlib.Path("LICENSE"):
+        if p.is_file() and rel not in wanted and rel not in papers:
             p.unlink()
             removed += 1
         elif p.is_dir() and not any(p.iterdir()):
@@ -364,6 +379,149 @@ def commit(text: str = "") -> int:
     return 0
 
 
+# --- release -------------------------------------------------------------------------------------
+
+TOC = ADDON / "ForeverFlip.toc"
+UTIL = ADDON / "Core" / "Util.lua"
+CHANGELOG = ROOT / "CHANGELOG.md"
+SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?$")
+
+
+def current_version() -> str:
+    found = re.search(r"^## Version:\s*(\S+)", TOC.read_text(encoding="utf-8"), re.M)
+    return found.group(1) if found else ""
+
+
+def version_key(version: str) -> tuple:
+    """Order of versions as Semantic Versioning has it: 3.1.0-beta.1 comes before 3.1.0."""
+    major, minor, patch, pre = SEMVER.match(version).groups()
+    parts = tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in (pre or "").split(".") if p)
+    return (int(major), int(minor), int(patch), 0 if pre else 1, parts)
+
+
+def unreleased(text: str) -> str:
+    """The notes under `## [Unreleased]`, up to the next version heading."""
+    found = re.search(r"^## \[Unreleased\][ \t]*\n(.*?)(?=^## \[|^\[[^\]]+\]: |\Z)", text, re.S | re.M)
+    return found.group(1).strip() if found else ""
+
+
+def stamp_changelog(text: str, version: str, previous: str, day: str) -> str:
+    """The Unreleased notes become the version's section; the compare links follow."""
+    text = re.sub(r"^## \[Unreleased\][ \t]*\n", f"## [Unreleased]\n\n## [{version}] - {day}\n",
+                  text, count=1, flags=re.M)
+    link = f"[{version}]: ../../compare/v{previous}...v{version}\n"
+    head = f"[Unreleased]: ../../compare/v{version}...HEAD\n"
+    text, done = re.subn(r"^\[Unreleased\]: .*\n", lambda _: head + link, text, count=1, flags=re.M)
+    if not done:
+        text = text.rstrip("\n") + "\n\n" + head + link
+    return text
+
+
+def ahead_of_us() -> int:
+    """How many commits GitHub's main has that this copy lacks."""
+    git("fetch", "--quiet", "origin", BRANCH, check=False, timeout=60)
+    counts = git("rev-list", "--left-right", "--count", f"origin/{BRANCH}...{BRANCH}", check=False)
+    try:
+        return int(counts.split()[0])
+    except (ValueError, IndexError):
+        return 0
+
+
+def release(version: str, note: str = "", yes: bool = False) -> int:
+    """`release <version> [-m text] [--yes]`: commit what is pending (documentation included), set the
+    version in the TOC, Core/Util.lua and CHANGELOG.md, build the package to check it, commit
+    "Release <version>", tag v<version> and push main and the tag. GitHub Actions
+    (.github/workflows/release.yml) then builds the zip and Sync and publishes the release with
+    this version's changelog notes; a version with "-" (3.1.0-beta.1) is published as a beta.
+
+    It asks for the version to be typed again before anything is changed, unless --yes is given."""
+    previous = current_version()
+    problems = []
+    if not SEMVER.match(version or ""):
+        problems.append(f"'{version}' is not a version like 3.1.0 or 3.1.0-beta.1")
+    elif SEMVER.match(previous) and version_key(version) <= version_key(previous):
+        problems.append(f"{version} is not newer than the current {previous}")
+    if git("rev-parse", "--abbrev-ref", "HEAD", check=False) != BRANCH:
+        problems.append(f"not on {BRANCH}")
+    if version and git("tag", "--list", f"v{version}", check=False):
+        problems.append(f"the tag v{version} already exists")
+    if os.environ.get("FF_NO_PUSH"):
+        problems.append("FF_NO_PUSH is set: a release has to be pushed")
+    changelog = CHANGELOG.read_text(encoding="utf-8")
+    if not unreleased(changelog):
+        problems.append("CHANGELOG.md has nothing under ## [Unreleased]: write the notes first")
+    guide = ROOT / "docs" / "testing.md"
+    if "-" in version and guide.exists() and version not in guide.read_text(encoding="utf-8"):
+        problems.append(f"docs/testing.md does not name {version}: a beta's notes send testers there "
+                        "(update its cards, then python tools/make_tester_workbook.py)")
+    if not problems and ahead_of_us():
+        problems.append("GitHub has commits this copy lacks: pull first")
+    if problems:
+        for problem in problems:
+            say("release stopped: " + problem)
+        return 2
+
+    pending = git("status", "--porcelain", check=False)
+    say(f"release {previous} -> {version}"
+        + (" (a beta, published as a prerelease)" if "-" in version else ""))
+    if pending:
+        say(f"first the pending changes are committed ({len(pending.splitlines())} files)"
+            + (f": {note}" if note else ", with a message written from them"))
+    say("then: the version in the TOC and Core/Util.lua, the CHANGELOG section, a build check, "
+        f"commit 'Release {version}', tag v{version}, push main and the tag")
+    if not yes:
+        try:
+            answer = input(f"Type {version} to go on: ").strip()
+        except EOFError:
+            answer = ""
+        if answer != version:
+            say("release cancelled, nothing changed")
+            return 1
+
+    if pending:
+        result = commit(note)
+        if result != 0 or git("status", "--porcelain", check=False):
+            say("release stopped: the pending changes were not committed (see above)")
+            return result or 1
+        changelog = CHANGELOG.read_text(encoding="utf-8")
+
+    day = datetime.date.today().isoformat()
+    TOC.write_text(re.sub(r"^## Version:.*$", f"## Version: {version}", TOC.read_text(encoding="utf-8"),
+                          count=1, flags=re.M), encoding="utf-8")
+    UTIL.write_text(re.sub(r'^F\.version = ".*"$', f'F.version = "{version}"',
+                           UTIL.read_text(encoding="utf-8"), count=1, flags=re.M), encoding="utf-8")
+    CHANGELOG.write_text(stamp_changelog(changelog, version, previous, day), encoding="utf-8")
+    if current_version() != version or f'F.version = "{version}"' not in UTIL.read_text(encoding="utf-8"):
+        say("release stopped: the version was not written; check the TOC and Core/Util.lua")
+        return 1
+
+    build = subprocess.run([sys.executable, str(ROOT / "tools" / "build.py"), "--output", "dist"],
+                           cwd=ROOT, capture_output=True, text=True)
+    if build.returncode != 0:
+        sys.stdout.write(build.stdout[-2000:] + build.stderr[-2000:])
+        say("release stopped: the package does not build; the version files are changed but not "
+            "committed (git checkout -- ForeverFlip CHANGELOG.md undoes them)")
+        return build.returncode
+    result = commit(f"Release {version}")
+    if result != 0:
+        return result
+    git("tag", "-a", f"v{version}", "-m", f"ForeverFlip {version}")
+    push()
+    if ahead():
+        say(f"release stopped: main is not on GitHub yet; the tag v{version} is made here, push "
+            f"both with: git push origin {BRANCH} v{version}")
+        return 1
+    out = subprocess.run(["git", "push", "origin", f"v{version}"], cwd=ROOT, capture_output=True,
+                         text=True, timeout=180)
+    if out.returncode != 0:
+        sys.stdout.write(out.stderr[-1000:])
+        say(f"the tag v{version} is made but not pushed: git push origin v{version}")
+        return out.returncode
+    say(f"pushed v{version}: GitHub Actions builds and publishes the release "
+        "(https://github.com/Danissemo/ForeverFlip/actions)")
+    return 0
+
+
 # --- prepare-message -----------------------------------------------------------------------------
 
 TEMPLATE = ROOT / ".git" / "ff-commit-message.txt"
@@ -423,7 +581,8 @@ def stop() -> int:
 
 
 COMMANDS = {"check": check, "test": run_tests, "commit": commit, "prepare-message": prepare_message,
-            "install": install, "push": push, "publish": publish, "stop": stop}
+            "install": install, "push": push, "publish": publish, "stop": stop,
+            "release": release}
 
 if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -436,6 +595,12 @@ if __name__ == "__main__":
         sys.exit(run_tests(word, verbose="-v" in args))
     if command == "commit":
         sys.exit(commit(" ".join(args)))
+    if command == "release":
+        text = ""
+        if "-m" in args and args.index("-m") + 1 < len(args):
+            text = args[args.index("-m") + 1]
+        version = next((a for a in args if not a.startswith("-") and a != text), "")
+        sys.exit(release(version, text, yes="--yes" in args))
     if command == "prepare-message":
         sys.exit(prepare_message(copy="--no-copy" not in args))
     sys.exit(COMMANDS[command]())
