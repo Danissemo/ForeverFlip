@@ -38,7 +38,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `fights` | table | Per-item undercut/repost observations used by selling advice. |
 | `toVendor` | table | `toVendor[key]` = time an item was marked by the anti-undercut plan for a merchant sale. A mark counts for 3 days and is cleared when the item is sold or posted. |
 | `shopping` | table | `shopping[key]` = shopping list entry `{ max, qty, name }`. |
-| `blocked` | table | `blocked[key]` = name of an ignored item. |
+| `blocked` | table | Ignored-item entries (`blocked[key]` = name). The engine also stores a bounded numeric list of protected-action blockage reports here; this mixed use is retained for compatibility and needs a separate cleanup. |
 | `merchantPrices` | table | `merchantPrices[itemID]` = price per unit a merchant asked. |
 | `gold` | table | `gold[owner][day]` = the character's money on that day (day = Unix time / 86400), kept 60 days. |
 | `errors` | array | The latest 20 addon errors, newest first: `{ at, version, message }`. |
@@ -57,6 +57,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `minProfit` | `100` | Minimum profit of a resale. |
 | `minROI` | `0.2` | Minimum resale return (profit / cost). |
 | `spendShare` | `0.8` | Share of the gold on hand one deal may use. |
+| `sellMinReturn` | `0.05` | Minimum return on selling owned stock over actual cost, including lost deposits. |
 | `itemShare` | `0.3` | Share of the gold one item may hold (stock plus the new resale). |
 | `duration` | `3` | Posting duration: `1` = 2 h, `2` = 8 h, `3` = 24 h, `0` = automatic. |
 | `autoScan` | `false` | Automatic full scan every 15 minutes; enabled in Settings. |
@@ -79,6 +80,17 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `vendorMargin` | `0` | Percent off the client's vendor price while a merchant has not confirmed it (the old default of 20 is reset once, `vendorMarginReset`). |
 | `spendLimit` | `0` | Gold one auction house visit may spend on deals; `0` = no limit. |
 | `leaveLots` | `0` | Cheap units of a vendor deal left for other buyers. |
+| `median` | `true` | Market reset strategy enabled internally; `medianShare = 0` effectively disables it. |
+| `medianItemGold` | `50` | Gold limit per item for Market reset. |
+| `medianDayGold` | `200` | Daily spending cap for Market reset. |
+| `medianShare` | `0.5` | Share of available gold for Market reset (0 disables it). |
+| `hideUnlearned` | `false` | Hide recipes that the current character has not learned. |
+| `logEcho` | `{ error = true }` | Message categories echoed to the main chat. |
+| `logSound` | `true` | Play an alert on an error. |
+| `soundSold` | `true` | Play a sound on a confirmed sold auction. |
+| `soundOutbid` | `true` | Play a sound when outbid. |
+| `windowScale` | `1` | UI scale on Settings → Display. |
+| `logTabMade` | `false` | Whether the private chat tab has already been created. |
 | `trace` | enabled unless `false` | Collect bounded trace records. `/ff trace on` enables; `/ff trace off` disables. |
 | `dev` | off unless `true` | Include detailed actions, events, pages and frame timings in the trace. `/ff dev` toggles this mode. |
 
