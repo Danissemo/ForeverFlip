@@ -20,3 +20,8 @@ venv/
 # Local/editor state (tracked legacy files must be removed explicitly)
 .DS_Store
 Thumbs.db
+
+# Per-developer editor and assistant settings (not portable)
+.claude/
+.codex/
+.vscode/
