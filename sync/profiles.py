@@ -13,7 +13,7 @@ install, so an older helper started on the same config finds a game.
 
 from __future__ import annotations
 
-import os
+import ntpath  # game folders are Windows paths, also when the tests run on Linux
 import pathlib
 import re
 
@@ -21,7 +21,7 @@ FIRST = "main"  # the id of the first profile: it keeps the files of the single-
 
 
 def same_path(a, b) -> bool:
-    return os.path.normcase(os.path.normpath(str(a))) == os.path.normcase(os.path.normpath(str(b)))
+    return ntpath.normcase(ntpath.normpath(str(a))) == ntpath.normcase(ntpath.normpath(str(b)))
 
 
 def migrate(config: dict) -> bool:
