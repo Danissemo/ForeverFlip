@@ -497,8 +497,8 @@ and Reset all data are new.
 - `UI.tipPair` (a two-column tooltip line that wraps when long) replaces direct `AddDoubleLine`;
   `UI.routeLabel` is the Best label for My items and Crafting; `Trade.boughtWay` / `T.KEEP_DAYS`
   keep a purchase's strategy (`lot.strategy`, `position.strategy`); `Crafting.profits` decides the
-  route with `Market.sellRoutes` + `Market.routeVerdict`. `docs/unification-review.md` lists what is
-  still not unified. Tests: BoughtWayTests in `test_review_trade_b`, journal and purchase views.
+  route with `Market.sellRoutes` + `Market.routeVerdict`. The completed unification review is
+  archived in Git history. Tests: BoughtWayTests in `test_review_trade_b`, journal and purchase views.
 
 - `Market.postPrice` (the one sell price and its reason), `Trade.postLimit`, `UI.priceWhy`;
   deals keep `exitWhy`. Tests: `test_one_price`.
