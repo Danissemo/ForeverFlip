@@ -64,7 +64,9 @@ def plain(text: str) -> str:
 def cards() -> list[dict]:
     """Every card of the in-game checklist, in order: the ##### headings under ### Чек-лист."""
     text = GUIDE.read_text(encoding="utf-8").replace("\r\n", "\n")
-    start = text.index("### Чек-лист поточної бети")
+    # The checklist has a stable anchor; its visible heading may change between releases.
+    anchor = '<a id="current-beta-checklist"></a>'
+    start = text.index(anchor)
     end = text.index("#### Автоперевірки складних ситуацій", start)
     out, section, card, part = [], None, None, None
     for line in text[start:end].split("\n"):

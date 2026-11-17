@@ -1,2 +1,27 @@
 research/
 dist/
+
+# Python interpreter and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Packaging and local environment
+build/
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Local/editor state (tracked legacy files must be removed explicitly)
+.DS_Store
+Thumbs.db
+
+# Per-developer editor and assistant settings (not portable)
+.claude/
+.codex/
+.vscode/

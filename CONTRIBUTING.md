@@ -49,9 +49,9 @@ Nothing else is published automatically: a release needs a tag (see [Releasing](
 the hooks never push. `FF_NO_PUSH=1` or `FF_NO_INSTALL=1` skip a step for one commit. A push that
 fails (no network) is retried at the next commit, or with `python tools/devflow.py push`.
 
-An AI assistant working in the repository (Claude Code) also runs `python tools/devflow.py stop` as
-its Stop hook (`.claude/settings.local.json`, not committed): it cannot end its turn while changes are
-uncommitted, and anything committed but not pushed is pushed.
+Assistant and editor hooks are optional local settings, not tracked repository files. See
+[`CLAUDE.md`](CLAUDE.md) for portable contribution guidance. A clean checkout does not install
+assistant hooks or publish commits on your behalf.
 
 Read [docs/architecture.md](docs/architecture.md) before larger changes.
 
@@ -91,10 +91,12 @@ If you add a game API call, add a fake for it to `mock.lua`, based on behaviour 
 
 ## Releasing
 
-1. Write the notes under `## [Unreleased]` in `CHANGELOG.md`. For a beta, also update the version in
-   `docs/testing.md` and its cards, then rebuild the tester workbook with
-   `python tools/make_tester_workbook.py` (a test fails while it is out of date).
-2. Go through the [in-game checklist](docs/testing.md#in-game-checklist).
+1. Write the notes under `## [Unreleased]` in `CHANGELOG.md`. For release-specific testing, update the relevant manual checklist and its cards, then rebuild
+   the tester workbook with `python tools/make_tester_workbook.py` (a test fails if it is out of sync).
+   The existing `docs/testing.md` cards describe a historical beta: update their actual test steps
+   before declaring them verified for a newer version.
+2. Go through the [current release checks](docs/release-3.1.0-validation.md), or create
+   a new version-specific checklist for a subsequent release.
 3. Run the release command with the new version:
 
    ```bash

@@ -94,11 +94,13 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> **Current release: [3.0.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.0.0)**
-> prices Resale and Market reset from the market's own sales, shows one Sure and one sell price
-> everywhere (gear seen rarely included), scans the house about twice as fast, and brings a new
-> item tooltip with a market reference and price chart. Sync restores the scans your history
-> lacks. See the [changelog](CHANGELOG.md#300---2026-11-17) for everything.
+> **Current stable release: [3.1.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.1.0)** (17 November 2026).
+> This release adds separate Alliance, Horde, Neutral and Server auction-house scopes, Retail
+> compatibility checks, update notices delivered by ForeverFlip Sync, and optional developer traces.
+> It also improves multi-version gear checks, Quick scan with the sniper running, sorted bulk actions,
+> timeouts, automatic posting durations and tooltip layout.
+> See the [3.1.0 changelog](CHANGELOG.md#310---2026-11-17) and
+> [release verification checklist](docs/release-3.1.0-validation.md).
 
 > [!TIP]
 > To update, replace the `ForeverFlip` folder, or let the
@@ -108,8 +110,8 @@
 
 | Requirement | |
 |---|---|
-| Game | WoW Forever, client 1.60.1 (Interface `16001`) |
-| Dependencies | None |
+| Game | WoW Forever 1.60.1 (Interface `16001`); Retail 12.0.5 (Interface `120105`) is capability-adapted, with in-game verification still recommended |
+| Dependencies | None for the addon. The optional ForeverFlip Sync desktop helper is Windows-oriented and has its own release/build version |
 | Optional | [LibAHTab](https://www.curseforge.com/wow/addons/libahtab) puts the tab next to other addon tabs. [auxForever](https://github.com/TylerHampton/aux-forever) prices fill in materials ForeverFlip has not seen yet |
 | Works next to | Auctionator, TradeSkillMaster and other auction addons |
 
@@ -134,6 +136,8 @@ with the auction house open).
 | `/ff diag` | Statistics of the last full scan |
 | `/ff rescan` | Allow a full scan right away after the server did not answer |
 | `/ff export` | The journal as CSV, ready to copy |
+| `/ff trace` | Show the recent trace and slow-operation diagnostics |
+| `/ff dev` | Toggle developer trace mode (off by default) |
 | `/ff lang en` · `/ff lang uk` | Switch the language (after `/reload`) |
 
 The Key Bindings window has five bindings (also set on **Settings → Key bindings**):
@@ -154,7 +158,8 @@ The Key Bindings window has five bindings (also set on **Settings → Key bindin
 | [Saved data](docs/saved-data.md) | Layout of the `ForeverFlipData` SavedVariables file |
 | [Community scans](docs/community.md) | The ForeverFlip Sync helper and the community data repository |
 | [API](docs/api.md) | `ForeverFlipAPI` for other addons |
-| [Testing](docs/testing.md) | Ukrainian test steps and a [fillable tester worksheet](docs/tester-checklist.uk.xlsx) |
+| [Testing](docs/testing.md) | Ukrainian manual checks and a [fillable tester worksheet](docs/tester-checklist.uk.xlsx) |
+| [3.1.0 validation](docs/release-3.1.0-validation.md) | Release-specific regression and in-game verification matrix |
 
 ## ❓ Questions and answers
 

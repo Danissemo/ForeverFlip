@@ -144,7 +144,7 @@ def run_tests(word: str = "", verbose: bool = False) -> int:
 
 def debug(pattern: str = "test_*.py") -> int:
     """The same discovery a debugger needs, one module at a time and in the open: the entry point
-    of the editor's test debugging (see .vscode/configurations in the workspace).
+    of a debugger's own test discovery (use the editor's local configuration).
 
         python tools/devflow.py test -v             every module of the suite
         python tools/devflow.py test test_bids -v   one module
