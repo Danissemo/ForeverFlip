@@ -3,7 +3,9 @@
 A review of ForeverFlip after the Best-route, strategy-lock and Market reset work (2026-11-17).
 Each item says where the code differs, why it matters, and what unifying it would take.
 
-**Status: all ten were carried out on 2026-11-17** (installed, not committed):
+**Historical status: all ten were carried out on 2026-11-17.** The phrase
+“installed, not committed” described the earlier local worktree, not the current 3.1.0 tag.
+See [3.1.0 validation](release-3.1.0-validation.md) for outstanding verification:
 1. `Market.THRESHOLDS` + `Market.thresholds(s)`; `Data.lua` defaults come from it.
 2. `Market.maxBuy(value, route, s, perUnit)` for Bids, Sniper, Disenchant and the vendor deals. Now
    every route asks both the minimum profit and the minimum return (Disenchant and Sniper's
