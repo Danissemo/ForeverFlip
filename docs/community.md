@@ -54,15 +54,20 @@ Click the tray icon to open the window again; right-click it for **Sync now** an
 
 ### Updating the helper
 
-For **2.1.0-beta.2**, download the new **ForeverFlipSync.exe** from the same release as the addon.
+The helper's internal `VERSION` identifier is independent of the addon's TOC version. A release
+can ship a newer helper executable without changing that identifier; use the GitHub release asset
+rather than treating the identifier as the addon version.
+
+
+For the current stable **3.1.0** release, download **ForeverFlipSync.exe** from the [v3.1.0 release](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.1.0), alongside the addon ZIP.
 Close the old helper window before replacing or launching the new file. The helper's addon updater
 updates the game addon only; it does not replace its own executable. Your game choice, sign-in and
 sharing preferences remain in `%APPDATA%\ForeverFlipSync`.
 
-This beta fixes startup sharing when the saved GitHub sign-in is discovered after the first price
-download. Existing unsent scans are reconsidered without needing a new `/reload`. It also fixes the
-Windows title-bar icon. **Show activity** shows upload submissions and the server's acceptance or
-rejection; **Community prices updated** describes the independent download, not proof of an upload.
+The helper can update the addon and publish the available release version through the shared-data
+addon; the game itself cannot query GitHub. **Show activity** shows upload submissions and the
+server's acceptance or rejection; **Community prices updated** describes the independent download,
+not proof of an upload. See the [3.1.0 release checks](release-3.1.0-validation.md).
 
 ### Addon updates and beta testing
 
@@ -72,8 +77,8 @@ the installed version and whether a newer one is out.
 
 - **Update automatically** (on by default): a newer release is installed as soon as it is found, at
   start and every 6 hours. Off, the helper only announces it, and **Update now** installs it.
-- **Beta tester** (off by default): pre-releases (`2.1.0-beta.2`) are offered too. Betas bring new
-  features first and may have rough edges; see [Beta testing](testing.md#beta-testing) for what to
+- **Beta tester** (off by default): pre-releases (versions with a `-beta.N` suffix) are offered too. Betas bring new
+  features first and may have rough edges; see [the manual testing guide](testing.md) for what to
   check and how to report. Ticking it looks for a beta at once. Unticking it never downgrades: you
   keep the beta until a release newer than it comes out.
 
