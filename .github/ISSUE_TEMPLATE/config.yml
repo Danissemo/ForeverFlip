@@ -4,7 +4,7 @@ contact_links:
     url: https://github.com/Danissemo/ForeverFlip/discussions/categories/q-a
     about: Ask how something works or why a deal looks the way it does.
   - name: Beta testing
-    url: https://github.com/Danissemo/ForeverFlip/blob/main/docs/testing.md#beta-testing
+    url: https://github.com/Danissemo/ForeverFlip/blob/main/docs/release-3.1.0-validation.md
     about: What to check in a beta and how to report it.
   - name: Security problem
     url: https://github.com/Danissemo/ForeverFlip/security/advisories/new
