@@ -1,7 +1,9 @@
 # T13 / T15 — The addon as all-Lua, with capability adapters (proposal)
 
 Status: **implemented** (T13, 16 November 2026), all five steps; see "Implemented" at the end.
-docs/architecture.md describes the result. The sections below are the proposal as written.
+[docs/architecture.md](../architecture.md) describes the current Core/Modules/UI layout in 3.1.0.
+The paths, line counts and module names below are historical proposal snapshots, not a live file
+inventory. The sections below are the proposal as written.
 
 ## What the code is today (checked)
 
