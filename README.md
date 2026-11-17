@@ -158,7 +158,7 @@ The Key Bindings window has five bindings (also set on **Settings → Key bindin
 | [Saved data](docs/saved-data.md) | Layout of the `ForeverFlipData` SavedVariables file |
 | [Community scans](docs/community.md) | The ForeverFlip Sync helper and the community data repository |
 | [API](docs/api.md) | `ForeverFlipAPI` for other addons |
-| [Testing](docs/testing.md) | Ukrainian manual checks and a [fillable tester worksheet](docs/tester-checklist.uk.xlsx) |
+| [Testing](docs/testing.md) | Archived Ukrainian 2.3.0-beta.1 manual checks and the corresponding [Excel worksheet](docs/tester-checklist.uk.xlsx); see the current release matrix below |
 | [3.1.0 validation](docs/release-3.1.0-validation.md) | Release-specific regression and in-game verification matrix |
 
 ## ❓ Questions and answers
