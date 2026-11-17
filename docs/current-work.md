@@ -6,7 +6,35 @@ its line to the changelog and start the next.
 
 Last updated: 17 November 2026.
 
-## Being done now
+## Current release: 3.1.0
+
+[ForeverFlip 3.1.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.1.0)
+is published. The addon metadata (`ForeverFlip/ForeverFlip.toc`) and runtime version
+(`ForeverFlip/Core/Util.lua`) both read `3.1.0`. The repository's main branch contains the
+release commit plus two follow-up CI/release-flow fixes; these do not define another version.
+
+The 3.1.0 release covers separate auction-house scopes, Retail capability guards, version
+announcements through Sync, diagnostic traces and developer mode, and corrections to gear searches,
+batch order, scan/sniper interaction, seller advice and tooltip sizing. Use the
+[3.1.0 release validation matrix](release-3.1.0-validation.md) for remaining manual checks.
+Automated tests and a published release are **not** proof that every WoW Forever or Retail
+interaction was checked in the game.
+
+### Current follow-up
+
+- Confirm the 3.1.0 regression matrix on an actual WoW Forever client, including both languages
+  and the protected buy/post/cancel actions.
+- Check the Retail 12.x capability-dependent paths separately; Sync's game-folder discovery
+  intentionally targets WoW Forever rather than Retail.
+- Record reproducible failures as issues and note test results before the next tagged release.
+
+## Historical work log (status as recorded before 3.1.0)
+
+The following entries are preserved as dated development notes. Phrases such as
+"not committed", "current beta", and "in the working tree" describe the state when written,
+**not** the repository or release status now. The changelog and the 3.1.0 tag take precedence.
+
+### Being done then
 
 **`3.0.0` is released** (17 November, the player asked for a full release): version in
 `ForeverFlip.toc` and `Util.lua`, `CHANGELOG.md` heading, committed, pushed and tagged `v3.0.0`.
@@ -130,7 +158,7 @@ nothing. ForeverFlip posted 60 times from Lasqa until 14 November 08:24 and the 
 not changed since. Next: does the game's own Sell tab post the same item? Yes → the client refuses
 addon calls (taint, a restriction type not checked); no → the server restricts the character.
 
-## Waiting
+### Waiting (historical)
 
 - **The in-game checks of the batch of 14 November.** None of it is confirmed in the game yet,
   though all of it is in `2.2.0-beta.1`. Worth a look: **To vendor** with a purse too small for a
@@ -159,7 +187,7 @@ addon calls (taint, a restriction type not checked); no → the server restricts
   fixed), read `/ff diag`, and look at disenchant deals. `docs/tester-checklist.uk.xlsx` holds the
   checklist.
 
-## Decided
+### Decided (historical)
 
 - Work goes straight to `main`; the hooks test, install into `C:/World of Warcraft/_forever_` and
   push after every commit. `FF_NO_PUSH=1` and `FF_NO_INSTALL=1` skip one step for one commit.
