@@ -7,6 +7,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-11-17
+
 ### Added
 
 - **The addon says when a newer ForeverFlip is out.** The game gives addons no internet, so the
@@ -1746,7 +1748,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v3.0.0...HEAD
+[Unreleased]: ../../compare/v3.1.0...HEAD
+[3.1.0]: ../../compare/v3.0.0...v3.1.0
 [3.0.0]: ../../compare/v2.3.0-beta.1...v3.0.0
 [2.3.0-beta.1]: ../../compare/v2.2.0-beta.2...v2.3.0-beta.1
 [2.2.0-beta.2]: ../../compare/v2.2.0-beta.1...v2.2.0-beta.2

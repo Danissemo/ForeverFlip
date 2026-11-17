@@ -494,6 +494,9 @@ def release(version: str, note: str = "", yes: bool = False) -> int:
     if current_version() != version or f'F.version = "{version}"' not in UTIL.read_text(encoding="utf-8"):
         say("release stopped: the version was not written; check the TOC and Core/Util.lua")
         return 1
+    workbook = ROOT / "tools" / "make_tester_workbook.py"
+    if workbook.exists():  # the testers' workbook carries the version; a test checks it
+        subprocess.run([sys.executable, str(workbook)], cwd=ROOT, capture_output=True, text=True)
 
     build = subprocess.run([sys.executable, str(ROOT / "tools" / "build.py"), "--output", "dist"],
                            cwd=ROOT, capture_output=True, text=True)
