@@ -61,6 +61,49 @@ class ReleaseCommandTests(unittest.TestCase):
         notes = tool('release_notes').render(text, '3.1.0', 'Danissemo/ForeverFlip')
         self.assertEqual(notes, '### Fixed\n\n- A fix.\n')
 
+    def test_the_ci_runs_of_a_commit_say_one_word(self):
+        verdict = tool('devflow').ci_verdict
+        done = {'status': 'completed', 'conclusion': 'success'}
+        self.assertEqual(verdict([]), 'missing')
+        self.assertEqual(verdict([done, {'status': 'in_progress', 'conclusion': ''}]), 'running')
+        self.assertEqual(verdict([done]), 'success')
+        self.assertEqual(verdict([done, {'status': 'completed', 'conclusion': 'failure'}]), 'failure')
+
+    def test_a_failed_ci_log_is_cut_to_what_failed(self):
+        # The lines of `gh run view --log-failed` from the Linux run that held back 3.0.0 and 3.1.0.
+        log = ('release\tRun tests and package\t2026-11-17T17:19:43.1399276Z FAIL: test_added_installs '
+               '(test_sync_profiles.ProfileTests.test_added_installs)\n'
+               'release\tRun tests and package\t2026-11-17T17:19:43.1400666Z Traceback (most recent call last):\n'
+               'release\tRun tests and package\t2026-11-17T17:19:43.1406365Z   File "/home/runner/tests/'
+               'test_sync_profiles.py", line 39, in test_added_installs\n'
+               'release\tRun tests and package\t2026-11-17T17:19:43.1408404Z AssertionError: a != b\n'
+               'release\tRun tests and package\t2026-11-17T17:19:43.1411972Z FAILED (failures=1, skipped=13)\n'
+               'release\tRun tests and package\t2026-11-17T17:19:43.1417289Z #1 completion pending\n')
+        lines = tool('devflow').ci_failures(log)
+        self.assertEqual(lines[0], 'FAIL: test_added_installs (test_sync_profiles.ProfileTests.test_added_installs)')
+        self.assertEqual(len(lines), 4, lines)
+        self.assertIn('AssertionError: a != b', lines)
+
+    def test_a_red_ci_stops_the_release_before_the_version_is_written(self):
+        # 3.0.0 and 3.1.0 were tagged on commits whose Linux CI had failed, so GitHub published nothing.
+        flow = tool('devflow')
+        with tempfile.TemporaryDirectory() as folder:
+            folder = pathlib.Path(folder)
+            flow.TOC, flow.UTIL, flow.CHANGELOG = folder / 'a.toc', folder / 'Util.lua', folder / 'CHANGELOG.md'
+            flow.TOC.write_text('## Version: 3.0.0\n', encoding='utf-8')
+            flow.UTIL.write_text('F.version = "3.0.0"\n', encoding='utf-8')
+            flow.CHANGELOG.write_text(self.TEXT, encoding='utf-8')
+            answers = {('rev-parse', '--abbrev-ref', 'HEAD'): flow.BRANCH, ('rev-parse', 'HEAD'): 'abc1234'}
+            flow.git = lambda *args, **_: answers.get(args, '')
+            flow.ahead_of_us = lambda: 0
+            flow.push = lambda: 0
+            waited = []
+            flow.wait_for_ci = lambda sha: waited.append(sha) or 'failure'
+            self.assertEqual(flow.release('3.1.0', yes=True), 1)
+            self.assertEqual(waited, ['abc1234'])
+            self.assertEqual(flow.TOC.read_text(encoding='utf-8'), '## Version: 3.0.0\n')
+            self.assertEqual(flow.CHANGELOG.read_text(encoding='utf-8'), self.TEXT)
+
     def test_versions_are_ordered_with_betas_before_their_release(self):
         key = tool('devflow').version_key
         order = ['3.0.0', '3.1.0-beta.1', '3.1.0-beta.2', '3.1.0-beta.10', '3.1.0', '3.1.1', '4.0.0']

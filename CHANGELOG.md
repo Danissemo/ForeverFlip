@@ -7,6 +7,19 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Development
+
+- **A release waits for GitHub CI to pass, Linux included, before it writes the version.** The tests
+  here run on Windows only, and a sync profile test that compared game folders through `os.path`
+  failed on the Linux runner: 3.0.0 and 3.1.0 were tagged on red commits and GitHub published
+  nothing. `devflow.py release` now pushes the pending work, waits for CI on that commit and, when
+  it fails, stops with the failing tests before anything of the version is changed (`--no-ci`
+  skips the wait when `gh` is missing). Game folders are now compared as Windows paths on every
+  system.
+- **A release no longer trips over its own files.** It writes the TOC, `Core/Util.lua` and the
+  changelog with LF line endings (Python on Windows wrote CRLF, which StyLua refused), and it
+  remakes the testers' workbook, which carries the version a test checks.
+
 ## [3.1.0] - 2026-11-17
 
 ### Added

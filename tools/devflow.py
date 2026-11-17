@@ -21,8 +21,9 @@ Other commands:
     python tools/devflow.py stop      for an AI assistant's "stop" hook: refuses to stop while
                                       changes are not committed, pushes what is not pushed yet
 
-    python tools/devflow.py release X.Y.Z [-m text] [--yes]  a release in one step: commits what
-                                      is pending (documentation too; -m gives its message), writes
+    python tools/devflow.py release X.Y.Z [-m text] [--yes] [--no-ci]  a release in one step: commits
+                                      what is pending (documentation too; -m gives its message),
+                                      waits for GitHub CI to pass on it (Linux too), writes
                                       the version into the TOC, Core/Util.lua and CHANGELOG.md
                                       (the [Unreleased] notes become the version's section),
                                       checks the package builds, commits "Release X.Y.Z", tags
@@ -427,7 +428,69 @@ def ahead_of_us() -> int:
         return 0
 
 
-def release(version: str, note: str = "", yes: bool = False) -> int:
+def ci_verdict(runs: list) -> str:
+    """The CI runs GitHub lists for one commit (gh run list --json status,conclusion) in one word:
+    "success", "failure", "running" or "missing"."""
+    if not runs:
+        return "missing"
+    if any(r.get("status") != "completed" for r in runs):
+        return "running"
+    return "success" if all(r.get("conclusion") == "success" for r in runs) else "failure"
+
+
+def ci_failures(log: str, limit: int = 20) -> list[str]:
+    """The lines of a failed run's log that say what failed, without the job and time prefixes."""
+    lines = []
+    for line in log.splitlines():
+        text = re.sub(r"^[^\t]*\t[^\t]*\t\S+Z ", "", line).strip()
+        if re.match(r"(FAIL|ERROR):|\w*Error\b|File \"|FAILED \(", text) and text not in lines:
+            lines.append(text)
+    return lines[:limit]
+
+
+def wait_for_ci(sha: str, timeout: int = 900) -> str:
+    """Waits for GitHub's CI on `sha` (every system it runs on, Linux too) and says how it ended.
+    The tests here run on Windows only: a test that breaks on Linux shows up only there."""
+    if not shutil.which("gh"):
+        say("release stopped: the GitHub CLI (gh) is not found, so the CI result cannot be read; "
+            "install it, or pass --no-ci after checking https://github.com/Danissemo/ForeverFlip/actions")
+        return "missing"
+    import time
+
+    start = time.monotonic()
+    said = False
+    while True:
+        out = subprocess.run(["gh", "run", "list", "--workflow", "CI", "--commit", sha,
+                              "--json", "databaseId,status,conclusion"],
+                             cwd=ROOT, capture_output=True, text=True, timeout=60)
+        runs = json.loads(out.stdout or "[]") if out.returncode == 0 else []
+        verdict = ci_verdict(runs)
+        if verdict in ("success", "failure"):
+            break
+        if time.monotonic() - start > timeout:
+            say(f"release stopped: no CI result for {sha[:7]} after {timeout // 60} minutes "
+                "(https://github.com/Danissemo/ForeverFlip/actions)")
+            return verdict
+        if not said:
+            say(f"waiting for GitHub CI on {sha[:7]} (Windows and Linux, about 2 minutes)")
+            said = True
+        time.sleep(15)
+    if verdict == "failure":
+        for run in runs:
+            if run.get("conclusion") != "success":
+                log = subprocess.run(["gh", "run", "view", str(run["databaseId"]), "--log-failed"],
+                                     cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
+                                     errors="replace", timeout=120).stdout
+                for line in ci_failures(log):
+                    print("    " + line)
+        say(f"release stopped: CI failed on {sha[:7]}; nothing of the version is written. Fix it, "
+            "commit, and run release again")
+    else:
+        say(f"CI passed on {sha[:7]}")
+    return verdict
+
+
+def release(version: str, note: str = "", yes: bool = False, ci: bool = True) -> int:
     """`release <version> [-m text] [--yes]`: commit what is pending (documentation included), set the
     version in the TOC, Core/Util.lua and CHANGELOG.md, build the package to check it, commit
     "Release <version>", tag v<version> and push main and the tag. GitHub Actions
@@ -484,13 +547,20 @@ def release(version: str, note: str = "", yes: bool = False) -> int:
             say("release stopped: the pending changes were not committed (see above)")
             return result or 1
         changelog = CHANGELOG.read_text(encoding="utf-8")
+    if ci:
+        push()
+        if wait_for_ci(git("rev-parse", "HEAD")) != "success":
+            return 1
 
     day = datetime.date.today().isoformat()
     TOC.write_text(re.sub(r"^## Version:.*$", f"## Version: {version}", TOC.read_text(encoding="utf-8"),
-                          count=1, flags=re.M), encoding="utf-8")
+                          count=1, flags=re.M), encoding="utf-8", newline="\n")
+    # newline="\n": the repository keeps LF, and Python on Windows would write CRLF, which StyLua refuses
     UTIL.write_text(re.sub(r'^F\.version = ".*"$', f'F.version = "{version}"',
-                           UTIL.read_text(encoding="utf-8"), count=1, flags=re.M), encoding="utf-8")
-    CHANGELOG.write_text(stamp_changelog(changelog, version, previous, day), encoding="utf-8")
+                           UTIL.read_text(encoding="utf-8"), count=1, flags=re.M), encoding="utf-8",
+                    newline="\n")
+    CHANGELOG.write_text(stamp_changelog(changelog, version, previous, day), encoding="utf-8",
+                         newline="\n")
     if current_version() != version or f'F.version = "{version}"' not in UTIL.read_text(encoding="utf-8"):
         say("release stopped: the version was not written; check the TOC and Core/Util.lua")
         return 1
@@ -603,7 +673,7 @@ if __name__ == "__main__":
         if "-m" in args and args.index("-m") + 1 < len(args):
             text = args[args.index("-m") + 1]
         version = next((a for a in args if not a.startswith("-") and a != text), "")
-        sys.exit(release(version, text, yes="--yes" in args))
+        sys.exit(release(version, text, yes="--yes" in args, ci="--no-ci" not in args))
     if command == "prepare-message":
         sys.exit(prepare_message(copy="--no-copy" not in args))
     sys.exit(COMMANDS[command]())
