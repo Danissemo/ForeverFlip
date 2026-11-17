@@ -128,6 +128,16 @@ class SchemaTests(unittest.TestCase):
         assert(D.open(nil).schemaVersion == D.SCHEMA_VERSION)
         assert(D.open({}).schemaVersion == D.SCHEMA_VERSION)''')
 
+    def test_the_ignore_list_and_the_blocked_actions_are_split_apart(self):
+        # 3.0 wrote the game's blocked actions into db.blocked, the table of the ignore list.
+        run('''local D = ForeverFlip.Data
+        local action = { at = 5, version = '3.0.0', event = 'forbidden', func = 'UNKNOWN()', doing = '' }
+        local db = D.open({ schemaVersion = 4, blocked = { action, ['c:10'] = 'Copper Ore' } })
+        assert(db.blocked == nil, 'the shared table is gone')
+        assert(db.ignored['c:10'] == 'Copper Ore' and db.ignored[1] == nil)
+        assert(#db.blockedActions == 1 and db.blockedActions[1].func == 'UNKNOWN()')
+        assert(D.open({ schemaVersion = 4 }).ignored == nil, 'nothing to split, nothing made')''')
+
     def test_a_newer_file_is_left_alone_with_a_warning(self):
         run('''local D = ForeverFlip.Data
         local db = D.open({ schemaVersion = D.SCHEMA_VERSION + 5, settings = { vendorMargin = 20 }, salesModel = 1,

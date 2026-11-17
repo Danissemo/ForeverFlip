@@ -43,7 +43,7 @@ Then every commit runs the hooks in [.githooks](.githooks) and [`tools/devflow.p
 |---|---|
 | `prepare-commit-msg` | When the message is empty, writes one from what is staged (the areas that moved and the files), so `Commit` with nothing typed still leaves a readable history. A typed message is never touched. |
 | `pre-commit` | When code changed (`ForeverFlip/`, `sync/`, `tests/`, `tools/`): StyLua check, `pyflakes` and the whole test suite. A failure stops the commit. |
-| `post-commit` | Installs `ForeverFlip/` into the game's `Interface/AddOns` (a `/reload` in game picks it up; a full restart when a file was added or removed), then pushes `main` to GitHub. |
+| `post-commit` | Copies the installed addon and its `ForeverFlip*.lua` saved data to `C:\FF\backups\auto-install-<time>` (the last five are kept; `FF_BACKUPS` moves them), installs `ForeverFlip/` into the game's `Interface/AddOns` (a `/reload` in game picks it up; a full restart when a file was added or removed), then pushes `main` to GitHub. |
 
 Nothing else is published automatically: a release needs a tag (see [Releasing](#releasing)), which
 the hooks never push. `FF_NO_PUSH=1` or `FF_NO_INSTALL=1` skip a step for one commit. A push that

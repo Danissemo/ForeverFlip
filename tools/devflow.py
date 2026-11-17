@@ -45,6 +45,9 @@ Settings (environment variables or `git config`):
                               stylua on PATH); the style check is skipped when none is found
     FF_NO_PUSH=1              commit without pushing
     FF_NO_INSTALL=1           commit without installing into the game
+    FF_BACKUPS / ff.backups   where install keeps its copies (default: C:\\FF\\backups); before it
+                              replaces files it copies the installed addon and the ForeverFlip
+                              SavedVariables into auto-install-<time>, and keeps the last 5
 """
 
 from __future__ import annotations
@@ -257,6 +260,39 @@ def game_folder() -> pathlib.Path | None:
     return None
 
 
+AUTO_BACKUP = "auto-install-"  # the backups install makes; only these are pruned
+AUTO_KEEP = 5
+
+
+def backups_folder() -> pathlib.Path:
+    given = setting("FF_BACKUPS", "ff.backups")
+    return pathlib.Path(given) if given else ROOT.parents[1] / "backups"
+
+
+def backup_before_install(game: pathlib.Path, target: pathlib.Path, root: pathlib.Path | None = None,
+                          stamp: str = "") -> pathlib.Path | None:
+    """Before files of the installed addon are replaced: a copy of that addon and of the ForeverFlip
+    SavedVariables of every account, as the working rules ask. The newer addon may migrate the saved
+    data at the next /reload, and that cannot be undone without this copy. The last AUTO_KEEP copies
+    stay; backups made by hand (any other name) are never touched."""
+    root = root or backups_folder()
+    saved = sorted(game.glob("WTF/Account/*/SavedVariables/ForeverFlip*.lua*"))
+    if not (target.is_dir() and any(target.iterdir())) and not saved:
+        return None
+    stamp = stamp or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    folder = root / (AUTO_BACKUP + stamp)
+    folder.mkdir(parents=True, exist_ok=True)
+    if target.is_dir():
+        shutil.copytree(target, folder / "ForeverFlip", dirs_exist_ok=True)
+    for path in saved:
+        account = path.parent.parent.name
+        (folder / "SavedVariables" / account).mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, folder / "SavedVariables" / account / path.name)
+    for old in sorted(p for p in root.glob(AUTO_BACKUP + "*") if p.is_dir())[:-AUTO_KEEP]:
+        shutil.rmtree(old, ignore_errors=True)
+    return folder
+
+
 def install() -> int:
     if os.environ.get("FF_NO_INSTALL"):
         return 0
@@ -265,15 +301,20 @@ def install() -> int:
         say("WoW Forever not found (set FF_GAME or git config ff.game): not installed")
         return 0
     target = game / "Interface" / "AddOns" / "ForeverFlip"
-    target.mkdir(parents=True, exist_ok=True)
     wanted = {p.relative_to(ADDON) for p in ADDON.rglob("*") if p.is_file()}
+    changed = [rel for rel in sorted(wanted)
+               if not (target / rel).exists() or (target / rel).read_bytes() != (ADDON / rel).read_bytes()]
+    if changed:
+        kept = backup_before_install(game, target)
+        if kept:
+            say(f"backed up the installed addon and its SavedVariables into {kept}")
+    target.mkdir(parents=True, exist_ok=True)
     copied = 0
-    for rel in sorted(wanted):
+    for rel in changed:
         src, dst = ADDON / rel, target / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        if not dst.exists() or dst.read_bytes() != src.read_bytes():
-            shutil.copy2(src, dst)
-            copied += 1
+        shutil.copy2(src, dst)
+        copied += 1
     # The player's papers travel with the addon, as in the release zip (tools/build.py).
     papers = {pathlib.Path(name) for name in PAPERS}
     for name in PAPERS:
@@ -400,6 +441,77 @@ def version_key(version: str) -> tuple:
     return (int(major), int(minor), int(patch), 0 if pre else 1, parts)
 
 
+# The places in the guides that name a version, each a pattern whose groups are the version.
+# A version written anywhere else in the text counts for nothing: the old check asked only whether
+# the version was somewhere in a file, and a sentence about a fix passed for an outdated release link.
+_V = r"(\d+\.\d+\.\d+(?:-beta\.\d+)?)"
+_TAG = r"\]\(https://github\.com/Danissemo/ForeverFlip/releases/tag/v" + _V + r"\)"
+DOC_FIELDS = {
+    # The current stable release: a stable release writes it, a beta leaves it alone.
+    "stable": {
+        "README.md": [r"Current stable release: \[" + _V + _TAG],
+        "docs/testing.md": [r"## Поточна версія: " + _V + "$", r"\[ForeverFlip " + _V + _TAG],
+        "docs/current-work.md": [r"\[ForeverFlip " + _V + _TAG, r"`Core/Util\.lua` both declare `" + _V + "`"],
+    },
+    # The version the testers' cards were written for. Their steps change with it, so it is written
+    # by hand, and a beta (whose notes send testers to the cards) is not released without it.
+    "checklist": {
+        "docs/testing.md": [
+            r"призначені для \*\*ForeverFlip і ForeverFlip Sync " + _V + r"\*\*",
+            r"\[випуску " + _V + _TAG,
+            r"Архів `ForeverFlip-" + _V + r"\.zip`",
+            r"Установіть " + _V + r" \(START-1\)",
+            r"У чаті видно версію " + _V + r"\.",
+            r"У рядку Addon видно " + _V + r"\.",
+            r"Версії аддона / помічника: " + _V + " / " + _V,
+        ],
+    },
+}
+
+
+def doc_versions(kind: str, root: pathlib.Path | None = None) -> dict:
+    """{"file: 'words'": [every version its matches name]}; an empty list is a field that is gone."""
+    root = root or ROOT
+    found = {}
+    for name, patterns in DOC_FIELDS[kind].items():
+        text = (root / name).read_text(encoding="utf-8")
+        for pattern in patterns:
+            label = pattern.split("(")[0].replace("\\", "").strip()  # the words before the version
+            found[f"{name}: '{label}'"] = [v for m in re.finditer(pattern, text, re.M) for v in m.groups()]
+    return found
+
+
+def doc_problems(version: str, root: pathlib.Path | None = None) -> list[str]:
+    """The version fields that do not name `version`: the stable release's for a stable version, the
+    testers' cards' for a beta."""
+    problems = []
+    for field, versions in doc_versions("checklist" if "-" in version else "stable", root).items():
+        if not versions:
+            problems.append(f"{field}: the field is missing")
+        elif set(versions) != {version}:
+            problems.append(f"{field}: names {', '.join(sorted(set(versions)))}, not {version}")
+    return problems
+
+
+def set_doc_versions(version: str, root: pathlib.Path | None = None) -> None:
+    """Write a stable `version` into the stable release's fields and nowhere else in the text."""
+    if "-" in version:
+        return
+    root = root or ROOT
+    for name, patterns in DOC_FIELDS["stable"].items():
+        path = root / name
+        text = path.read_text(encoding="utf-8")
+        for pattern in patterns:
+            def put(match):
+                out, at = [], match.start()
+                for i in range(1, len(match.groups()) + 1):
+                    out.append(match.string[at:match.start(i)] + version)
+                    at = match.end(i)
+                return "".join(out) + match.string[at:match.end()]
+            text = re.sub(pattern, put, text, flags=re.M)
+        path.write_text(text, encoding="utf-8", newline="\n")
+
+
 def unreleased(text: str) -> str:
     """The notes under `## [Unreleased]`, up to the next version heading."""
     found = re.search(r"^## \[Unreleased\][ \t]*\n(.*?)(?=^## \[|^\[[^\]]+\]: |\Z)", text, re.S | re.M)
@@ -492,7 +604,8 @@ def wait_for_ci(sha: str, timeout: int = 900) -> str:
 
 def release(version: str, note: str = "", yes: bool = False, ci: bool = True) -> int:
     """`release <version> [-m text] [--yes]`: commit what is pending (documentation included), set the
-    version in the TOC, Core/Util.lua and CHANGELOG.md, build the package to check it, commit
+    version in the TOC, Core/Util.lua, CHANGELOG.md and, for a stable release, the current
+    release's fields of README.md, docs/testing.md and docs/current-work.md (DOC_FIELDS), build the package to check it, commit
     "Release <version>", tag v<version> and push main and the tag. GitHub Actions
     (.github/workflows/release.yml) then builds the zip and Sync and publishes the release with
     this version's changelog notes; a version with "-" (3.1.0-beta.1) is published as a beta.
@@ -513,10 +626,16 @@ def release(version: str, note: str = "", yes: bool = False, ci: bool = True) ->
     changelog = CHANGELOG.read_text(encoding="utf-8")
     if not unreleased(changelog):
         problems.append("CHANGELOG.md has nothing under ## [Unreleased]: write the notes first")
-    guide = ROOT / "docs" / "testing.md"
-    if "-" in version and guide.exists() and version not in guide.read_text(encoding="utf-8"):
-        problems.append(f"docs/testing.md does not name {version}: a beta's notes send testers there "
-                        "(update its cards, then python tools/make_tester_workbook.py)")
+    if not problems:
+        # A beta's notes send testers to the cards, so their version is updated by hand first. A
+        # stable release writes its own fields; one it cannot find (reworded) would keep the old one.
+        found = doc_problems(version)
+        if "-" not in version:
+            found = [p for p in found if p.endswith("the field is missing")]
+        problems.extend("the guides: " + p for p in found)
+        if "-" in version and found:
+            problems.append("update the cards of docs/testing.md for the beta, then "
+                            "python tools/make_tester_workbook.py")
     if not problems and ahead_of_us():
         problems.append("GitHub has commits this copy lacks: pull first")
     if problems:
@@ -530,8 +649,8 @@ def release(version: str, note: str = "", yes: bool = False, ci: bool = True) ->
     if pending:
         say(f"first the pending changes are committed ({len(pending.splitlines())} files)"
             + (f": {note}" if note else ", with a message written from them"))
-    say("then: the version in the TOC and Core/Util.lua, the CHANGELOG section, a build check, "
-        f"commit 'Release {version}', tag v{version}, push main and the tag")
+    say("then: the version in the TOC, Core/Util.lua and the guides, the CHANGELOG section, "
+        f"a build check, commit 'Release {version}', tag v{version}, push main and the tag")
     if not yes:
         try:
             answer = input(f"Type {version} to go on: ").strip()
@@ -561,8 +680,11 @@ def release(version: str, note: str = "", yes: bool = False, ci: bool = True) ->
                     newline="\n")
     CHANGELOG.write_text(stamp_changelog(changelog, version, previous, day), encoding="utf-8",
                          newline="\n")
-    if current_version() != version or f'F.version = "{version}"' not in UTIL.read_text(encoding="utf-8"):
-        say("release stopped: the version was not written; check the TOC and Core/Util.lua")
+    set_doc_versions(version)
+    if current_version() != version or f'F.version = "{version}"' not in UTIL.read_text(encoding="utf-8") \
+            or doc_problems(version):
+        say("release stopped: the version was not written; check the TOC, Core/Util.lua, README.md "
+            "and docs/testing.md")
         return 1
     workbook = ROOT / "tools" / "make_tester_workbook.py"
     if workbook.exists():  # the testers' workbook carries the version; a test checks it

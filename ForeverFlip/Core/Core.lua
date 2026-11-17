@@ -377,16 +377,17 @@ function E.onBlocked(event, addon, func)
     if InCombatLockdown and InCombatLockdown() then
         doing[#doing + 1] = "in combat"
     end
-    F.db.blocked = type(F.db.blocked) == "table" and F.db.blocked or {}
-    table.insert(F.db.blocked, 1, {
+    F.db.blockedActions = type(F.db.blockedActions) == "table" and F.db.blockedActions or {}
+    local kept = F.db.blockedActions
+    table.insert(kept, 1, {
         at = E.clock(),
         version = F.version,
         event = event == "ADDON_ACTION_FORBIDDEN" and "forbidden" or "blocked",
         func = func,
         doing = table.concat(doing, ", "),
     })
-    while #F.db.blocked > E.BLOCKED_KEEP do
-        table.remove(F.db.blocked)
+    while #kept > E.BLOCKED_KEEP do
+        table.remove(kept)
     end
     -- Told once for each function, and once in every session (a saved list of the last 10 must not
     -- silence the chat line for the ones seen before): the player has to know while it happens. It
@@ -1055,7 +1056,7 @@ SlashCmdList.FOREVERFLIP = function(msg)
         return
     end
     if msg == "diag" then
-        local blocked = F.db and type(F.db.blocked) == "table" and F.db.blocked or {}
+        local blocked = F.db and type(F.db.blockedActions) == "table" and F.db.blockedActions or {}
         if #blocked == 0 then
             say("ForeverFlip: " .. L("No blocked action recorded."))
         end

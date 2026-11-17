@@ -188,18 +188,39 @@ def build() -> bytes:
     return out.getvalue()
 
 
+def content(wb) -> dict:
+    """What a tester reads in the workbook: every filled cell's text and link, and its title.
+    Styles and row heights are left out; the text, steps, expected results and the version are not."""
+    found = {"title": wb.properties.title}
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                link = cell.hyperlink.target if cell.hyperlink else None
+                if cell.value is not None or link:
+                    found[f"{ws.title}!{cell.coordinate}"] = (cell.value, link)
+    return found
+
+
+def compare(have: dict, want: dict) -> list[str]:
+    """The cells that differ from what the guide and the TOC give, in sheet order."""
+    out = []
+    for place in list(want) + [p for p in have if p not in want]:
+        if have.get(place) != want.get(place):
+            now, then = have.get(place), want.get(place)
+            out.append(f"{place}: {str(now)[:60]!r} should be {str(then)[:60]!r}")
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--check", action="store_true", help="only report whether it is up to date")
     args = parser.parse_args()
     if args.check:
-        wb = load_workbook(BOOK)
-        ws = wb["Перевірки"]
-        ids = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
-        want = [c["id"] for c in cards()]
-        ok = ids == want and version() in str(wb["Як почати"]["B3"].value)
-        print("up to date" if ok else "out of date: run python tools/make_tester_workbook.py")
-        return 0 if ok else 1
+        differences = compare(content(load_workbook(BOOK)), content(load_workbook(io.BytesIO(build()))))
+        for line in differences[:10]:
+            print("  " + line)
+        print("out of date: run python tools/make_tester_workbook.py" if differences else "up to date")
+        return 1 if differences else 0
     BOOK.write_bytes(build())
     print(f"wrote {BOOK.relative_to(ROOT)}: {len(cards())} checks for {version()}")
     return 0

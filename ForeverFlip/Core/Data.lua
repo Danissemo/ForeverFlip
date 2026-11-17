@@ -188,6 +188,29 @@ D.MIGRATIONS = {
             s.median, s.medianShare = true, 0
         end
     end,
+    -- 5: db.blocked held two lists in one table: the ignore list (key -> name) and, from 3.0, the
+    -- game's blocked actions (an array of records), which then showed up as ignored "items".
+    -- They are apart now: db.ignored and db.blockedActions.
+    function(db)
+        local old = db.blocked
+        if type(old) ~= "table" then
+            db.blocked = nil
+            return
+        end
+        db.ignored = type(db.ignored) == "table" and db.ignored or {}
+        db.blockedActions = type(db.blockedActions) == "table" and db.blockedActions or {}
+        for key, value in pairs(old) do
+            if type(key) == "string" then
+                db.ignored[key] = db.ignored[key] or value
+            end
+        end
+        for _, record in ipairs(old) do
+            if type(record) == "table" and record.func then
+                db.blockedActions[#db.blockedActions + 1] = record
+            end
+        end
+        db.blocked = nil
+    end,
 }
 D.SCHEMA_VERSION = #D.MIGRATIONS
 

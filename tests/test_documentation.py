@@ -20,10 +20,20 @@ class DocumentationTests(unittest.TestCase):
         self.assertIsNotNone(toc_version)
         self.assertIsNotNone(runtime_version)
         self.assertEqual(toc_version.group(1), runtime_version.group(1))
+        # Field by field (tools/devflow.py DOC_FIELDS): the current release's line and link in
+        # README, testing.md and current-work.md, and one version across the testers' cards. Being
+        # somewhere in the text is not enough.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("devflow", ROOT / "tools" / "devflow.py")
+        flow = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(flow)
         version = toc_version.group(1)
-        for path in ("README.md", "docs/current-work.md"):
-            with self.subTest(path=path):
-                self.assertIn(version, (ROOT / path).read_text(encoding="utf-8"))
+        if "-" not in version:
+            self.assertEqual(flow.doc_problems(version), [])
+        cards = flow.doc_versions("checklist")
+        self.assertTrue(all(cards.values()), cards)
+        self.assertEqual(len({v for found in cards.values() for v in found}), 1, cards)
 
     def test_repository_markdown_links_point_to_existing_paths(self):
         for doc in sorted(ROOT.rglob("*.md")):

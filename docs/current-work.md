@@ -17,6 +17,8 @@ without changing the addon release number.
 - Reproduce or resolve the earlier report of `That action is currently restricted`
   while posting outside combat; simulated tests alone do not establish a fix.
 - Keep CI passing on Windows and Linux before merging or tagging another release.
+- Check the `[Unreleased]` ignore-list split in game: after the first login (data migration 5),
+  Ignore item lists only ignored items, and the blocked-action records stay in `/ff diag`.
 
 ## Source of truth
 

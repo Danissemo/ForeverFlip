@@ -320,7 +320,7 @@ are booked with mode `disenchant` and are kept out of Post next bought.
 
 ### Ignored items
 
-An ignored item (Ignore item, kept in `F.db.blocked`) never becomes a deal, a sniper candidate, a bid
+An ignored item (Ignore item, kept in `F.db.ignored`) never becomes a deal, a sniper candidate, a bid
 candidate or part of Post all.
 
 ## Money limits

@@ -891,7 +891,7 @@ The result of `/ff diag` helps too.
 
 ## Background work and click priority
 
-Since **1.2.0-beta.4**, a single-item check goes before the rest of a batch. Clicking a key already
+A single-item check goes before the rest of a batch. Clicking a key already
 queued promotes the same request; it does not duplicate it. A gear batch can pause between its
 unsent versions and resume with the results already read. Purchases and posts have priority in
 the status line; click feedback is painted on the next frame.

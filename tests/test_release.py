@@ -96,6 +96,7 @@ class ReleaseCommandTests(unittest.TestCase):
             answers = {('rev-parse', '--abbrev-ref', 'HEAD'): flow.BRANCH, ('rev-parse', 'HEAD'): 'abc1234'}
             flow.git = lambda *args, **_: answers.get(args, '')
             flow.ahead_of_us = lambda: 0
+            flow.doc_problems = lambda *_: []
             flow.push = lambda: 0
             waited = []
             flow.wait_for_ci = lambda sha: waited.append(sha) or 'failure'
@@ -103,6 +104,60 @@ class ReleaseCommandTests(unittest.TestCase):
             self.assertEqual(waited, ['abc1234'])
             self.assertEqual(flow.TOC.read_text(encoding='utf-8'), '## Version: 3.0.0\n')
             self.assertEqual(flow.CHANGELOG.read_text(encoding='utf-8'), self.TEXT)
+
+    def test_an_install_keeps_a_copy_of_the_addon_and_the_saved_data_first(self):
+        flow = tool('devflow')
+        with tempfile.TemporaryDirectory() as folder:
+            folder = pathlib.Path(folder)
+            game, root = folder / 'game', folder / 'backups'
+            target = game / 'Interface' / 'AddOns' / 'ForeverFlip'
+            target.mkdir(parents=True)
+            (target / 'ForeverFlip.toc').write_text('## Version: 3.0.0\n', encoding='utf-8')
+            saved = game / 'WTF' / 'Account' / 'A#1' / 'SavedVariables'
+            saved.mkdir(parents=True)
+            (saved / 'ForeverFlip.lua').write_text('ForeverFlipData = {}\n', encoding='utf-8')
+            (saved / 'Other.lua').write_text('x = 1\n', encoding='utf-8')
+            (root / 'by-hand').mkdir(parents=True)
+            for i in range(7):
+                kept = flow.backup_before_install(game, target, root, stamp=f'2026111{i}-000000')
+            self.assertTrue((kept / 'ForeverFlip' / 'ForeverFlip.toc').is_file())
+            self.assertTrue((kept / 'SavedVariables' / 'A#1' / 'ForeverFlip.lua').is_file())
+            self.assertFalse((kept / 'SavedVariables' / 'A#1' / 'Other.lua').exists(), 'only our files')
+            names = sorted(p.name for p in root.iterdir())
+            self.assertEqual(len(names), flow.AUTO_KEEP + 1, names)
+            self.assertIn('by-hand', names, 'a backup made by hand is never pruned')
+            self.assertNotIn(flow.AUTO_BACKUP + '20261110-000000', names, 'the oldest go')
+            self.assertIsNone(flow.backup_before_install(folder / 'empty', folder / 'none', root),
+                              'a first install has nothing to keep')
+
+    def test_the_guides_name_the_version_in_their_fields_not_only_somewhere(self):
+        # The old check asked whether the version was anywhere in README and current-work.md: a
+        # sentence about a fix passed while the release link still named an older version.
+        flow = tool('devflow')
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            (root / 'docs').mkdir()
+            for name in ('README.md', 'docs/testing.md', 'docs/current-work.md'):
+                (root / name).write_bytes((ROOT / name).read_bytes())
+            readme = root / 'README.md'
+            readme.write_text(readme.read_text(encoding='utf-8') + '\nFixed in 9.9.0: the sorting.\n',
+                              encoding='utf-8')
+            fields = sum(len(p) for p in flow.DOC_FIELDS['stable'].values())
+            self.assertEqual(len(flow.doc_problems('9.9.0', root)), fields, 'a mention is not a field')
+            cards = flow.doc_versions('checklist', root)
+            flow.set_doc_versions('9.9.0', root)
+            self.assertEqual(flow.doc_problems('9.9.0', root), [])
+            self.assertIn('[9.9.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v9.9.0)',
+                          readme.read_text(encoding='utf-8'))
+            self.assertEqual(flow.doc_versions('checklist', root), cards, 'the cards keep their version')
+            flow.set_doc_versions('10.0.0-beta.1', root)
+            self.assertEqual(flow.doc_problems('9.9.0', root), [], 'a beta writes nothing')
+            beta = flow.doc_problems('10.0.0-beta.1', root)
+            self.assertEqual(len(beta), sum(len(p) for p in flow.DOC_FIELDS['checklist'].values()),
+                             'a beta waits for the cards to name it')
+            readme.write_text('Current release: 9.9.0\n', encoding='utf-8')
+            self.assertEqual(flow.doc_problems('9.9.0', root),
+                             ["README.md: 'Current stable release: [': the field is missing"])
 
     def test_versions_are_ordered_with_betas_before_their_release(self):
         key = tool('devflow').version_key

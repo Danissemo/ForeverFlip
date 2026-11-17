@@ -12,9 +12,10 @@ local function list()
     return F.db.shopping
 end
 
+-- The ignore list: key -> item name (db.ignored; the game's blocked actions are db.blockedActions).
 local function blockedList()
-    F.db.blocked = type(F.db.blocked) == "table" and F.db.blocked or {}
-    return F.db.blocked
+    F.db.ignored = type(F.db.ignored) == "table" and F.db.ignored or {}
+    return F.db.ignored
 end
 
 -- Item key of a link or an item name the game knows; nil while the item is not loaded.

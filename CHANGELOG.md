@@ -7,6 +7,13 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The ignore list no longer shows the game's blocked-action records.** Both were kept in one
+  table (`db.blocked`): items you ignore by key, and the "blocked from an action" events by number,
+  so those events turned up as nameless rows among the ignored items. They are now apart
+  (`db.ignored`, `db.blockedActions`); the first login moves what was saved into the right one.
+
 ### Development
 
 - **A release waits for GitHub CI to pass, Linux included, before it writes the version.** The tests
@@ -19,6 +26,18 @@ All notable changes are listed here. The format follows
 - **A release no longer trips over its own files.** It writes the TOC, `Core/Util.lua` and the
   changelog with LF line endings (Python on Windows wrote CRLF, which StyLua refused), and it
   remakes the testers' workbook, which carries the version a test checks.
+- **The guides' version is checked where it is written, and a release writes it.** The check asked
+  only whether README and `docs/current-work.md` mentioned the version anywhere, so a sentence about
+  a fix passed while a release link named an older version. The fields that name the current release
+  (README's line and link, the testing guide's current-version heading and link, the status page's
+  link and version line) are now read one by one, `devflow.py release` writes a stable version into
+  them, and the testers' cards must all name one version; a beta is not released until they name it.
+- **The testers' workbook check reads every cell and link**, not the card IDs and one cell: a changed
+  step, expected result or release link now counts as out of date.
+- **An install keeps a copy first.** Before the commit hook copies the addon into the game, the
+  installed addon and its `ForeverFlip*.lua` saved data go to `C:\FF\backups\auto-install-<time>`
+  (the last five are kept; other backups are never touched). Install and push stay automatic.
+- The user guide no longer dates the click priority to 1.2.0-beta.4.
 
 ## [3.1.0] - 2026-11-17
 

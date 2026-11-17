@@ -13,7 +13,7 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | number | How many of `Data.MIGRATIONS` have run (`4`). A file from a newer ForeverFlip is left as it is. |
+| `schemaVersion` | number | How many of `Data.MIGRATIONS` have run (`5`). A file from a newer ForeverFlip is left as it is. |
 | `salesModel` | number | Sales-estimation model (`4`). Older derived sales/flow/pending values and daily sold counts are reset once; prices, positions and journals are retained. |
 | `vendorMarginReset` | boolean | The one-time default vendor-margin migration has run. |
 | `settings` | table | User settings, see below. |
@@ -38,7 +38,8 @@ All money values are in **copper**. All times are Unix timestamps in seconds (`t
 | `fights` | table | Per-item undercut/repost observations used by selling advice. |
 | `toVendor` | table | `toVendor[key]` = time an item was marked by the anti-undercut plan for a merchant sale. A mark counts for 3 days and is cleared when the item is sold or posted. |
 | `shopping` | table | `shopping[key]` = shopping list entry `{ max, qty, name }`. |
-| `blocked` | table | Ignored-item entries (`blocked[key]` = name). The engine also stores a bounded numeric list of protected-action blockage reports here; this mixed use is retained for compatibility and needs a separate cleanup. |
+| `ignored` | table | Ignored items: `ignored[key]` = name. |
+| `blockedActions` | list | The last game reports of "ForeverFlip has been blocked from an action" (time, version, event, function, what the addon was doing), newest first, bounded. `/ff diag` shows them. Until schema 5 both lived in one `blocked` table; migration 5 split it. |
 | `merchantPrices` | table | `merchantPrices[itemID]` = price per unit a merchant asked. |
 | `gold` | table | `gold[owner][day]` = the character's money on that day (day = Unix time / 86400), kept 60 days. |
 | `errors` | array | The latest 20 addon errors, newest first: `{ at, version, message }`. |
