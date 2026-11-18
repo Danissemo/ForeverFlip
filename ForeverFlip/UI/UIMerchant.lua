@@ -306,7 +306,41 @@ local function createMerchantTab()
     -- The Merchant tab: one button sells the list at once. Gear the class cannot use is sold from
     -- the ForeverFlip tab only: a second button over the game's tabs covered their items.
     UI.merchantButton = button(MerchantFrame, "Sell to vendor", 180, sellAll)
-    UI.merchantButton:SetPoint("TOPRIGHT", MerchantFrame, "TOPRIGHT", -40, -28)
+    UI.placeMerchantButton()
+    -- The game shows and hides its filter as the merchant's goods change: looked at on our own
+    -- button's clock, nothing is hooked on the game's frames.
+    local since = 0
+    UI.merchantButton:SetScript("OnUpdate", function(_, elapsed)
+        since = since + (elapsed or 0)
+        if since >= 0.2 then
+            since = 0
+            UI.placeMerchantButton()
+        end
+    end)
+end
+
+-- Where the Sell to vendor button stands. Its place under the title is where the game puts the
+-- class filter of a merchant with class goods (MerchantFrame.FilterDropdown, 152 wide at the top
+-- right): over it on Retail the two covered each other. While the filter shows, the button stands
+-- above the frame's top edge, where the whole label still fits. The filter is only read.
+local placedHigh
+function UI.placeMerchantButton()
+    local b = UI.merchantButton
+    if not b then
+        return
+    end
+    local filter = MerchantFrame and MerchantFrame.FilterDropdown
+    local high = type(filter) == "table" and type(filter.IsShown) == "function" and filter:IsShown() == true
+    if placedHigh == high then
+        return
+    end
+    placedHigh = high
+    b:ClearAllPoints()
+    if high then
+        b:SetPoint("BOTTOMRIGHT", MerchantFrame, "TOPRIGHT", -8, 2)
+    else
+        b:SetPoint("TOPRIGHT", MerchantFrame, "TOPRIGHT", -40, -28)
+    end
 end
 
 function UI.merchantOffers(open)

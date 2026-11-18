@@ -14,6 +14,10 @@ All notable changes are listed here. The format follows
   price without an answer, so an undercut like 2g 3s 99c ended in "The auction house did not
   confirm the post". The addon now asks the game which prices it takes, undercuts by a whole
   silver on Retail and rounds every commodity post down to it. WoW Forever keeps the copper.
+- **The Sell to vendor button no longer covers the merchant's class filter.** A merchant with
+  class goods shows the game's filter at the top right of the window, where the button stood, and
+  on Retail the two lay over each other. While the filter shows, the button stands just above the
+  window instead.
 - **A full scan no longer stands still at its last few rows.** On Retail every scan ended with
   about 30 auctions whose item data never came, and the progress stood at "271810 / 271839" for
   30 seconds before the scan finished. When no more than 100 rows wait, 5 seconds without news is
