@@ -192,6 +192,17 @@ function C.itemInfo(id)
         expansion
 end
 
+-- True for a cosmetic item (an appearance for the collection, item level 1): it looks like a weapon
+-- or armor piece but cannot be disenchanted. False when unknown or the client has no such check.
+function C.cosmetic(id)
+    local check = C_Item and C_Item.IsCosmeticItem
+    if not check or not id then
+        return false
+    end
+    local ok, yes = pcall(check, id)
+    return ok and yes == true
+end
+
 -- Units of an item the player has: in the bags, and with `bank` the bank too (as last seen); 0
 -- when unknown.
 function C.itemCount(id, bank)

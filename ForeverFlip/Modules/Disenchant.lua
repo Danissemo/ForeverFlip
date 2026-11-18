@@ -86,6 +86,11 @@ function DE.band(quality, level, classID, expansion)
         return nil
     end
     local kind = classID == 2 and "w" or "a"
+    -- Item level 1 is a cosmetic appearance (Lost Soul Collector, a Midnight epic mace): the game
+    -- answers "That item is not a valid target" to Disenchant on it.
+    if U.finite(level) and level < 5 then
+        return nil
+    end
     if DE.retail() then
         if not U.finite(quality) or quality < 2 or quality > 4 or not U.finite(expansion) then
             return nil
@@ -277,7 +282,7 @@ end
 -- nil when the item cannot be disenchanted or a material has no usual price yet.
 function DE.value(id)
     local _, _, quality, level, _, _, _, _, _, _, _, classID, _, _, expansion = U.itemInfo(id)
-    local outcomes = DE.outcomes(quality, level, classID, expansion)
+    local outcomes = not F.Compat.cosmetic(id) and DE.outcomes(quality, level, classID, expansion)
     if not outcomes then
         return nil
     end
@@ -378,7 +383,7 @@ function DE.queue()
                         left[key] = tonumber(p.qty) or 0
                     end
                     local _, _, quality, level, _, _, _, _, _, _, _, classID, _, _, expansion = U.itemInfo(id)
-                    if left[key] > 0 and DE.band(quality, level, classID, expansion) then
+                    if left[key] > 0 and DE.band(quality, level, classID, expansion) and not F.Compat.cosmetic(id) then
                         left[key] = left[key] - (tonumber(info.stackCount) or 1)
                         out[#out + 1] = { bag = bag, slot = slot, id = id, link = info.hyperlink }
                     end

@@ -34,6 +34,18 @@ class DisenchantButtonTests(unittest.TestCase):
         assert(b:GetAttribute('target-bag') == 0 and b:GetAttribute('target-slot') == 2)
         assert(b.scripts.OnClick == nil, 'the secure template keeps its own click')''')
 
+    def test_cosmetic_gear_is_not_disenchanted(self):
+        # Lost Soul Collector, a cosmetic epic mace of item level 1: the game answered "That item
+        # is not a valid target" and the button stayed on it.
+        run(BOOK + '''assert(#DE.queue() == 1)
+        C_Item.IsCosmeticItem = function(id) return id == 50 end
+        assert(#DE.queue() == 0, 'a cosmetic is skipped')
+        assert(DE.value(50) == nil, 'and not priced for the Disenchant page')
+        C_Item.IsCosmeticItem = nil
+        gear[50] = { 4, 1, 2, 11 }
+        assert(#DE.queue() == 0, 'item level 1 is a cosmetic too')
+        assert(DE.band(4, 1, 2, 11) == nil)''')
+
     def test_the_press_reaches_the_secure_click(self):
         # With ActionButtonUseKeyDown on, the game's default, the secure click acts on the press;
         # a button registered for the release only did nothing in the game.

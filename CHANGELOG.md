@@ -23,6 +23,10 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Cosmetic gear is no longer priced for disenchanting.** A cosmetic appearance such as Lost Soul
+  Collector looks like an epic weapon but cannot be disenchanted: the Disenchant page priced it as
+  if it could, and the Disenchant bought button stopped on it with "That item is not a valid
+  target". Items the game marks as cosmetic, and any of item level 1, are left out.
 - **Profit sorts by profit on Deals.** The column was sorted by the profit times Sure, so 271g
   stood above 580g and the arrow looked broken. It now sorts by the profit it shows; Sure has its
   own column for the chance of a sale. The other Profit columns already sorted by what they show.
