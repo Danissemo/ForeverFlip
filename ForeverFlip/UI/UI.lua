@@ -260,7 +260,7 @@ function UI.fitButton(b, width)
         if not need or need <= 0 then
             need = #text * 7 -- letterfont: about 7 px a character, one line
         end
-        b:SetSize(math.max(width or 0, math.ceil(need) + 20), 22)
+        b:SetSize(math.max(width or 0, math.ceil(need) + 20), b.labelHeight or 22)
         if b.fitLabel then
             b:fitLabel() -- the label in the grown button: back to the normal font if it fits now
         end
@@ -298,8 +298,9 @@ local function fonts(b, set)
     end
 end
 function UI.keepLabelInside(b)
+    -- b.smallLabel: a button that sits among the game's own (the merchant's) keeps the small font.
     b.resetLabel = function(self)
-        fonts(self, NORMAL)
+        fonts(self, self.smallLabel and SMALL or NORMAL)
         local fs = self.GetFontString and self:GetFontString()
         if fs and fs.SetWidth then
             fs:SetWidth(0) -- unbounded again, so the measure is the label's own

@@ -272,7 +272,7 @@ class MerchantTests(unittest.TestCase):
         addItem(71, 'Murloc Fin', 28, 'commodity'); putBag(0, 1, 71, 4)
         F.Data.market(F.db, F.Engine.scope()).history['c:71'] = { scan = { at = now, market = 20 } }
         MerchantFrame:Show(); fire('MERCHANT_SHOW')
-        assert(UI.merchantButton:IsShown() and UI.merchantButton:GetText():find('Sell to vendor %(1%)'), UI.merchantButton:GetText())
+        assert(UI.merchantButton:IsShown() and UI.merchantButton:GetText():find('^Sell %(1%)'), UI.merchantButton:GetText())
         UI.merchantTab:Click()
         assert(UI.merchantView:IsShown() and UI.merchantView.sellRows[1]:IsShown())
         UI.merchantView.sellAll:Click()

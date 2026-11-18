@@ -51,6 +51,16 @@ All notable changes are listed here. The format follows
   estimate now counts the item's other endings, or gear of about its price, for the hours the
   estimate adds to its own; the more hours the item is watched, the less they count. The Deals
   column, the deal detail, Check Sure, the Sell page and the tooltip show that one figure.
+- **Disenchant works on Retail (Midnight).** Its table was Classic's, by item level up to 65:
+  Midnight gear (item level 197 and up) matched no band, so the Disenchant page stayed empty after
+  every scan and your own disenchants were never learned. On Retail an item gives the reagents of
+  its own expansion, so the band is now the expansion and quality: Midnight greens, blues and
+  epics are priced from Eversinging Dust, Radiant Shard and Dawn Crystal (both ranks, the rates
+  from logged disenchants), and gear of older expansions is priced from your own disenchants once
+  15 of a kind were seen, rather than guessed from the Classic table. WoW Forever is unchanged.
+- **The merchant's Sell button fits the window.** "Sell to vendor (14): 2700g 97s" in the normal
+  font ran past the merchant window on the left. It now reads "Sell (14): 2700g 97s" in the small
+  font on a lower button, and its tooltip says it is ForeverFlip's and what it sells.
 - **Item names no longer show as "|..." on the Sell page during a scan.** A scan makes the client
   drop items from its cache, and Retail then hands out bag links with an empty name; the row put
   the link as it was. It now shows the item's name, or the last one it showed.

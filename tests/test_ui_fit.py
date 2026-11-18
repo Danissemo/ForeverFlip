@@ -57,6 +57,19 @@ class FitButtonTests(unittest.TestCase):
         b:GetScript('OnUpdate')(b,0.3)
         assert(where=='TOPRIGHT>TOPRIGHT','back under the title without it: '..tostring(where))""")
 
+    def test_the_merchant_button_is_short_small_and_says_what_it_is(self):
+        # "Sell to vendor (14): 2700g 97s" in the normal font ran past the merchant window.
+        run(BASE + """F.db.settings.vendorMargin = 0
+        addItem(71, 'Murloc Fin', 28, 'commodity'); putBag(0, 1, 71, 4)
+        F.Data.market(F.db, F.Engine.scope()).history['c:71'] = { scan = { at = now, market = 20 } }
+        MerchantFrame:Show(); fire('MERCHANT_SHOW')
+        local b=UI.merchantButton
+        assert(b:GetText():find('^Sell %(1%): '),b:GetText())
+        assert(b.height==20,'a little lower than the game buttons: '..tostring(b.height))
+        b:GetScript('OnEnter')(b)
+        assert(GameTooltip:IsShown(),'the hover says it is ForeverFlip')
+        b:GetScript('OnLeave')(b)""")
+
 
 if __name__ == '__main__':
     unittest.main()

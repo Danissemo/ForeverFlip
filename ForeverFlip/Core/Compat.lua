@@ -163,18 +163,33 @@ function C.playerSpell(id)
 end
 
 -- Items -------------------------------------------------------------------------------------------
--- GetItemInfo moved to C_Item on the WoW Forever client; the global may be missing.
+-- GetItemInfo moved to C_Item on the WoW Forever client; the global may be missing. The last three
+-- (subclass, bind type, expansion) are Retail's: the expansion decides what an item disenchants into.
 function C.itemInfo(id)
     local get = (C_Item and C_Item.GetItemInfo) or GetItemInfo
     if not get then
         return nil
     end
-    local ok, name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice, classID =
+    local ok, name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice, classID, subclassID, bind, expansion =
         pcall(get, id)
     if not ok then
         return nil
     end
-    return name, link, quality, level, minLevel, itemType, subType, stack, equip, texture, sellPrice, classID
+    return name,
+        link,
+        quality,
+        level,
+        minLevel,
+        itemType,
+        subType,
+        stack,
+        equip,
+        texture,
+        sellPrice,
+        classID,
+        subclassID,
+        bind,
+        expansion
 end
 
 -- Units of an item the player has: in the bags, and with `bank` the bank too (as last seen); 0

@@ -305,7 +305,33 @@ local function createMerchantTab()
 
     -- The Merchant tab: one button sells the list at once. Gear the class cannot use is sold from
     -- the ForeverFlip tab only: a second button over the game's tabs covered their items.
-    UI.merchantButton = button(MerchantFrame, "Sell to vendor", 180, sellAll)
+    -- Small, in the small font, and "Sell (14): 2700g": the long label in the normal font ran past
+    -- the merchant window on the left. What it is and what it sells is said on hover.
+    UI.merchantButton = button(MerchantFrame, "Sell to vendor", 90, sellAll)
+    UI.merchantButton.smallLabel, UI.merchantButton.labelHeight = true, 20
+    UI.merchantButton.fitWidth()
+    UI.merchantButton:SetScript("OnEnter", function(self)
+        if not GameTooltip then
+            return
+        end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("ForeverFlip", 1, 0.82, 0)
+        GameTooltip:AddLine(
+            L(
+                "Sells to this merchant the items worth more here than on the auction house. The list is on the ForeverFlip tab."
+            ),
+            1,
+            1,
+            1,
+            true
+        )
+        GameTooltip:Show()
+    end)
+    UI.merchantButton:SetScript("OnLeave", function(self)
+        if GameTooltip and GameTooltip:IsOwned(self) then
+            GameTooltip:Hide()
+        end
+    end)
     UI.placeMerchantButton()
     -- The game shows and hides its filter as the merchant's goods change: looked at on our own
     -- button's clock, nothing is hooked on the game's frames.
@@ -387,7 +413,7 @@ function UI.merchant(open)
     local refused = F.Trade.vendorRefusedCount or 0
     local view = UI.merchantView
     if #list > 0 and not view:IsShown() then
-        UI.merchantButton:SetText(string.format(L("Sell to vendor (%d): %s"), #list, U.money(total)))
+        UI.merchantButton:SetText(string.format(L("Sell (%d): %s"), #list, U.money(total)))
         if UI.merchantButton.fitWidth then
             UI.merchantButton.fitWidth()
         end

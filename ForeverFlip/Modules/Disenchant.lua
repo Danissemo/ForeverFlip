@@ -6,6 +6,11 @@
 -- ForeverForge Auction found from logged disenchants: green weapons of item level 21-30 give
 -- Greater Magic Essence, never an astral one. Your own disenchants are learned (LOOT_OPENED after
 -- the spell) and replace the table for a band once DE.LEARN of them were seen.
+--
+-- Retail (12.x) is another game: its item levels were squished and an item disenchants into the
+-- materials of its own expansion, whatever its level. There an item's band is its expansion and
+-- quality ("x11:2:a"); Midnight gear has a table (DE.MIDNIGHT), gear of older expansions is learned
+-- from your own disenchants only, since a guess from the Classic table would price it wrong.
 local F = ForeverFlip
 local U = F.Util
 local DE = {}
@@ -25,6 +30,21 @@ local SMALL_GLOWING, LARGE_GLOWING = 11138, 11139
 local SMALL_RADIANT, LARGE_RADIANT = 11177, 11178
 local SMALL_BRILLIANT, LARGE_BRILLIANT = 14343, 14344
 local NEXUS = 20725
+
+-- Midnight's reagents, each in two ranks (the second worth more): Eversinging Dust from uncommon
+-- gear, Radiant Shard from rare, Dawn Crystal from epic.
+local DUST_1, DUST_2 = 243599, 243600
+local SHARD_1, SHARD_2 = 243602, 243603
+local CRYSTAL_1, CRYSTAL_2 = 243605, 243606
+DE.MIDNIGHT_EXPANSION = 11 -- LE_EXPANSION_MIDNIGHT, GetItemInfo's 15th answer
+-- Expected units of each by quality, from Wowhead's disenchant logs of Midnight gear (item level 197
+-- and up, November 2026): a green gives about two dust (a quarter of them rank 2), a blue a shard, an
+-- epic a crystal, about a third and a half of them rank 2. Your own disenchants replace it (DE.LEARN).
+DE.MIDNIGHT = {
+    [2] = { { DUST_1, 1.35 }, { DUST_2, 0.45 } },
+    [3] = { { SHARD_1, 0.7 }, { SHARD_2, 0.3 } },
+    [4] = { { CRYSTAL_1, 0.5 }, { CRYSTAL_2, 0.45 } },
+}
 
 -- Uncommon items: { up to item level, dust, dust qty, essence, essence qty, shard, shard chance }.
 -- Armor gives dust 75% (80% below level 16) and essence 20%; weapons swap the two.
@@ -54,13 +74,27 @@ local RARE = {
     { 65, LARGE_BRILLIANT },
 }
 
--- The band of an item: a key for learning ("2:w:25" = green weapon up to item level 25) and the
--- table row; nil when it cannot be disenchanted.
-function DE.band(quality, level, classID)
-    if not U.finite(level) or level < 5 or (classID ~= 2 and classID ~= 4) then
+function DE.retail()
+    return F.AH.isRetail() and true or false
+end
+
+-- The band of an item: a key for learning ("2:w:25" = green weapon up to item level 25; on Retail
+-- "x11:2:w" = a green Midnight weapon) and the Classic table row; nil when it cannot be
+-- disenchanted. `expansion`: GetItemInfo's, asked on Retail only.
+function DE.band(quality, level, classID, expansion)
+    if classID ~= 2 and classID ~= 4 then
         return nil
     end
     local kind = classID == 2 and "w" or "a"
+    if DE.retail() then
+        if not U.finite(quality) or quality < 2 or quality > 4 or not U.finite(expansion) then
+            return nil
+        end
+        return "x" .. expansion .. ":" .. quality .. ":" .. kind
+    end
+    if not U.finite(level) or level < 5 then
+        return nil
+    end
     if quality == 2 then
         for _, row in ipairs(UNCOMMON) do
             if level <= row[1] then
@@ -98,14 +132,18 @@ end
 -- Outcomes { { itemID, expected units } } of an item of `quality` (2 or 3), `level` and class
 -- (2 = weapon, 4 = armor); nil when it cannot be disenchanted. Second value: "yours" when your own
 -- disenchants set them, else "table".
-function DE.outcomes(quality, level, classID)
-    local band = DE.band(quality, level, classID)
+function DE.outcomes(quality, level, classID, expansion)
+    local band = DE.band(quality, level, classID, expansion)
     if not band then
         return nil
     end
     local own = learned(band)
     if own then
         return own, "yours"
+    end
+    if DE.retail() then
+        local row = expansion == DE.MIDNIGHT_EXPANSION and DE.MIDNIGHT[quality]
+        return row or nil, row and "table" or nil
     end
     if quality == 2 then
         for _, row in ipairs(UNCOMMON) do
@@ -177,6 +215,12 @@ DE.MATERIALS = {
     SMALL_BRILLIANT,
     LARGE_BRILLIANT,
     NEXUS,
+    DUST_1,
+    DUST_2,
+    SHARD_1,
+    SHARD_2,
+    CRYSTAL_1,
+    CRYSTAL_2,
 }
 function DE.status(scanned)
     if not DE.canDisenchant() then
@@ -232,8 +276,8 @@ end
 -- Expected money from disenchanting one item and selling the materials on the auction house;
 -- nil when the item cannot be disenchanted or a material has no usual price yet.
 function DE.value(id)
-    local _, _, quality, level, _, _, _, _, _, _, _, classID = U.itemInfo(id)
-    local outcomes = DE.outcomes(quality, level, classID)
+    local _, _, quality, level, _, _, _, _, _, _, _, classID, _, _, expansion = U.itemInfo(id)
+    local outcomes = DE.outcomes(quality, level, classID, expansion)
     if not outcomes then
         return nil
     end
@@ -368,8 +412,8 @@ function DE.onLoot()
     if not c or F.Engine.clock() - c.at > 15 or not GetNumLootItems or not GetLootSlotLink then
         return false
     end
-    local _, _, quality, level, _, _, _, _, _, _, _, classID = U.itemInfo(c.id)
-    local band = DE.band(quality, level, classID)
+    local _, _, quality, level, _, _, _, _, _, _, _, classID, _, _, expansion = U.itemInfo(c.id)
+    local band = DE.band(quality, level, classID, expansion)
     if not band then
         return false
     end
