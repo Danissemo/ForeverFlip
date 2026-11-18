@@ -153,6 +153,15 @@ All notable changes are listed here. The format follows
 
 ### Development
 
+- **ForeverFlip needs no other addon, and a test keeps it so.** Players install it alone; TSM,
+  Auctionator and the like only help development. `tests/test_standalone.py` fails if the TOC
+  requires another addon or the code calls one, and loads the addon with no library at all.
+- **`tools/calibrate.py` compares the addon's own estimates with TSM's region data.** On the
+  developer's machine it reads the saved data and TSM's `AppData.lua` (both only read), works out
+  usual prices and daily sales with the addon's own code and reports how far they are from what
+  the region really sold. First run: daily sales right on the median (x0.98) but off by more than 3x
+  for a quarter of items, and 549 items the region sells that ForeverFlip has no sales for yet.
+  The proposals that follow from it are in `docs/improvement-proposals.uk.md`.
 - **Consistency audit, `docs/consistency-audit.uk.md`.** Which formulas have one source and
   which differ on purpose, the repeated work found in the traces, the replay of the last full scan
   and what the check timings mean. The tooltip's DEV line about its rules is traced only when it
