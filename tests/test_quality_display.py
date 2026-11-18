@@ -40,8 +40,9 @@ class CheckLinesTests(unittest.TestCase):
         text = clean(run(BASE + '''sales(1)
         local c = D.checkAt('c:10', 100, 1, nil, 0, 0, now)
         return table.concat(UI.checkLines(c), ' ## ')'''))
-        # Sure is shown with a question mark (a guess from too few pairs), Est./day not at all.
-        self.assertRegex(text, r'Sure \d+%\?, about - a day sell')
+        # Sure and Est./day are shown with a question mark (a guess from too few pairs): the
+        # same numbers as the Deals columns.
+        self.assertRegex(text, r'Sure \d+%\?, about [\d.]+\? a day sell')
         self.assertIn('No reliable data: too few scan pairs compared yet', text)
 
     def test_legacy_sales_say_an_older_version_measured_them(self):
@@ -61,11 +62,12 @@ class TooltipTests(unittest.TestCase):
     for _, fn in ipairs(tooltipCalls) do fn(GameTooltip) end
     return table.concat(tooltipLines, ' ## ')'''
 
-    def test_few_pairs_in_the_tooltip_give_the_reason_not_the_number(self):
+    def test_few_pairs_in_the_tooltip_give_the_number_marked_and_the_reason(self):
         text = clean(run(BASE + '''fullScan()
         local h = market.history['c:10']
         h.sales = nil; M.recordSales(h, {[100] = 2}, 900, now); D.sureCache = {}''' + self.TIP))
-        self.assertIn('No reliable data', text)
+        # The same Est./day as the Deals column, marked "?", and why it is thin.
+        self.assertRegex(text, r'Estimated sales / day = ~[\d.]+\?')
         self.assertIn('too few scan pairs compared yet', text)
         self.assertNotIn('Sure to sell one', text)
 

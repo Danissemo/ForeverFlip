@@ -18,6 +18,10 @@ All notable changes are listed here. The format follows
 - **Auction durations on Retail are 12, 24 and 48 hours.** The Duration buttons said 2, 8 and 24
   (WoW Forever's), and Auto weighed the deposits a post would lose over those hours. On Retail the
   buttons now show its hours and Auto chooses between them.
+- **Est./day is one number everywhere.** The Deals column showed a figure (10.2) while the
+  line under the table and the item tooltip said only "No reliable data" for the same item and
+  price. Every page now shows the same estimate in the same format; while it rests on too few
+  scans it is marked "?" and the reason is given, instead of being hidden on some pages.
 - **Item names no longer show as "|..." on the Sell page during a scan.** A scan makes the client
   drop items from its cache, and Retail then hands out bag links with an empty name; the row put
   the link as it was. It now shows the item's name, or the last one it showed.
@@ -44,9 +48,12 @@ All notable changes are listed here. The format follows
 
 - **ForeverFlip Sync accepts WoW Retail installations.** A `_retail_` folder can be added to the
   game list next to WoW Forever and is shown as "WoW Retail" with its version, so the helper
-  keeps the addon there up to date too. Community prices stay a WoW Forever exchange: a Retail
-  client shares and downloads no scans, since its auction houses are another market and the
-  data repository refuses them. Classic, PTR and beta folders are still refused.
+  keeps the addon there up to date too. Classic, PTR and beta folders are still refused.
+- **Retail scans are shared and community prices downloaded for Retail too**, each region
+  apart. Realm names repeat across regions and Retail's prices are another game's, so the
+  helper names the client's region with every upload, and the data repository keeps each
+  region's houses in `shared/retail-eu/`, `shared/retail-us/` and so on, away from WoW
+  Forever's. A Retail helper downloads only its own region's prices.
 - **Post all and Post AH-worthy say "Check prices" while no item has a price yet.** The game takes
   a post only from a click, so the first click reads the prices and the next one posts; with the
   same label on both, the button looked like it needed two presses to work.

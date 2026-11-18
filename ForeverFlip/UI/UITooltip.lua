@@ -923,11 +923,13 @@ local function tooltipLines(tooltip, data)
             local s = F.Market.saleability(h, at, now)
             -- T32: the sample behind Est./day and Sure; below the thresholds the reason, not a number.
             local q = F.Market.quality(h, at, now)
-            if s.known and not q.reliable then
-                line("Estimated sales / day", UI.C.warn .. L("No reliable data") .. "|r")
-                tipLine(tooltip, " ", grey(UI.qualityReason(q)))
-            elseif s.known then
-                line("Estimated sales / day", UI.estimateLimits(q) or string.format("~%.1f", s.perDay))
+            -- The same number as the Deals column (UI.perDayText); "?" and the reason while it rests
+            -- on too few scans.
+            if s.known then
+                line("Estimated sales / day", "~" .. UI.perDayText(s.perDay, q))
+                if not q.reliable then
+                    tipLine(tooltip, " ", grey(UI.qualityReason(q)))
+                end
             else
                 line("Estimated sales / day", L("not measured yet (needs two scans)"))
             end
@@ -1004,7 +1006,7 @@ local function tooltipLines(tooltip, data)
             line("Your last scan", U.finite(market.scannedAt) and UI.age(market.scannedAt) or L("none yet"))
             local from = other.peers and string.format(L("%d gear items of about this price"), other.n or 0)
                 or string.format(L("%d other versions"), other.n or 0)
-            line("Estimated sales / day", string.format("~%.1f", other.perDay or 0), from)
+            line("Estimated sales / day", "~" .. UI.perDayText(other.perDay or 0), from)
             if U.finite(at) then
                 line(
                     "Sure",

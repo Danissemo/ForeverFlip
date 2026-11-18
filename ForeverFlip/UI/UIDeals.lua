@@ -569,7 +569,19 @@ local function rate(v)
     if not U.finite(v) then
         return "-"
     end
-    return v < 0.05 and "0" or v >= 10 and string.format("%d", math.floor(v + 0.5)) or string.format("%.1f", v)
+    return v < 0.05 and "0" or string.format("%.1f", v)
+end
+
+-- Est./day as every page shows it: the same number (F.Market.saleability at the price, one
+-- formula), the same format, and "?" after it while the sample is below the T32 thresholds
+-- (UI.noReliable says why). A thin sample still gives the best estimate there is (sales over the
+-- hours watched plus M.PRIOR_HOURS, which pulls a few early sales towards 0); hiding it on one page
+-- and showing it on another made two answers to one question.
+function UI.perDayText(perDay, q)
+    if not U.finite(perDay) then
+        return "-"
+    end
+    return rate(perDay) .. (q and not q.reliable and UI.C.warn .. "?|r" or "")
 end
 
 -- "Est./day 3.2", units a day sold near the price; nil without a figure at the price. The 80%
@@ -658,24 +670,27 @@ local function modeText(d)
 end
 -- Est./day: grey when the data is old, orange when no lot was seen bought in part at the price
 -- (only whole lots that vanished, confirmed by the next scan: the weaker evidence).
-local function estimateText(d, estimate, h)
+local function estimateText(d, estimate, h, price, now)
     if d.mode ~= "flip" then
         return modeText(d)
     elseif not estimate.known then
         return "-"
     end
-    local value = estimate.perDay == 0 and "0" or string.format("%.1f", estimate.perDay)
+    price = price or d.exit
+    local value = rate(estimate.perDay)
     if estimate.sibling then
         return UI.C.dim .. "~" .. value .. "|r"
     end
+    local q = h and U.finite(price) and F.Market.quality(h, price, now) or nil
+    local mark = q and not q.reliable and "?" or ""
     if estimate.stale then
-        return UI.C.dim .. value .. "|r"
+        return UI.C.dim .. value .. mark .. "|r"
     end
-    local e = h and U.finite(d.exit) and F.Market.saleEvidence(h, 0.85 * d.exit)
+    local e = h and U.finite(price) and F.Market.saleEvidence(h, 0.85 * price)
     if e and e.sure == 0 then
-        return UI.C.warn .. value .. "|r"
+        return UI.C.warn .. value .. mark .. "|r"
     end
-    return value
+    return value .. (mark ~= "" and UI.C.warn .. mark .. "|r" or "")
 end
 
 -- The sales an estimate rests on, in words: units, buys, how sure, prices (UI.saleEvidenceLine).
@@ -762,11 +777,7 @@ function UI.checkLines(c)
     -- T32: below the sample thresholds the figures are not shown as numbers.
     local q = c.quality
     local unreliable = q and not q.reliable
-    local perDay = not unreliable
-            and c.sale
-            and c.sale.known
-            and (c.sale.perDay == 0 and "0" or string.format("%.1f", c.sale.perDay))
-        or "-"
+    local perDay = c.sale and c.sale.known and UI.perDayText(c.sale.perDay, q) or "-"
     local line = UI.C.info
         .. L("Check")
         .. "|r "
@@ -951,27 +962,17 @@ function UI.dealDetail(d, estimate, h, now)
         lines[#lines + 1] = why
     end
     local floor = U.finite(d.exit) and math.floor(0.85 * d.exit) or nil
-    -- T32: the sample behind Demand and Sure; below the thresholds no number is shown.
+    -- T32: the sample behind Demand and Sure. Below the thresholds the same numbers as the columns,
+    -- marked "?", and the reason under them.
     local q = U.finite(d.exit) and F.Market.quality(h, d.exit, now) or nil
-    if q and not q.reliable and (q.reason ~= "no_data" or (estimate and estimate.known)) then
-        local line = gold("Demand") .. " " .. UI.noReliable(q)
-        if estimate and estimate.age then
-            line = line
-                .. "  ·  "
-                .. string.format(L("data %s old"), UI.duration(estimate.age))
-                .. (estimate.stale and L(" (old data)") or "")
-        end
-        lines[#lines + 1] = line
-        if q.watched then
-            lines[#lines + 1] = UI.C.dim .. UI.sampleLine(q) .. "|r"
-        end
-        lines[#lines + 1] = UI.saleEvidenceLine(h, floor)
-        lines[#lines + 1] = gold("Sure") .. " " .. UI.noReliable(q)
-        return lines
-    end
+    local thin = q and not q.reliable and (q.reason ~= "no_data" or (estimate and estimate.known))
     if estimate and estimate.known then
-        local line =
-            string.format(L("%s ~%.1f a day at %s or more"), gold("Demand"), estimate.perDay, U.money(floor or 0))
+        local line = string.format(
+            L("%s ~%s a day at %s or more"),
+            gold("Demand"),
+            UI.perDayText(estimate.perDay, thin and q or nil),
+            U.money(floor or 0)
+        )
         if estimate.perDay > 0 then
             line = line
                 .. "  ·  "
@@ -984,10 +985,16 @@ function UI.dealDetail(d, estimate, h, now)
                 .. (estimate.stale and L(" (old data)") or "")
         end
         lines[#lines + 1] = line
-    else
+    elseif not thin then
         lines[#lines + 1] = gold("Demand")
             .. " "
             .. L("Sale estimate unavailable: collect two full scans with usable price data.")
+    end
+    if thin then
+        lines[#lines + 1] = UI.noReliable(q)
+        if q.watched then
+            lines[#lines + 1] = UI.C.dim .. UI.sampleLine(q) .. "|r"
+        end
     end
     lines[#lines + 1] = UI.saleEvidenceLine(h, floor)
     local sure = UI.sureSentence(d, now)
@@ -1132,7 +1139,7 @@ function UI.refreshDeals()
                 r.cols[2]:SetText(U.money(unitCost(d)))
                 r.cols[3]:SetText(UI.C.info .. U.money(check.price) .. "|r")
                 r.cols[4]:SetText(U.money(math.floor(check.result.profit + 0.5)))
-                r.cols[5]:SetText(estimateText(d, check.result.sale, history[d.key]))
+                r.cols[5]:SetText(estimateText(d, check.result.sale, history[d.key], check.price, now))
                 r.cols[6]:SetText(UI.sureText(check.result.sure) .. (check.result.thin and UI.C.warn .. "?|r" or ""))
                 r.cols[7]:SetText(dealStatus(d))
             else
@@ -1140,7 +1147,7 @@ function UI.refreshDeals()
                 r.cols[2]:SetText(U.money(unitCost(d)))
                 r.cols[3]:SetText(sellsAtText(d, history))
                 r.cols[4]:SetText(U.money(d.profit))
-                r.cols[5]:SetText(estimateText(d, estimates[d.key], history[d.key]))
+                r.cols[5]:SetText(estimateText(d, estimates[d.key], history[d.key], d.exit, now))
                 r.cols[6]:SetText(UI.dealSureText(d, now))
                 r.cols[7]:SetText(dealStatus(d))
             end
