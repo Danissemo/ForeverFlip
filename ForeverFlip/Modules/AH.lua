@@ -136,30 +136,139 @@ local function has(list, value)
     return false
 end
 
--- true: equipment the class can never use; false: usable (or not equipment); nil: unknown.
-function A.unusableGear(id)
+-- Retail (Midnight) proficiencies. Every class wears the armor below its own, so only heavier
+-- armor is out; relics are gone. Ranged weapons stay allowed where unsure: a piece left out is only
+-- not sold, a wrong one would be.
+local RETAIL_WEAPONS = {
+    WARRIOR = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 15, 16, 18 },
+    PALADIN = { 0, 1, 4, 5, 6, 7, 8 },
+    DEATHKNIGHT = { 0, 1, 4, 5, 6, 7, 8 },
+    HUNTER = { 0, 1, 2, 3, 6, 7, 8, 10, 13, 15, 18 },
+    ROGUE = { 0, 2, 3, 4, 7, 13, 15, 16, 18 },
+    PRIEST = { 4, 10, 15, 19 },
+    SHAMAN = { 0, 1, 4, 5, 10, 13, 15 },
+    MAGE = { 7, 10, 15, 19 },
+    WARLOCK = { 7, 10, 15, 19 },
+    MONK = { 0, 4, 6, 7, 10, 13 },
+    DRUID = { 4, 5, 6, 10, 13, 15 },
+    DEMONHUNTER = { 0, 7, 9, 13, 15 },
+    EVOKER = { 0, 1, 4, 5, 7, 8, 10, 13, 15 },
+}
+local RETAIL_ARMOR = {
+    WARRIOR = { 1, 2, 3, 4, 6 },
+    PALADIN = { 1, 2, 3, 4, 6 },
+    DEATHKNIGHT = { 1, 2, 3, 4 },
+    HUNTER = { 1, 2, 3 },
+    SHAMAN = { 1, 2, 3, 6 },
+    EVOKER = { 1, 2, 3 },
+    ROGUE = { 1, 2 },
+    MONK = { 1, 2 },
+    DRUID = { 1, 2 },
+    DEMONHUNTER = { 1, 2 },
+    PRIEST = { 1 },
+    MAGE = { 1 },
+    WARLOCK = { 1 },
+}
+-- Main stats any specialization of the class uses: a respec makes the others' gear wearable.
+local MAIN_STATS = {
+    WARRIOR = { "STRENGTH" },
+    PALADIN = { "STRENGTH", "INTELLECT" },
+    DEATHKNIGHT = { "STRENGTH" },
+    HUNTER = { "AGILITY" },
+    ROGUE = { "AGILITY" },
+    DEMONHUNTER = { "AGILITY" },
+    MONK = { "AGILITY", "INTELLECT" },
+    DRUID = { "AGILITY", "INTELLECT" },
+    SHAMAN = { "AGILITY", "INTELLECT" },
+    EVOKER = { "INTELLECT" },
+    PRIEST = { "INTELLECT" },
+    MAGE = { "INTELLECT" },
+    WARLOCK = { "INTELLECT" },
+}
+local ACCOUNT_BINDS = { [7] = true, [8] = true, [9] = true } -- heirloom and warband binds
+
+-- Gear bound to the account (heirlooms, warband pieces) goes to an alt instead of a merchant.
+local function accountBound(id)
+    if C_Item and C_Item.IsItemBindToAccount and C_Item.IsItemBindToAccount(id) then
+        return true
+    end
+    if C_Item and C_Item.IsItemBindToAccountUntilEquip and C_Item.IsItemBindToAccountUntilEquip(id) then
+        return true
+    end
+    local bind = select(14, U.itemInfo(id))
+    return ACCOUNT_BINDS[bind] == true
+end
+
+-- false when the piece carries a main stat some specialization of the class uses, or none at all;
+-- true only when every main stat on it is one no specialization of the class uses.
+local function wrongMainStat(link, class)
+    local read = C_Item and C_Item.GetItemStats or (not C_Item and GetItemStats)
+    local wanted = MAIN_STATS[class]
+    if not link or not read or not wanted then
+        return false
+    end
+    local ok, stats = pcall(read, link)
+    if not ok or type(stats) ~= "table" then
+        return false
+    end
+    local any = false
+    for name in pairs(stats) do
+        local main = false
+        for _, stat in ipairs({ "STRENGTH", "AGILITY", "INTELLECT" }) do
+            if string.find(name, stat, 1, true) then
+                main = true
+                for _, w in ipairs(wanted) do
+                    if w == stat then
+                        return false
+                    end
+                end
+            end
+        end
+        any = any or main
+    end
+    return any
+end
+
+-- true: equipment the class can never use; false: usable (or not equipment); nil: unknown. On
+-- Retail a piece whose main stat no specialization of the class uses counts too (link needed), and
+-- gear bound to the account never does: an alt can wear it.
+function A.unusableGear(id, link)
     local info = C_Item and C_Item.GetItemInfoInstant
     if not info then
         return nil
     end
     local _, _, _, equipLoc, _, classID, subclassID = info(id)
-    if not equipLoc or equipLoc == "" or EVERYONE[equipLoc] or equipLoc == "INVTYPE_BAG" then
+    if not equipLoc or equipLoc == "" or equipLoc == "INVTYPE_BAG" then
+        return false
+    end
+    if accountBound(id) then
         return false
     end
     local class = UnitClass and select(2, UnitClass("player"))
-    if not class or not WEAPONS[class] then
+    local retail = A.isRetail()
+    local weapons, armor = WEAPONS, ARMOR
+    if retail then
+        weapons, armor = RETAIL_WEAPONS, RETAIL_ARMOR
+    end
+    if not class or not weapons[class] then
         return nil
+    end
+    if retail and wrongMainStat(link, class) then
+        return true
+    end
+    if EVERYONE[equipLoc] then
+        return false
     end
     if classID == 2 then
         if subclassID == 14 or subclassID == 20 then
             return false -- miscellaneous weapons, fishing poles
         end
-        return not has(WEAPONS[class], subclassID)
+        return not has(weapons[class], subclassID)
     elseif classID == 4 then
-        if subclassID == 0 then
-            return false
+        if subclassID == 0 or (retail and subclassID == 5) then
+            return false -- miscellaneous and cosmetic
         end
-        return not has(ARMOR[class], subclassID)
+        return not has(armor[class], subclassID)
     end
     return false
 end

@@ -51,6 +51,11 @@ All notable changes are listed here. The format follows
   estimate now counts the item's other endings, or gear of about its price, for the hours the
   estimate adds to its own; the more hours the item is watched, the less they count. The Deals
   column, the deal detail, Check Sure, the Sell page and the tooltip show that one figure.
+- **Gear I can't use follows Retail's rules.** On Retail it used the Classic proficiencies (no
+  polearms for druids, and Monks, Death Knights, Demon Hunters and Evokers were never checked). Now a
+  piece counts only when no specialization of your class could wear it: a respec makes the other main
+  stat wearable, so intellect leather stays for a druid while strength leather goes. Gear bound to
+  the account (warband pieces, heirlooms) is never listed — an alt can wear it.
 - **Disenchant works on Retail (Midnight).** Its table was Classic's, by item level up to 65:
   Midnight gear (item level 197 and up) matched no band, so the Disenchant page stayed empty after
   every scan and your own disenchants were never learned. On Retail an item gives the reagents of
