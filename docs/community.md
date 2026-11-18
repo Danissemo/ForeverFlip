@@ -120,7 +120,9 @@ A folder that is a developer's checkout (a link or a `.git` folder inside) is ne
    the helper shows its answer and deletes the gist.
 4. In game, after `/reload`: **Settings → Sharing** shows **Shared by the helper: N of your scans**
    with the age of the newest one, and how many full scans still wait for the helper. Shared scans
-   are dropped from the saved file at login.
+   are dropped from the saved file at login. Under **This house** it also shows how many players'
+   scans the published prices rest on (`uploaders` in the market's `status.json`); while full
+   scans are off it adds a line inviting the player to add theirs.
 
 A sign-in of the [GitHub CLI](https://cli.github.com) (`gh auth login`), `FF_GITHUB_TOKEN` or a
 `token` in `config.json` also works; the window shows which one is used and never displays it.

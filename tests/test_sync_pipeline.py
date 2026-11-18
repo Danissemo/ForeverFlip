@@ -240,7 +240,8 @@ class HelperStatusTests(unittest.TestCase):
     def test_unreliable_markets_are_withheld_with_their_reason(self):
         at = 1_700_000_000
         status = {'format': 1, 'checked_at': at + 600, 'markets': {
-            'Realm-Horde': {'reliable': True, 'reason': None, 'published_at': at + 300, 'latest_published': at},
+            'Realm-Horde': {'reliable': True, 'reason': None, 'published_at': at + 300, 'latest_published': at,
+                            'uploaders': 3},
             'Realm-Alliance': {'reliable': False, 'published_at': at + 200, 'latest_published': at,
                                'reason': 'only 1 published scan in the last 7 days, 2 needed'}}}
         summary = ffscan.encode_summary('Realm-Horde', at, {'1': (10, 9, 2)})
@@ -249,6 +250,7 @@ class HelperStatusTests(unittest.TestCase):
         self.assertEqual(report['Realm-Alliance']['scans'], 0)
         self.assertEqual(report['Realm-Horde']['published_at'], at + 300)
         self.assertIn('reason = "only 1 published scan', data)
+        self.assertIn('uploaders = 3', data)  # the addon shows how many players share the house
         lines = helper.community_status({'exchange': {'ok_at': at + 700, 'downloaded_at': at + 700,
                                                       'shared_at': at + 100, 'scopes': report},
                                           'uploaded': [f'Realm-Horde@{at + 50}']})
@@ -310,6 +312,20 @@ local scope = F.Engine.scope()
         assert(text:find('downloaded by the helper', 1, true), text)
         assert(text:find('published ', 1, true), text)
         assert(text:find('No community price yet: only 1 published scan', 1, true), text)''')
+
+    def test_the_players_sharing_the_house_are_counted_and_the_player_is_invited(self):
+        run(self.BASE + '''ForeverFlipShared = { generated = now - 60, scans = {}, status = {
+            [scope] = { published_at = now - 3600, checked_at = now - 120, uploaders = 4 } } }
+        R.importCommunity()
+        assert(R.community.scopes[scope].sharers == 4)
+        F.db.settings.rawScans = false
+        UI.show('settings:share'); UI.refreshShare()
+        local text = UI.shareStatus
+        assert(text:find('4 players share scans of this house', 1, true), text)
+        assert(text:find('Add yours', 1, true), text)
+        F.db.settings.rawScans = true
+        UI.refreshShare()
+        assert(not UI.shareStatus:find('Add yours', 1, true), 'already sharing: no invitation')''')
 
     def test_only_own_scans_give_no_community_price(self):
         line = ffscan.encode_summary('Realm-Alliance', 1_700_000_000, {'i:2589': (10, 9, 2)})

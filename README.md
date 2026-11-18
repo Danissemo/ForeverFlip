@@ -34,6 +34,19 @@
 > of this repository. GitHub shows the SHA-256 of every file on the release page; compare it with
 > `certutil -hashfile ForeverFlip-<version>.zip SHA256` (Windows) or `sha256sum` (Linux, macOS).
 
+## 💡 Why ForeverFlip
+
+- **Free and on its own.** No subscription, no desktop app required, no other addon needed.
+- **Tells you what a deal is worth before you buy.** Profit after the auction cut and deposits,
+  how many sell a day (**Est./day**) and the chance it sells at your price (**Sure**), learned from
+  the sales on your own realm.
+- **Checks every deal live.** Nothing can be bought from an old scan: an exact search confirms the
+  price first.
+- **Gets better with every player.** Scans shared through [ForeverFlip Sync](docs/community.md) fill
+  in the prices of items you have not seen sell yet; the Share tab shows how many players share
+  scans of your auction house.
+- **Shows what really paid.** **Analytics → By strategy** books every sale against what it cost.
+
 ## ✨ Feature highlights
 
 **Finding deals**
@@ -94,13 +107,13 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> **Current stable release: [3.2.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.2.0)** (17 November 2026).
-> This release adds separate Alliance, Horde, Neutral and Server auction-house scopes, Retail
-> compatibility checks, update notices delivered by ForeverFlip Sync, and optional developer traces.
-> It also improves multi-version gear checks, Quick scan with the sniper running, sorted bulk actions,
-> timeouts, automatic posting durations and tooltip layout.
-> See the [3.1.0 changelog](CHANGELOG.md#310---2026-11-17) and
-> [release verification checklist](docs/release-3.1.0-validation.md).
+> **Current stable release: [3.2.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.2.0)** (18 November 2026).
+> **Analytics → By strategy** shows what Resale, Market reset, Bids and To vendor really earned;
+> **Disenchant bought** disenchants your purchases one click each; Est./day no longer reads 0 for
+> items that sell, and leans on similar items while their own sales are few. ForeverFlip Sync starts
+> with Windows in the tray and shares Retail scans per region. Check all, Market reset, posting on
+> Retail and two dozen other things are fixed.
+> See the [3.2.0 changelog](CHANGELOG.md#320---2026-11-18).
 
 > [!TIP]
 > To update, replace the `ForeverFlip` folder, or let the
@@ -157,6 +170,7 @@ The Key Bindings window has five bindings (also set on **Settings → Key bindin
 | [Architecture](docs/architecture.md) | Modules, load order, events and data flow |
 | [Saved data](docs/saved-data.md) | Layout of the `ForeverFlipData` SavedVariables file |
 | [Community scans](docs/community.md) | The ForeverFlip Sync helper and the community data repository |
+| [Promotion](docs/promotion.md) | Addon-site uploads, release posts, the shot list and the public numbers |
 | [API](docs/api.md) | `ForeverFlipAPI` for other addons |
 | [Testing](docs/testing.md) | Archived Ukrainian 2.3.0-beta.1 manual checks and the corresponding [Excel worksheet](docs/tester-checklist.uk.xlsx); see the current release matrix below |
 | [3.1.0 validation](docs/release-3.1.0-validation.md) | Release-specific regression and in-game verification matrix |

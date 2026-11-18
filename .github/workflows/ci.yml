@@ -56,3 +56,30 @@ jobs:
         with:
           name: ForeverFlip-${{ matrix.os }}
           path: dist/
+
+  catalogs:
+    name: Package for the addon sites (dry run)
+    # The release uploads with the BigWigs packager; this checks, without uploading, that it still
+    # builds ForeverFlip/ForeverFlip.toc from what tools/build.py packages.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Package and stage
+        id: stage
+        run: |
+          python tools/build.py --output dist --skip-tests
+          echo "Dry run: no notes are published." > "$RUNNER_TEMP/notes.md"
+          top=$(python tools/catalog_stage.py --zip dist/ForeverFlip-*.zip --notes "$RUNNER_TEMP/notes.md"             --out "$RUNNER_TEMP/stage")
+          echo "top=$top" >> "$GITHUB_OUTPUT"
+
+      - uses: BigWigsMods/packager@v2
+        with:
+          args: -d -t ${{ steps.stage.outputs.top }}
+
+      - name: Check the package
+        run: unzip -l ${{ steps.stage.outputs.top }}/.release/ForeverFlip-*.zip | grep -q ' ForeverFlip/ForeverFlip.toc$'

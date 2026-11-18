@@ -483,8 +483,8 @@ def lua_data_file(summaries: list[str], generated: int, uploaded: list[str] | No
                   status: dict | None = None, latest: dict | None = None) -> str:
     """Data.lua of the ForeverFlip_Shared addon. `uploaded`: the scans ("scope@time") this helper
     uploaded, so the addon stops keeping them (Raw.lua). `status`: {scope: {checked_at, published_at,
-    reason}} from the data repository's status.json, so the addon can say when the community data was
-    published and why there is no community price. `latest`: {version, beta, page}, the newest
+    uploaders, reason}} from the data repository's status.json, so the addon can say when the community
+    data was published, how many players' scans it rests on and why there is no community price. `latest`: {version, beta, page}, the newest
     ForeverFlip release of the player's channel, so the addon can say an update is out (it has no
     internet of its own)."""
     lines = ["-- Written by the ForeverFlip Sync helper. Do not edit: it is replaced on every update.",
@@ -494,7 +494,7 @@ def lua_data_file(summaries: list[str], generated: int, uploaded: list[str] | No
     if status:
         lines += ["    },", "    status = {"]
         for scope, info in sorted(status.items()):
-            fields = [f"{key} = {int(info[key])}" for key in ("checked_at", "published_at")
+            fields = [f"{key} = {int(info[key])}" for key in ("checked_at", "published_at", "uploaders")
                       if isinstance(info.get(key), (int, float))]
             if info.get("reason"):
                 fields.append(f"reason = {lua_string(str(info['reason']))}")

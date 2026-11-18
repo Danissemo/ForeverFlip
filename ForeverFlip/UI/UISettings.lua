@@ -829,7 +829,15 @@ function UI.refreshShare()
                 UI.age(here.newest)
             )
         end
-        groups[#groups + 1] = { "This house", { house } }
+        local facts = { house }
+        -- How many players' scans the community price rests on: each one more makes it better.
+        if here and here.sharers and here.sharers > 0 then
+            facts[#facts + 1] = string.format(L("%d players share scans of this house"), here.sharers)
+            if not F.db.settings.rawScans then
+                facts[#facts + 1] = grey(L("Add yours: turn on Keep my full scans for the ForeverFlip Sync helper"))
+            end
+        end
+        groups[#groups + 1] = { "This house", facts }
     else
         groups[#groups + 1] = { "Community", { grey(L("none: run the ForeverFlip Sync helper to get it")) } }
     end

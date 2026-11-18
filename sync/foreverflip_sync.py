@@ -434,6 +434,7 @@ def download_shared(game: pathlib.Path, repo: str, uploaded: list[str] | None = 
         if status is not None:
             extra = {"checked_at": status.get("checked_at"),
                      "published_at": (house or {}).get("published_at"),
+                     "uploaders": (house or {}).get("uploaders"),
                      "reason": (house or {}).get("reason") if house else "no scan of it is published yet"}
             for_addon[scope] = extra
             if house is None or not house.get("reliable"):

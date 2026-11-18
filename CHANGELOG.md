@@ -7,6 +7,22 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Settings → Sharing says how many players share scans of your auction house.** The community
+  price is only as good as the scans behind it; the count shows that it is real people, and while
+  your full scans are off a line under it says how to add yours.
+
+### Development
+
+- **Releases upload to CurseForge, Wago and WoWInterface.** The release workflow stages the
+  packaged addon for the BigWigs packager and uploads to each site whose token and project ID are
+  set; CI packages it the same way without uploading, so a broken package shows before a tag.
+- **A promotion kit.** `tools/promo.py post` drafts the Reddit, Discord and Telegram posts of a
+  release from the changelog; `tools/promo.py metrics` reads the public numbers (downloads per
+  release, players sharing per auction house). `docs/promotion.md` holds the site setup, the
+  channels, a letter to creators and the shot list for screenshots and GIFs.
+
 ## [3.2.0] - 2026-11-18
 
 ### Added

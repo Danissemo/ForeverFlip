@@ -33,6 +33,12 @@ jobs:
   release:
     needs: helper
     runs-on: ubuntu-latest
+    env:
+      # The addon sites: each upload runs only once its token is a repository secret and its
+      # project ID a repository variable (Settings > Secrets and variables > Actions).
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+      WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
     steps:
       - uses: actions/checkout@v7
 
@@ -73,3 +79,25 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.exe $prerelease \
             --title "ForeverFlip ${GITHUB_REF_NAME#v}" \
             --notes-file release-notes.md
+
+      - name: Stage the addon for CurseForge, Wago and WoWInterface
+        id: catalogs
+        if: env.CF_API_KEY != '' || env.WAGO_API_TOKEN != '' || env.WOWI_API_TOKEN != ''
+        env:
+          CF_PROJECT_ID: ${{ vars.CF_PROJECT_ID }}
+          WAGO_PROJECT_ID: ${{ vars.WAGO_PROJECT_ID }}
+          WOWI_PROJECT_ID: ${{ vars.WOWI_PROJECT_ID }}
+        run: |
+          top=$(python tools/catalog_stage.py --zip "dist/ForeverFlip-${GITHUB_REF_NAME#v}.zip"             --notes release-notes.md --out "$RUNNER_TEMP/stage")
+          # A site without its token or its project ID is skipped, not failed.
+          args="-t $top"
+          if [ -n "$CF_API_KEY" ] && [ -n "$CF_PROJECT_ID" ]; then args="$args -p $CF_PROJECT_ID"; else args="$args -L"; fi
+          if [ -n "$WAGO_API_TOKEN" ] && [ -n "$WAGO_PROJECT_ID" ]; then args="$args -a $WAGO_PROJECT_ID"; fi
+          if [ -n "$WOWI_API_TOKEN" ] && [ -n "$WOWI_PROJECT_ID" ]; then args="$args -w $WOWI_PROJECT_ID"; fi
+          echo "args=$args" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to the addon sites
+        if: steps.catalogs.outcome == 'success'
+        uses: BigWigsMods/packager@v2
+        with:
+          args: ${{ steps.catalogs.outputs.args }}

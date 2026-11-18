@@ -220,7 +220,7 @@ function R.saved()
 end
 
 -- Community data written by the helper into the ForeverFlip_Shared addon: { generated, scans =
--- { "FF1|..." }, status = { [scope] = { checked_at, published_at, reason } } }, merged like scans
+-- { "FF1|..." }, status = { [scope] = { checked_at, published_at, uploaders, reason } } }, merged like scans
 -- shared in game. Returns the number of scans merged. R.community keeps, per auction house, how many
 -- scans came, how many were merged and how many were the player's own, with the data repository's
 -- status, so the Share tab can tell "downloaded" from "published" and say why there is no price.
@@ -276,6 +276,8 @@ function R.importCommunity()
                 local info = house(tostring(scope))
                 info.publishedAt = tonumber(status.published_at)
                 info.checkedAt = tonumber(status.checked_at)
+                -- Players whose scans of the house were published: a reason to share one's own.
+                info.sharers = tonumber(status.uploaders)
                 info.reason = type(status.reason) == "string" and status.reason or nil
             end
         end
