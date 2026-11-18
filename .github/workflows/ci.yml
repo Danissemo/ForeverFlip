@@ -74,7 +74,8 @@ jobs:
         run: |
           python tools/build.py --output dist --skip-tests
           echo "Dry run: no notes are published." > "$RUNNER_TEMP/notes.md"
-          top=$(python tools/catalog_stage.py --zip dist/ForeverFlip-*.zip --notes "$RUNNER_TEMP/notes.md"             --out "$RUNNER_TEMP/stage")
+          top=$(python tools/catalog_stage.py --zip dist/ForeverFlip-*.zip --notes "$RUNNER_TEMP/notes.md" \
+            --out "$RUNNER_TEMP/stage" --no-tag)
           echo "top=$top" >> "$GITHUB_OUTPUT"
 
       - uses: BigWigsMods/packager@v2

@@ -88,7 +88,8 @@ jobs:
           WAGO_PROJECT_ID: ${{ vars.WAGO_PROJECT_ID }}
           WOWI_PROJECT_ID: ${{ vars.WOWI_PROJECT_ID }}
         run: |
-          top=$(python tools/catalog_stage.py --zip "dist/ForeverFlip-${GITHUB_REF_NAME#v}.zip"             --notes release-notes.md --out "$RUNNER_TEMP/stage")
+          top=$(python tools/catalog_stage.py --zip "dist/ForeverFlip-${GITHUB_REF_NAME#v}.zip" \
+            --notes release-notes.md --out "$RUNNER_TEMP/stage")
           # A site without its token or its project ID is skipped, not failed.
           args="-t $top"
           if [ -n "$CF_API_KEY" ] && [ -n "$CF_PROJECT_ID" ]; then args="$args -p $CF_PROJECT_ID"; else args="$args -L"; fi

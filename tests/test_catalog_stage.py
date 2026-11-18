@@ -42,6 +42,11 @@ class CatalogStageTests(unittest.TestCase):
         self.assertIn('filename: RELEASE_NOTES.md', pkgmeta)
         self.assertEqual((top / 'RELEASE_NOTES.md').read_text(encoding='utf-8'), '### Added\n- Something\n')
 
+    def test_the_dry_run_leaves_the_commit_untagged(self):
+        top = tool().stage(self.zip, self.notes, self.base / 'stage', tag=False)
+        tags = subprocess.run(['git', 'tag'], cwd=top, capture_output=True, text=True, check=True)
+        self.assertEqual(tags.stdout.strip(), '')
+
     def test_a_zip_without_the_addon_toc_is_refused(self):
         bad = self.base / 'bad.zip'
         with zipfile.ZipFile(bad, 'w') as z:

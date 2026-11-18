@@ -43,7 +43,7 @@ def git(folder: pathlib.Path, *args: str) -> None:
                    cwd=folder, check=True, stdout=subprocess.DEVNULL)
 
 
-def stage(archive: pathlib.Path, notes: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
+def stage(archive: pathlib.Path, notes: pathlib.Path, out: pathlib.Path, tag: bool = True) -> pathlib.Path:
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -59,7 +59,8 @@ def stage(archive: pathlib.Path, notes: pathlib.Path, out: pathlib.Path) -> path
     git(top, "init", "-q")
     git(top, "add", "-A")
     git(top, "commit", "-q", "-m", f"{ADDON} {version}")
-    git(top, "tag", "-a", f"v{version}", "-m", f"{ADDON} {version}")
+    if tag:  # on a branch push the packager refuses a tagged HEAD as a release still to come
+        git(top, "tag", "-a", f"v{version}", "-m", f"{ADDON} {version}")
     return top
 
 
@@ -68,8 +69,9 @@ def main(argv=None) -> int:
     parser.add_argument("--zip", required=True, type=pathlib.Path, help="the archive tools/build.py made")
     parser.add_argument("--notes", required=True, type=pathlib.Path, help="the release notes in markdown")
     parser.add_argument("--out", default=pathlib.Path("stage"), type=pathlib.Path, help="folder to stage in")
+    parser.add_argument("--no-tag", action="store_true", help="leave the commit untagged (the CI dry run)")
     args = parser.parse_args(argv)
-    print(stage(args.zip, args.notes, args.out).as_posix())
+    print(stage(args.zip, args.notes, args.out, tag=not args.no_tag).as_posix())
     return 0
 
 
