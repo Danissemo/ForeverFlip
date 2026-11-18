@@ -180,6 +180,10 @@ function methods:SetAttribute(name, value)
     self.attributes = rawget(self, "attributes") or {}
     self.attributes[name] = value
 end
+-- Which mouse presses reach OnClick: none until it is called, as in the game.
+function methods:RegisterForClicks(...)
+    self.clicks = { ... }
+end
 function methods:GetAttribute(name)
     local a = rawget(self, "attributes")
     return a and a[name]

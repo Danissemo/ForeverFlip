@@ -34,6 +34,12 @@ class DisenchantButtonTests(unittest.TestCase):
         assert(b:GetAttribute('target-bag') == 0 and b:GetAttribute('target-slot') == 2)
         assert(b.scripts.OnClick == nil, 'the secure template keeps its own click')''')
 
+    def test_the_press_reaches_the_secure_click(self):
+        # With ActionButtonUseKeyDown on, the game's default, the secure click acts on the press;
+        # a button registered for the release only did nothing in the game.
+        run(BOOK + '''local got = table.concat(b.clicks or {}, ',')
+        assert(got:find('AnyDown') and got:find('AnyUp'), got)''')
+
     def test_nothing_is_cast_while_busy_or_when_empty(self):
         run(BOOK + '''UnitCastingInfo = function() return 'Disenchant' end
         b.scripts.PreClick(b)

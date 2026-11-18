@@ -396,7 +396,10 @@ function UI.professionBook()
     b:SetSize(190, 22)
     b:SetPoint("TOPRIGHT", book, "BOTTOMRIGHT", -8, -2)
     if b.RegisterForClicks then
-        b:RegisterForClicks("AnyUp")
+        -- Both: the secure click acts on the press when ActionButtonUseKeyDown is on (the
+        -- default) and on the release when it is off. Registered for the release only, a click
+        -- with the default setting did nothing.
+        b:RegisterForClicks("AnyUp", "AnyDown")
     end
     b:SetScript("PreClick", function(self)
         F.Engine.input()
