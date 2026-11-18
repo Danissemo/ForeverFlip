@@ -134,7 +134,7 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> **Current stable release: [3.2.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.2.0)** (18 November 2026).
+> **Current stable release: [3.3.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.3.0)** (18 November 2026).
 > **Analytics → By strategy** shows what Resale, Market reset, Bids and To vendor really earned;
 > **Disenchant bought** disenchants your purchases one click each; Est./day no longer reads 0 for
 > items that sell, and leans on similar items while their own sales are few. ForeverFlip Sync starts

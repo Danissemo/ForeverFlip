@@ -7,6 +7,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-11-18
+
 ### Added
 
 - **Settings → Sharing says how many players share scans of your auction house.** The community
@@ -1997,7 +1999,8 @@ First public release.
 - English and Ukrainian interface.
 - Slash commands `/ff`, `/ff diag`, `/ff rescan`, `/ff lang`.
 
-[Unreleased]: ../../compare/v3.2.0...HEAD
+[Unreleased]: ../../compare/v3.3.0...HEAD
+[3.3.0]: ../../compare/v3.2.0...v3.3.0
 [3.2.0]: ../../compare/v3.1.0...v3.2.0
 [3.1.0]: ../../compare/v3.0.0...v3.1.0
 [3.0.0]: ../../compare/v2.3.0-beta.1...v3.0.0
