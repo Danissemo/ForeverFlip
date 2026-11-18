@@ -24,11 +24,14 @@ confirming scan must be independent: another uploader's copy of the same scan (s
 confirms it, and the same scan uploaded twice (same file, or same auction house, time and seal) is
 one observation, refused the second time.
 
-Markets are kept apart: a scan belongs to one auction house, "<realm>-<faction>" (the realm names
-the region, e.g. "CAMWOW EU4 Realm 3 PvE"; the faction is the auction house: Alliance, Horde or the
-Neutral one), and only to WoW Forever (product wowf). A scan whose header contradicts its auction
-house, whose issue names another house or time, whose client is not wowf, or whose house would
-share a summary file with another house is refused.
+Markets are kept apart: a scan belongs to one auction house, "<realm>-<faction>", of one game.
+WoW Forever (product wowf) is filed at the top of `shared/` and `registry/scans.jsonl`: its realm
+names the region, e.g. "CAMWOW EU4 Realm 3 PvE", and the faction is the auction house: Alliance,
+Horde or the Neutral one. WoW Retail (product wow) is a market per region, `shared/retail-eu/`,
+`shared/retail-us/`, ... (Silvermoon is a realm in both), with one house per realm, "<realm>-Server";
+its registry entries carry `"market": "retail-eu"`. A scan whose header contradicts its auction
+house, whose issue names another house or time, whose client is another game (or Retail without
+its region), or whose house would share a summary file with another house is refused.
 
 Raw scans stay the primary source: an archived scan whose registry line was lost (a run that failed
 to push after archiving) is registered again from the archive (`reconcile_archive`). The summaries
@@ -87,7 +90,8 @@ HISTORY_DAYS = 3  # summaries the prices of a new scan are compared with
 HISTORY_RATIO = 2.0  # a usual price more than twice or less than half the community's is out of line
 HISTORY_MIN_ITEMS = 20  # items in common needed to judge a whole scan
 HISTORY_MAX_OFF = 0.25  # share of out-of-line items that disputes a whole scan
-PRODUCT = "wowf"  # WoW Forever: scans of any other client are another market
+PRODUCT = "wowf"  # WoW Forever, the market at the top of shared/
+RETAIL = "wow"  # WoW Retail: shared/retail-<region>/, one market per region
 FRESH = ffscan.MAX_AGE  # published scans older than this give no community price
 MIN_OBSERVATIONS = 2  # published scans (server snapshots) within FRESH needed for a price
 STATUS_FORMAT = 1
@@ -285,39 +289,67 @@ def safe(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9-]", "-", text) or "x"
 
 
-def archive_name(scan: ffscan.RawScan, uploader: str) -> str:
-    return f"{safe(scan.realm)}_{safe(scan.faction)}_{scan.at}_{safe(uploader)}.ffr.gz"
+def market(entry: dict) -> str:
+    """The market space of a registry entry: "" for WoW Forever, "retail-eu" and so on for Retail."""
+    return entry.get("market") or ""
 
 
-def market_problem(scan: ffscan.RawScan, fields: dict, entries: list[dict]) -> str | None:
+def market_folder(shared: pathlib.Path, space: str) -> pathlib.Path:
+    return shared / space if space else shared
+
+
+def archive_name(scan: ffscan.RawScan, uploader: str, space: str = "") -> str:
+    prefix = f"{space}_" if space else ""
+    return f"{prefix}{safe(scan.realm)}_{safe(scan.faction)}_{scan.at}_{safe(uploader)}.ffr.gz"
+
+
+def archived_market(name: str) -> str:
+    """The market of an archive file name (archive_name): Retail's start with "retail-<region>_"."""
+    m = re.match(r"(retail-[a-z]{2})_", name)
+    return m.group(1) if m else ""
+
+
+def client_market(fields: dict) -> str:
+    """The market the issue's client line names (ffscan.market_of); ValueError for another game."""
+    space = ffscan.market_of(fields.get("client") or "")
+    if space is None:
+        product = (fields.get("client") or "").split(" ")[0]
+        if product == RETAIL:
+            raise ValueError("the Retail scan does not name its region (update ForeverFlip Sync)")
+        raise ValueError(f"the scan comes from another game ({product}), not WoW Forever or Retail")
+    return space
+
+
+def market_problem(scan: ffscan.RawScan, fields: dict, entries: list[dict], space: str = "") -> str | None:
     """Why the scan cannot be filed under its market, or None. The market is the auction house
-    "<realm>-<faction>" of WoW Forever; the issue, the file's header and the summary file must agree."""
-    if scan.faction not in ("Alliance", "Horde", "Neutral") or not scan.realm.strip() \
+    "<realm>-<faction>" of WoW Forever, or "<realm>-Server" of a Retail region (`space`); the issue,
+    the file's header and the summary file must agree."""
+    houses = ("Server",) if space else ("Alliance", "Horde", "Neutral")
+    if scan.faction not in houses or not scan.realm.strip() \
             or scan.scope != f"{scan.realm}-{scan.faction}":
         return "the auction house in the scan does not match its realm and faction (wrong market id)"
     if fields.get("scope") is not None and fields["scope"] != scan.scope:
         return "the issue names another auction house than the scan (wrong market id)"
     if fields.get("time") is not None and fields["time"] != str(scan.at):
         return "the issue names another time than the scan"
-    product = (fields.get("client") or "").split(" ")[0]
-    if product and product != PRODUCT:
-        return f"the scan comes from another game ({product}), not WoW Forever"
-    other = next((e["scope"] for e in entries if e["scope"] != scan.scope
+    other = next((e["scope"] for e in entries if market(e) == space and e["scope"] != scan.scope
                   and scope_file(e["scope"]) == scope_file(scan.scope)), None)
     if other:
         return f"the auction house name collides with {other!r}"
     return None
 
 
-def limits(entries: list[dict], uploader: str, scan: ffscan.RawScan, digest: str, now: float) -> str | None:
+def limits(entries: list[dict], uploader: str, scan: ffscan.RawScan, digest: str, now: float,
+           space: str = "") -> str | None:
     mine = [e for e in entries if e["uploader"].lower() == uploader.lower()]
+    house = [e for e in entries if market(e) == space and e["scope"] == scan.scope]
     if any(e["sha256"] == digest for e in entries):
         return "this scan was uploaded already"
-    if any(e["scope"] == scan.scope and e["at"] == scan.at and e.get("seal") == scan.seal for e in entries):
+    if any(e["at"] == scan.at and e.get("seal") == scan.seal for e in house):
         return "this scan was uploaded already (the same scan counts once)"
     if sum(1 for e in mine if now - e["received"] < 86400) >= MAX_PER_DAY:
         return f"more than {MAX_PER_DAY} uploads in 24 hours"
-    if any(e["scope"] == scan.scope and abs(e["at"] - scan.at) < MIN_GAP for e in mine):
+    if any(e in house and abs(e["at"] - scan.at) < MIN_GAP for e in mine):
         return "another scan of this auction house was uploaded less than 10 minutes apart"
     return None
 
@@ -339,11 +371,12 @@ def accept_upload(hub: Hub, issue: dict, entries: list[dict], uploaders: dict, n
         scan = ffscan.decode_raw(gzip.decompress(packed).decode("utf-8"))
     except (OSError, EOFError, UnicodeDecodeError, zlib.error) as exc:
         raise ValueError("the file is not a gzip-compressed scan") from exc
-    why = (ffscan.check(scan, now) or market_problem(scan, fields, entries)
-           or limits(entries, author, scan, digest, now))
+    space = client_market(fields)
+    why = (ffscan.check(scan, now) or market_problem(scan, fields, entries, space)
+           or limits(entries, author, scan, digest, now, space))
     if why:
         raise ValueError(why)
-    entry = archive_scan(hub, scan, packed, digest, author, now, "trusted" if trusted else "pending")
+    entry = archive_scan(hub, scan, packed, digest, author, now, "trusted" if trusted else "pending", space)
     entry["issue"] = issue["number"]
     if fields.get("client"):
         entry["client"] = fields["client"][:40]
@@ -351,17 +384,20 @@ def accept_upload(hub: Hub, issue: dict, entries: list[dict], uploaders: dict, n
 
 
 def archive_scan(hub, scan: ffscan.RawScan, packed: bytes, digest: str, uploader: str, now: float,
-                 status: str) -> dict:
+                 status: str, space: str = "") -> dict:
     day = time.strftime("%Y-%m-%d", time.gmtime(scan.at))
     tag = f"raw-{day}"
-    name = archive_name(scan, uploader)
+    name = archive_name(scan, uploader, space)
     archive = hub.release(tag, f"Full auction house scans of {day} (UTC), unchanged, one file per scan.")
     hub.upload(archive, name, packed)
-    return {
+    entry = {
         "name": name, "archive": tag, "scope": scan.scope, "at": scan.at, "uploader": uploader,
         "auctions": len(scan.rows), "seal": scan.seal, "sha256": digest, "addon": scan.addon,
         "issue": None, "received": int(now), "status": status, "peers": [], "compared": [], "items": 0,
     }
+    if space:
+        entry["market"] = space
+    return entry
 
 
 
@@ -468,6 +504,7 @@ def add_summary(shared: pathlib.Path, scope: str, at: int, items: dict) -> bool:
         return False  # the same server scan, read by another player
     entries.append((at, ffscan.encode_summary(scope, at, items)))
     entries.sort(key=lambda e: e[0], reverse=True)
+    path.parent.mkdir(parents=True, exist_ok=True)  # a Retail region's folder, on its first scan
     path.write_text("\n".join(text for _, text in entries[:KEEP]) + "\n", encoding="utf-8")
     return True
 
@@ -478,7 +515,7 @@ def publish(shared: pathlib.Path, entry: dict, scan: ffscan.RawScan, keys: set[s
     if keys is not None:
         items = {k: v for k, v in items.items() if k in keys}
     entry["items"] = len(items)
-    return bool(items) and add_summary(shared, scan.scope, scan.at, items)
+    return bool(items) and add_summary(market_folder(shared, market(entry)), scan.scope, scan.at, items)
 
 
 def confirm_pending(entries: list[dict], load, shared: pathlib.Path, now: float,
@@ -489,7 +526,8 @@ def confirm_pending(entries: list[dict], load, shared: pathlib.Path, now: float,
         if entry["status"] != "pending":
             continue
         peers = [e for e in entries
-                 if e is not entry and e["scope"] == entry["scope"] and e["status"] != "refused"
+                 if e is not entry and market(e) == market(entry) and e["scope"] == entry["scope"]
+                 and e["status"] != "refused"
                  and e["uploader"].lower() != entry["uploader"].lower()
                  and (e.get("seal") is None or e.get("seal") != entry.get("seal"))
                  and abs(e["at"] - entry["at"]) <= PEER_WINDOW and e["name"] not in entry["compared"]]
@@ -503,7 +541,7 @@ def confirm_pending(entries: list[dict], load, shared: pathlib.Path, now: float,
                 entry["peers"].append(peer["name"])
                 keys |= agreeing_items(scan, other)
         if entry["peers"]:
-            history = community_history(shared, entry["scope"], entry["at"])
+            history = community_history(market_folder(shared, market(entry)), entry["scope"], entry["at"])
             compared, off = out_of_line(ffscan.summarize(scan), history)
             entry["history"] = {"compared": compared, "off": len(off)}
             if compared >= HISTORY_MIN_ITEMS and len(off) > HISTORY_MAX_OFF * compared:
@@ -513,7 +551,7 @@ def confirm_pending(entries: list[dict], load, shared: pathlib.Path, now: float,
             keys -= off
             entry["status"] = "confirmed"
             if publish(shared, entry, scan, keys) and published is not None:
-                published[entry["scope"]] = int(now)
+                published[(market(entry), entry["scope"])] = int(now)
             report.append(f"confirmed {entry['name']} by {', '.join(entry['peers'])}: {entry['items']} items")
         elif now - entry["received"] > WAIT:
             entry["status"] = "unconfirmed"
@@ -560,9 +598,11 @@ def reconcile_archive(hub, entries: list[dict], uploaders: dict, shared: pathlib
                 continue
             digest = hashlib.sha256(packed).hexdigest()
             # It was accepted when it arrived: only its age is not held against it now.
-            why = (ffscan.check(scan, scan.at + 60) or market_problem(scan, {}, entries)
-                   or (None if archive_name(scan, uploader) == name else "its name does not match the scan"))
-            if not why and any(e["sha256"] == digest or (e["scope"] == scan.scope and e["at"] == scan.at
+            space = archived_market(name)
+            why = (ffscan.check(scan, scan.at + 60) or market_problem(scan, {}, entries, space)
+                   or (None if archive_name(scan, uploader, space) == name else "its name does not match the scan"))
+            if not why and any(e["sha256"] == digest or (market(e) == space and e["scope"] == scan.scope
+                                                          and e["at"] == scan.at
                                                           and e.get("seal") == scan.seal) for e in entries):
                 why = "the same scan is registered already"
             if why:
@@ -575,17 +615,21 @@ def reconcile_archive(hub, entries: list[dict], uploaders: dict, shared: pathlib
                 "issue": None, "received": int(now), "status": "trusted" if trusted else "pending",
                 "peers": [], "compared": [], "items": 0, "recovered": True,
             }
+            if space:
+                entry["market"] = space
             entries.append(entry)
             known.add((tag, name))
             loaded[name] = scan
             if trusted and now - scan.at <= FRESH and publish(shared, entry, scan, None):
-                published[scan.scope] = int(now)
+                published[(space, scan.scope)] = int(now)
             report.append(f"recovered {tag}/{name} from the archive ({entry['status']})")
     return report
 
 
-def write_status(shared: pathlib.Path, entries: list[dict], now: float, published: dict) -> dict:
-    """shared/status.json: per auction house what the data repository holds and publishes, so the
+def write_status(shared: pathlib.Path, entries: list[dict], now: float, published: dict,
+                 product: str = PRODUCT) -> dict:
+    """status.json of one market's folder (shared/ for Forever, shared/retail-eu/ ...; `entries` and
+    `published` of that market only): per auction house what the data repository holds and publishes, so the
     helper and the addon can tell an upload, a publication and a download apart, and say why there
     is no community price when there is none."""
     path = shared / "status.json"
@@ -621,7 +665,7 @@ def write_status(shared: pathlib.Path, entries: list[dict], now: float, publishe
             published_at = max((e["received"] for e in mine if e["at"] in times), default=None)
         markets[scope] = {
             "file": file,
-            "product": PRODUCT,
+            "product": product,
             "latest_scan": max((e["at"] for e in mine if e["status"] != "refused"), default=None),
             "latest_published": times[-1] if times else None,
             "published_at": published_at,
@@ -656,7 +700,7 @@ def process(hub, data: pathlib.Path, now: float, defer_completion: bool = False)
     loaded: dict[str, ffscan.RawScan] = {}
     report = []
     accepted = []
-    published: dict[str, int] = {}
+    published: dict[tuple[str, str], int] = {}  # (market, scope)
     registered = {entry["issue"]: entry for entry in entries if entry.get("issue") is not None}
 
     def load(entry):
@@ -687,15 +731,21 @@ def process(hub, data: pathlib.Path, now: float, defer_completion: bool = False)
         entries.append(entry)
         loaded[entry["name"]] = scan
         if entry["status"] == "trusted" and publish(shared, entry, scan, None):
-            published[entry["scope"]] = int(now)
+            published[(market(entry), entry["scope"])] = int(now)
         report.append(f"archived #{number} as {entry['archive']}/{entry['name']} ({entry['status']})")
         accepted.append(entry)
 
     report += reconcile_archive(hub, entries, uploaders, shared, now, loaded, published)
     report += confirm_pending(entries, load, shared, now, published)
     save_registry(data, entries)
-    write_index(shared)
-    write_status(shared, entries, now, published)
+    spaces = {""} | {market(e) for e in entries} | {p.name for p in shared.glob("retail-*") if p.is_dir()}
+    for space in sorted(spaces):
+        folder = market_folder(shared, space)
+        folder.mkdir(parents=True, exist_ok=True)
+        write_index(folder)
+        write_status(folder, [e for e in entries if market(e) == space], now,
+                     {scope: at for (where, scope), at in published.items() if where == space},
+                     RETAIL if space else PRODUCT)
     # Workflows defer completion until the generated files have been pushed.
     if not defer_completion:
         report += acknowledge_entries(hub, accepted)

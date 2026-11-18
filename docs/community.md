@@ -32,9 +32,11 @@ data adds everyone's history and keeps the full scans.
 2. Check **Game installation**. The helper remembers your selection. It looks at running clients,
    Windows installation records and common folders on local drives; it does not recursively scan
    every drive. If several clients are found, choose the one you play.
-3. If necessary, press **Choose game...**. Select the `_forever_` folder or its parent installation
-   folder. Retail and Classic folders are not accepted. The command-line `--game` option also
-   accepts `Wow.exe` or a folder inside the Forever addon directory.
+3. If necessary, open the game list and press **Add a game folder…**. Select the `_forever_` or
+   `_retail_` folder, or the installation folder above them (it means `_forever_`). Classic, PTR
+   and beta folders are not accepted. The command-line `--game` option also accepts `Wow.exe` or a
+   folder inside the addon directory. Community prices are exchanged for WoW Forever and for
+   WoW Retail, each a market of its own; see [Retail markets](#retail-markets).
 4. Leave **Sync automatically** on, or press **Sync now** when you want one pass. Community prices
    can be downloaded without a GitHub account. Sharing your scans is off until you enable it.
 5. In game, use `/reload` to save new scans and read updated community prices. After the helper
@@ -45,12 +47,20 @@ for changed saves every five seconds, refreshes community prices every fifteen m
 pending uploads about once a minute. A failed attempt keeps unsent scans and retries after thirty
 seconds. File changes made during a transfer are processed on the next pass. The window stays
 responsive while parsing and network work run in the background; the ring at the top right turns
-while the helper works. Reading the game's saved file takes a few seconds even when it holds eight
-full scans: only the scans table is read, and scans already shared are not parsed again.
+while the helper works. Reading the game's saved file takes under a second even when it holds
+eight full scans: only the part from `ForeverFlipRaw` on is decoded and read, and scans already
+shared are not parsed again.
 
 **Keep running in the tray** (under Prices, on by default): closing the window then
 hides it into the notification area, and the helper goes on syncing prices and sharing new scans.
 Click the tray icon to open the window again; right-click it for **Sync now** and **Quit**.
+
+**Start with Windows in the tray** (under Prices, off by default) adds the helper to your own
+startup list (the `ForeverFlipSync` value in `HKCU\...\CurrentVersion\Run`, no admin rights).
+At sign-in it starts with `--tray`: only the tray icon shows, and syncing goes on as usual. The
+switch shows that entry, so turning it off in Task Manager's Startup tab turns it off here too.
+It needs the tray: turning it on turns on **Keep running in the tray**, and turning the tray
+off turns it off. A packaged helper that was moved or updated points the entry at itself.
 
 ### Updating the helper
 
@@ -137,7 +147,7 @@ remembered and applies to command-line runs too, unless an explicit command-line
 | `--beta` / `--no-beta` | Become a beta tester or stop (remembered; with `--update-addon` it applies at once) |
 | `--login` | Sign in to GitHub with a device code, then exit |
 | `--logout` | Remove the helper's GitHub sign-in, then exit |
-| `--game <path>` | Forever client folder, parent installation folder, executable or addon subfolder |
+| `--game <path>` | Forever or Retail client folder, parent installation folder, executable or addon subfolder |
 | `--repo <owner/name>` | Another community data repository |
 | `--interval <seconds>` | Console check interval, default 60 seconds |
 
@@ -158,6 +168,22 @@ The release workflow uses the same builder.
 For a local diagnostic without syncing, run `ForeverFlipSync.exe --self-test --self-test-report
 runtime.json`. Add `--self-test-network` to test the public community index as well. This does not
 load credentials, share scans or change the game's saved data.
+
+### Retail markets
+
+Retail scans are shared and downloaded like Forever's, but never mixed with them. On Retail one
+auction house serves the whole realm, so a scan's house is `<realm>-Server`, and realm names
+repeat across regions (Silvermoon is in Europe and in America). The helper therefore reads the
+client's region from the `Branch` column of `.build.info` and sends it in the issue's client
+line (`client: wow 12.1.5.70961 eu`). The data repository files each region apart:
+
+- summaries and `status.json` in `shared/retail-eu/`, `shared/retail-us/`, ...;
+- registry entries with `"market": "retail-eu"`;
+- archived scans named `retail-eu_<realm>_Server_...`.
+
+A Retail helper downloads only its region's folder. A Retail scan without a region (an older
+helper), a Retail scan of a faction house, a Forever scan of a `-Server` house and scans of
+Classic or other clients are refused.
 
 ## What is shared and how it is used
 

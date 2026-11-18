@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import urllib.error
 import json
+import os
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'sync'))
@@ -33,12 +34,60 @@ class GameLocationTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(self.location.normalize_game(value), game)
 
-    def test_retail_is_not_accepted_just_because_it_has_addons(self):
+    def client(self, game, name):
+        other = game.parent / name
+        (other / 'Interface/AddOns').mkdir(parents=True)
+        (other / 'Wow.exe').write_bytes(b'other client fixture')
+        return other.resolve()
+
+    def test_retail_is_accepted_beside_forever(self):
         game = self.game()
-        retail = game.parent / '_retail_'
-        (retail / 'Interface/AddOns').mkdir(parents=True)
-        (retail / 'Wow.exe').write_bytes(b'retail fixture')
-        self.assertIsNone(self.location.normalize_game(retail))
+        retail = self.client(game, '_retail_')
+        self.assertEqual(self.location.normalize_game(retail), retail)
+        self.assertEqual(self.location.normalize_game(retail / 'Wow.exe'), retail)
+        # the installation folder still means Forever, and discovery lists both clients in it
+        self.assertEqual(self.location.normalize_game(game.parent), game)
+        self.assertEqual(self.location.discover_games([game.parent]), sorted([game, retail], key=lambda p: str(p).casefold()))
+
+    def test_classic_and_test_clients_are_not_accepted_just_because_they_have_addons(self):
+        game = self.game()
+        for name in ('_classic_', '_classic_era_', '_ptr_', '_beta_'):
+            with self.subTest(name=name):
+                self.assertIsNone(self.location.normalize_game(self.client(game, name)))
+
+    def test_shared_build_info_names_the_retail_client_by_its_own_row(self):
+        game = self.game()
+        retail = self.client(game, '_retail_')
+        (game.parent / '.build.info').write_text(
+            'Branch!STRING:0|Active!DEC:1|Version!STRING:0|Product!STRING:0\n'
+            'eu|1|1.60.1.70938|wowf\neu|1|12.0.5.64000|wow\n', encoding='utf-8')
+        info = helper.profiles.client_info(retail)
+        self.assertEqual((info['product'], info['version'], info['region']), ('wow', '12.0.5.64000', 'eu'))
+        self.assertEqual(helper.profiles.client_info(game)['product'], 'wowf')
+        self.assertEqual(helper.client_line(retail), 'wow 12.0.5.64000 eu')
+        self.assertEqual(helper.client_line(game), 'wowf 1.60.1.70938')
+        self.assertEqual(helper.ffscan.market_of(helper.client_line(retail)), 'retail-eu')
+        self.assertTrue(helper.community_market(game))
+        self.assertTrue(helper.community_market(retail))
+
+    def test_retail_takes_part_in_the_exchange_only_when_its_region_is_known(self):
+        game = self.game()
+        retail = self.client(game, '_retail_')
+        build = retail / '.build.info'
+        build.write_text('Active!DEC:1|Version!STRING:0|Product!STRING:0\n1|12.0.5|wow\n', encoding='utf-8')
+        state = {}
+        with patch.object(helper, 'upload_new_scans') as upload, patch.object(helper, 'download_shared') as download:
+            self.assertIsNone(helper.run_once(retail, 'owner/repo', state, 'token', True))
+        upload.assert_not_called()
+        download.assert_not_called()
+        self.assertTrue(state['other_game'])
+        build.write_text('Branch!STRING:0|Active!DEC:1|Version!STRING:0|Product!STRING:0\n'
+                         'us|1|12.0.5|wow\n', encoding='utf-8')
+        with patch.object(helper, 'upload_new_scans', return_value=[]) as upload, \
+                patch.object(helper, 'download_shared', return_value=True) as download:
+            helper.run_once(retail, 'owner/repo', {}, 'token', True)
+        upload.assert_called()
+        download.assert_called()
 
     def test_nonstandard_client_name_requires_forever_product_metadata(self):
         game = self.root / 'My client'
@@ -258,3 +307,30 @@ class DescribeFailureTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SavedFileReadingTests(unittest.TestCase):
+    def saved(self, tmp, text):
+        path = pathlib.Path(tmp) / 'WTF' / 'Account' / 'A' / 'SavedVariables' / 'ForeverFlip.lua'
+        path.parent.mkdir(parents=True)
+        path.write_text(text, encoding='utf-8')
+        return path
+
+    def test_retail_houses_are_among_the_players_houses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.saved(tmp, 'ForeverFlipData = {\n["markets"] = {\n["Silvermoon-Server"] = {\n},\n'
+                                   '["Realm-Horde"] = {\n},\n["Not-A-House"] = {\n},\n},\n}\n')
+            self.assertEqual(helper.my_scopes(pathlib.Path(tmp)), {'Silvermoon-Server', 'Realm-Horde'})
+            # read again when the file changes
+            path.write_text('ForeverFlipData = {["Мураш-Alliance"] = {}}\n', encoding='utf-8')
+            os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 10 ** 9))
+            self.assertEqual(helper.my_scopes(pathlib.Path(tmp)), {'Мураш-Alliance'})
+
+    def test_only_the_raw_scans_part_of_the_file_is_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.saved(tmp, 'ForeverFlipData = {"ForeverFlipRaw = 1"}\nForeverFlipRaw = {\n}\n')
+            self.assertEqual(helper.raw_section(path), 'ForeverFlipRaw = {\n}\n')
+            path.write_text('ForeverFlipRaw = {}\n', encoding='utf-8')
+            self.assertEqual(helper.raw_section(path), 'ForeverFlipRaw = {}\n')
+            path.write_text('ForeverFlipData = {}\n', encoding='utf-8')
+            self.assertEqual(helper.raw_section(path), '')

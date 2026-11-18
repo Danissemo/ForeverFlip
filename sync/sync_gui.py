@@ -21,6 +21,7 @@ import webbrowser
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 import addon_update
+import autostart
 import github_login
 import profiles
 import self_update
@@ -438,12 +439,14 @@ class Switch(Widget, tk.Frame):
 
 
 class Picker(Widget, tk.Canvas):
-    """A rounded field with a caret; a click calls `open(self)`, which posts a menu under it."""
+    """A rounded field with a caret, on one line: the choice, a grey detail (the folder, shortened in
+    the middle to fit) and a small count badge. A click calls `open(self)`, which posts a menu under it."""
 
-    def __init__(self, master, font, scale, open, bg=CARD):
-        self.text, self.font, self.s, self.open = '', font, scale, open
+    def __init__(self, master, font, detail_font, scale, open, bg=CARD):
+        self.text, self.detail, self.badge = '', '', ''
+        self.font, self.detail_font, self.s, self.open = font, detail_font, scale, open
         self.hover = False
-        tk.Canvas.__init__(self, master, bg=bg, highlightthickness=0, bd=0, height=scale(32), cursor='hand2')
+        tk.Canvas.__init__(self, master, bg=bg, highlightthickness=0, bd=0, height=scale(34), cursor='hand2')
         self.bind('<Enter>', lambda _: self.set_hover(True))
         self.bind('<Leave>', lambda _: self.set_hover(False))
         self.bind('<ButtonRelease-1>', lambda _: not self.disabled and self.open(self))
@@ -453,18 +456,30 @@ class Picker(Widget, tk.Canvas):
         self.hover = value
         self.redraw()
 
-    def set(self, text):
-        self.text = text
+    def set(self, text, detail='', badge=''):
+        self.text, self.detail, self.badge = text, detail, badge
         self.redraw()
 
     def redraw(self):
-        s, w, h = self.s, max(self.winfo_width(), self.s(200)), self.s(32)
+        s, w, h = self.s, max(self.winfo_width(), self.s(200)), self.s(34)
         self.delete('all')
         line = '#CFD8E9' if self.disabled else ACCENT if self.hover else BUTTON_LINE
-        rounded(self, 1, 1, w - 1, h - 1, s(7), fill='#F7FAFF' if not self.disabled else '#F1F4FA', outline=line)
-        self.create_text(s(12), h / 2, text=self.text, font=self.font, fill=FAINT if self.disabled else TEXT,
-                         anchor='w', width=w - s(44))
+        rounded(self, 1, 1, w - 1, h - 1, s(8), fill='#F7FAFF' if not self.disabled else '#F1F4FA', outline=line)
         icon(self, 'caret', w - s(18), h / 2, s(16), FAINT if self.disabled else ACCENT)
+        right = w - s(34)
+        if self.badge:
+            bw = measure(self.detail_font, self.badge) + s(16)
+            rounded(self, right - bw, h / 2 - s(10), right, h / 2 + s(10), s(10), fill='#E6EEFF')
+            self.create_text(right - bw / 2, h / 2, text=self.badge, font=self.detail_font,
+                             fill=FAINT if self.disabled else ACCENT)
+            right -= bw + s(10)
+        x = s(12)
+        self.create_text(x, h / 2, text=fit(self.font, self.text, right - x), font=self.font,
+                         fill=FAINT if self.disabled else TEXT, anchor='w')
+        x += measure(self.font, self.text) + s(10)
+        if self.detail and right - x > s(60):
+            self.create_text(x, h / 2, text=fit(self.detail_font, self.detail, right - x), font=self.detail_font,
+                             fill=FAINT, anchor='w')
         tk.Canvas.configure(self, cursor='arrow' if self.disabled else 'hand2')
 
 
@@ -483,30 +498,41 @@ class LinkButton(Widget, tk.Label):
 class ActivityBar(tk.Canvas):
     """A thin moving bar while something runs; empty otherwise."""
 
+    SPEED = 320  # pixels a second
+    FRAME = 16  # ms: about 60 frames a second
+
     def __init__(self, master, bg):
         super().__init__(master, height=3, bg=bg, highlightthickness=0, bd=0)
-        self.running, self.x, self.bar = False, 0, None
+        self.running, self.bar, self.began, self.job = False, None, 0.0, None
 
     def start(self):
         if not self.running:
             self.running = True
+            self.began = time.perf_counter()
             self.bar = self.create_rectangle(-160, 0, 0, 3, fill=ACCENT, outline='')
             self.tick()
 
     def stop(self):
         self.running = False
+        if self.job:
+            self.after_cancel(self.job)
+            self.job = None
         self.delete('all')
         self.bar = None
 
     def tick(self):
+        self.job = None
         if not self.running:
             return
+        # Placed by the time gone, not moved a step per frame: a late frame does not slow the bar.
         # Hidden (closed to the tray): nothing to draw, look again later.
         if self.winfo_ismapped():
-            width = max(self.winfo_width(), 1)
-            self.x = (self.x + 9) % (width + 160)
-            self.coords(self.bar, self.x - 160, 0, self.x, 3)
-        self.after(30, self.tick)
+            span = max(self.winfo_width(), 1) + 160
+            x = (time.perf_counter() - self.began) * self.SPEED % span
+            self.coords(self.bar, x - 160, 0, x, 3)
+            self.job = self.after(self.FRAME, self.tick)
+        else:
+            self.job = self.after(250, self.tick)
 
 
 def tray_icons(folder=ASSETS):
@@ -518,6 +544,17 @@ def community_lines(lines):
     """The exchange's lines for the window, without the download line: the Prices line and the
     footer already say when it came and that /reload reads it."""
     return '\n'.join(line for line in lines if not line.startswith('Downloaded:'))
+
+
+def fit(font, text: str, width: int) -> str:
+    """`text` cut in the middle ("C:\\…\\World of Warcraft\\_retail_") until it fits `width` in `font`:
+    the start says the drive, the end says which client."""
+    if measure(font, text) <= width:
+        return text
+    head, tail = text[:3], text[3:]
+    while tail and measure(font, head + '…' + tail) > width:
+        tail = tail[1:]
+    return head + '…' + tail
 
 
 def shorten(path: str, limit: int = 46) -> str:
@@ -550,7 +587,7 @@ class SyncWindow:
         self.beta = tk.BooleanVar(value=config.get('beta', False))
         self.auto = tk.BooleanVar(value=not args.paused and config.get('automatic', True))
         self.share = tk.BooleanVar(value=not args.download_only and (args.upload or bool(config.get('upload', False))))
-        self.status = tk.StringVar(value='Finding your Forever installation…')
+        self.status = tk.StringVar(value='Finding your WoW installation…')
         self.last_sync = tk.StringVar(value='Not synced yet')
         self.path_text = tk.StringVar(value='')
         self.share_hint = tk.StringVar()
@@ -598,7 +635,7 @@ class SyncWindow:
         # Game: one picker for every installation (each its own profile: market, state, addon backups).
         game = self.row('game', 'Game')
         self.candidates = []  # several installations found and none chosen yet
-        self.picker = Picker(game, f['body'], s, self.open_game_menu)
+        self.picker = Picker(game, f['body'], f['hint'], s, self.open_game_menu)
         self.picker.pack(fill='x')
         self.picker.set('Looking for WoW Forever…')
         self.hint(game, self.path_text, wrap)
@@ -662,6 +699,17 @@ class SyncWindow:
         self.tray_button.pack(side='left', padx=(s(20), 0))
         if not tray.available():
             self.tray_button.state(['disabled'])
+        # Start with Windows: the registry entry is the setting (autostart), so it is read, not saved.
+        self.autostart_on = tk.BooleanVar(value=autostart.enabled())
+        startup = tk.Frame(prices, bg=CARD)
+        startup.pack(anchor='w', pady=(s(8), 0))
+        self.autostart_button = Switch(startup, 'Start with Windows in the tray', self.autostart_on,
+                                       self.autostart_changed, f['switch'], s, images=img)
+        self.autostart_button.pack(side='left')
+        if not autostart.available():
+            self.autostart_button.state(['disabled'])
+        elif self.autostart_on.get() and autostart.refresh():  # moved or updated: point at this copy
+            core.log('Start with Windows now starts this copy of the helper.')
 
         # Footer: the in-game step, and the activity log behind a link.
         self.foot = tk.Frame(self.bg, bg=hexcolor(BOTTOM))
@@ -698,6 +746,8 @@ class SyncWindow:
         root.after(60, self.check_account)
         root.after(2000, self.check_helper)
         root.after(100, self.poll)
+        if getattr(args, 'tray', False):
+            self.start_hidden()
 
     # --- Drawing ----------------------------------------------------------------------------------
 
@@ -845,7 +895,9 @@ class SyncWindow:
             for item in set(c.find_all()) - before:
                 c.addtag_withtag('status', item)
         c.create_text(tx, cy, text=text, font=f['status'], fill=TEXT, anchor='w', width=width + 1, tags='status')
-        self.tray.title(text)
+        if text != getattr(self, 'tray_text', None):
+            self.tray_text = text
+            self.tray.title(text)
 
     def request_layout(self):
         """Lays the window out once the current events are handled: a resize sends Configure from the
@@ -925,9 +977,12 @@ class SyncWindow:
             self.spinning = False
             return
         if self.root.winfo_viewable():
-            self.spin_angle = (self.spin_angle - 15) % 360
+            # by the clock (a turn in about a second), so a late frame does not make it stutter
+            self.spin_angle = -(time.perf_counter() * 360) % 360
             self.bg.itemconfigure('spinner', start=self.spin_angle)
-        self.root.after(40, self.spin)
+            self.root.after(16, self.spin)
+        else:
+            self.root.after(250, self.spin)
 
     def toggle_log(self):
         self.log_open = not self.log_open
@@ -1076,19 +1131,34 @@ class SyncWindow:
 
     # --- Installations ----------------------------------------------------------------------------
 
+    NAMES: dict = {}
+
+    @classmethod
+    def install_name(cls, game):
+        """"WoW Forever 1.60.1.70938" / "WoW Retail 12.0.5…", else the folder's name and its version."""
+        marks = []
+        for path in (pathlib.Path(str(game)) / '.build.info', pathlib.Path(str(game)).parent / '.build.info'):
+            try:
+                marks.append(path.stat().st_mtime_ns)
+            except OSError:
+                marks.append(None)
+        key = (str(game), tuple(marks))
+        if key not in cls.NAMES:
+            cls.NAMES[key] = cls.read_install_name(game)
+        return cls.NAMES[key]
+
     @staticmethod
-    def install_name(game):
-        """"WoW Forever 1.60.1.70938" for the Forever client, else the folder's name and its version."""
+    def read_install_name(game):
         info = profiles.client_info(game)
-        name = 'WoW Forever' if info['product'] == 'wowf' else info['flavor']
+        name = {'wowf': 'WoW Forever', 'wow': 'WoW Retail'}.get(info['product']) or info['flavor']
         return f'{name} {info["version"]}' if info['version'] else name
 
     def refresh_installs(self):
         active = profiles.active_install(self.config)
         if active and self.game:
             count = len(self.config.get('installs') or [])
-            more = f'   (+{count - 1} more)' if count > 1 else ''
-            self.picker.set(f'{self.install_name(active["game"])}   ·   {shorten(str(active["game"]), 40)}{more}')
+            self.picker.set(self.install_name(active['game']), str(active['game']),
+                            f'{count} games' if count > 1 else '')
 
     def open_game_menu(self, widget):
         """The picker's menu: the installations (or the ones found), then adding, opening, removing."""
@@ -1272,8 +1342,37 @@ class SyncWindow:
         if chosen:
             self.select_game(chosen)
 
+    def autostart_changed(self):
+        try:
+            if self.autostart_on.get():
+                autostart.enable()
+                self.core.log('ForeverFlip Sync starts with Windows, hidden in the tray.')
+                if not self.tray_on.get() and tray.available():
+                    # started in the tray, closing the window must keep it there
+                    self.tray_on.set(True)
+                    self.tray_changed()
+            else:
+                autostart.disable()
+                self.core.log('ForeverFlip Sync no longer starts with Windows.')
+        except OSError as error:
+            self.status.set(f'Could not change starting with Windows: {error}')
+            self.tone('error')
+        self.autostart_on.set(autostart.enabled())
+
+    def start_hidden(self):
+        """Started by Windows at sign-in: only the tray icon shows; without one, a minimized window."""
+        if self.tray.show() is not False:
+            self.root.withdraw()
+            self.core.log('Started with Windows: syncing in the tray (right-click its icon to open it).')
+        else:
+            self.root.iconify()
+
     def tray_changed(self):
         self.config['tray'] = self.tray_on.get()
+        if not self.tray_on.get() and getattr(self, 'autostart_on', None) is not None and self.autostart_on.get():
+            # without the tray, a start at sign-in would leave a window open: the two go together
+            self.autostart_on.set(False)
+            self.autostart_changed()
         try:
             self.core.save_json(self.folder/'config.json', self.config)
         except OSError as error:
@@ -1336,12 +1435,26 @@ class SyncWindow:
                 self.events.put(('error', str(error)))
         threading.Thread(target=work, daemon=True).start()
 
+    def flush_log(self, lines):
+        self.output.configure(state='normal')
+        self.output.insert('end', '\n'.join(lines) + '\n')
+        total = int(self.output.index('end-1c').split('.')[0])
+        if total > 400:
+            self.output.delete('1.0', f'{total - 350}.0')
+        self.output.see('end')
+        self.output.configure(state='disabled')
+
     def poll(self):
+        handled, log_lines = 0, []
         while True:
             try:
                 kind, value = self.events.get_nowait()
             except queue.Empty:
                 break
+            handled += 1
+            if kind != 'log' and log_lines:
+                self.flush_log(log_lines)  # in order with what the other events show
+                log_lines = []
             if kind == 'tray':
                 if value == 'open':
                     self.show_window()
@@ -1354,12 +1467,7 @@ class SyncWindow:
                     self.close()
                 continue
             if kind == 'log':
-                self.output.configure(state='normal')
-                self.output.insert('end', value+'\n')
-                if int(self.output.index('end-1c').split('.')[0]) > 400:
-                    self.output.delete('1.0', '50.0')
-                self.output.see('end')
-                self.output.configure(state='disabled')
+                log_lines.append(str(value))
             elif kind == 'game':
                 self.set_busy(False)
                 self.select_game(value)
@@ -1454,6 +1562,8 @@ class SyncWindow:
                     self.tray.hide()
                     self.root.destroy()
                     return
+        if log_lines:
+            self.flush_log(log_lines)
         if not self.updating and not self.closing and self.game and time.monotonic() >= self.next_update:
             self.start_update()
         if not self.busy and not self.closing and self.auto.get() and self.game and time.monotonic() >= self.next_check:
@@ -1468,7 +1578,8 @@ class SyncWindow:
             self.tray.hide()
             self.root.destroy()
             return
-        self.poll_job = self.root.after(250, self.poll)
+        # A worker's answer is shown within 30 ms while something runs; idle, four looks a second do.
+        self.poll_job = self.root.after(30 if handled or self.busy or self.updating else 250, self.poll)
 
     def close(self):
         # With "Keep running in the tray" the window only hides: syncing and sharing go on.

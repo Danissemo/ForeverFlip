@@ -20,6 +20,12 @@ All notable changes are listed here. The format follows
   disenchants them, one a click (the game wants a click for each cast), and shows how many are
   left. It takes only items bought to disenchant, as many as were bought, and does nothing in
   combat or while a cast or a loot window is still open.
+- **ForeverFlip Sync can start with Windows, hidden in the tray.** Prices only came in while the
+  helper was started by hand. **Start with Windows in the tray** (under Prices) adds it to your
+  own startup list, no admin rights needed: at sign-in only the tray icon shows, and it syncs
+  and shares as usual. The switch reads what Windows will really run, so removing the entry in
+  Task Manager's Startup tab turns it off too. It turns on **Keep running in the tray** with it,
+  and turning the tray off turns it off, so no window is left open at sign-in.
 
 ### Fixed
 
@@ -123,6 +129,14 @@ All notable changes are listed here. The format follows
   `2.1.0-beta.2` through 3.0.0 and 3.1.0, in its requests to GitHub and in the uploads, and a build
   it could not find among the releases measured updates against that. A release now writes the
   addon's version into the helper too, and the build stops when they differ.
+- **Retail scans are shared at all.** The helper stopped on a Retail save with "invalid literal
+  for int()": Lua writes numbers of more than 14 digits in exponent form, and a stack of 3000
+  at 4 million gold each was saved as `1.200000225e+14`. Such numbers are now read, and one
+  unreadable line no longer stops the whole file. Then the check refused every Retail scan as
+  "implausible values": Retail lists a commodity once per price with all its units (19000 herbs
+  in a row), and the limits were WoW Forever's (stacks of at most 10000, 10^12 copper an
+  auction). A Retail house now allows such rows, and the price limit is per unit. Your Retail
+  houses (`<realm>-Server`) were also never asked for when community prices were downloaded.
 
 ### Changed
 
@@ -157,6 +171,15 @@ All notable changes are listed here. The format follows
   versions**, and one button that reads **Install update** when there is one and **Check now**
   otherwise. Hints show only when they have something to say, and the Prices section no longer
   repeats the /reload note the footer gives.
+
+- **The Sync window no longer freezes while it reads and sends scans, and moves smoothly.**
+  Finding the scans in a 42 MB save held the window for half a second; only the part from
+  `ForeverFlipRaw` on is decoded and read now (35 ms instead of 85 + 470). A scan's seal is worked
+  out in C (0.96 s to 0.54 s), and its compression takes 0.3 s instead of 1.6 s for 4% more
+  bytes. The houses you use are read again only when the save changes, and their community
+  prices are downloaded four at a time. The busy bar and the status ring are placed by the clock
+  at about 60 frames a second instead of a step every 30–40 ms, a worker's result is shown within
+  30 ms instead of up to 250, and a burst of log lines is added in one go.
 
 ### Development
 

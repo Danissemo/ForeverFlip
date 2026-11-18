@@ -11,6 +11,7 @@ Only the Python standard library is used.
 from __future__ import annotations
 
 import math
+import operator
 import re
 from dataclasses import dataclass, field
 
@@ -40,11 +41,12 @@ class _Reader:
     LONG_OPEN = re.compile(r"\[(=*)\[")
     NUMBER = re.compile(r"-?(0[xX][0-9a-fA-F]+|\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+(?:[eE][-+]?\d+)?)")
     NAME_KEY = re.compile(r"([A-Za-z_]\w*)\s*=(?!=)")
-    DIGITS3 = re.compile(r"\d{1,3}")
-    # The characters of a quoted string up to its closing quote or an escape, read in one step:
-    # a saved full scan is one string of several megabytes, read a character at a time it took
-    # most of a minute.
-    PLAIN = {'"': re.compile(r'[^"\\]*'), "'": re.compile(r"[^'\\]*")}
+    # A whole quoted string, escapes included, matched in one step, then its escapes replaced in
+    # one split: a saved full scan is one string of several megabytes (6.5 MB took 235 ms read
+    # piece by piece between escapes, 150 ms this way; a character at a time took most of a minute).
+    BODY = {'"': re.compile(r'"([^"\\]*(?:\\[\s\S][^"\\]*)*)"'),
+            "'": re.compile(r"'([^'\\]*(?:\\[\s\S][^'\\]*)*)'")}
+    ESCAPE = re.compile(r"\\(\d{1,3}|[\s\S])")
 
     def __init__(self, text: str):
         self.s, self.i = text, 0
@@ -92,32 +94,17 @@ class _Reader:
         raise LuaError(f"unexpected {c!r} at {self.i}")
 
     def string(self):
-        s, quote = self.s, self.s[self.i]
-        plain = self.PLAIN[quote]
-        self.i += 1
-        out = []
-        while True:
-            end = plain.match(s, self.i).end()
-            if end > self.i:
-                out.append(s[self.i:end])
-                self.i = end
-            if self.i >= len(s):
-                raise LuaError("unfinished string")
-            c = s[self.i]
-            if c == quote:
-                self.i += 1
-                return "".join(out)
-            # an escape
-            if self.i + 1 >= len(s):
-                raise LuaError("unfinished string escape")
-            nxt = s[self.i + 1]
-            if nxt.isdigit():
-                m = self.DIGITS3.match(s, self.i + 1)
-                out.append(chr(int(m.group(0))))
-                self.i += 1 + len(m.group(0))
-                continue
-            out.append(self.ESCAPES.get(nxt, nxt))
-            self.i += 2
+        m = self.BODY[self.s[self.i]].match(self.s, self.i)
+        if not m:
+            raise LuaError("unfinished string")
+        self.i = m.end()
+        body = m.group(1)
+        if "\\" not in body:
+            return body
+        parts = self.ESCAPE.split(body)
+        escapes = self.ESCAPES
+        parts[1::2] = [chr(int(e)) if e[0] in "0123456789" else escapes.get(e, e) for e in parts[1::2]]
+        return "".join(parts)
 
     def long_string(self):
         m = self.LONG_OPEN.match(self.s, self.i)
@@ -174,12 +161,21 @@ def lua_assignment(text: str, name: str):
     """The value assigned to the global `name` in a SavedVariables file, None when it is not there.
     The game writes each global at the start of a line; only that one value is read, not the
     whole file (the addon's price history is most of it)."""
-    m = re.search(r"(?m)^" + re.escape(name) + r"\s*=", text)
-    if not m:
-        return None
-    reader = _Reader(text)
-    reader.i = m.end()
-    return reader.value()
+    # str.find, not a multiline regex: the regex took half a second over a 40 MB file, holding
+    # the interpreter (and so the helper's window) all that time.
+    pattern = re.compile(r"\s*=")
+    line = "\n" + name
+    pos = 0 if text.startswith(name) else text.find(line) + 1
+    while pos > 0 or (pos == 0 and text.startswith(name)):
+        m = pattern.match(text, pos + len(name))
+        if m:
+            reader = _Reader(text)
+            reader.i = m.end()
+            return reader.value()
+        pos = text.find(line, pos + len(name)) + 1
+        if pos == 0:
+            break
+    return None
 
 
 def lua_assignments(text: str) -> dict:
@@ -233,7 +229,14 @@ class RawScan:
 
 
 def _int(text: str) -> int | None:
-    return int(text) if text not in ("", None) else None
+    if text in ("", None):
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        # Lua 5.1 writes numbers of more than 14 digits in exponent form: a Retail stack of 3000
+        # at 4 million gold each is "1.200000225e+14". Exact below 2^53.
+        return int(float(text))
 
 
 def parse_rows(text: str) -> list:
@@ -244,11 +247,14 @@ def parse_rows(text: str) -> list:
             rows.append(None)
             continue
         parts += [""] * (9 - len(parts))
-        rows.append(Auction(
-            item=int(parts[0]), count=_int(parts[1]) or 0, buyout=_int(parts[2]) or 0,
-            min_bid=_int(parts[3]), bid=_int(parts[4]), band=_int(parts[5]), own=parts[6] == "1",
-            kind=parts[7], name=parts[8],
-        ))
+        try:
+            rows.append(Auction(
+                item=_int(parts[0]), count=_int(parts[1]) or 0, buyout=_int(parts[2]) or 0,
+                min_bid=_int(parts[3]), bid=_int(parts[4]), band=_int(parts[5]), own=parts[6] == "1",
+                kind=parts[7], name=parts[8],
+            ))
+        except (ValueError, OverflowError):
+            rows.append(None)  # an unreadable line counts as one (check)
     return rows
 
 
@@ -276,10 +282,24 @@ def scans_from_saved_variables(text: str, skip=None) -> list[RawScan]:
 
 # --- Seal --------------------------------------------------------------------------------------
 
+# _hash is h = (h * 31 + byte) % SEAL_MOD over the bytes, which is the sum of byte * 31^(n-1-i):
+# with the powers worked out once the sum runs in C. Byte by byte a full scan took a second.
+_SPAN = 4096
+_POW = [1]
+for _ in range(_SPAN - 1):
+    _POW.append(_POW[-1] * 31 % SEAL_MOD)
+_POW.reverse()  # _POW[k] = 31 ** (_SPAN - 1 - k)
+
+
 def _hash(data: bytes) -> int:
+    n = len(data)
+    if n <= _SPAN:
+        return sum(map(operator.mul, data, _POW[_SPAN - n:])) % SEAL_MOD
     h = 0
-    for b in data:
-        h = (h * 31 + b) % SEAL_MOD
+    for k in range(0, n, _SPAN):
+        block = data[k:k + _SPAN]
+        h = (h * pow(31, len(block), SEAL_MOD) + sum(map(operator.mul, block, _POW[_SPAN - len(block):]))) \
+            % SEAL_MOD
     return h
 
 
@@ -309,15 +329,18 @@ def compute_seal(scan: RawScan) -> int:
     over "<scope>|<time>|<auctions>"). Any changed line, number or header field changes it."""
     seal = 0
     if scan.rows:
-        for line in rows_text(scan).split("\n"):
-            seal = _chain(seal, line)
+        mul, pw, span, mod = operator.mul, _POW, _SPAN, SEAL_MOD
+        for line in rows_text(scan).encode("utf-8").split(b"\n"):
+            n = len(line)
+            h = sum(map(mul, line, pw[span - n:])) % mod if n <= span else _hash(line)
+            seal = (seal * 1000003 + h + 1) % mod
     return _chain(seal, f"{scan.scope}|{scan.at}|{len(scan.rows)}")
 
 
 def check(scan: RawScan, now: float) -> str | None:
     """Why a scan cannot be shared, or None. The helper checks before uploading and the data
     repository checks again before archiving."""
-    if not re.fullmatch(r"[^|\n]+-(Alliance|Horde|Neutral)", scan.scope):
+    if not re.fullmatch(r"[^|\n]+-(Alliance|Horde|Neutral|Server)", scan.scope):
         return "bad auction house name"
     if scan.at > now + 600:
         return "the scan is from the future"
@@ -329,11 +352,14 @@ def check(scan: RawScan, now: float) -> str | None:
         return "the scan has no seal (it was made by a ForeverFlip version before 1.1.0)"
     if compute_seal(scan) != scan.seal:
         return "the seal does not match: the scan was changed after the game read it"
+    # Retail lists a commodity once per price with all its units (19000 herbs in one row);
+    # WoW Forever lists stacks, never more than 10000.
+    most = 10 ** 7 if scan.scope.endswith("-Server") else 10000
     unreadable = 0
     for r in scan.rows:
         if r is None:
             unreadable += 1
-        elif r.item <= 0 or r.count <= 0 or r.count > 10000 or r.buyout < 0 or r.buyout > 10 ** 12 \
+        elif r.item <= 0 or r.count <= 0 or r.count > most or r.buyout < 0 or r.buyout > r.count * 10 ** 12 \
                 or r.kind not in ("c", "i", "g", "") or (r.band is not None and not 0 <= r.band <= 3):
             return "implausible values"
     if unreadable > len(scan.rows) // 2:
@@ -363,6 +389,23 @@ def decode_raw(text: str) -> RawScan:
 
 
 # --- Summaries ---------------------------------------------------------------------------------
+
+REGIONS = ("us", "eu", "kr", "tw", "cn")
+
+
+def market_of(client: str) -> str | None:
+    """The data repository's market space of a scan's client line ("<product> <version> [region]"):
+    "" for WoW Forever (its realm names carry the region; an older helper sent no line at all),
+    "retail-eu", "retail-us", ... for Retail, whose realm names repeat across regions (Silvermoon
+    is in Europe and in America) and whose market is another game's. None for any other client."""
+    parts = (client or "").split()
+    product = parts[0] if parts else "wowf"
+    if product == "wowf":
+        return ""
+    if product == "wow" and len(parts) >= 3 and parts[2].lower() in REGIONS:
+        return f"retail-{parts[2].lower()}"
+    return None
+
 
 def scope_file(scope: str) -> str:
     return re.sub(r"[^A-Za-z0-9-]", "-", scope) + ".txt"
@@ -474,7 +517,7 @@ def lua_data_file(summaries: list[str], generated: int, uploaded: list[str] | No
     return "\n".join(lines)
 
 
-SHARED_TOC = """## Interface: 16001
+SHARED_TOC = """## Interface: 16001, 120105
 ## Title: ForeverFlip Shared Data
 ## Notes: Auction prices shared by the ForeverFlip community. Written by the ForeverFlip Sync helper.
 ## Author: ForeverFlip contributors

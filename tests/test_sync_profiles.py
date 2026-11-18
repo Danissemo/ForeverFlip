@@ -57,7 +57,7 @@ class ProfileTests(unittest.TestCase):
             'eu|1|1.15.0.1|wow_classic_era\n'
             'eu|1|1.60.1.70938|wowf\n', encoding='utf-8')
         info = profiles.client_info(game)
-        self.assertEqual(info, {'flavor': '_forever_', 'version': '1.60.1.70938', 'product': 'wowf'})
+        self.assertEqual(info, {'flavor': '_forever_', 'version': '1.60.1.70938', 'product': 'wowf', 'region': 'eu'})
         self.assertIn('1.60.1.70938', profiles.describe({'id': 'main', 'game': str(game)}))
         self.assertEqual(profiles.client_info(self.root / 'nothing')['version'], None)
 

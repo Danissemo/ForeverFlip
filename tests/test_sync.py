@@ -103,6 +103,26 @@ class HelperFormatTests(unittest.TestCase):
         self.assertEqual(data['A'][1], [1, 2.5, True, None])
         self.assertEqual(data['B'], 3)
 
+    def test_numbers_lua_wrote_in_exponent_form_are_read(self):
+        # Lua 5.1 writes more than 14 digits as 1.2e+14: a Retail stack of 3000 at 4 million gold
+        rows = ffscan.parse_rows('237359,3000,1.200000225e+14,0,0,3,0,c,\nnot,a,row,0,0,3,0,c,\n5,1,100,,,,0,i,')
+        self.assertEqual(rows[0].buyout, 120000022500000)
+        self.assertIsNone(rows[1])
+        self.assertEqual((rows[2].item, rows[2].min_bid, rows[2].band), (5, None, None))
+
+    def test_a_global_is_found_only_at_the_start_of_a_line(self):
+        text = 'A = {x = "\\nForeverFlipRaw = 1"}\nForeverFlipRawOld = 2\nForeverFlipRaw = {3}\n'
+        self.assertEqual(ffscan.lua_assignment(text, 'ForeverFlipRaw'), [3])
+        self.assertEqual(ffscan.lua_assignment('ForeverFlipRaw = 5\n', 'ForeverFlipRaw'), 5)
+        self.assertIsNone(ffscan.lua_assignment('ForeverFlipRawOld = 2\n', 'ForeverFlipRaw'))
+        self.assertIsNone(ffscan.lua_assignment('', 'ForeverFlipRaw'))
+
+    def test_strings_with_every_kind_of_escape(self):
+        data = ffscan.lua_assignments('A = "a\\65\\0661\\\\\\\n\\q\\t\'"\nB = \'x\\\'y"\'\nC = ""\n')
+        self.assertEqual(data, {'A': 'aAB1\\\nq\t\'', 'B': 'x\'y"', 'C': ''})
+        with self.assertRaises(ffscan.LuaError):
+            ffscan.lua_assignments('A = "never closed\\"\n')
+
     def test_usual_price_matches_the_addon(self):
         lua = runtime()
         lots = [(60, 15), (150, 20), (153, 4), (300, 1), (95.5, 7)]
@@ -199,6 +219,15 @@ class SealTests(unittest.TestCase):
         self.assertEqual((back.seal, back.text), (scan.seal, scan.text))
         self.assertEqual(ffscan.compute_seal(back), back.seal)
 
+    def test_the_fast_hash_is_the_addons_hash(self):
+        def slow(data):
+            h = 0
+            for b in data:
+                h = (h * 31 + b) % ffscan.SEAL_MOD
+            return h
+        for data in (b'', b'a', b'10,5,300,0,0,3,0,c,', 'Клинок,é'.encode('utf-8'), bytes(range(256)) * 50):
+            self.assertEqual(ffscan._hash(data), slow(data))
+
     def test_any_change_breaks_the_seal(self):
         _, scan = self.saved()
         text = ffscan.encode_raw(scan)
@@ -238,6 +267,12 @@ class CheckTests(unittest.TestCase):
         self.assertIn('changed', ffscan.check(bad, now))
         silly = make_scan(int(now), market([(5, 50000, 1)]))
         self.assertIn('implausible', ffscan.check(silly, now))
+        # a Retail stack of 3000 at 4 million gold each is real; one item at 200 million gold is not
+        self.assertIsNone(ffscan.check(make_scan(int(now), market([(5, 3000, 120000022500000)])), now))
+        self.assertIn('implausible', ffscan.check(make_scan(int(now), market([(5, 1, 2 * 10 ** 12)])), now))
+        # Retail lists a commodity's units in one row; WoW Forever never has a stack of 19000
+        self.assertIsNone(ffscan.check(make_scan(int(now), market([(5, 19000, 10 ** 9)]), scope='Silvermoon-Server'), now))
+        self.assertIn('implausible', ffscan.check(make_scan(int(now), market([(5, 19000, 10 ** 9)])), now))
 
 
 class FakeHub:

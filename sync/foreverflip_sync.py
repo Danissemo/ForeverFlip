@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import concurrent.futures
 import gzip
 import hashlib
 import json
@@ -188,15 +189,17 @@ PART = 900_000  # characters per gist file, so that every part is returned whole
 
 def package(scan: ffscan.RawScan) -> tuple[bytes, dict[str, str]]:
     """The file to share (the scan, gzip-compressed, unchanged) and its gist parts (base64)."""
-    packed = gzip.compress(ffscan.encode_raw(scan).encode("utf-8"), mtime=0)
+    # Level 6, not 9: five times faster (0.3 s against 1.6 s for a full scan) for 4% more bytes.
+    packed = gzip.compress(ffscan.encode_raw(scan).encode("utf-8"), compresslevel=6, mtime=0)
     text = base64.b64encode(packed).decode("ascii")
     parts = {f"scan.{k // PART + 1:03d}.b64": text[k:k + PART] for k in range(0, len(text), PART)}
     return packed, parts
 
 
 def client_line(game: pathlib.Path | None) -> str:
-    """"wowf 1.60.1.70938": the game the scan comes from, so the data repository keeps markets of
-    other clients apart. Empty when the client cannot be read."""
+    """"wowf 1.60.1.70938" / "wow 12.1.5.70961 eu": the game the scan comes from (and for Retail its
+    region), so the data repository keeps markets of other clients apart. Empty when the client
+    cannot be read."""
     if game is None:
         return ""
     try:
@@ -205,7 +208,17 @@ def client_line(game: pathlib.Path | None) -> str:
         return ""
     product = re.sub(r"[^A-Za-z0-9_.-]", "", str(info.get("product") or ""))
     version = re.sub(r"[^0-9.]", "", str(info.get("version") or ""))
-    return f"{product} {version}".strip() if product else ""
+    region = re.sub(r"[^a-z]", "", str(info.get("region") or "").lower())
+    if not product:
+        return ""
+    return f"{product} {version or '0'} {region}".strip() if product == "wow" and region \
+        else f"{product} {version}".strip()
+
+
+def community_market(game: pathlib.Path | None) -> bool:
+    """Whether the client takes part in the community exchange: WoW Forever, and Retail when its
+    region is known (each region is a market of its own). Classic and the rest do not."""
+    return ffscan.market_of(client_line(game)) is not None
 
 
 def issue_body(scan: ffscan.RawScan, digest: str, gist_id: str, client: str = "") -> str:
@@ -218,13 +231,26 @@ def issue_body(scan: ffscan.RawScan, digest: str, gist_id: str, client: str = ""
             + (f"client: {client}\n" if client else "") + "```\n")
 
 
+def raw_section(path: pathlib.Path) -> str:
+    """The part of a saved file from the line `ForeverFlipRaw = ` on, or "" without it. Only that part
+    is decoded and read: the price history before it is most of the file (35 of 42 MB)."""
+    data = path.read_bytes()
+    if not data.startswith(b"ForeverFlipRaw"):
+        k = data.find(b"\nForeverFlipRaw")
+        if k < 0:
+            return ""
+        data = data[k + 1:]
+    # line ends as read_text gave them: Windows ones become \n
+    return data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
 def shareable_scans(game: pathlib.Path, state: dict, paths=None):
     """The kept full scans not shared yet that pass the checks: (scan, ident, when)."""
     done = set(state.setdefault("uploaded", []))
     for path in saved_variable_files(game) if paths is None else paths:
         try:
-            scans = ffscan.scans_from_saved_variables(path.read_text(encoding="utf-8", errors="replace"), skip=done)
-        except ffscan.LuaError as exc:
+            scans = ffscan.scans_from_saved_variables(raw_section(path), skip=done)
+        except (ffscan.LuaError, ValueError, OSError) as exc:
             log(f"Cannot read {path}: {exc}")
             continue
         for scan in scans:
@@ -345,19 +371,37 @@ def follow_uploads(hub: GitHub, state: dict) -> None:
 
 # --- Download --------------------------------------------------------------------------------------
 
+SCOPE_KEY = re.compile(rb'\["([^"\]]+-(?:Alliance|Horde|Neutral|Server))"\]\s*=\s*\{')
+_SCOPES: dict[str, tuple] = {}  # path: ((mtime_ns, size), scopes): the file is read again only when it changes
+
+
 def my_scopes(game: pathlib.Path) -> set[str]:
-    """Auction houses the player uses: the markets keys in ForeverFlip's saved data."""
+    """Auction houses the player uses: the markets keys in ForeverFlip's saved data (Retail's realm-wide
+    houses end in -Server)."""
     scopes = set()
     for path in saved_variable_files(game):
-        text = path.read_text(encoding="utf-8", errors="replace")
-        scopes.update(re.findall(r'\["([^"\]]+-(?:Alliance|Horde|Neutral))"\]\s*=\s*\{', text))
+        try:
+            st = path.stat()
+            mark = (st.st_mtime_ns, st.st_size)
+            known = _SCOPES.get(str(path))
+            if known is None or known[0] != mark:
+                found = {m.decode("utf-8", errors="replace") for m in SCOPE_KEY.findall(path.read_bytes())}
+                known = _SCOPES[str(path)] = (mark, found)
+        except OSError:
+            continue
+        scopes.update(known[1])
     return scopes
 
 
-def fetch_status(repo: str) -> dict | None:
+def market_path(market: str, file: str) -> str:
+    """The path of a file of the market under shared/: Forever's at its top, Retail's in its folder."""
+    return f"{market}/{file}" if market else file
+
+
+def fetch_status(repo: str, market: str = "") -> dict | None:
     """shared/status.json of the data repository (aggregate.write_status), or None when it has none
     yet or it cannot be read: then the summaries are used as before."""
-    url = RAW_URL.format(repo=repo, file="status.json")
+    url = RAW_URL.format(repo=repo, file=market_path(market, "status.json"))
     req = urllib.request.Request(url, headers={"User-Agent": f"ForeverFlipSync/{VERSION}"})
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -380,34 +424,46 @@ def download_shared(game: pathlib.Path, repo: str, uploaded: list[str] | None = 
     when the community price is not reliable yet, reason; such a market's summaries are withheld."""
     texts = []
     mine = set(uploaded or [])
-    status = fetch_status(repo)
+    market = ffscan.market_of(client_line(game)) or ""
+    status = fetch_status(repo, market)
     markets = (status or {}).get("markets", {})
     for_addon = {}
+    wanted = []
     for scope in sorted(my_scopes(game)):
-        market = markets.get(scope)
+        house = markets.get(scope)
         if status is not None:
             extra = {"checked_at": status.get("checked_at"),
-                     "published_at": (market or {}).get("published_at"),
-                     "reason": (market or {}).get("reason") if market else "no scan of it is published yet"}
+                     "published_at": (house or {}).get("published_at"),
+                     "reason": (house or {}).get("reason") if house else "no scan of it is published yet"}
             for_addon[scope] = extra
-            if market is None or not market.get("reliable"):
+            if house is None or not house.get("reliable"):
                 if report is not None:
-                    report[scope] = {"scans": 0, "own": 0, "latest": (market or {}).get("latest_published"),
+                    report[scope] = {"scans": 0, "own": 0, "latest": (house or {}).get("latest_published"),
                                      **extra}
                 continue
         else:
             extra = {}
-        url = RAW_URL.format(repo=repo, file=urllib.parse.quote(scope_file(scope)))
+        wanted.append((scope, extra))
+
+    def fetch(scope):
+        url = RAW_URL.format(repo=repo, file=urllib.parse.quote(market_path(market, scope_file(scope))))
         req = urllib.request.Request(url, headers={"User-Agent": f"ForeverFlipSync/{VERSION}"})
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
-                body = resp.read().decode("utf-8")
+                return resp.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
-                if report is not None:
-                    report[scope] = {"scans": 0, "own": 0, "latest": None, **extra}
-                continue
+                return None
             raise
+
+    # The houses' files come at once, not one after another: each is a separate request.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        bodies = list(pool.map(fetch, [scope for scope, _ in wanted]))
+    for (scope, extra), body in zip(wanted, bodies):
+        if body is None:
+            if report is not None:
+                report[scope] = {"scans": 0, "own": 0, "latest": None, **extra}
+            continue
         lines = [line for line in body.splitlines() if line.startswith("FF1|")]
         texts += lines
         if report is not None:
@@ -525,6 +581,12 @@ def describe(exc: BaseException) -> str:
 
 def run_once(game: pathlib.Path, repo: str, state: dict, token: str | None, upload: bool,
              paths=None, download=True, checkpoint=None, config=None) -> int | None:
+    if not community_market(game):
+        if not state.get("other_game"):
+            log("Community prices are not shared for this client (only WoW Forever and Retail with a "
+                "known region are); it keeps its scans to itself.")
+            state["other_game"] = True
+        return None
     errors = []
     if upload:
         if token:
@@ -691,6 +753,8 @@ def arguments(argv=None):
     mode.add_argument("--gui", action="store_true", help="open the desktop window")
     mode.add_argument("--console", action="store_true", help="use console mode")
     parser.add_argument("--paused", action="store_true", help="open the window with automatic sync paused")
+    parser.add_argument("--tray", action="store_true",
+                        help="start hidden in the tray (how Windows starts it at sign-in)")
     parser.add_argument("--update-addon", action="store_true", help="install a newer ForeverFlip release, then exit")
     parser.add_argument("--beta", action="store_true", help="be a beta tester: include pre-releases (remembered)")
     parser.add_argument("--no-beta", action="store_true", help="stop getting pre-releases (remembered)")

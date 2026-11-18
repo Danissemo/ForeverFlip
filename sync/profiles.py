@@ -114,9 +114,12 @@ def backups_folder(folder: pathlib.Path, install: dict | None) -> pathlib.Path:
 
 
 def client_info(game) -> dict:
-    """{flavor, version, product} of a client folder; version/product None when unknown."""
+    """{flavor, version, product, region} of a client folder; each None when unknown. The region is
+    the Battle.net branch the client was installed for ("eu", "us", ...)."""
     game = pathlib.Path(str(game))
-    info = {"flavor": game.name, "version": None, "product": None}
+    info = {"flavor": game.name, "version": None, "product": None, "region": None}
+    # an installation's .build.info lists every client in it: take the row of this folder's client
+    wanted = {"_forever_": "wowf", "_retail_": "wow"}.get(game.name.lower())
     for path in (game / ".build.info", game.parent / ".build.info"):
         try:
             lines = path.read_text(encoding="utf-8-sig").splitlines()
@@ -132,13 +135,16 @@ def client_info(game) -> dict:
             continue
         vi = fields.index("Version") if "Version" in fields else None
         ai = fields.index("Active") if "Active" in fields else None
+        bi = fields.index("Branch") if "Branch" in fields else None
         for row in rows:
             if len(row) <= pi or (ai is not None and (len(row) <= ai or row[ai] != "1")):
                 continue
-            if row[pi] == "wowf" or len(rows) == 1:
+            if (row[pi] == wanted) if wanted else (row[pi] == "wowf" or len(rows) == 1):
                 info["product"] = row[pi]
                 if vi is not None and len(row) > vi:
                     info["version"] = row[vi] or None
+                if bi is not None and len(row) > bi:
+                    info["region"] = row[bi].strip().lower() or None
                 return info
     return info
 

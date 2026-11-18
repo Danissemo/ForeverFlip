@@ -131,7 +131,7 @@ class PipelineTests(unittest.TestCase):
         hub.add_upload(make_scan(self.now - 900, market()), 'Owner', 2)
         hub.issues[-1]['body'] = hub.issues[-1]['body'].replace('scope: Realm-Alliance', 'scope: Realm-Horde')
         hub.add_upload(make_scan(self.now - 1800, market()), 'Owner', 3)
-        hub.issues[-1]['body'] += 'client: wow 11.0.2.56000\n'
+        hub.issues[-1]['body'] += 'client: wow_classic 1.15.7.61000\n'
         hub.add_upload(make_scan(self.now - 2700, market()), 'Owner', 4)
         hub.issues[-1]['body'] += 'client: wowf 1.60.1.70938\n'
         _, result = self.process(hub)
@@ -140,6 +140,60 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('another game', hub.comments[3])
         self.assertEqual(list(result), [4])
         self.assertEqual(result[4]['client'], 'wowf 1.60.1.70938')
+
+    def retail(self, hub, at, region, number, scope='Silvermoon-Server', login='Owner', prices=None):
+        scan = make_scan(at, prices or market(), scope=scope)
+        hub.add_upload(scan, login, number)
+        if region is not None:
+            hub.issues[-1]['body'] += f'client: wow 12.1.5.70961 {region}'.rstrip() + '\n'
+        return scan
+
+    def test_retail_scans_are_published_per_region_apart_from_forever(self):
+        hub = ArchiveHub()
+        hub.add_upload(make_scan(self.now - 4000, market()), 'Owner', 1)
+        self.retail(hub, self.now - 3000, 'eu', 2)
+        self.retail(hub, self.now - 2000, 'us', 3, prices=market([(3, 5, 333)]))
+        _, result = self.process(hub)
+        self.assertEqual([result[n]['status'] for n in (1, 2, 3)], ['trusted'] * 3)
+        self.assertNotIn('market', result[1])
+        self.assertEqual((result[2]['market'], result[3]['market']), ('retail-eu', 'retail-us'))
+        self.assertTrue(result[2]['name'].startswith('retail-eu_'))
+        shared = self.data / 'shared'
+        self.assertTrue((shared / 'retail-eu' / 'Silvermoon-Server.txt').exists())
+        self.assertTrue((shared / 'retail-us' / 'Silvermoon-Server.txt').exists())
+        self.assertFalse((shared / 'Silvermoon-Server.txt').exists())
+        self.assertEqual(list(self.status()['markets']), ['Realm-Alliance'])
+        for region, at in (('eu', self.now - 3000), ('us', self.now - 2000)):
+            status = json.loads((shared / f'retail-{region}' / 'status.json').read_text(encoding='utf-8'))
+            self.assertEqual(status['markets']['Silvermoon-Server']['product'], 'wow')
+            self.assertEqual(list(status['markets']), ['Silvermoon-Server'])
+            self.assertEqual(status['markets']['Silvermoon-Server']['latest_published'], at)
+        self.assertEqual(self.status()['markets']['Realm-Alliance']['product'], 'wowf')
+
+    def test_retail_and_forever_houses_are_not_mixed(self):
+        hub = ArchiveHub()
+        self.retail(hub, self.now - 60, 'eu', 1, scope='Realm-Alliance')  # Retail has one house per realm
+        self.retail(hub, self.now - 900, None, 2)  # an older helper: no region
+        hub.issues[-1]['body'] += 'client: wow 12.1.5.70961\n'
+        hub.add_upload(make_scan(self.now - 1800, market(), scope='Realm-Server'), 'Owner', 3)
+        hub.issues[-1]['body'] += 'client: wowf 1.60.1.70938\n'
+        _, result = self.process(hub)
+        self.assertIn('market', hub.comments[1])
+        self.assertIn('region', hub.comments[2])
+        self.assertIn('market', hub.comments[3])
+        self.assertEqual(result, {})
+
+    def test_a_lost_retail_registry_line_keeps_its_region(self):
+        hub = ArchiveHub()
+        self.retail(hub, self.now - 600, 'eu', 1)
+        self.process(hub)
+        (self.data / 'registry' / 'scans.jsonl').unlink()
+        (self.data / 'shared' / 'retail-eu' / 'Silvermoon-Server.txt').unlink()
+        self.process(hub, self.now + 60)
+        entries = aggregate.load_registry(self.data)
+        self.assertEqual([(e['market'], e['scope'], e.get('recovered')) for e in entries],
+                         [('retail-eu', 'Silvermoon-Server', True)])
+        self.assertTrue((self.data / 'shared' / 'retail-eu' / 'Silvermoon-Server.txt').exists())
 
     def test_a_lost_registry_line_is_recovered_from_the_archive(self):
         hub = ArchiveHub()
@@ -216,6 +270,23 @@ class HelperStatusTests(unittest.TestCase):
             report = {}
             self.assertEqual(helper.download_shared(pathlib.Path(tmp), 'o/r', [], report=report), 1)
         self.assertEqual(report, {'Realm-Horde': {'scans': 1, 'own': 0, 'latest': 1_700_000_000}})
+
+    def test_a_retail_client_downloads_its_own_regions_folder(self):
+        asked = []
+
+        def urlopen(req, timeout=None):
+            asked.append(req.full_url)
+            if req.full_url.endswith('/status.json'):
+                raise helper.urllib.error.HTTPError(req.full_url, 404, 'Not Found', {}, None)
+            return Answer(ffscan.encode_summary('Silvermoon-Server', 1_700_000_000, {'1': (10, 9, 2)}).encode())
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(helper, 'client_line', return_value='wow 12.1.5.70961 eu'), \
+                patch.object(helper, 'my_scopes', return_value={'Silvermoon-Server'}), \
+                patch.object(helper.urllib.request, 'urlopen', urlopen):
+            self.assertEqual(helper.download_shared(pathlib.Path(tmp), 'o/r', []), 1)
+        self.assertEqual(asked, ['https://raw.githubusercontent.com/o/r/main/shared/retail-eu/status.json',
+                                 'https://raw.githubusercontent.com/o/r/main/shared/retail-eu/Silvermoon-Server.txt'])
 
     def test_the_issue_names_the_client(self):
         scan = make_scan(1_700_000_000, market())

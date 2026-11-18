@@ -1,4 +1,5 @@
-"""Bounded discovery of the Forever client, without confusing Retail addon folders with it."""
+"""Bounded discovery of the game clients ForeverFlip runs in: WoW Forever and WoW Retail.
+Classic, PTR and beta folders are never taken for them."""
 
 from __future__ import annotations
 
@@ -8,8 +9,10 @@ import subprocess
 import sys
 
 GAME_PATHS = [r'C:\World of Warcraft\_forever_', r'C:\Program Files (x86)\World of Warcraft\_forever_',
-              r'C:\Program Files\World of Warcraft\_forever_', r'D:\World of Warcraft\_forever_']
-OTHER_CLIENTS = {'_retail_', '_classic_', '_classic_era_', '_ptr_', '_beta_'}
+              r'C:\Program Files\World of Warcraft\_forever_', r'D:\World of Warcraft\_forever_',
+              r'C:\Program Files (x86)\World of Warcraft\_retail_', r'C:\World of Warcraft\_retail_']
+CLIENTS = {'_forever_': 'wowf', '_retail_': 'wow'}  # client folder -> its Battle.net product
+OTHER_CLIENTS = {'_classic_', '_classic_era_', '_ptr_', '_xptr_', '_beta_'}
 
 
 class GameNotFound(ValueError):
@@ -19,10 +22,10 @@ class GameNotFound(ValueError):
 class AmbiguousGame(ValueError):
     def __init__(self, candidates):
         self.candidates = candidates
-        super().__init__('Several Forever installations were found. Choose the one you play.')
+        super().__init__('Several WoW installations were found. Choose the one you play.')
 
 
-def _forever_product(folder: pathlib.Path) -> bool:
+def _products(folder: pathlib.Path) -> set:
     try:
         lines = (folder / '.build.info').read_text(encoding='utf-8-sig').splitlines()
         fields = [field.split('!')[0] for field in lines[0].split('|')]
@@ -30,16 +33,17 @@ def _forever_product(folder: pathlib.Path) -> bool:
         active = fields.index('Active') if 'Active' in fields else None
         products = {parts[product] for parts in (line.split('|') for line in lines[1:])
                     if len(parts) > product and (active is None or len(parts) > active and parts[active] == '1')}
-        return products == {'wowf'}
+        return products
     except (OSError, ValueError, IndexError):
-        return False
+        return set()
 
 
 def _is_game(folder: pathlib.Path) -> bool:
     return (folder.name.lower() not in OTHER_CLIENTS
             and (folder / 'Interface' / 'AddOns').is_dir()
             and (folder / 'Wow.exe').is_file()
-            and (folder.name.lower() == '_forever_' or _forever_product(folder) or _forever_product(folder.parent)))
+            and (folder.name.lower() in CLIENTS
+                 or any(_products(where) in ({'wowf'}, {'wow'}) for where in (folder, folder.parent))))
 
 
 def normalize_game(given) -> pathlib.Path | None:
@@ -55,7 +59,7 @@ def normalize_game(given) -> pathlib.Path | None:
         if any(parent.name.lower() in OTHER_CLIENTS for parent in (path, *path.parents)):
             return None
         for parent in (path, *list(path.parents)[:4]):
-            for candidate in (parent / '_forever_', parent):
+            for candidate in (parent / '_forever_', parent / '_retail_', parent):
                 if _is_game(candidate):
                     return candidate.resolve()
     except (OSError, RuntimeError):
@@ -116,7 +120,7 @@ def common_locations() -> list[pathlib.Path]:
                 drive = f'{chr(65+i)}:\\'
                 if ctypes.windll.kernel32.GetDriveTypeW(drive) not in (2, 3):
                     continue
-                for relative in ('World of Warcraft', 'Games/World of Warcraft', 'Games/WoW',
+                for relative in ('World of Warcraft', 'WOW/World of Warcraft', 'Games/World of Warcraft', 'Games/WoW',
                                  'WoW', 'Battle.net/World of Warcraft', 'Program Files/World of Warcraft',
                                  'Program Files (x86)/World of Warcraft'):
                     roots.append(pathlib.Path(drive) / relative)
@@ -127,9 +131,10 @@ def discover_games(paths=None) -> list[pathlib.Path]:
     candidates = paths if paths is not None else running_locations() + windows_locations() + common_locations()
     found = {}
     for candidate in candidates:
-        game = normalize_game(candidate)
-        if game is not None:
-            found[os.path.normcase(str(game))] = game
+        for game in [normalize_game(candidate)] + [normalize_game(pathlib.Path(str(candidate)) / name)
+                                                   for name in CLIENTS]:
+            if game is not None:
+                found[os.path.normcase(str(game))] = game
     return sorted(found.values(), key=lambda p: str(p).casefold())
 
 
@@ -137,11 +142,11 @@ def locate_game(given: str | None = None) -> pathlib.Path:
     if given:
         game = normalize_game(given)
         if game is None:
-            raise GameNotFound('The selected folder is not a WoW Forever client. Choose its game folder or Wow.exe.')
+            raise GameNotFound('The selected folder is not a WoW Forever or WoW Retail client. Choose its game folder or Wow.exe.')
         return game
     games = discover_games()
     if len(games) == 1:
         return games[0]
     if len(games) > 1:
         raise AmbiguousGame(games)
-    raise GameNotFound('WoW Forever was not found. Choose the game folder; a parent installation folder also works.')
+    raise GameNotFound('WoW was not found. Choose the game folder; a parent installation folder also works.')
