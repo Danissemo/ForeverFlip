@@ -54,7 +54,8 @@ import addon_update  # noqa: E402
 import profiles  # noqa: E402
 import self_update  # noqa: E402
 
-VERSION = "2.1.0-beta.2"
+# The release this helper ships with; `devflow.py release` writes it with the addon's version.
+VERSION = "3.1.0"
 DEFAULT_REPO = "Danissemo/ForeverFlip-Data"
 ADDON_REPO = "Danissemo/ForeverFlip"
 UPDATE_EVERY = 6 * 3600  # how often new addon releases are looked for

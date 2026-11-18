@@ -92,6 +92,8 @@ class ReleaseCommandTests(unittest.TestCase):
             flow.TOC, flow.UTIL, flow.CHANGELOG = folder / 'a.toc', folder / 'Util.lua', folder / 'CHANGELOG.md'
             flow.TOC.write_text('## Version: 3.0.0\n', encoding='utf-8')
             flow.UTIL.write_text('F.version = "3.0.0"\n', encoding='utf-8')
+            flow.SYNC = folder / 'foreverflip_sync.py'
+            flow.SYNC.write_text('VERSION = "3.0.0"\n', encoding='utf-8')
             flow.CHANGELOG.write_text(self.TEXT, encoding='utf-8')
             answers = {('rev-parse', '--abbrev-ref', 'HEAD'): flow.BRANCH, ('rev-parse', 'HEAD'): 'abc1234'}
             flow.git = lambda *args, **_: answers.get(args, '')

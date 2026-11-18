@@ -13,6 +13,10 @@ All notable changes are listed here. The format follows
   table (`db.blocked`): items you ignore by key, and the "blocked from an action" events by number,
   so those events turned up as nameless rows among the ignored items. They are now apart
   (`db.ignored`, `db.blockedActions`); the first login moves what was saved into the right one.
+- **The Sync helper reports the version it was released with.** It had called itself
+  `2.1.0-beta.2` through 3.0.0 and 3.1.0, in its requests to GitHub and in the uploads, and a build
+  it could not find among the releases measured updates against that. A release now writes the
+  addon's version into the helper too, and the build stops when they differ.
 
 ### Development
 

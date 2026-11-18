@@ -7,7 +7,7 @@ The archive contains a single ForeverFlip/ folder (the TOC, every file it loads 
 and can be unpacked straight into Interface/AddOns. Before packaging the script checks that:
 
 * every file listed in the TOC exists and no stray .lua file is left out of it;
-* the TOC version matches F.version in Util.lua;
+* the TOC version matches F.version in Util.lua and the Sync helper's VERSION;
 * the automated tests pass (unless --skip-tests is given).
 
 It prints the archive path and its SHA-256 checksum (GitHub shows the same one on the release page).
@@ -29,6 +29,7 @@ TOC = ADDON / "ForeverFlip.toc"
 # The player's documents travel in the addon folder too, as other addons ship theirs.
 EXTRA_FILES = [ROOT / "LICENSE", ROOT / "README.md", ROOT / "CHANGELOG.md"]
 UTIL = ADDON / "Core" / "Util.lua"
+SYNC = ROOT / "sync" / "foreverflip_sync.py"  # its helper is built from the same tag
 
 
 def fail(message: str) -> None:
@@ -70,6 +71,9 @@ def check_sources(version: str, files: list[str]) -> None:
     match = re.search(r'F\.version\s*=\s*"([^"]+)"', util)
     if not match or match.group(1) != version:
         fail(f"F.version in Core/Util.lua does not match the TOC version {version}")
+    helper = re.search(r'^VERSION = "([^"]+)"', SYNC.read_text(encoding="utf-8"), re.M)
+    if not helper or helper.group(1) != version:
+        fail(f"VERSION in sync/foreverflip_sync.py does not match the TOC version {version}")
 
 
 def run_tests() -> None:

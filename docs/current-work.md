@@ -2,8 +2,8 @@
 
 Updated: 17 November 2026. The latest published stable release is
 [ForeverFlip 3.1.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.1.0).
-The TOC and `Core/Util.lua` both declare `3.1.0`; the desktop Sync helper has a
-separate internal version identifier. Later changes to `main` fixed the release process
+The TOC and `Core/Util.lua` both declare `3.1.0`, and so does the Sync helper's `VERSION`
+(a release writes all three). Later changes to `main` fixed the release process
 without changing the addon release number.
 
 ## Current priorities

@@ -3,12 +3,13 @@
 **Baseline:** [v3.1.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.1.0),
 published 17 November 2026. Compare the working copy with the tagged release before using
 this checklist. The addon declares `3.1.0` in `ForeverFlip/ForeverFlip.toc` and
-`ForeverFlip/Core/Util.lua`; `sync/foreverflip_sync.py` has an independent helper identifier.
+`ForeverFlip/Core/Util.lua`. The 3.1.0 helper executable still reports `2.1.0-beta.2`; from the
+next release `sync/foreverflip_sync.py` carries the release version too.
 
 This checklist is a **plan**, not a test report. No live WoW Forever or Retail session was
-performed as part of this documentation pass. The [historical Ukrainian checklist](testing.md) and its Excel workbook
-contain the 2.3.0-beta.1 scenarios. Even when the workbook header reflects the current
-TOC version, this does **not** mean its procedures were verified for 3.1.0.
+performed as part of this documentation pass. The [historical Ukrainian checklist](testing.md)
+and its Excel workbook contain the 2.3.0-beta.1 scenarios and are labelled with that version;
+none of their procedures was verified for 3.1.0.
 
 ## Automated release gates
 

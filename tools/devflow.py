@@ -425,6 +425,7 @@ def commit(text: str = "") -> int:
 
 TOC = ADDON / "ForeverFlip.toc"
 UTIL = ADDON / "Core" / "Util.lua"
+SYNC = ROOT / "sync" / "foreverflip_sync.py"
 CHANGELOG = ROOT / "CHANGELOG.md"
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?$")
 
@@ -604,8 +605,9 @@ def wait_for_ci(sha: str, timeout: int = 900) -> str:
 
 def release(version: str, note: str = "", yes: bool = False, ci: bool = True) -> int:
     """`release <version> [-m text] [--yes]`: commit what is pending (documentation included), set the
-    version in the TOC, Core/Util.lua, CHANGELOG.md and, for a stable release, the current
-    release's fields of README.md, docs/testing.md and docs/current-work.md (DOC_FIELDS), build the package to check it, commit
+    version in the TOC, Core/Util.lua, the Sync helper, CHANGELOG.md and, for a stable release, the
+    current release's fields of README.md, docs/testing.md and docs/current-work.md (DOC_FIELDS),
+    build the package to check it, commit
     "Release <version>", tag v<version> and push main and the tag. GitHub Actions
     (.github/workflows/release.yml) then builds the zip and Sync and publishes the release with
     this version's changelog notes; a version with "-" (3.1.0-beta.1) is published as a beta.
@@ -649,7 +651,7 @@ def release(version: str, note: str = "", yes: bool = False, ci: bool = True) ->
     if pending:
         say(f"first the pending changes are committed ({len(pending.splitlines())} files)"
             + (f": {note}" if note else ", with a message written from them"))
-    say("then: the version in the TOC, Core/Util.lua and the guides, the CHANGELOG section, "
+    say("then: the version in the TOC, Core/Util.lua, the Sync helper and the guides, the CHANGELOG section, "
         f"a build check, commit 'Release {version}', tag v{version}, push main and the tag")
     if not yes:
         try:
@@ -678,13 +680,16 @@ def release(version: str, note: str = "", yes: bool = False, ci: bool = True) ->
     UTIL.write_text(re.sub(r'^F\.version = ".*"$', f'F.version = "{version}"',
                            UTIL.read_text(encoding="utf-8"), count=1, flags=re.M), encoding="utf-8",
                     newline="\n")
+    # The Sync helper is built from the same tag; it had kept 2.1.0-beta.2 through 3.1.0.
+    SYNC.write_text(re.sub(r'^VERSION = ".*"$', f'VERSION = "{version}"', SYNC.read_text(encoding="utf-8"),
+                           count=1, flags=re.M), encoding="utf-8", newline="\n")
     CHANGELOG.write_text(stamp_changelog(changelog, version, previous, day), encoding="utf-8",
                          newline="\n")
     set_doc_versions(version)
     if current_version() != version or f'F.version = "{version}"' not in UTIL.read_text(encoding="utf-8") \
-            or doc_problems(version):
-        say("release stopped: the version was not written; check the TOC, Core/Util.lua, README.md "
-            "and docs/testing.md")
+            or f'VERSION = "{version}"' not in SYNC.read_text(encoding="utf-8") or doc_problems(version):
+        say("release stopped: the version was not written; check the TOC, Core/Util.lua, "
+            "sync/foreverflip_sync.py, README.md and docs/testing.md")
         return 1
     workbook = ROOT / "tools" / "make_tester_workbook.py"
     if workbook.exists():  # the testers' workbook follows the cards; a test checks it

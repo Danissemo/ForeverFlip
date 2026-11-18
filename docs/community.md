@@ -54,9 +54,9 @@ Click the tray icon to open the window again; right-click it for **Sync now** an
 
 ### Updating the helper
 
-The helper's internal `VERSION` identifier is independent of the addon's TOC version. A release
-can ship a newer helper executable without changing that identifier; use the GitHub release asset
-rather than treating the identifier as the addon version.
+The helper is built from the same tag as the addon and carries the same version: a release writes
+it into `sync/foreverflip_sync.py`, and the build stops when it differs from the TOC. Up to 3.1.0
+it kept `2.1.0-beta.2`, whatever release it came with.
 
 
 For the current stable **3.1.0** release, download **ForeverFlipSync.exe** from the [v3.1.0 release](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.1.0), alongside the addon ZIP.
