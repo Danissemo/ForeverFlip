@@ -15,6 +15,11 @@ All notable changes are listed here. The format follows
   those bought, the return on their cost and per day held, and under the table the money still in
   unsold units. Profit and Sure on Deals are forecasts; this says which strategy pays on your
   server.
+- **Disenchant bought, under the profession book.** Items bought on the Disenchant page had to be
+  found in the bags and disenchanted one by one. A button under the profession book now
+  disenchants them, one a click (the game wants a click for each cast), and shows how many are
+  left. It takes only items bought to disenchant, as many as were bought, and does nothing in
+  combat or while a cast or a loot window is still open.
 
 ### Fixed
 

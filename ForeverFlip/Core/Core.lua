@@ -475,6 +475,10 @@ function E.handle(event, ...)
                 F.UI.tooltips()
             end
         end
+        -- The profession book loads on demand (or is already there): our button goes under it.
+        if (... == "ForeverFlip" or ... == "Blizzard_ProfessionsBook") and F.UI and F.UI.professionBook then
+            F.UI.professionBook()
+        end
         return
     end
     if not F.db then

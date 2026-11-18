@@ -356,6 +356,39 @@ function DE.evaluate(rows, id, budget, keep)
     }
 end
 
+-- Items in the bags bought to disenchant (a held position of mode "disenchant") that can be
+-- disenchanted, at most as many of each as are held: { bag, slot, id, link }, in bag order. The
+-- profession book's button disenchants them one a click (UI.professionBook).
+function DE.queue()
+    local out = {}
+    if not F.db or not F.Compat.caps.container then
+        return out
+    end
+    local char = F.Data.char(F.db, F.Engine.owner())
+    local left = {}
+    for bag = 0, 4 do
+        for slot = 1, F.Compat.bagSlots(bag) do
+            local info = F.Compat.bagItem(bag, slot)
+            local id = type(info) == "table" and info.itemID
+            if id and not info.isLocked then
+                local key = F.AH.keyFor(id, info.hyperlink)
+                local p = key and char.positions[key]
+                if p and p.mode == "disenchant" then
+                    if left[key] == nil then
+                        left[key] = tonumber(p.qty) or 0
+                    end
+                    local _, _, quality, level, _, _, _, _, _, _, _, classID, _, _, expansion = U.itemInfo(id)
+                    if left[key] > 0 and DE.band(quality, level, classID, expansion) then
+                        left[key] = left[key] - (tonumber(info.stackCount) or 1)
+                        out[#out + 1] = { bag = bag, slot = slot, id = id, link = info.hyperlink }
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
 -- Learning from your own disenchants ------------------------------------------------------------------
 -- When the Disenchant cast starts, the item it is aimed at is locked in the bags: it is noted. The
 -- loot window that opens right after holds its result, added to the item's band (F.db.deSeen).

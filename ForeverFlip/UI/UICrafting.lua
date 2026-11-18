@@ -327,3 +327,116 @@ function UI.craftPlanLines(s)
     end
     return lines
 end
+
+-- Profession book ----------------------------------------------------------------------------------
+-- A button under the profession book disenchants what was bought on the Disenchant page
+-- (Disenchant.queue), one item a click: a spell needs a click of the player's own for each cast.
+-- It is a secure button of ours casting Disenchant with the item as its target (target-bag and
+-- target-slot), set for the next item before each click, out of combat only. The game's targeting
+-- uses the item only while the spell waits for one, so a cast that fails never equips the item.
+-- Nothing of the book is called or changed: the button is only placed under it.
+local function inCombat()
+    return InCombatLockdown and InCombatLockdown() or false
+end
+
+function UI.updateDisenchantButton()
+    local b = UI.deButton
+    if not b then
+        return 0
+    end
+    local n = #F.Disenchant.queue()
+    b:SetText(string.format(L("Disenchant bought (%d)"), n))
+    if not inCombat() then
+        if F.Disenchant.canDisenchant() then
+            b:Show()
+        else
+            b:Hide()
+        end
+    end
+    return n
+end
+
+-- Sets the button's cast for the first item of the queue; none when it is empty or a cast or loot
+-- window is still running (that click would be lost on a busy cast).
+function UI.aimDisenchant(b)
+    if inCombat() then
+        return nil
+    end
+    local busy = (UnitCastingInfo and UnitCastingInfo("player")) or (GetNumLootItems and (GetNumLootItems() or 0) > 0)
+    local nextItem = not busy and F.Disenchant.canDisenchant() and F.Disenchant.queue()[1] or nil
+    if nextItem then
+        b:SetAttribute("type", "spell")
+        b:SetAttribute("spell", F.Disenchant.SPELL)
+        b:SetAttribute("target-bag", nextItem.bag)
+        b:SetAttribute("target-slot", nextItem.slot)
+    else
+        b:SetAttribute("type", nil)
+        b:SetAttribute("target-bag", nil)
+        b:SetAttribute("target-slot", nil)
+    end
+    return nextItem
+end
+
+function UI.professionBook()
+    local book = ProfessionsBookFrame
+    if UI.deButton or not book or inCombat() then
+        return
+    end
+    local ok, b = pcall(
+        CreateFrame,
+        "Button",
+        "ForeverFlipDisenchantButton",
+        book,
+        "SecureActionButtonTemplate, UIPanelButtonTemplate"
+    )
+    if not ok or not b then
+        return
+    end
+    UI.deButton = b
+    b:SetSize(190, 22)
+    b:SetPoint("TOPRIGHT", book, "BOTTOMRIGHT", -8, -2)
+    if b.RegisterForClicks then
+        b:RegisterForClicks("AnyUp")
+    end
+    b:SetScript("PreClick", function(self)
+        F.Engine.input()
+        UI.aimDisenchant(self)
+    end)
+    b:SetScript("OnEnter", function(self)
+        if not GameTooltip then
+            return
+        end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("ForeverFlip", 1, 0.82, 0)
+        GameTooltip:AddLine(
+            L("Disenchants the items bought on the Disenchant page, one a click, while they are in your bags."),
+            1,
+            1,
+            1,
+            true
+        )
+        local first = F.Disenchant.queue()[1]
+        if first then
+            GameTooltip:AddLine(string.format(L("Next: %s"), first.link or U.itemInfo(first.id) or "?"), 1, 1, 1)
+        end
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function(self)
+        if GameTooltip and GameTooltip:IsOwned(self) then
+            GameTooltip:Hide()
+        end
+    end)
+    -- The count follows the bags while the book is open, on a plain frame of ours: it keeps its
+    -- clock while the button is hidden (a character who has not learned Disenchant yet).
+    local watch = CreateFrame("Frame", nil, book)
+    UI.deWatch = watch
+    local since = 0
+    watch:SetScript("OnUpdate", function(_, elapsed)
+        since = since + (elapsed or 0)
+        if since >= 0.5 then
+            since = 0
+            UI.updateDisenchantButton()
+        end
+    end)
+    UI.updateDisenchantButton()
+end

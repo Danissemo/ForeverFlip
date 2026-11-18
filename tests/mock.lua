@@ -175,6 +175,15 @@ function methods:GetFontString()
     self.fontString = rawget(self, "fontString") or widget("FontString", self)
     return self.fontString
 end
+-- Secure buttons: the attributes the game's secure click reads.
+function methods:SetAttribute(name, value)
+    self.attributes = rawget(self, "attributes") or {}
+    self.attributes[name] = value
+end
+function methods:GetAttribute(name)
+    local a = rawget(self, "attributes")
+    return a and a[name]
+end
 function methods:Click()
     if self.enabled and self.scripts.OnClick then
         self.scripts.OnClick(self)
