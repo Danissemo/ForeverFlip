@@ -19,6 +19,12 @@ push). For each site:
    | Wago        | `WAGO_API_TOKEN`  | `WAGO_PROJECT_ID`     | addons.wago.io → account → API keys; the project URL |
    | WoWInterface| `WOWI_API_TOKEN`  | `WOWI_PROJECT_ID`     | wowinterface.com → Author Portal → API tokens; the addon ID |
 
+Where it stands (18 November 2026): all three tokens are set. CurseForge has the project
+[1814511](https://authors.curseforge.com/#/projects/1814511) (`CF_PROJECT_ID`), waiting for
+moderation. WoWInterface takes its first file through the upload form (category Forever), and
+its addon ID becomes `WOWI_PROJECT_ID`. Wago's developer site needs a Battle.net or GitHub sign-in
+before its project can be made.
+
 A site without its token or ID is skipped, not failed. The packager maps `## Interface: 16001` to
 the *Forever* game version and `120105` to Retail; WoWInterface has no Forever version and gets
 the Retail one only.

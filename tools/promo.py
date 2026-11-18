@@ -58,7 +58,7 @@ def post(changelog: str, version: str, channel: str, repository: str = REPO) -> 
     elif channel == "discord":
         lines = [f"**ForeverFlip {version} is out**"] + [f"• {h}" for h in added[:4]]
         if fixed:
-            lines.append(f"…and {len(fixed)} fixes.")
+            lines.append(f"…and {len(fixed)} fix{'' if len(fixed) == 1 else 'es'}.")
         lines += [release, "Share your scans with ForeverFlip Sync: every player makes the community prices better."]
     elif channel == "telegram":
         lines = [f"🔄 ForeverFlip {version} — безкоштовний аддон для перепродажу на аукціоні WoW Forever", "",

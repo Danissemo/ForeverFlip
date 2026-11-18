@@ -53,6 +53,9 @@ class PromoToolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.promo.post(CHANGELOG, '9.0.0', 'fax', 'o/r')
 
+    def test_the_discord_draft_counts_one_fix_in_the_singular(self):
+        self.assertIn('…and 1 fix.', self.promo.post(CHANGELOG, '9.0.0', 'discord', 'o/r'))
+
     def test_downloads_count_every_asset_and_skip_drafts(self):
         releases = [{'tag_name': 'v2', 'assets': [{'download_count': 3}, {'download_count': 4}]},
                     {'tag_name': 'v1', 'draft': True, 'assets': [{'download_count': 9}]}]
