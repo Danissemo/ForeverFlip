@@ -9,8 +9,8 @@
   <a href="https://github.com/Danissemo/ForeverFlip/releases/latest"><img src="https://img.shields.io/github/v/release/Danissemo/ForeverFlip?label=release&color=f5b52e" alt="Latest release" /></a>
   <a href="https://github.com/Danissemo/ForeverFlip/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Danissemo/ForeverFlip/ci.yml?branch=main&label=tests" alt="Tests" /></a>
   <a href="https://github.com/Danissemo/ForeverFlip/releases"><img src="https://img.shields.io/github/downloads/Danissemo/ForeverFlip/total?color=2ea44f" alt="Downloads" /></a>
-  <img src="https://img.shields.io/badge/WoW%20Forever-1.60.1-8a2be2" alt="WoW Forever 1.60.1" />
-  <img src="https://img.shields.io/badge/Lua-5.1-000080?logo=lua&logoColor=white" alt="Lua 5.1" />
+  <a href="https://www.wowhead.com/forever"><img src="https://img.shields.io/badge/WoW%20Forever-1.60.1-8a2be2" alt="WoW Forever 1.60.1" /></a>
+  <a href="https://www.lua.org/manual/5.1/"><img src="https://img.shields.io/badge/Lua-5.1-000080?logo=lua&logoColor=white" alt="Lua 5.1" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Danissemo/ForeverFlip?color=blue" alt="MIT license" /></a>
 </p>
 
