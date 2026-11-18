@@ -13,6 +13,12 @@ All notable changes are listed here. The format follows
   price is only as good as the scans behind it; the count shows that it is real people, and while
   your full scans are off a line under it says how to add yours.
 
+### Fixed
+
+- **The totals under Deals no longer run under Sell at.** A long line ("Deals: 5 · all: cost ...,
+  profit ..., expected ...") went on under the price box and its label. It now ends before them
+  with "...", and the whole line shows on hover.
+
 ### Development
 
 - **Releases upload to CurseForge, Wago and WoWInterface.** The release workflow stages the

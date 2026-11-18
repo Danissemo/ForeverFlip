@@ -529,6 +529,26 @@ class MerchantScrollTests(unittest.TestCase):
         assert(not row.gain:GetText():find('each', 1, true) and row.gain:GetText():find('/day', 1, true), row.gain:GetText())''')
 
 
+    def test_the_deals_total_ends_before_sell_at_and_shows_whole_on_hover(self):
+        # "Deals: 5 · all: cost ..., profit ..., expected 33s" ran under Sell at and its box.
+        run(BASE + '''measureText = true
+        local fs = UI.pageText
+        fs:SetText('Deals: 5  ·  all: cost 6g 18s, profit 1g 83s, expected 33s')
+        fs.GetLeft = function() return 100 end
+        UI.dealCheckLabel:Show(); UI.runStop:Hide(); UI.runButton:Hide()
+        UI.dealCheckLabel.GetLeft = function() return 400 end
+        UI.fitPageText()
+        assert(fs.width == 400 - 100 - UI.PAGE_TEXT_GAP, tostring(fs.width))
+        assert(UI.pageCut == fs:GetText(), 'the whole line on hover')
+        UI.dealCheckLabel.GetLeft = function() return 900 end
+        UI.fitPageText()
+        assert(fs.width == 0 and UI.pageCut == nil, 'room enough: nothing cut')
+        UI.dealCheckLabel:Hide(); UI.runButton:Show(); UI.runStop:Show()
+        UI.runStop.GetLeft = function() return 300 end
+        UI.runButton.GetLeft = function() return 380 end
+        UI.fitPageText()
+        assert(fs.width == 300 - 100 - UI.PAGE_TEXT_GAP, 'To vendor: before Stop, the leftmost')''')
+
 class CoinTests(unittest.TestCase):
     def test_money_shows_coins_and_edit_boxes_get_plain_text(self):
         run('''local U = ForeverFlip.Util

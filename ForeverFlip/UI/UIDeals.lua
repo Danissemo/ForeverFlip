@@ -149,6 +149,25 @@ function UI.createDeals(p)
     -- The deals scroll like every table (the scrollbar on the right); the line below counts them.
     UI.pageText = text(p, "GameFontHighlightSmall")
     UI.pageText:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 8, -20)
+    if UI.pageText.SetWordWrap then
+        UI.pageText:SetWordWrap(false)
+    end
+    -- Over the line, for the whole of it on hover once UI.fitPageText has cut it.
+    UI.pageHover = CreateFrame("Frame", nil, p)
+    UI.pageHover:SetAllPoints(UI.pageText)
+    UI.pageHover:EnableMouse(true)
+    UI.pageHover:SetScript("OnEnter", function(self)
+        if GameTooltip and UI.pageCut then
+            GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+            GameTooltip:SetText(UI.pageCut, 1, 1, 1, 1, true)
+            GameTooltip:Show()
+        end
+    end)
+    UI.pageHover:SetScript("OnLeave", function()
+        if GameTooltip then
+            GameTooltip:Hide()
+        end
+    end)
 
     local bar = footer(p, 92, "GameFontHighlightSmall")
     -- Selected deal details can be longer than the footer. Use the shared scrolling
@@ -256,6 +275,32 @@ function UI.createDeals(p)
     UI.dealCheckLabel:SetPoint("RIGHT", UI.dealCheckPrice, "LEFT", -8, 0)
     UI.dealCheckLabel:SetText(L("Sell at"))
     UI.createMedianControls(bar)
+end
+
+-- The count and totals under the table share their line with Sell at, its box and buttons (or Buy
+-- first and Stop): a long total ("..., expected 33s") ran under them. The line now ends before the
+-- leftmost of them that is shown; what does not fit is cut with "..." and shown whole on hover.
+-- Without positions (before the first layout) the line keeps its own width.
+UI.PAGE_TEXT_GAP = 12
+function UI.fitPageText()
+    local fs = UI.pageText
+    local left = fs.GetLeft and fs:GetLeft()
+    local stop
+    for _, w in ipairs({ UI.dealCheckLabel, UI.runStop, UI.runButton }) do
+        local x = w and w:IsShown() and w.GetLeft and w:GetLeft()
+        if x and (not stop or x < stop) then
+            stop = x
+        end
+    end
+    local room = left and stop and stop - left - UI.PAGE_TEXT_GAP
+    fs:SetWidth(0)
+    local need = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth()
+    if room and room > 0 and need and need > room then
+        fs:SetWidth(room)
+        UI.pageCut = fs:GetText()
+    else
+        UI.pageCut = nil
+    end
 end
 
 -- T25: Deals -> Market reset. The strategy's money limits, on the line above the footer: gold an
@@ -1286,6 +1331,7 @@ function UI.refreshDeals()
     UI.dealCheckButton:SetEnabled(canCheck)
     UI.dealCheckReset:SetEnabled(check ~= nil)
     UI.refreshRun()
+    UI.fitPageText()
     UI.confirmButton:SetEnabled(op ~= nil and op.state == "quoted")
     UI.cancelButton:SetEnabled(op ~= nil and (op.state == "quote" or op.state == "quoted"))
     if op and op.state == "quoted" then

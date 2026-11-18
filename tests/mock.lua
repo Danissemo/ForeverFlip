@@ -156,6 +156,10 @@ end
 function methods:SetSize(width, height)
     self.width, self.height = width, height
 end
+-- A font string's width as set (0: unbounded again, as in the game).
+function methods:SetWidth(width)
+    self.width = width
+end
 function methods:GetSize()
     return self.width or 0, self.height or 0
 end
