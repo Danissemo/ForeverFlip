@@ -55,7 +55,8 @@ class FakeRegistry:
 class AutostartTests(unittest.TestCase):
     def setUp(self):
         self.reg = FakeRegistry()
-        for p in (patch.object(autostart, 'winreg', self.reg), patch.object(autostart.os, 'name', 'nt')):
+        # available() is patched, not os.name: with os.name 'nt' pathlib builds WindowsPath on Linux
+        for p in (patch.object(autostart, 'winreg', self.reg), patch.object(autostart, 'available', return_value=True)):
             p.start()
             self.addCleanup(p.stop)
 
@@ -69,8 +70,9 @@ class AutostartTests(unittest.TestCase):
         self.assertFalse(autostart.enabled())
 
     def test_the_command_starts_the_packaged_helper_or_the_script_without_a_console(self):
-        exe = autostart.command(executable=r'C:\Program Files\FF\ForeverFlipSync.exe')
-        self.assertEqual(exe, r'"C:\Program Files\FF\ForeverFlipSync.exe" --tray')
+        packaged = pathlib.Path(tempfile.gettempdir()) / 'Program Files' / 'ForeverFlipSync.exe'
+        exe = autostart.command(executable=packaged)
+        self.assertEqual(exe, f'"{packaged.resolve()}" --tray')  # quoted: the path has a space
         script = autostart.command()
         self.assertIn('foreverflip_sync.py', script)
         self.assertTrue(script.endswith('--tray'))
@@ -100,7 +102,7 @@ class AutostartWindowTests(unittest.TestCase):
         import sync_gui
         self.gui = sync_gui
         self.reg = FakeRegistry()
-        for p in (patch.object(autostart, 'winreg', self.reg), patch.object(autostart.os, 'name', 'nt'),
+        for p in (patch.object(autostart, 'winreg', self.reg), patch.object(autostart, 'available', return_value=True),
                   patch.object(sync_gui.tray, 'available', return_value=True)):
             p.start()
             self.addCleanup(p.stop)
