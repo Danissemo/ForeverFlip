@@ -2016,9 +2016,12 @@ function M.evaluateMedian(rows, ctx)
     if #used > M.RESET_MAX_LOTS then
         return nil, "too_much"
     end
-    -- The whole supply must sell in a few days of the item's sales (a day with weak data).
+    -- The whole supply must sell in a few days of the item's sales (a day with weak data). One
+    -- unit on trust only while its sales are not measured well: a reliable sample with no sale is
+    -- an item nobody buys at that price, however few days its price is known (a 5g lot offered to
+    -- relist at an asking price of 990g that never sold, Sure 4%, Est./day 0).
     local cap = math.floor(perDay * (weak and M.MEDIAN_WEAK_DAYS or M.MEDIAN_HOLD_DAYS)) - held
-    if weak then
+    if weak and not (q.reliable and perDay <= 0) then
         cap = math.max(cap, 1 - held)
     end
     if cap < 1 then
@@ -2054,6 +2057,10 @@ function M.evaluateMedian(rows, ctx)
     }
     best.quality, best.weak = q, weak or nil
     local sure, low, high = M.sureLimits(h, exit, best.qty + held, now, trust)
+    -- Measured well and unlikely to sell in its days: the profit is only on paper.
+    if q.reliable and U.finite(sure) and sure < M.SURE_UNLIKELY then
+        return nil, "not_selling"
+    end
     best.sure, best.sureLow, best.sureHigh = sure, low, high
     return best
 end

@@ -76,6 +76,18 @@ class EvaluateTests(unittest.TestCase):
         local none = assert(judge(history(0)))
         assert(none.weak and none.qty == 1, 'one unit when no sales are measured: ' .. none.qty)''')
 
+    def test_a_price_known_one_day_with_no_sale_measured_well_is_not_reset(self):
+        # In game: 5g lots offered to relist at 990g, an asking price that never sold (Est./day 0,
+        # Sure 4%), because a price known for a day let one unit through on trust.
+        run(BASE + '''rows = { { unit = 7000, qty = 1 }, { unit = 12000, qty = 10 } }
+        local h = { days = { { d = today, m = 10000, min = 10000, n = 10 } } }
+        for _ = 1, 8 do M.recordSales(h, {}, 900, now) end
+        market.history['c:10'] = h; D.sureCache = {}
+        local q = M.quality(h, 9999, now)
+        assert(q.reliable and (q.perDay or 0) == 0, 'a reliable zero: ' .. tostring(q.reason))
+        local d, why = judge(h)
+        assert(d == nil and why == 'not_selling', tostring(why))''')
+
     def test_all_or_nothing_and_too_many_lots(self):
         run(BASE + '''local h = history(8)
         local d = assert(judge(h))

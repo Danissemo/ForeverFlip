@@ -22,6 +22,11 @@ All notable changes are listed here. The format follows
   line under the table and the item tooltip said only "No reliable data" for the same item and
   price. Every page now shows the same estimate in the same format; while it rests on too few
   scans it is marked "?" and the reason is given, instead of being hidden on some pages.
+- **Market reset no longer offers items nobody buys.** An item whose price was known for less
+  than three days was let through one unit on trust even when its sales were measured well and
+  were zero: 5g lots showed 934g profit to relist at an asking price of 990g that never sold
+  (Est./day 0, Sure 4%). A unit on trust is now taken only while sales are not measured yet, and a
+  reset with reliable data and a Sure under 10% is not offered.
 - **Item names no longer show as "|..." on the Sell page during a scan.** A scan makes the client
   drop items from its cache, and Retail then hands out bag links with an empty name; the row put
   the link as it was. It now shows the item's name, or the last one it showed.
