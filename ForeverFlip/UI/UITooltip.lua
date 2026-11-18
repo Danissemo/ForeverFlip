@@ -363,9 +363,9 @@ function UI.tipBlock(tooltip, calls, house, colour)
     local fit, drawnFoot = width and UI.tipFit, lastWidth(tooltip)
     if fit and drawnHead and drawnFoot then
         UI.learnTipSkew((drawnFoot - fit.foot) - (drawnHead - fit.head))
-        -- DEV: what the meter expected against what the game drew, header and X line.
-        F.Log.trace(
-            "tooltip.rules",
+        -- DEV: what the meter expected against what the game drew, header and X line; written
+        -- once per different tooltip, not each time the game draws the same one again.
+        local note = string.format(
             "font %s: header %.1f drawn %.1f, X line %.1f drawn %.1f, skew %.1f",
             tostring(UI.tipFont),
             fit.head,
@@ -374,6 +374,10 @@ function UI.tipBlock(tooltip, calls, house, colour)
             drawnFoot,
             fit.skew
         )
+        if note ~= UI.tipNote then
+            UI.tipNote = note
+            F.Log.trace("tooltip.rules", "%s", note)
+        end
     end
     tooltip:Show()
 end
@@ -744,6 +748,7 @@ end
 --   Demand       the last scan, sales a day, purchases seen, Sure at the post price
 --   References   community data, the 14-day median / mean, trends
 --   situational  your stock and auctions
+UI.TIP_KEEP = 2
 local function tooltipLines(tooltip, data)
     if not F.db or not F.db.settings.tooltipPrices or not tooltip.GetItem then
         return
@@ -758,6 +763,17 @@ local function tooltipLines(tooltip, data)
     if not key then
         return
     end
+    -- The game draws an item's tooltip again several times a second while it is shown (three
+    -- times in one frame, then every 0.25 s, in the trace): the lines worked out for the same item
+    -- are written again until the data changes (F.Engine.version) or UI.TIP_KEEP passes.
+    local cacheKey = table.concat({ link, tostring(UI.tooltipCount), F.Engine.scope(), F.Engine.version }, "|")
+    local moment = GetTime and GetTime() or F.Engine.clock()
+    local kept = UI.tipCache
+    if kept and kept.key == cacheKey and moment - kept.at < UI.TIP_KEEP and moment >= kept.at then
+        UI.tipBlock(tooltip, kept.calls, kept.house, kept.colour)
+        return
+    end
+    UI.tipCache = nil
     local market = F.Data.market(F.db, F.Engine.scope())
     local h = market.history[key]
     if type(h) ~= "table" then
@@ -1082,6 +1098,7 @@ local function tooltipLines(tooltip, data)
             )
         end
     end
+    UI.tipCache = { key = cacheKey, at = moment, calls = tooltip.calls, house = house, colour = colour }
     UI.tipBlock(target, tooltip.calls, house, colour)
 end
 

@@ -242,6 +242,11 @@ class CraftPlanTests(unittest.TestCase):
         local plan = F.Crafting.plan(2963)
         assert(plan.crafts == 2 and plan.limit == 'sales', plan.crafts .. ' ' .. plan.limit)""")
 
+    def test_a_busy_market_still_ends_at_the_most_crafts(self):
+        run(self.PLAN + """F.Crafting.PLAN_MAX = 3
+        local plan = F.Crafting.plan(2963)
+        assert(plan.crafts == 3 and plan.limit == 'max', plan.crafts .. ' ' .. plan.limit)""")
+
     def test_a_day_of_crafts_divides_by_the_units_made(self):
         run(self.PLAN + """F.Data.char(F.db, F.Engine.owner()).recipes[2963].n = 5
         F.Crafting.profits = (function(inner) return function(all)

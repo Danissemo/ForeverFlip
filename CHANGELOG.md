@@ -23,6 +23,9 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **The crafting plan stops at 100 crafts on the auction route too.** A product that sells fast
+  could plan more crafts than the 100 the rule allows; the plan also spends the same money a deal
+  may use (`Deals.budget`) instead of its own copy of that sum.
 - **Stale deals leave the list before Check all.** Opening the auction house with deals from a scan
   of an hour ago listed them all until Check all, which then emptied the page at once: most items
   were sold or cheaper by then. When the list is two minutes old or more and nothing else is
@@ -117,6 +120,10 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- **An item tooltip is worked out once while it stays on screen.** The game draws an item's
+  tooltip again several times a second (three times in one frame, then every quarter second), and
+  each time every line was computed again: price, Best, sales a day, Sure, routes. The lines are
+  now reused for the same item until the data changes or two seconds pass.
 - **ForeverFlip Sync accepts WoW Retail installations.** A `_retail_` folder can be added to the
   game list next to WoW Forever and is shown as "WoW Retail" with its version, so the helper
   keeps the addon there up to date too. Classic, PTR and beta folders are still refused.
@@ -140,6 +147,11 @@ All notable changes are listed here. The format follows
 
 ### Development
 
+- **Consistency audit, `docs/consistency-audit.uk.md`.** Which formulas have one source and
+  which differ on purpose, the repeated work found in the traces, the replay of the last full scan
+  and what the check timings mean. The tooltip's DEV line about its rules is traced only when it
+  changes: it filled 785 of the 2000 trace lines. The share of money one item may hold is one
+  function, `Deals.itemBudget`.
 - **`devflow install` puts the addon into Retail too**, when a Retail folder is found (`FF_RETAIL`
   or the usual places), with its own backups beside the WoW Forever ones. A fix made for Retail
   was installed only into WoW Forever, and the Retail copy had to be updated by hand.

@@ -200,8 +200,12 @@ function E.notify(message)
     E.changed()
 end
 
+-- E.version counts the changes: what is worked out from the data (a tooltip's lines) is kept
+-- only while it stays the same.
+E.version = 0
 function E.changed()
     E.dirty = true
+    E.version = E.version + 1
 end
 
 -- Services tell the screen what happened (E.emit) instead of calling F.UI; the UI subscribes

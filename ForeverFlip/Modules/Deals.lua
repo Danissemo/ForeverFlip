@@ -73,17 +73,23 @@ local function settings()
     return F.db.settings
 end
 
+-- The money one deal may use (settings.spendShare of the money on hand); the crafting plan uses
+-- the same.
 function D.budget()
     local s = settings()
     return math.floor(F.Engine.wallet() * (s.spendShare or 0.8))
+end
+
+-- The money one item may hold in all, stock and new resale (settings.itemShare).
+function D.itemBudget()
+    return math.floor(F.Engine.wallet() * (settings().itemShare or 0.3))
 end
 
 -- Evaluates a scan group or live listings. `g` has key, kind, id, rows, market, link.
 -- One item may hold at most this share of the money (in stock plus the new purchase).
 local function itemRoom(key)
     local p = F.Data.char(F.db, F.Engine.owner()).positions[key]
-    local share = settings().itemShare or 0.3
-    return math.max(0, math.floor(F.Engine.wallet() * share) - (p and p.cost or 0)), p and p.qty or 0
+    return math.max(0, D.itemBudget() - (p and p.cost or 0)), p and p.qty or 0
 end
 
 -- How far the scan estimate of sales is trusted for an item, from own results: stock bought a

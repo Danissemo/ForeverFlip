@@ -378,12 +378,15 @@ function C.plan(recipeID)
         else
             local units = row.perDay * C.PLAN_DAYS - C.have(r.out)
             cap, capLimit = math.max(0, math.floor(units / made)), "sales"
+            if cap > C.PLAN_MAX then
+                cap, capLimit = C.PLAN_MAX, "max" -- a busy market still ends at C.PLAN_MAX crafts
+            end
             if cap == 0 then
                 capLimit = row.perDay * C.PLAN_DAYS >= made and "stock" or "no_sales"
             end
         end
     end
-    local money = math.floor(F.Engine.wallet() * (F.db.settings.spendShare or 0.8))
+    local money = F.Deals.budget()
     local mats = {}
     for _, m in ipairs(r.r) do
         local kind = F.AH.kindOf(m[1])

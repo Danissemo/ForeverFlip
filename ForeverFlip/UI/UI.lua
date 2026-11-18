@@ -2137,12 +2137,7 @@ function UI.noResaleText(stats)
                 UI.pct(F.Market.thresholds(s).minROI)
             )
         elseif r.reason == "budget" then
-            line = string.format(
-                L(NO_RESALE.budget),
-                r.n,
-                U.money(F.Deals.budget()),
-                U.money(math.floor(F.Engine.wallet() * (s.itemShare or 0.3)))
-            )
+            line = string.format(L(NO_RESALE.budget), r.n, U.money(F.Deals.budget()), U.money(F.Deals.itemBudget()))
         else
             line = string.format(L(NO_RESALE[r.reason]), r.n)
         end
@@ -2154,7 +2149,7 @@ function UI.noResaleText(stats)
     lines[#lines + 1] = string.format(
         L("Budget: %s; one item at most %s; minimum profit %s."),
         U.money(F.Deals.budget()),
-        U.money(math.floor(F.Engine.wallet() * (s.itemShare or 0.3))),
+        U.money(F.Deals.itemBudget()),
         U.money(F.Market.thresholds(s).minProfit)
     )
     local onePair = stats.onePair or 0
