@@ -711,6 +711,31 @@ local function stackOf(data, id)
     return 1
 end
 
+-- Bind types the auction house never takes: bind on pickup, quest, heirloom, warband.
+local NEVER_AUCTIONED = { [1] = true, [4] = true, [7] = true, [8] = true }
+
+-- True for an item that cannot be put on the auction house: its type binds it (a dungeon drop that
+-- binds when picked up), or this copy says it is bound (the tooltip's own Soulbound or Warbound
+-- line, as on a bind-on-equip piece once worn).
+function UI.neverAuctioned(data, id)
+    if NEVER_AUCTIONED[select(14, U.itemInfo(id))] then
+        return true
+    end
+    local bound = {}
+    for _, s in ipairs({ ITEM_SOULBOUND, ITEM_ACCOUNTBOUND, ITEM_BNETACCOUNTBOUND }) do
+        if type(s) == "string" and s ~= "" then
+            bound[s] = true
+        end
+    end
+    for _, l in ipairs(type(data) == "table" and type(data.lines) == "table" and data.lines or {}) do
+        local text = type(l) == "table" and l.leftText
+        if type(text) == "string" and not F.Compat.secret(text) and bound[text] then
+            return true
+        end
+    end
+    return false
+end
+
 -- Item tooltip, in this order (each part only when it has something to say):
 --   header       FOREVER FLIP: the house the prices are for
 --   Selling      vendor, lowest and median auction prices, craft and disenchant values (and what
@@ -748,6 +773,8 @@ local function tooltipLines(tooltip, data)
         return
     end
     local now = F.Engine.clock()
+    -- No sales a day or Sure for an item nobody can buy at the auction house.
+    local bound = UI.neverAuctioned(data, id)
     local stale = UI.staleData(now)
     if stale ~= nil then
         staleWarning(tooltip, stale or nil)
@@ -922,7 +949,7 @@ local function tooltipLines(tooltip, data)
         )
     end
 
-    if h then
+    if h and not bound then
         section("Demand")
         line("Your last scan", U.finite(market.scannedAt) and UI.age(market.scannedAt) or L("none yet"))
         local at = chainAdvice and chainAdvice.net and chainAdvice.post or usual
@@ -998,7 +1025,7 @@ local function tooltipLines(tooltip, data)
             )
         end
     end
-    if not h then
+    if not h and not bound then
         -- Gear with no scan data of its own (one ending nobody sells now): Est./day and Sure of its
         -- other endings, else of gear of about the same price, as My items shows them (~).
         local item = U.parseKey(key)

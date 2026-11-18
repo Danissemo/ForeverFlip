@@ -23,6 +23,10 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **No sales a day or Sure for an item the auction house never takes.** A soulbound dungeon drop
+  showed Est./day and Sure from gear of about its price, though nobody can buy it there. Items that
+  bind when picked up, quest items, heirlooms and warband items, and any copy the tooltip calls
+  Soulbound or Warbound, now show no Demand section.
 - **Cosmetic gear is no longer priced for disenchanting.** A cosmetic appearance such as Lost Soul
   Collector looks like an epic weapon but cannot be disenchanted: the Disenchant page priced it as
   if it could, and the Disenchant bought button stopped on it with "That item is not a valid

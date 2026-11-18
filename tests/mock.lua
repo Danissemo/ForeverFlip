@@ -656,6 +656,11 @@ C_Container.GetContainerNumFreeSlots = function(bag)
     return bag == 0 and freeBagSlots or 0
 end
 
+-- The bound lines of an item tooltip (GlobalStrings).
+ITEM_SOULBOUND = "Soulbound"
+ITEM_ACCOUNTBOUND = "Warbound"
+ITEM_BNETACCOUNTBOUND = "Warbound"
+
 -- Tooltips ------------------------------------------------------------------------------------------
 Enum.TooltipDataType = { Item = 0 }
 tooltipCalls = {}

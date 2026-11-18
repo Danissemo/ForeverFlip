@@ -71,6 +71,29 @@ class TooltipTests(unittest.TestCase):
         self.assertIn('too few scan pairs compared yet', text)
         self.assertNotIn('Sure to sell one', text)
 
+    def test_an_item_the_auction_house_never_takes_has_no_demand(self):
+        # A soulbound dungeon drop showed Est./day and Sure, though nobody can buy it there.
+        tip = self.TIP.replace('for _, fn in ipairs(tooltipCalls) do fn(GameTooltip) end',
+                               'for _, fn in ipairs(tooltipCalls) do fn(GameTooltip, data) end')
+        setup = BASE + '''fullScan()
+        local h = market.history['c:10']
+        h.sales = nil; M.recordSales(h, {[100] = 2}, 900, now); D.sureCache = {}
+        '''
+        free = clean(run(setup + 'local data = { lines = {} }' + tip))
+        self.assertIn('Estimated sales / day', free)
+        bound = clean(run(setup + 'local data = { lines = { { leftText = ITEM_SOULBOUND } } }' + tip))
+        self.assertNotIn('Estimated sales / day', bound)
+        self.assertNotIn('Sells at', bound)
+        self.assertIn('Selling', bound)
+        byType = clean(run(setup + '''local info = F.Util.itemInfo
+        F.Util.itemInfo = function(id)
+            local r = { info(id) }
+            if id == 10 then r[14] = 1 end
+            return unpack(r, 1, 15)
+        end
+        local data = nil''' + tip))
+        self.assertNotIn('Estimated sales / day', byType)
+
 
 class PostJournalTests(unittest.TestCase):
     def test_a_post_keeps_its_sure_and_est_per_day(self):
