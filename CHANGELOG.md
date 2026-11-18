@@ -15,6 +15,9 @@ All notable changes are listed here. The format follows
   cannot be trusted for this (Retail did not answer false and a 2s 99c post was still dropped), so
   a Retail client is told by its version. The addon undercuts by a whole silver on Retail and
   rounds every commodity post down to it; WoW Forever keeps the copper.
+- **Auction durations on Retail are 12, 24 and 48 hours.** The Duration buttons said 2, 8 and 24
+  (WoW Forever's), and Auto weighed the deposits a post would lose over those hours. On Retail the
+  buttons now show its hours and Auto chooses between them.
 - **Item names no longer show as "|..." on the Sell page during a scan.** A scan makes the client
   drop items from its cache, and Retail then hands out bag links with an empty name; the row put
   the link as it was. It now shows the item's name, or the last one it showed.

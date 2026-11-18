@@ -351,12 +351,15 @@ local myName, myFullName
 -- when SupportsCopperValues() does not say false: its server dropped a post of 299 copper without
 -- an answer, and every price on its market is whole silver.
 A.RETAIL_INTERFACE = 100000
+function A.isRetail()
+    local interface = GetBuildInfo and select(4, GetBuildInfo())
+    return type(interface) == "number" and interface >= A.RETAIL_INTERFACE, interface
+end
 function A.readPriceStep()
     local ok, copper = pcall(function()
         return AH.SupportsCopperValues()
     end)
-    local interface = GetBuildInfo and select(4, GetBuildInfo())
-    local retail = type(interface) == "number" and interface >= A.RETAIL_INTERFACE
+    local retail, interface = A.isRetail()
     U.commodityStep = ((ok and copper == false) or retail) and 100 or 1
     F.Log.devTrace(
         "post.step",

@@ -2178,6 +2178,11 @@ UI.shared.L = L
 UI.shared.MESSAGES = MESSAGES
 UI.shared.text = text
 UI.shared.button = button
+
+-- A Duration button's label: its hours on this client (Trade.DURATION_HOURS), or Auto.
+function UI.durationLabel(d)
+    return d == 0 and "Auto" or tostring(F.Trade.DURATION_HOURS[d])
+end
 UI.shared.editbox = editbox
 UI.shared.place = place
 UI.shared.hint = UI.tip

@@ -961,8 +961,8 @@ function UI.createGeneralSettings(p)
     durationLabel:SetPoint("TOPLEFT", p, "TOPLEFT", COL[2], y - 4)
     durationLabel:SetText(L("Auction duration, h"))
     UI.settingDurations = {}
-    for i, d in ipairs({ { "2", 1 }, { "8", 2 }, { "24", 3 }, { "Auto", 0 } }) do
-        local b = button(p, d[1], i == 4 and 50 or 34, function()
+    for i, d in ipairs({ { 1, 1 }, { 2, 2 }, { 3, 3 }, { 0, 0 } }) do
+        local b = button(p, UI.durationLabel(d[1]), i == 4 and 50 or 34, function()
             F.db.settings.duration = d[2]
             F.Engine.changed()
             UI.refreshGeneralSettings()
@@ -1093,6 +1093,7 @@ end
 -- may have been changed on their Deals page), and the duration buttons the current one.
 function UI.refreshGeneralSettings()
     for _, b in ipairs(UI.settingDurations or {}) do
+        b:SetText(L(UI.durationLabel(b.value)))
         b:SetEnabled(F.db.settings.duration ~= b.value)
     end
     local typed = {}

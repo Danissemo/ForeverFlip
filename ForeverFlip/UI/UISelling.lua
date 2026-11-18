@@ -360,10 +360,9 @@ function UI.createSell(p)
     durationLabel:SetPoint("LEFT", UI.sellQty, "RIGHT", 14, 0)
     durationLabel:SetText(L("Duration"))
     UI.durations = {}
-    local labels = { "2", "8", "24", "Auto" }
     local values = { 1, 2, 3, 0 }
     for i = 1, 4 do
-        local b = button(bar, labels[i], i == 4 and 50 or 34, function()
+        local b = button(bar, UI.durationLabel(values[i]), i == 4 and 50 or 34, function()
             F.db.settings.duration = values[i]
             F.Engine.changed()
             UI.refresh()
@@ -954,6 +953,7 @@ function UI.refreshSell()
         return
     end
     for _, b in ipairs(UI.durations) do
+        b:SetText(L(UI.durationLabel(b.value)))
         b:SetEnabled(F.db.settings.duration ~= b.value)
     end
     UI.refreshPostAll()

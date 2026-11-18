@@ -484,6 +484,7 @@ function E.handle(event, ...)
         E.spent = 0
         F.AH.refreshPlayer()
         F.AH.readPriceStep()
+        F.Trade.readDurations()
         E.house = E.detectHouse()
         E.applyCut()
         local scope = E.scope()
@@ -603,6 +604,7 @@ function E.handle(event, ...)
         if event == "PLAYER_ENTERING_WORLD" then
             F.Trade.repairInvoices()
             F.AH.readPriceStep() -- the Sell page prices posts before the auction house opens
+            F.Trade.readDurations()
             F.Log.entered()
         end
         if event == "PLAYER_ENTERING_WORLD" and not F.Share.joined then

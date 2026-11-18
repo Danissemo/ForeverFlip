@@ -1373,7 +1373,19 @@ end
 -- scans, or older than 3 hours. Deposits come from the game (commodities), from the last post of the
 -- item at that duration, else from the vendor price at the Classic multiples 1, 2 and 4 (at least 1
 -- silver). The Sell page's duration tooltip shows the costs, T and the undercut rate.
+-- Retail lists for 12, 24 and 48 hours instead of WoW Forever's 2, 8 and 24 (the same three
+-- choices, the same deposit multiples). Read again on entering the world; the table is changed in
+-- place, so whoever holds it sees the client's hours.
 T.DURATION_HOURS = { 2, 8, 24 }
+T.RETAIL_DURATION_HOURS = { 12, 24, 48 }
+T.FOREVER_DURATION_HOURS = { 2, 8, 24 }
+function T.readDurations()
+    local hours = F.AH.isRetail() and T.RETAIL_DURATION_HOURS or T.FOREVER_DURATION_HOURS
+    for d = 1, 3 do
+        T.DURATION_HOURS[d] = hours[d]
+    end
+end
+T.readDurations()
 T.DURATION_SLACK = 0.02
 T.OUTCOMES_MIN = 4 -- units of the item's own posts that sold or expired
 T.OUTCOMES_DAYS = 30
