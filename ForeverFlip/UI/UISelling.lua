@@ -1084,7 +1084,7 @@ function UI.refreshSell()
     local h = F.Data.market(F.db, F.Engine.scope()).history[item.key]
     -- What buyers really paid (sales seen between full scans), and how much sells a day at the price.
     local sale = h and F.Market.salePrice(h)
-    local demand = price and h and F.Market.saleability(h, price, F.Engine.clock())
+    local demand = price and h and F.Deals.saleability(item.key, h, price, F.Engine.clock())
     local market = {}
     if sale then
         market[#market + 1] = string.format(L("buyers paid about %s lately"), U.money(sale))

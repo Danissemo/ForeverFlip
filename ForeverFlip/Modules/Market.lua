@@ -1899,6 +1899,58 @@ M.MEDIAN_MIN_DAYS = 3 -- fewer days of prices give no median
 M.MEDIAN_HOLD_DAYS = 3 -- at most this many days of the item's sales are bought
 M.MEDIAN_WEAK_DAYS = 1 -- a weak find: at most this many days of its sales (at least one unit)
 M.RESET_MAX_LOTS = 40 -- a market reset of more lots than this is too much to buy in clicks
+-- A reset relists at most at the price this share of the units seen sold reached: the 7-day
+-- median is made of asking prices, and one above every price buyers paid is only on paper.
+M.RESET_PAID_SHARE = 0.9
+-- A reset holds only while nobody posts under it: an item undercut more than this many times, at
+-- its measured rate, in the hours its units take to sell is not reset (after 2 undercuts seen).
+M.RESET_MAX_CUTS = 1
+M.RESET_CUTS_SEEN = 2
+
+-- The highest price a market reset may count on: what M.RESET_PAID_SHARE of the units seen sold
+-- reached, at most M.CAP_SPREAD times their median; nil before one sale is seen.
+function M.paidTop(h)
+    local top = soldQuantile(h, M.RESET_PAID_SHARE, 0.5)
+    local median = soldQuantile(h, 0.5, 0.5)
+    if top and median then
+        top = math.min(top, math.floor(median * M.CAP_SPREAD))
+    end
+    return top
+end
+
+-- What a deal is worth on average: its profit when it sells (chance `sure`), the deposits it loses
+-- when it does not (the units stay and are posted again). Without a Sure, the profit.
+function M.expectedProfit(profit, risk, sure)
+    if not U.finite(profit) then
+        return nil
+    end
+    if not U.finite(sure) then
+        return profit
+    end
+    sure = math.max(0, math.min(1, sure))
+    return sure * profit - (1 - sure) * (risk or 0)
+end
+
+-- The return a day on the money a deal ties up: its expected profit against its cost, over the
+-- days its units take to sell at `perDay` (at least a day). nil without a rate.
+function M.dayReturn(ev, cost, qty, perDay)
+    if not U.finite(ev) or not U.finite(cost) or cost <= 0 or not U.finite(perDay) or perDay <= 0 then
+        return nil
+    end
+    local days = math.max(1, (qty or 1) / perDay)
+    return ev / cost / days, days
+end
+
+-- A thin purchase rate leaned on a similar items' rate (`prior`, units a day): the M.PRIOR_HOURS
+-- the estimate adds to its hours watched count `prior`'s sales instead of none, so one scan pair
+-- reads between the two and many scan pairs read as the item's own.
+function M.withPrior(perDay, hours, prior)
+    if not U.finite(perDay) or not U.finite(prior) or prior <= 0 then
+        return perDay
+    end
+    hours = U.finite(hours) and math.max(0, hours) or 0
+    return perDay + prior * M.PRIOR_HOURS / (hours + M.PRIOR_HOURS)
+end
 
 -- The median of an item's daily usual prices over the last `span` days before `now` (today
 -- included); nil and the days found when fewer than M.MEDIAN_MIN_DAYS have a price.
@@ -1970,7 +2022,7 @@ end
 -- "no_median" (too few days of prices), "sources_disagree"
 -- (own and shared medians far apart, M.sourcesDisagree), "no_gap",
 -- "budget", "enough_stock", "small", "too_much" (more on sale under the price than sells in a few
--- days, or more lots than M.RESET_MAX_LOTS).
+-- days, or more lots than M.RESET_MAX_LOTS), "undercut" (rivals post under it before it sells).
 function M.evaluateMedian(rows, ctx)
     local s = ctx.settings or {}
     local kind = ctx.kind
@@ -1983,6 +2035,13 @@ function M.evaluateMedian(rows, ctx)
     local target = median
     if U.finite(ctx.market) and ctx.market > 0 then
         target = math.min(target, ctx.market)
+    end
+    -- Never above what buyers were seen paying (most of them): an asking-price median nobody paid
+    -- was a reset that sat on the shelf.
+    local paid = M.paidTop(h)
+    local paidCap = U.finite(paid) and paid > 0 and paid < target
+    if paidCap then
+        target = paid
     end
     local exit = U.stepDown(target, kind)
     if not U.finite(exit) or exit <= 0 then
@@ -2030,6 +2089,15 @@ function M.evaluateMedian(rows, ctx)
     if qty > cap then
         return nil, "too_much"
     end
+    -- Undercut often: a rival posts under the reset price before its units sell, and they wait
+    -- behind him.
+    local cut = M.undercutRate(h)
+    if cut and cut.cuts >= M.RESET_CUTS_SEEN and perDay > 0 then
+        local hours = (qty + held) / perDay * 24
+        if cut.perHour * hours > M.RESET_MAX_CUTS then
+            return nil, "undercut"
+        end
+    end
     if cost > (ctx.budget or 0) then
         return nil, "budget"
     end
@@ -2054,6 +2122,7 @@ function M.evaluateMedian(rows, ctx)
         lots = used,
         perDay = perDay,
         reset = true,
+        paidCap = paidCap or nil,
     }
     best.quality, best.weak = q, weak or nil
     local sure, low, high = M.sureLimits(h, exit, best.qty + held, now, trust)
@@ -2062,6 +2131,11 @@ function M.evaluateMedian(rows, ctx)
         return nil, "not_selling"
     end
     best.sure, best.sureLow, best.sureHigh = sure, low, high
+    -- Worth less than nothing on average: what it loses unsold outweighs what it earns sold.
+    best.ev = M.expectedProfit(profit, risk, sure)
+    if best.ev <= 0 then
+        return nil, "not_selling"
+    end
     return best
 end
 
@@ -2490,6 +2564,8 @@ function M.evaluate(rows, ctx)
                             lots = U.copy(used),
                             perDay = d.perDay,
                             expected = expected,
+                            risk = risk,
+                            ev = M.expectedProfit(profit, risk, sure),
                             -- Where the exit price came from (M.postPrice; the Resale panel and
                             -- the tooltip say why): the next lot left on sale, or what sells.
                             exitNext = nextUnit,

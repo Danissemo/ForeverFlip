@@ -7,6 +7,15 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Analytics -> By strategy: what each strategy really earned.** Resale, Market reset, Bids and
+  To vendor each get a row built from the purchases of the period: the profit of the units already
+  gone (what they brought after the cut, less what they cost and the deposits lost), units sold of
+  those bought, the return on their cost and per day held, and under the table the money still in
+  unsold units. Profit and Sure on Deals are forecasts; this says which strategy pays on your
+  server.
+
 ### Fixed
 
 - **Posting commodities on Retail goes through.** Retail takes commodity prices in whole silver
@@ -27,6 +36,21 @@ All notable changes are listed here. The format follows
   were zero: 5g lots showed 934g profit to relist at an asking price of 990g that never sold
   (Est./day 0, Sure 4%). A unit on trust is now taken only while sales are not measured yet, and a
   reset with reliable data and a Sure under 10% is not offered.
+- **Deals are ranked by what they are worth on average.** A deal's Profit counted every unit as
+  sold. The Profit column now sorts by the profit times Sure, less the deposits lost when it does
+  not sell, the deal detail shows that expected profit with the return a day on the money until
+  the units sell, and the line under the table adds the expected sum. A market reset worth less
+  than nothing on average is no longer offered.
+- **Market reset relists no higher than buyers paid.** Its price is the 7-day median of asking
+  prices, which can sit above every sale: it now stays under the price 90% of the units seen sold
+  reached. An item undercut more often than once in the hours its units take to sell (two
+  undercuts seen at least) is not reset either: a rival under the price holds the units back, and
+  the empty page counts such items.
+- **Est./day of rarely seen gear leans on similar gear.** With one scan pair an item's own sales
+  read near 0 a day even for gear of a kind that sells daily. While the sample is thin the
+  estimate now counts the item's other endings, or gear of about its price, for the hours the
+  estimate adds to its own; the more hours the item is watched, the less they count. The Deals
+  column, the deal detail, Check Sure, the Sell page and the tooltip show that one figure.
 - **Item names no longer show as "|..." on the Sell page during a scan.** A scan makes the client
   drop items from its cache, and Retail then hands out bag links with an empty name; the row put
   the link as it was. It now shows the item's name, or the last one it showed.

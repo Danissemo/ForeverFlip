@@ -256,20 +256,7 @@ end
 -- market reset), "vendor" (bought for a merchant) or "flip" (bought for resale; also purchases
 -- made elsewhere).
 function UI.lotKind(lot)
-    if lot.chain then
-        local first = lot.events and lot.events[1]
-        return first and first.source == "disenchant" and "disenchant" or "craft"
-    end
-    if lot.bid then
-        return "bid"
-    end
-    if lot.strategy == "median" then
-        return "median"
-    end
-    if lot.mode == "disenchant" then
-        return "disenchant"
-    end
-    return lot.mode == "vendor" and "vendor" or "flip"
+    return F.Analytics.lotKind(lot)
 end
 
 -- The lots the Journal page lists, for the view chosen under it (UI.lotKind). Shared with the Check all of that page, so both read the same rows.

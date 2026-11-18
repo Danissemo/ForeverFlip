@@ -102,7 +102,7 @@ class ViewButtonsTests(unittest.TestCase):
             b.SetWidth = function(s, w) rawset(s, 'testWidth', w) end
             b.GetWidth = function(s) return rawget(s, 'testWidth') or 0 end
         end
-        assert(n == 7, n)
+        assert(n == 8, n)
         row.GetWidth = function() return 600 end
         UI.layoutViewButtons()
         local w = UI.viewButtons.results:GetWidth()

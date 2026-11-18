@@ -121,6 +121,11 @@ local MARKET_VIEWS = {
         "My results",
         "What each item earned or lost in the period chosen above: profit, money in, units sold and return.",
     },
+    {
+        "strategies",
+        "By strategy",
+        "What the purchases of each strategy in the period turned into: profit of the units gone, units sold of those bought, return on their cost and per day held.",
+    },
 }
 -- The list buttons share the row's width: seven at a fixed 96 px ran past the window's edge.
 UI.VIEW_GAP = 3
@@ -149,6 +154,7 @@ end
 -- The column names of the market lists and of My results (the table is the same).
 local MARKET_HEADERS = { "Usual price", "Cheapest", "Change", "Sells/day" }
 local RESULT_HEADERS = { "Profit", "Earned", "Sold", "Return" }
+local STRATEGY_HEADERS = { "Profit", "Sold", "Return", "Per day" }
 
 local DAYS = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
 local PARTS = { "night", "morning", "day", "evening" }
@@ -583,6 +589,9 @@ function UI.refreshAnalytics()
     if UI.marketView == "results" then
         UI.refreshResults(r)
         return
+    elseif UI.marketView == "strategies" then
+        UI.refreshStrategies(days)
+        return
     end
     for i, label in ipairs(MARKET_HEADERS) do
         UI.marketTable.headers[i + 1]:SetText(L(label))
@@ -701,6 +710,62 @@ function UI.refreshResults(r)
         end
     end
     UI.marketText:SetText(about .. "  " .. UI.C.dim .. string.format(L("(%d items)"), #list) .. "|r")
+end
+
+-- By strategy: what each strategy's purchases of the period really earned (Analytics.strategies),
+-- in the market table. A row a strategy; the line under it adds up the money still in stock.
+function UI.refreshStrategies(days)
+    for i, label in ipairs(STRATEGY_HEADERS) do
+        UI.marketTable.headers[i + 1]:SetText(L(label))
+    end
+    local all = F.Analytics.strategies(days)
+    local list = UI.marketTable.sort(all, function(e, column)
+        if column == 1 then
+            return L(e.label)
+        elseif column == 2 then
+            return e.profit
+        elseif column == 3 then
+            return e.sold
+        elseif column == 4 then
+            return e.roi or -math.huge
+        end
+        return e.perDay or -math.huge
+    end)
+    for i, row in ipairs(UI.marketTable.rows) do
+        local e = list[i]
+        if e then
+            row.key, row.link = nil, nil
+            row.icon:SetTexture(134400)
+            row.name:SetText(L(e.label) .. " " .. UI.C.dim .. string.format(L("(%d lots)"), e.lots) .. "|r")
+            row.cols[1]:SetText((e.profit < 0 and UI.C.bad .. "-" .. U.money(-e.profit) .. "|r") or U.money(e.profit))
+            row.cols[2]:SetText(string.format("%d/%d", e.sold, e.qty))
+            row.cols[3]:SetText(e.roi and percent(e.roi) or "-")
+            row.cols[4]:SetText(e.perDay and percent(e.perDay) or "-")
+            row.selected:Hide()
+            row:Show()
+        else
+            row.key = nil
+            row:Hide()
+        end
+    end
+    local empty = UI.marketTable.empty
+    if #list == 0 then
+        empty:SetText(L("No purchases in this period yet."))
+        empty:Show()
+    else
+        empty:Hide()
+    end
+    local held, lost, daysSum, n = 0, 0, 0, 0
+    for _, e in ipairs(all) do
+        held, lost = held + e.held, lost + e.lost
+        if e.days then
+            daysSum, n = daysSum + e.days, n + 1
+        end
+    end
+    UI.marketText:SetText(
+        string.format(L("Still in unsold units: %s  ·  deposits lost: %s"), U.money(held), U.money(lost))
+            .. (n > 0 and string.format(L("  ·  a lot sells out in about %s"), UI.duration(daysSum / n * 86400)) or "")
+    )
 end
 
 -- Locals later UI files share.

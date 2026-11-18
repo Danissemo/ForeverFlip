@@ -920,7 +920,7 @@ local function tooltipLines(tooltip, data)
         line("Your last scan", U.finite(market.scannedAt) and UI.age(market.scannedAt) or L("none yet"))
         local at = chainAdvice and chainAdvice.net and chainAdvice.post or usual
         if at then
-            local s = F.Market.saleability(h, at, now)
+            local s = F.Deals.saleability(key, h, at, now)
             -- T32: the sample behind Est./day and Sure; below the thresholds the reason, not a number.
             local q = F.Market.quality(h, at, now)
             -- The same number as the Deals column (UI.perDayText); "?" and the reason while it rests

@@ -206,6 +206,82 @@ function A.results(days, now)
     return r
 end
 
+-- The way a lot came and is dealt (F.STRATEGIES ids), as the Journal and the strategy results name
+-- it: "craft" or "disenchant" (the products of a chain, T21, or stock bought to disenchant), "bid"
+-- (won with a bid), "median" (a market reset), "vendor" (bought for a merchant) or "flip" (bought
+-- for resale; also purchases made elsewhere).
+function A.lotKind(lot)
+    if lot.chain then
+        local first = lot.events and lot.events[1]
+        return first and first.source == "disenchant" and "disenchant" or "craft"
+    end
+    if lot.bid then
+        return "bid"
+    end
+    if lot.strategy == "median" then
+        return "median"
+    end
+    if lot.mode == "disenchant" then
+        return "disenchant"
+    end
+    return lot.mode == "vendor" and "vendor" or "flip"
+end
+
+-- What each way of trading really earned with the lots bought in the last `days` days (1: today
+-- from local midnight): money spent, units sold of those bought, money back after the cut, deposits
+-- lost, the profit of the units that are gone (what they brought, less what they cost and the
+-- deposits), the money still in unsold units, and how long a lot took to sell out. The pages'
+-- Profit and Sure are forecasts; this is what the purchases of each strategy turned into.
+-- Shopping-list purchases (own use) are left out. A list in F.STRATEGIES order, strategies with a
+-- purchase only: { id, label, lots, qty, sold, spent, received, lost, profit, held, roi, days,
+-- perDay (return a day on the money of the units gone) }.
+function A.strategies(days, now)
+    days = days or 7
+    now = now or F.Engine.clock()
+    local since = days == 1 and A.dayStart(now) or now - days * DAY
+    local by = {}
+    for _, lot in ipairs(F.Data.lots(char())) do
+        if (lot.at or 0) >= since and lot.mode ~= "shop" and (lot.qty or 0) > 0 then
+            local id = A.lotKind(lot)
+            local s = by[id]
+            if not s then
+                s = { id = id, lots = 0, qty = 0, sold = 0, spent = 0, received = 0, lost = 0, used = 0, held = 0 }
+                s.closedDays, s.closed = 0, 0
+                by[id] = s
+            end
+            local qty, left = lot.qty, math.max(0, lot.left or 0)
+            -- Units made into other items (T21) took their share of the cost along.
+            local gone = qty - left
+            s.lots, s.qty, s.sold = s.lots + 1, s.qty + qty, s.sold + (lot.sold or 0)
+            s.spent = s.spent + (lot.cost or 0)
+            s.received = s.received + (lot.received or 0) + (lot.convertedCost or 0)
+            s.lost = s.lost + (lot.lost or 0)
+            s.used = s.used + (lot.cost or 0) * gone / qty
+            s.held = s.held + (lot.cost or 0) * left / qty
+            if left <= 0 and lot.soldAt and lot.at then
+                s.closedDays, s.closed = s.closedDays + math.max(0, lot.soldAt - lot.at) / DAY, s.closed + 1
+            end
+        end
+    end
+    local out = {}
+    for _, st in ipairs(F.STRATEGIES) do
+        local s = by[st.id]
+        if s then
+            s.label = st.label
+            s.held = math.floor(s.held + 0.5)
+            s.profit = math.floor(s.received - s.used - s.lost + 0.5)
+            s.roi = s.used > 0 and s.profit / s.used or nil
+            s.days = s.closed > 0 and s.closedDays / s.closed or nil
+            -- The return on the money a day it was tied up (at least a day: a lot sold in an hour
+            -- does not earn its return 24 times over).
+            s.perDay = s.roi and s.days and s.roi / math.max(1, s.days) or nil
+            s.closedDays, s.closed = nil, nil
+            out[#out + 1] = s
+        end
+    end
+    return out
+end
+
 -- The market of the current auction house from the saved scan history.
 --   liquid:   most units gone per day near the usual price
 --   gaps:     today's cheapest far below the usual price, weighted by how much sells

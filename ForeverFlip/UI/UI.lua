@@ -2054,6 +2054,7 @@ local NO_MEDIAN = {
     enough_stock = "%d: you already hold three days of their sales",
     too_much = "%d have more under the price than sells in three days (or over %d lots): no reset",
     sources_disagree = "%d: your scans and the community's disagree on the usual price",
+    undercut = "%d are undercut too often to hold the price until they sell",
     blocked = "%d are on your ignore list",
 }
 function UI.noMedianText(stats)

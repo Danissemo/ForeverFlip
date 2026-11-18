@@ -121,6 +121,11 @@ function UI.createDeals(p)
         "The price of one unit: what the deal pays on average for each (several lots may have different prices). Qty times this is the whole cost."
     )
     headerTip(
+        UI.dealTable.headers[5],
+        "Profit",
+        "What the deal earns once every unit sells at its Sells at price, after the cut and the deposits. Sorted by what it is worth on average: the profit times Sure, less the deposits lost when it does not sell, so a big profit that rarely sells does not lead the list. The line under the table adds the expected sum."
+    )
+    headerTip(
         UI.dealTable.headers[6],
         "Est./day",
         "Units bought per day at 85% of the Sells at price or more, not a sale probability. Counted from lots seen bought between full scans: a lot that got smaller is a sure sale; a lot that vanished whole counts only when the next scan shows its seller did not post the item again. Expired/cancelled lots, reposts at any price, your own purchases and one-off sweeps (above three times the usual scan pair) are left out.\n\nTwo usable full scans are required. Zero means none was bought; '-' means unknown. Orange: only whole lots were seen, no lot bought in part. Vendor deals need no auction-house resale.\n\nGrey estimates use data older than 3 hours. Checking a current price does not refresh sale history. Short observations are smoothed: one unit bought in 15 minutes counts as about 5-6 a day, not 96."
@@ -481,7 +486,7 @@ local function saleEstimate(d, history, now)
     if d.mode ~= "flip" then
         return { known = false }
     end
-    local e = F.Market.saleability(history[d.key], d.exit, now)
+    local e = F.Deals.saleability(d.key, history[d.key], d.exit, now, F.Deals.sellQty(d))
     if not e.known then
         -- No figure of its own: the item's other endings (gear), marked as an approximation.
         local other = F.Deals.siblingEstimate(d.key, F.Deals.sellQty(d), now)
@@ -572,8 +577,8 @@ local function rate(v)
     return v < 0.05 and "0" or string.format("%.1f", v)
 end
 
--- Est./day as every page shows it: the same number (F.Market.saleability at the price, one
--- formula), the same format, and "?" after it while the sample is below the T32 thresholds
+-- Est./day as every page shows it: the same number (F.Deals.saleability at the price, one
+-- formula; thin gear data leans on similar gear), the same format, and "?" after it while the sample is below the T32 thresholds
 -- (UI.noReliable says why). A thin sample still gives the best estimate there is (sales over the
 -- hours watched plus M.PRIOR_HOURS, which pulls a few early sales towards 0); hiding it on one page
 -- and showing it on another made two answers to one question.
@@ -824,6 +829,31 @@ end
 --   Demand                buyers a day at the price, how long the units take, how old the data is
 --   Seen                  the purchases the demand rests on
 --   Sure                  how sure the resale is to pay back (UI.sureSentence)
+-- What a resale is worth on average (Market.expectedProfit: its profit times Sure, less the
+-- deposits lost when it does not sell) and the return a day on the money it ties up until its
+-- units sell at `perDay` (Market.dayReturn). nil without a Sure.
+function UI.expectedLine(d, perDay)
+    if not U.finite(d.ev) or not U.finite(d.profit) then
+        return nil
+    end
+    local line = string.format(
+        L("%s %s on average (profit times Sure, less lost deposits)"),
+        gold("Expected"),
+        UI.signed(math.floor(d.ev + 0.5))
+    )
+    local daily, days = F.Market.dayReturn(d.ev, d.cost, d.qty, perDay)
+    if daily then
+        line = line
+            .. "  ·  "
+            .. string.format(
+                L("%s%% a day on the money over %s"),
+                string.format("%.1f", daily * 100),
+                UI.duration(days * 86400)
+            )
+    end
+    return line
+end
+
 -- T25: a resale below the median: what it buys, the median it relists at, the profit after the
 -- cut and the deposits, and its risk (Sure with its limits, the sales sample behind them).
 function UI.medianDetail(d, roi, each)
@@ -847,6 +877,7 @@ function UI.medianDetail(d, roi, each)
             U.money(d.risk or 0)
         ),
     }
+    lines[#lines + 1] = UI.expectedLine(d, d.perDay)
     local risk = gold("Risk") .. " " .. UI.sureLimitsText(d.sure)
     if not U.finite(d.sure) then
         local other = F.Deals.siblingEstimate(d.key, d.qty, F.Engine.clock())
@@ -957,6 +988,7 @@ function UI.dealDetail(d, estimate, h, now)
             UI.pct(F.Market.CUT)
         ),
     }
+    lines[#lines + 1] = UI.expectedLine(d, estimate and estimate.known and estimate.perDay)
     local why = UI.exitWhy(d, h)
     if why then
         lines[#lines + 1] = why
@@ -1048,7 +1080,9 @@ function UI.refreshDeals()
         elseif field == 4 then
             return unitExit(d)
         elseif field == 5 then
-            return vendor and (d.offer and d.offer.cost or d.cost) or d.profit
+            -- A resale by what it is worth on average (profit times Sure), so a big profit that
+            -- rarely sells no longer leads the page.
+            return vendor and (d.offer and d.offer.cost or d.cost) or (U.finite(d.ev) and d.ev or d.profit)
         elseif field == 6 then
             return vendor and (unitExit(d) - unitCost(d)) or estimates[d.key].perDay
         elseif field == 7 and not vendor then
@@ -1164,19 +1198,24 @@ function UI.refreshDeals()
     end
     -- The totals: the vendor page counts the whole offers on the shelf (what is on offer, not only
     -- what the purse covers), every other page the deals as its rows buy them.
-    local cost, profit = 0, 0
+    local cost, profit, expected = 0, 0, 0
     for _, d in ipairs(list) do
         local o = vendor and (d.offer or d) or d
         cost, profit = cost + (o.cost or 0), profit + (o.profit or 0)
+        expected = expected + (not vendor and U.finite(d.ev) and d.ev or (o.profit or 0))
     end
-    UI.pageText:SetText(
-        string.format(L("Deals: %d"), #list)
-            .. (
-                #list > 0
-                    and (L("  ·  ") .. string.format(L("all: cost %s, profit %s"), U.money(cost), U.money(profit)))
-                or ""
-            )
-    )
+    local totals = ""
+    if #list > 0 then
+        totals = L("  ·  ") .. string.format(L("all: cost %s, profit %s"), U.money(cost), U.money(profit))
+        if not vendor and math.floor(expected) < profit then
+            totals = totals
+                .. string.format(
+                    L(", expected %s"),
+                    (expected < 0 and "-" or "") .. U.money(math.abs(math.floor(expected + 0.5)))
+                )
+        end
+    end
+    UI.pageText:SetText(string.format(L("Deals: %d"), #list) .. totals)
     local empty = view.empty
     if #list == 0 then
         if UI.filter == "disenchant" and (not F.Scan.busy() or F.Disenchant.status(true)) then

@@ -175,7 +175,8 @@ function D.evaluateMedian(g, history, now)
     end
     local duration = F.Market.duration(g.key, nil, cap)
     -- The market reset relists at the median (Market.usualTarget) itself: capped by what buyers
-    -- paid (D.resaleCap) it sold where Resale does, and the two pages showed the same deals.
+    -- paid (D.resaleCap) it sold where Resale does, and the two pages showed the same deals. It
+    -- stays under what most buyers paid (Market.paidTop) instead.
     return F.Market.evaluateMedian(g.rows, {
         kind = g.kind,
         history = history,
@@ -531,6 +532,27 @@ function D.peerEstimate(price, qty, now)
     return peerBands[slot] or nil
 end
 
+-- Est./day of an item at `price` (Market.saleability), the one figure the Deals column, the deal
+-- detail, Check Sure and the tooltip show. While the item's own sample is thin (Market.quality not
+-- reliable), gear leans on its other endings or on gear of about its price (D.siblingEstimate)
+-- instead of on none: one scan pair read 0 a day for gear whose kind sells every day. The more
+-- hours its own lots were watched, the less the others count (Market.withPrior).
+function D.saleability(key, h, price, now, qty)
+    now = now or clock()
+    local sale = F.Market.saleability(h, price, now)
+    if sale.known and U.finite(sale.perDay) then
+        local q = F.Market.quality(h, price, now)
+        if not q.reliable then
+            local other = D.siblingEstimate(key, qty or 1, now)
+            if other and U.finite(other.perDay) and other.perDay > 0 then
+                sale.perDay = F.Market.withPrior(sale.perDay, sale.hours, other.perDay)
+                sale.prior, sale.priorN, sale.priorPeers = other.perDay, other.n, other.peers
+            end
+        end
+    end
+    return sale
+end
+
 -- T32: how good the sales sample of an item is at `price` (Market.quality).
 -- The usual price of an item (Market.usual of its history) and the history: the one reader of
 -- Trade's floors and the pages. `history` defaults to the scope's.
@@ -566,7 +588,7 @@ function D.checkAt(key, price, qty, cost, risk, held, now)
     qty = math.max(1, math.floor(qty or 1))
     local h = F.Data.market(F.db, F.Engine.scope()).history[key]
     local sure, parts = D.sureAt(key, price, qty + (held or 0), now)
-    local sale = F.Market.saleability(h, price, now)
+    local sale = D.saleability(key, h, price, now, qty)
     local out = { key = key, price = price, qty = qty, sure = sure, parts = parts, sale = sale }
     out.net = F.Market.net(price, qty)
     if U.finite(cost) then
