@@ -126,6 +126,13 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- **Est./day no longer reads 0 for an item that sells, after a few hours of scans.** A plain item
+  or commodity now leans on similar ones: the same kind at about its price with about as many units
+  listed. Their typical rate fills in where its own sales are still few, never past what the item's
+  own sales allow, and it fades as its own hours add up. Before, two of three slow sellers read 0
+  and a single sale read as several a day. Against TSM's region figures the typical error fell
+  from about x5.7 to x4.2. One sale early on still reads high. This changes the figure the pages and
+  the tooltip show, not how deals are found.
 - **An item tooltip is worked out once while it stays on screen.** The game draws an item's
   tooltip again several times a second (three times in one frame, then every quarter second), and
   each time every line was computed again: price, Best, sales a day, Sure, routes. The lines are

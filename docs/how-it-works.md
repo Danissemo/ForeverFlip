@@ -156,6 +156,14 @@ hours decay with a **2-day half-life**, so recent behaviour counts most.
 - **Smoothing.** Units per day are computed as if 4 more hours had been watched with no sale
   (`M.PRIOR_HOURS`). One unit gone in a single 15-minute pair is about 5.6 a day, not 96. The prior
   fades as data accumulates.
+- **Similar items.** The Est./day the pages show (`Deals.saleability`) lets a plain item or a
+  commodity lean on similar items. These are items of the same key type, within a factor of 2 of its
+  usual price and of its units listed (`Market.peerCell`). Their geometric mean (`Deals.peerRate`, at
+  least 5 items) stands in for the prior's hours of no sale over 8 hours (`M.PEER_HOURS`). It counts
+  less in proportion above the item's usual price. It never goes past the upper 80% limit of the
+  item's own sales. A few hours of watching otherwise read one sale as several a day and no sale
+  as 0. Against TSM's region sales (`tools/calibrate.py`) the typical error fell from x5.7 to x4.2.
+  Gear leans on its other endings instead (`Deals.siblingEstimate`).
 
 `demandAt(h, price)` returns the units per day sold at or above 85% of `price`, plus the number of
 scan pairs. With 0 pairs there is no estimate yet: the item is still *collecting*. When lot-by-lot

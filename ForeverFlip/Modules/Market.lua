@@ -1952,6 +1952,53 @@ function M.withPrior(perDay, hours, prior)
     return perDay + prior * M.PRIOR_HOURS / (hours + M.PRIOR_HOURS)
 end
 
+-- Similar items: a plain item's or commodity's sales lean on those of items of the same key type at
+-- about its usual price and with about as many units listed (the neighbouring cells of M.peerCell:
+-- within a factor of 2 either way). Their rates are averaged geometrically, so a few fast sellers
+-- do not make every slow item look fast. M.PEER_HOURS of that rate stand in for the M.PRIOR_HOURS
+-- of no sale, and the item's own hours outweigh them as they add up. One sale in a few hours read
+-- as several a day and no sale as 0: against TSM's region sales (tools/calibrate.py, 18.11.2026,
+-- with Deals.saleability's cap at the item's own upper limit) the typical error went from x5.7 to
+-- x4.2 and the order of items from 0.66 to 0.73.
+M.PEER_HOURS = 8
+M.PEER_MIN = 5 -- similar items with sales data needed for their rate to count
+M.PEER_OFFSET = 0.1 -- units a day added before the logarithm, so items at 0 a day count too
+
+-- The cell of an item among similar ones: its price band and its listed-units band (powers of 2).
+-- nil without a usual price.
+function M.peerCell(h, usual)
+    if not U.finite(usual) or usual <= 0 then
+        return nil
+    end
+    local scan = type(h) == "table" and type(h.scan) == "table" and h.scan or {}
+    local listed = 0
+    if type(scan.above) == "table" and U.finite(scan.above[1]) then
+        listed = math.max(0, scan.above[1])
+    end
+    local log2 = math.log(2)
+    return math.floor(math.log(usual) / log2 + 0.5), math.floor(math.log(listed + 1) / log2 + 0.5)
+end
+
+-- The value an item adds to its cell, and the similar items' rate from a cell sum of `n` values;
+-- nil below M.PEER_MIN items.
+function M.peerValue(perDay)
+    return math.log(math.max(0, perDay) + M.PEER_OFFSET)
+end
+
+function M.peerRate(sum, n)
+    if not U.finite(sum) or not n or n < M.PEER_MIN then
+        return nil
+    end
+    return math.max(0, math.exp(sum / n) - M.PEER_OFFSET)
+end
+
+-- Units a day from `units` (effective) seen in `hours` with M.PEER_HOURS of the similar items'
+-- rate `peer` in place of the M.PRIOR_HOURS of no sale.
+function M.withPeers(units, hours, peer)
+    hours = U.finite(hours) and math.max(0, hours) or 0
+    return (math.max(0, units or 0) + peer * M.PEER_HOURS / 24) / (hours + M.PEER_HOURS) * 24
+end
+
 -- The median of an item's daily usual prices over the last `span` days before `now` (today
 -- included); nil and the days found when fewer than M.MEDIAN_MIN_DAYS have a price.
 function M.medianTarget(h, now, span)

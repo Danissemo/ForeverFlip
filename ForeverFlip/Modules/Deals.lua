@@ -546,15 +546,90 @@ function D.peerEstimate(price, qty, now)
     return peerBands[slot] or nil
 end
 
+-- Plain items and commodities: the cells of Market.peerCell over the house's history, built once
+-- per scan. cells[type .. price band .. ":" .. listed band] = { sum, n } of Market.peerValue at
+-- each item's usual price; own[key] = the item's own value, left out of its similar items.
+local peerCells, peerOwn, peerCellsStamp, peerCellsOf
+local function itemPeerCells(history)
+    local last = F.Scan.last
+    local stamp = last and last.at or 0
+    if peerCellsOf ~= history or peerCellsStamp ~= stamp then
+        peerCells, peerOwn, peerCellsStamp, peerCellsOf = {}, {}, stamp, history
+        local M = F.Market
+        for k, h in pairs(history) do
+            local tag = type(k) == "string" and k:sub(1, 2)
+            if tag == "c:" or tag == "i:" then
+                local usual = M.usual(h)
+                local d = U.finite(usual) and usual > 0 and M.lotDemand(h, usual)
+                if d then
+                    local band, listed = M.peerCell(h, usual)
+                    local cell = tag .. band .. ":" .. listed
+                    local c = peerCells[cell] or { sum = 0, n = 0 }
+                    local v = M.peerValue(d.perDay)
+                    c.sum, c.n = c.sum + v, c.n + 1
+                    peerCells[cell], peerOwn[k] = c, v
+                end
+            end
+        end
+    end
+    return peerCells, peerOwn
+end
+
+-- Units a day of the items similar to a plain item or commodity (Market.peerCell), at their usual
+-- prices, and how many there are; nil for gear, without a usual price or with too few of them.
+-- `history` defaults to the scope's.
+function D.peerRate(key, h, history)
+    local tag = type(key) == "string" and key:sub(1, 2)
+    if (tag ~= "c:" and tag ~= "i:") or not F.db and not history then
+        return nil
+    end
+    history = history or F.Data.market(F.db, F.Engine.scope()).history
+    local band, listed = F.Market.peerCell(h, F.Market.usual(h))
+    if not band then
+        return nil
+    end
+    local cells, own = itemPeerCells(history)
+    local sum, n = 0, 0
+    for b = band - 1, band + 1 do
+        for l = listed - 1, listed + 1 do
+            local c = cells[tag .. b .. ":" .. l]
+            if c then
+                sum, n = sum + c.sum, n + c.n
+            end
+        end
+    end
+    if own[key] then
+        sum, n = sum - own[key], n - 1
+    end
+    local rate = F.Market.peerRate(sum, n)
+    return rate, rate and n or nil
+end
+
 -- Est./day of an item at `price` (Market.saleability), the one figure the Deals column, the deal
--- detail, Check Sure and the tooltip show. While the item's own sample is thin (Market.quality not
--- reliable), gear leans on its other endings or on gear of about its price (D.siblingEstimate)
--- instead of on none: one scan pair read 0 a day for gear whose kind sells every day. The more
--- hours its own lots were watched, the less the others count (Market.withPrior).
-function D.saleability(key, h, price, now, qty)
+-- detail, Check Sure and the tooltip show. A plain item or commodity with lots watched leans on
+-- similar items (D.peerRate, Market.withPeers) always: their weight fades as its own hours add up.
+-- Above its usual price their rate counts less, in proportion, and it never goes past what the
+-- item's own sales allow (their upper 80% limit). While the item's own sample is thin
+-- (Market.quality not reliable), gear leans on its other endings or on gear of about its price
+-- (D.siblingEstimate) instead of on none: one scan pair read 0 a day for gear whose kind sells
+-- every day. The more hours its own lots were watched, the less the others count
+-- (Market.withPrior). `history` (optional) is the scope's history.
+function D.saleability(key, h, price, now, qty, history)
     now = now or clock()
     local sale = F.Market.saleability(h, price, now)
-    if sale.known and U.finite(sale.perDay) then
+    local own = sale.known and U.finite(sale.perDay) and F.Market.lotDemand(h, price)
+    local peer, n
+    if own then
+        peer, n = D.peerRate(key, h, history)
+    end
+    if peer then
+        -- Never past the upper 80% limit of the item's own sales: a commodity in a busy cell read
+        -- 9 a day after 7 hours with none sold.
+        local _, high = F.Market.rateRange(own.sold, own.hours)
+        peer = math.min(peer * math.min(1, F.Market.usual(h) / price), high or peer)
+        sale.perDay = F.Market.withPeers(own.sold, own.hours, peer)
+        sale.prior, sale.priorN, sale.priorPeers = peer, n, true
+    elseif sale.known and U.finite(sale.perDay) then
         local q = F.Market.quality(h, price, now)
         if not q.reliable then
             local other = D.siblingEstimate(key, qty or 1, now)

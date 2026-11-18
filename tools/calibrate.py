@@ -95,7 +95,7 @@ def ff_estimates(lua, scope: str | None) -> tuple[str, list[dict]]:
     if scope not in scopes:
         raise SystemExit("no house %r; houses: %s" % (scope, ", ".join(sorted(scopes))))
     history = scopes[scope].history
-    M = lua.globals().ForeverFlip.Market
+    M, D = lua.globals().ForeverFlip.Market, lua.globals().ForeverFlip.Deals
     rows = []
     for key in history.keys():
         key = str(key)
@@ -107,7 +107,7 @@ def ff_estimates(lua, scope: str | None) -> tuple[str, list[dict]]:
         if not usual:
             continue
         at = h.scan and h.scan.at or 0
-        sale = M.saleability(h, usual, at)
+        sale = D.saleability(key, h, usual, at, 1, history)  # Est./day as the pages show it
         lots = M.lotDemand(h, usual)
         low = high = hours = None
         if lots:
