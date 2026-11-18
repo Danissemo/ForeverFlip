@@ -22,8 +22,8 @@ All notable changes are listed here. The format follows
   merchants: Retail gives no text for an empty note, and adding to it failed.
 - **The Sell to vendor button no longer covers the merchant's class filter.** A merchant with
   class goods shows the game's filter at the top right of the window, where the button stood, and
-  on Retail the two lay over each other. While the filter shows, the button stands just above the
-  window instead.
+  on Retail the two lay over each other. While the filter shows, the button stands at the bottom,
+  left of your money.
 - **A full scan no longer stands still at its last few rows.** On Retail every scan ended with
   about 30 auctions whose item data never came, and the progress stood at "271810 / 271839" for
   30 seconds before the scan finished. When no more than 100 rows wait, 5 seconds without news is
@@ -39,6 +39,11 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- **ForeverFlip Sync accepts WoW Retail installations.** A `_retail_` folder can be added to the
+  game list next to WoW Forever and is shown as "WoW Retail" with its version, so the helper
+  keeps the addon there up to date too. Community prices stay a WoW Forever exchange: a Retail
+  client shares and downloads no scans, since its auction houses are another market and the
+  data repository refuses them. Classic, PTR and beta folders are still refused.
 - **Post all and Post AH-worthy say "Check prices" while no item has a price yet.** The game takes
   a post only from a click, so the first click reads the prices and the next one posts; with the
   same label on both, the button looked like it needed two presses to work.

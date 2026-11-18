@@ -39,8 +39,10 @@ class FitButtonTests(unittest.TestCase):
 
     def test_the_merchant_button_moves_off_the_class_filter(self):
         # Retail shows a class filter at the top right of a merchant with class goods, where the
-        # button stood: the two covered each other. While the filter shows, the button goes above.
+        # button stood: the two covered each other. While the filter shows, the button stands left
+        # of the player's money at the bottom (above the frame it left the window).
         run(BASE + """MerchantFrame.FilterDropdown=CreateFrame('Frame',nil,MerchantFrame)
+        MerchantMoneyInset=CreateFrame('Frame',nil,MerchantFrame)
         MerchantFrame.FilterDropdown:Hide()
         """ + MERCHANT + """
         local b=UI.merchantButton
@@ -50,7 +52,7 @@ class FitButtonTests(unittest.TestCase):
         UI.placeMerchantButton()
         MerchantFrame.FilterDropdown:Show()
         b:GetScript('OnUpdate')(b,0.3)
-        assert(where=='BOTTOMRIGHT>TOPRIGHT','above the frame while the filter shows: '..tostring(where))
+        assert(where=='RIGHT>LEFT','left of the money while the filter shows: '..tostring(where))
         MerchantFrame.FilterDropdown:Hide()
         b:GetScript('OnUpdate')(b,0.3)
         assert(where=='TOPRIGHT>TOPRIGHT','back under the title without it: '..tostring(where))""")

@@ -322,7 +322,8 @@ end
 -- Where the Sell to vendor button stands. Its place under the title is where the game puts the
 -- class filter of a merchant with class goods (MerchantFrame.FilterDropdown, 152 wide at the top
 -- right): over it on Retail the two covered each other. While the filter shows, the button stands
--- above the frame's top edge, where the whole label still fits. The filter is only read.
+-- at the bottom, left of the player's money (MerchantMoneyInset); above the frame's top edge it
+-- left the window. The filter and the money box are only read.
 local placedHigh
 function UI.placeMerchantButton()
     local b = UI.merchantButton
@@ -336,7 +337,10 @@ function UI.placeMerchantButton()
     end
     placedHigh = high
     b:ClearAllPoints()
-    if high then
+    local money = MerchantMoneyInset
+    if high and type(money) == "table" then
+        b:SetPoint("RIGHT", money, "LEFT", -4, 0)
+    elseif high then
         b:SetPoint("BOTTOMRIGHT", MerchantFrame, "TOPRIGHT", -8, 2)
     else
         b:SetPoint("TOPRIGHT", MerchantFrame, "TOPRIGHT", -40, -28)
