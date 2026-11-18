@@ -347,12 +347,25 @@ end
 -- each scan and when the auction house opens): this runs for every row of a full scan.
 local myName, myFullName
 -- Whether commodity prices may carry copper (U.commodityStep). A client without the call is WoW
--- Forever's kind, which takes copper.
+-- Forever's kind, which takes copper. Retail (interface 100000 and up) lists whole silver only even
+-- when SupportsCopperValues() does not say false: its server dropped a post of 299 copper without
+-- an answer, and every price on its market is whole silver.
+A.RETAIL_INTERFACE = 100000
 function A.readPriceStep()
     local ok, copper = pcall(function()
         return AH.SupportsCopperValues()
     end)
-    U.commodityStep = (ok and copper == false) and 100 or 1
+    local interface = GetBuildInfo and select(4, GetBuildInfo())
+    local retail = type(interface) == "number" and interface >= A.RETAIL_INTERFACE
+    U.commodityStep = ((ok and copper == false) or retail) and 100 or 1
+    F.Log.devTrace(
+        "post.step",
+        "commodity step %d (SupportsCopperValues %s %s, interface %s)",
+        U.commodityStep,
+        tostring(ok),
+        tostring(copper),
+        tostring(interface)
+    )
 end
 
 function A.refreshPlayer()
@@ -1321,6 +1334,16 @@ end
 
 -- Returns true when the game asks for a confirmation (call again with confirm = true).
 function A.post(item, qty, price, duration, confirm)
+    F.Log.devTrace(
+        "post.send",
+        "%s %s x%s at %s, duration %s%s",
+        tostring(item.kind),
+        tostring(item.key),
+        tostring(qty),
+        tostring(price),
+        tostring(duration),
+        confirm and ", confirmed" or ""
+    )
     if item.kind == "commodity" then
         local fn = confirm and AH.ConfirmPostCommodity or AH.PostCommodity
         return fn(item.loc, duration, qty, price)

@@ -168,7 +168,7 @@ function U.linkName(link)
 end
 
 -- Gear and plain items are listed in whole silver only. Commodities go to the copper on WoW Forever;
--- Retail takes whole silver for them too (C_AuctionHouse.SupportsCopperValues() is false there), and
+-- Retail takes whole silver for them too (told by its version, AH.readPriceStep), and
 -- its server drops a copper price without an answer: the undercut post of 2g 3s 99c was never made.
 -- AH.lua sets U.commodityStep from the game (AH.readPriceStep).
 U.commodityStep = 1

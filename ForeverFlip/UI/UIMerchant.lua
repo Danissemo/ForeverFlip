@@ -420,7 +420,9 @@ function UI.merchant(open)
     end
     if refused > 0 then
         local note = string.format(L("%d item(s) here are not bought by merchants and are left out."), refused)
-        view.sellNote:SetText(view.sellNote:GetText() ~= "" and (view.sellNote:GetText() .. " " .. note) or note)
+        -- Retail's GetText gives nil for an empty string.
+        local prev = view.sellNote:GetText() or ""
+        view.sellNote:SetText(prev ~= "" and (prev .. " " .. note) or note)
     end
     view.sellAll:SetText(
         busy(#list > 0 and string.format(L("Sell all (%d): %s"), #list, U.money(total)) or L("Sell all"))

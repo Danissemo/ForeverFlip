@@ -14,6 +14,17 @@ class PriceGridTests(unittest.TestCase):
         assert(U.below(20400,'gear')==20300)
         """)
 
+    def test_a_retail_client_steps_in_silver_whatever_the_copper_call_says(self):
+        # Retail's SupportsCopperValues() did not say false, and a 299 copper post was dropped.
+        run(POST + """C_AuctionHouse.SupportsCopperValues=function() return true end
+        GetBuildInfo=function() return '12.0.1','1','Nov 1 2026',120001 end
+        F.AH.readPriceStep()
+        assert(F.Util.commodityStep==100,tostring(F.Util.commodityStep))
+        GetBuildInfo=function() return '1.60.1','70938','Nov 1 2026',16001 end
+        F.AH.readPriceStep()
+        assert(F.Util.commodityStep==1,'WoW Forever keeps the copper')
+        """)
+
     def test_retail_undercuts_commodities_by_whole_silver(self):
         run(POST + RETAIL + """local U=F.Util
         assert(U.commodityStep==100)
