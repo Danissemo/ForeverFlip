@@ -187,15 +187,23 @@ local MAIN_STATS = {
 }
 local ACCOUNT_BINDS = { [7] = true, [8] = true, [9] = true } -- heirloom and warband binds
 
--- Gear bound to the account (heirlooms, warband pieces) goes to an alt instead of a merchant.
-local function accountBound(id)
+-- Gear bound to the account (heirlooms, warband pieces) goes to an alt instead of a merchant. A
+-- "warband until equipped" piece stops being one once worn, so with its bag slot (loc) the piece
+-- itself is asked; the item type answers only without one.
+local function accountBound(id, loc)
     if C_Item and C_Item.IsItemBindToAccount and C_Item.IsItemBindToAccount(id) then
         return true
+    end
+    local bind = select(14, U.itemInfo(id))
+    if loc and C_Item and C_Item.IsBoundToAccountUntilEquip then
+        local ok, untilEquip = pcall(C_Item.IsBoundToAccountUntilEquip, loc)
+        if ok then
+            return untilEquip == true or (bind ~= 9 and ACCOUNT_BINDS[bind] == true)
+        end
     end
     if C_Item and C_Item.IsItemBindToAccountUntilEquip and C_Item.IsItemBindToAccountUntilEquip(id) then
         return true
     end
-    local bind = select(14, U.itemInfo(id))
     return ACCOUNT_BINDS[bind] == true
 end
 
@@ -231,8 +239,8 @@ end
 
 -- true: equipment the class can never use; false: usable (or not equipment); nil: unknown. On
 -- Retail a piece whose main stat no specialization of the class uses counts too (link needed), and
--- gear bound to the account never does: an alt can wear it.
-function A.unusableGear(id, link)
+-- gear bound to the account never does: an alt can wear it. loc: the piece's ItemLocation, if known.
+function A.unusableGear(id, link, loc)
     local info = C_Item and C_Item.GetItemInfoInstant
     if not info then
         return nil
@@ -241,7 +249,7 @@ function A.unusableGear(id, link)
     if not equipLoc or equipLoc == "" or equipLoc == "INVTYPE_BAG" then
         return false
     end
-    if accountBound(id) then
+    if accountBound(id, loc) then
         return false
     end
     local class = UnitClass and select(2, UnitClass("player"))
@@ -1394,7 +1402,7 @@ function A.readBags(merchant)
                     -- Bound items the auction house never sees (read Fated Fortune Cards) have no
                     -- item key info and no commodity status: a merchant is their only use, and an
                     -- unknown kind left them out of Sell all.
-                    kind = A.VENDOR_JUNK[info.itemID] and "item" or kindOfBagItem(info.itemID, loc)
+                    kind = A.vendorJunk(info.itemID) and "item" or kindOfBagItem(info.itemID, loc)
                     if kind then
                         guesses[info.itemID] = kind
                         key = A.keyFor(info.itemID, info.hyperlink)

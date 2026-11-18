@@ -49,6 +49,19 @@ class FortuneCardTests(unittest.TestCase):
         for _, fn in ipairs(tooltipCalls) do fn(GameTooltip, { lines = { { type = 11, price = 230000 } } }) end
         return table.concat(tooltipLines, ' ## ')""")
         self.assertIn('not bought by merchants', text)
+
+    def test_the_tooltip_follows_a_merchant_seen_refusing_an_item(self):
+        text = run(SETUP + """addItem(194830, 'Odd Trinket', 50000, 'commodity')
+        addAuction(194830, 124100, 5); fullScan()
+        local db = ForeverFlip.db
+        db.vendorSeen = db.vendorSeen or {}
+        db.vendorSeen[194830] = { p = 0 }
+        tooltipLines = {}
+        GameTooltip.itemLink = link(194830)
+        for _, fn in ipairs(tooltipCalls) do fn(GameTooltip, { lines = {} }) end
+        return table.concat(tooltipLines, ' ## ')""")
+        self.assertIn('not bought by merchants', text)
+        self.assertNotIn('5g', text)
         self.assertNotIn('23g', text)
 
     def test_only_cards_are_junk(self):

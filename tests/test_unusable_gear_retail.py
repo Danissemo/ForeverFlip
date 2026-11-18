@@ -49,6 +49,18 @@ class RetailUnusableGearTests(unittest.TestCase):
         assert(F.AH.unusableGear(88, 'l88') == false, 'warband plate goes to an alt')
         assert(F.AH.unusableGear(86, 'l86') == false, 'warband strength leather too')''')
 
+    def test_warband_until_equipped_is_asked_of_the_piece(self):
+        run(RETAIL + '''local worn = {}
+        C_Item.IsItemBindToAccountUntilEquip = function(id) return id == 88 or id == 86 end
+        C_Item.IsBoundToAccountUntilEquip = function(loc) return not worn[loc.slot] end
+        local A = F.AH
+        assert(A.unusableGear(88, 'l88') == false, 'without a bag slot the item type decides')
+        assert(A.unusableGear(88, 'l88', ItemLocation:CreateFromBagAndSlot(0, 1)) == false,
+            'never worn: still warband, goes to an alt')
+        worn[2] = true
+        assert(A.unusableGear(88, 'l88', ItemLocation:CreateFromBagAndSlot(0, 2)) == true,
+            'worn once it is soulbound plate a druid cannot use')''')
+
     def test_heirlooms_are_kept_on_forever_too(self):
         run(test_audit.GearSellTests.GEAR + '''local info = F.Util.itemInfo
         F.Util.itemInfo = function(id)

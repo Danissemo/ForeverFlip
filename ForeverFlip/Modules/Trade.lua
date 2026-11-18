@@ -3495,7 +3495,11 @@ function T.unusableGearList()
         for slot = 1, F.Compat.bagSlots(bag) do
             local info = F.Compat.bagItem(bag, slot)
             local id = info and info.itemID
-            if id and not info.isLocked and F.AH.unusableGear(id, info.hyperlink) then
+            if
+                id
+                and not info.isLocked
+                and F.AH.unusableGear(id, info.hyperlink, ItemLocation and ItemLocation:CreateFromBagAndSlot(bag, slot))
+            then
                 local key = F.AH.keyFor(id, info.hyperlink)
                 local p = key and c.positions[key]
                 local price = F.AH.vendorPrice(id, true)
