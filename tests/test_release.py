@@ -131,6 +131,16 @@ class ReleaseCommandTests(unittest.TestCase):
             self.assertNotIn(flow.AUTO_BACKUP + '20261110-000000', names, 'the oldest go')
             self.assertIsNone(flow.backup_before_install(folder / 'empty', folder / 'none', root),
                               'a first install has nothing to keep')
+            # Retail is backed up apart and pruned apart: the same second keeps both copies.
+            retail = flow.backup_before_install(game, target, root, stamp='20261116-000000', flavor='retail')
+            self.assertEqual(retail.name, flow.AUTO_BACKUP + '20261116-000000-retail')
+            self.assertTrue((root / (flow.AUTO_BACKUP + '20261116-000000') / 'ForeverFlip').is_dir())
+            for i in range(7):
+                flow.backup_before_install(game, target, root, stamp=f'2026112{i}-000000', flavor='retail')
+            names = sorted(p.name for p in root.iterdir())
+            self.assertEqual(sum(n.endswith('-retail') for n in names), flow.AUTO_KEEP, names)
+            self.assertEqual(sum(n.startswith(flow.AUTO_BACKUP) and not n.endswith('-retail') for n in names),
+                             flow.AUTO_KEEP, 'the Forever copies are not pruned by Retail ones')
 
     def test_the_guides_name_the_version_in_their_fields_not_only_somewhere(self):
         # The old check asked whether the version was anywhere in README and current-work.md: a

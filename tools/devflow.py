@@ -16,7 +16,8 @@ Other commands:
                                       do, in one command a key binding can run)
     python tools/devflow.py prepare-message  only say what the message would be: writes it into the
                                       commit template the editor reads and puts it in the clipboard
-    python tools/devflow.py install   copy ForeverFlip/ into the game's Interface/AddOns
+    python tools/devflow.py install   copy ForeverFlip/ into Interface/AddOns of WoW Forever and of
+                                      Retail (each one that is found)
     python tools/devflow.py push      push main when it is ahead of GitHub
     python tools/devflow.py stop      for an AI assistant's "stop" hook: refuses to stop while
                                       changes are not committed, pushes what is not pushed yet
@@ -41,6 +42,8 @@ Settings (environment variables or `git config`):
 
     FF_GAME / ff.game         the WoW Forever folder (default: C:\\World of Warcraft\\_forever_ and
                               other usual places); install is skipped when none is found
+    FF_RETAIL / ff.retail     the Retail folder (default: C:\\WOW\\World of Warcraft\\_retail_ and
+                              other usual places); the addon is installed there too when found
     FF_STYLUA / ff.stylua     the StyLua executable (default: C:\\FF\\.tools\\stylua\\stylua.exe or
                               stylua on PATH); the style check is skipped when none is found
     FF_NO_PUSH=1              commit without pushing
@@ -69,6 +72,13 @@ GAME_PATHS = [
     r"C:\Program Files (x86)\World of Warcraft\_forever_",
     r"C:\Program Files\World of Warcraft\_forever_",
     r"D:\World of Warcraft\_forever_",
+]
+RETAIL_PATHS = [
+    r"C:\WOW\World of Warcraft\_retail_",
+    r"C:\World of Warcraft\_retail_",
+    r"C:\Program Files (x86)\World of Warcraft\_retail_",
+    r"C:\Program Files\World of Warcraft\_retail_",
+    r"D:\World of Warcraft\_retail_",
 ]
 STYLUA_PATHS = [r"C:\FF\.tools\stylua\stylua.exe"]
 PAPERS = ("LICENSE", "README.md", "CHANGELOG.md")
@@ -252,12 +262,17 @@ def pyflakes() -> int:
 
 # --- install -------------------------------------------------------------------------------------
 
-def game_folder() -> pathlib.Path | None:
-    given = setting("FF_GAME", "ff.game")
-    for candidate in ([given] if given else []) + GAME_PATHS:
+def game_folder(env: str = "FF_GAME", key: str = "ff.game",
+                paths: list[str] | None = None) -> pathlib.Path | None:
+    given = setting(env, key)
+    for candidate in ([given] if given else []) + (GAME_PATHS if paths is None else paths):
         if candidate and (pathlib.Path(candidate) / "Interface" / "AddOns").is_dir():
             return pathlib.Path(candidate)
     return None
+
+
+def retail_folder() -> pathlib.Path | None:
+    return game_folder("FF_RETAIL", "ff.retail", RETAIL_PATHS)
 
 
 AUTO_BACKUP = "auto-install-"  # the backups install makes; only these are pruned
@@ -270,17 +285,19 @@ def backups_folder() -> pathlib.Path:
 
 
 def backup_before_install(game: pathlib.Path, target: pathlib.Path, root: pathlib.Path | None = None,
-                          stamp: str = "") -> pathlib.Path | None:
+                          stamp: str = "", flavor: str = "") -> pathlib.Path | None:
     """Before files of the installed addon are replaced: a copy of that addon and of the ForeverFlip
     SavedVariables of every account, as the working rules ask. The newer addon may migrate the saved
     data at the next /reload, and that cannot be undone without this copy. The last AUTO_KEEP copies
-    stay; backups made by hand (any other name) are never touched."""
+    stay, of each client apart (`flavor`: "" for WoW Forever, "retail"); backups made by hand (any
+    other name) are never touched."""
     root = root or backups_folder()
     saved = sorted(game.glob("WTF/Account/*/SavedVariables/ForeverFlip*.lua*"))
     if not (target.is_dir() and any(target.iterdir())) and not saved:
         return None
     stamp = stamp or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    folder = root / (AUTO_BACKUP + stamp)
+    suffix = "-" + flavor if flavor else ""
+    folder = root / (AUTO_BACKUP + stamp + suffix)
     folder.mkdir(parents=True, exist_ok=True)
     if target.is_dir():
         shutil.copytree(target, folder / "ForeverFlip", dirs_exist_ok=True)
@@ -288,24 +305,35 @@ def backup_before_install(game: pathlib.Path, target: pathlib.Path, root: pathli
         account = path.parent.parent.name
         (folder / "SavedVariables" / account).mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, folder / "SavedVariables" / account / path.name)
-    for old in sorted(p for p in root.glob(AUTO_BACKUP + "*") if p.is_dir())[:-AUTO_KEEP]:
+    mine = re.compile(re.escape(AUTO_BACKUP) + r"\d{8}-\d{6}" + re.escape(suffix))
+    for old in sorted(p for p in root.glob(AUTO_BACKUP + "*") if p.is_dir() and mine.fullmatch(p.name))[:-AUTO_KEEP]:
         shutil.rmtree(old, ignore_errors=True)
     return folder
 
 
 def install() -> int:
+    """Into WoW Forever and into Retail: the addon runs on both, and a fix made for one is tried on
+    the other with the same files."""
     if os.environ.get("FF_NO_INSTALL"):
         return 0
     game = game_folder()
-    if not game:
+    if game:
+        install_into(game, "WoW Forever")
+    else:
         say("WoW Forever not found (set FF_GAME or git config ff.game): not installed")
-        return 0
+    retail = retail_folder()
+    if retail:
+        install_into(retail, "Retail", "retail")
+    return 0
+
+
+def install_into(game: pathlib.Path, label: str, flavor: str = "") -> None:
     target = game / "Interface" / "AddOns" / "ForeverFlip"
     wanted = {p.relative_to(ADDON) for p in ADDON.rglob("*") if p.is_file()}
     changed = [rel for rel in sorted(wanted)
                if not (target / rel).exists() or (target / rel).read_bytes() != (ADDON / rel).read_bytes()]
     if changed:
-        kept = backup_before_install(game, target)
+        kept = backup_before_install(game, target, flavor=flavor)
         if kept:
             say(f"backed up the installed addon and its SavedVariables into {kept}")
     target.mkdir(parents=True, exist_ok=True)
@@ -329,9 +357,8 @@ def install() -> int:
             p.rmdir()
     version = next((line.split(":", 1)[1].strip() for line in (ADDON / "ForeverFlip.toc").read_text(
         encoding="utf-8").splitlines() if line.startswith("## Version:")), "?")
-    say(f"installed ForeverFlip {version} into the game ({copied} files updated, {removed} removed). "
+    say(f"installed ForeverFlip {version} into {label} ({copied} files updated, {removed} removed). "
         f"In game: /reload (a full restart when a file was added or removed)")
-    return 0
 
 
 # --- push ----------------------------------------------------------------------------------------

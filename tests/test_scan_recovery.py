@@ -58,6 +58,30 @@ class RecoveryTests(unittest.TestCase):
         assert(S.listedUnits('c:41') == nil, 'the unread item is not known as unlisted')''')
 
 
+    def test_a_few_rows_left_are_given_up_after_a_short_silence(self):
+        # On Retail every scan ended with about 30 rows whose data never came: the progress stood
+        # still for the whole S.RECOVER. A few rows left wait S.RECOVER_FEW_IDLE seconds only.
+        run(BASE + '''S.RECOVER_FEW = 500
+        toRecovery()
+        items[40].cached = true
+        local start = now
+        while S.busy() do run(0.05) end
+        assert(now - start < S.RECOVER_FEW_IDLE + 3, 'no 30 second wait: ' .. (now - start))
+        assert(S.last.skipped == 400 and S.last.unread[41] and S.listedUnits('c:40') == 60000)
+        local found = false
+        for _, line in ipairs(ForeverFlip.db.trace) do
+            found = found or line:find('scan.unread 400 rows unread', 1, true) and line:find('items 41', 1, true)
+        end
+        assert(found, 'the unread items are traced')''')
+
+    def test_many_rows_left_keep_the_long_wait(self):
+        run(BASE + '''toRecovery()
+        items[40].cached = true
+        local start = now
+        while S.busy() do run(0.05) end
+        assert(now - start >= S.RECOVER - 1, '400 rows are more than a few: ' .. (now - start))''')
+
+
 class MissingItemTests(unittest.TestCase):
     """Rows of items the server does not have are given up at once, not after S.RECOVER."""
 

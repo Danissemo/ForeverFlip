@@ -16,6 +16,11 @@ S.COOLDOWN = F.Compat.REPLICATE_COOLDOWN
 S.ROWS = 40 -- cheapest auctions kept per item
 S.RECOVER = 30 -- seconds without any item's data arriving before the rows still waiting are given up
 S.RECOVER_MAX = 300 -- the longest the deferred rows are waited for, however slowly the data arrives
+-- A few rows left (S.RECOVER_FEW or fewer) are given up after S.RECOVER_FEW_IDLE seconds without
+-- news: on Retail every full scan ended with about 30 rows whose item data never came, and the
+-- progress stood at 271810 / 271839 for the whole S.RECOVER. Such rows count as unread.
+S.RECOVER_FEW = 100
+S.RECOVER_FEW_IDLE = 5
 S.PREFETCH = 400 -- item ids queued for loading per frame while the answer of a full scan is awaited
 -- Milliseconds a frame for reading the full scan's list: 6 read 200 000 auctions in about a
 -- minute at 60 frames a second; 12 halves that, the frame rate dropping only while the list is read.
@@ -1185,6 +1190,7 @@ recover = function(j, now)
                 end
                 list.pos = list.pos + 1
                 j.waitLeft = j.waitLeft - 1
+                j.recoverNews = now
                 if done() then
                     break
                 end
@@ -1504,15 +1510,37 @@ function S.step()
             end
         end
         j.state, j.recoverUntil, j.recoverCap = "recovering", now + S.RECOVER, now + S.RECOVER_MAX
+        j.recoverNews = now
         return
     end
     if j.state == "recovering" then
         if recover(j, now) then
             beginFinish(j, now)
-        elseif now >= j.recoverUntil or now >= (j.recoverCap or j.recoverUntil) then
-            -- Nothing arrived for S.RECOVER seconds (or S.RECOVER_MAX passed): the rest is unread.
+        elseif
+            now >= j.recoverUntil
+            or now >= (j.recoverCap or j.recoverUntil)
+            or (j.waitLeft or 0) <= S.RECOVER_FEW and now - (j.recoverNews or now) >= S.RECOVER_FEW_IDLE
+        then
+            -- Nothing arrived for S.RECOVER seconds (S.RECOVER_FEW_IDLE when only a few rows are
+            -- left, or S.RECOVER_MAX passed): the rest is unread.
             j.deferred = waitingRows(j)
             j.skipped = j.skipped + #j.deferred
+            local ids = {}
+            for _, id in ipairs(j.waitIds or {}) do
+                if #ids >= 20 then
+                    break
+                end
+                if j.waitBy[id] then
+                    ids[#ids + 1] = tostring(id)
+                end
+            end
+            F.Log.trace(
+                "scan.unread",
+                "%d rows unread after %.0f s waiting, items %s",
+                #j.deferred,
+                now - ((j.recoverCap or now) - S.RECOVER_MAX),
+                table.concat(ids, " ")
+            )
             j.state, j.unreadIndex, j.unread = "unread", 1, {}
         end
         return

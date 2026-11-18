@@ -14,6 +14,10 @@ All notable changes are listed here. The format follows
   price without an answer, so an undercut like 2g 3s 99c ended in "The auction house did not
   confirm the post". The addon now asks the game which prices it takes, undercuts by a whole
   silver on Retail and rounds every commodity post down to it. WoW Forever keeps the copper.
+- **A full scan no longer stands still at its last few rows.** On Retail every scan ended with
+  about 30 auctions whose item data never came, and the progress stood at "271810 / 271839" for
+  30 seconds before the scan finished. When no more than 100 rows wait, 5 seconds without news is
+  enough; they count as unread, never as sales. The trace names the items left unread.
 - **The ignore list no longer shows the game's blocked-action records.** Both were kept in one
   table (`db.blocked`): items you ignore by key, and the "blocked from an action" events by number,
   so those events turned up as nameless rows among the ignored items. They are now apart
@@ -25,6 +29,9 @@ All notable changes are listed here. The format follows
 
 ### Development
 
+- **`devflow install` puts the addon into Retail too**, when a Retail folder is found (`FF_RETAIL`
+  or the usual places), with its own backups beside the WoW Forever ones. A fix made for Retail
+  was installed only into WoW Forever, and the Retail copy had to be updated by hand.
 - **A release waits for GitHub CI to pass, Linux included, before it writes the version.** The tests
   here run on Windows only, and a sync profile test that compared game folders through `os.path`
   failed on the Linux runner: 3.0.0 and 3.1.0 were tagged on red commits and GitHub published
