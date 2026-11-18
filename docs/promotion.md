@@ -22,8 +22,9 @@ push). For each site:
 Where it stands (18 November 2026): all three projects exist, the first two waiting for moderators:
 CurseForge [1814511](https://authors.curseforge.com/#/projects/1814511) (`CF_PROJECT_ID`),
 WoWInterface 27314 (`WOWI_PROJECT_ID`) and Wago `qGYBxzNg` (`WAGO_PROJECT_ID`). 3.3.0 went to
-CurseForge and WoWInterface through their upload forms. The CurseForge token is refused by its API
-(`Error fetching game version info`): make a new one and replace `CF_API_KEY` before the next release.
+all three through their upload forms. Two tokens are refused by their APIs: CurseForge's
+(`Error fetching game version info`) and Wago's (`401 Unauthenticated`). Make new ones and replace
+`CF_API_KEY` and `WAGO_API_TOKEN` before the next release.
 
 A release reads the project IDs when its tag is pushed. A site set up later gets that version
 through **Actions → Upload to the addon sites → Run workflow** (`.github/workflows/catalogs.yml`),
