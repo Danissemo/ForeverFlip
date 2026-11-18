@@ -47,6 +47,33 @@
   scans of your auction house.
 - **Shows what really paid.** **Analytics → By strategy** books every sale against what it cost.
 
+## 📸 Screenshots
+
+<p align="center">
+  <img src=".github/assets/screenshots/deals.png" width="800"
+       alt="Deals → Resale: buy price, sell price, profit, sales a day and the chance to sell for each deal" />
+  <br /><sub><b>Deals.</b> What each lot costs, what it sells for, the profit after the cut, how many sell a day and how sure the sale is.</sub>
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src=".github/assets/screenshots/tooltip.png" alt="Item tooltip with prices, demand, the best time to buy and what you hold" /><br />
+      <sub><b>Tooltip.</b> Vendor and auction prices, sales a day, the best time to buy and what you paid.</sub></td>
+    <td width="50%"><img src=".github/assets/screenshots/professions.png" alt="Professions → Crafting: materials, product, profit per recipe" /><br />
+      <sub><b>Professions.</b> Each recipe you know: materials against the product, and where to sell it.</sub></td>
+  </tr>
+  <tr>
+    <td><img src=".github/assets/screenshots/selling.png" alt="Selling → My items: best place to sell each item from the bags" /><br />
+      <sub><b>Selling.</b> Auction or vendor for each item in the bags, with price, quantity and duration.</sub></td>
+    <td><img src=".github/assets/screenshots/settings.png" alt="Settings → General: minimum profit, money limits, market reset and posting" /><br />
+      <sub><b>Settings.</b> Profit thresholds and money limits, or one click: Careful, Balanced, Aggressive.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src=".github/assets/screenshots/sync-helper.png" width="380" alt="ForeverFlip Sync window: game, sharing, updater and community prices" /><br />
+      <sub><b>ForeverFlip Sync</b> (optional). Community prices, shared scans and automatic updates.</sub></td>
+  </tr>
+</table>
+
 ## ✨ Feature highlights
 
 **Finding deals**

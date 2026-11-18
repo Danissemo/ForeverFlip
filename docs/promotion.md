@@ -58,17 +58,23 @@ Send it personally, one creator at a time, and only to those who cover WoW Forev
 
 ## Shot list (recorded in game)
 
-Short, without other addons' frames, UI scale 1, in English and once in Ukrainian:
+Short, without other addons' frames, UI scale 1. In `.github/assets/screenshots/` and the README:
+
+- [x] Deals → Resale (`deals.png`), Professions → Crafting, Selling → My items, Settings → General,
+      the item tooltip, the Sync helper window.
+
+Still to record (GIFs under 5 MB so GitHub shows them):
 
 1. GIF, 10 s: a scan finishing and the Deals tab filling, sorted by Profit.
 2. GIF, 8 s: **Check all** striking out a stale deal, then a buy with the live check.
-3. Screenshot: Deals with the Profit, Est./day and Sure columns and a tooltip open.
-4. Screenshot: Analytics → By strategy after a week of play.
-5. Screenshot: Settings → Sharing with "N players share scans of this house".
-6. Screenshot: the Sync helper window, signed in.
+3. Screenshot: Analytics → By strategy after a week of play.
+4. Screenshot: Settings → Sharing with "N players share scans of this house" (after the next
+   release).
+5. Screenshot: Professions with a profitable recipe on top, and Selling with a Sure above 0%: the
+   current ones show mostly losses and 0%, honest but not the best first impression.
 
-Save them in `.github/assets/` (GIFs under 5 MB so GitHub shows them) and put 1 and 3 at the top
-of the README.
+GIF 1 goes to the top of the README in place of `deals.png`. The addon sites take the PNGs as
+they are.
 
 ## Measuring
 
