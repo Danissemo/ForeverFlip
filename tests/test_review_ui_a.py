@@ -413,6 +413,23 @@ class DealsRepaintTests(unittest.TestCase):
         UI.dealSort = 7; UI.refreshDeals()
         assert(counted() == 40, 'sorting by Sure needs every deal')''')
 
+    def test_profit_sorts_by_the_profit_shown(self):
+        # Sorted by the expected value (profit times Sure), 271g stood above 580g and the column
+        # looked unsorted.
+        run(BASE + r'''D.list = {}
+        local profits, evs = { 1507, 2465, 271, 580 }, { 437, 419, 122, 104 }
+        for n = 1, 4 do
+            local id = 600 + n
+            addItem(id, 'Potion ' .. n, 10, 'commodity')
+            D.list[n] = { key = 'c:' .. id, id = id, kind = 'commodity', mode = 'flip', qty = 1, cost = 100,
+                profit = profits[n], ev = evs[n], maxUnit = 100, exit = 200, found = now }
+        end
+        UI.show('deals:all'); UI.refreshDeals()
+        UI.dealSort = 5; UI.dealDescending = true; UI.refreshDeals()
+        local got = {}
+        for i, d in ipairs(UI.dealSorted) do got[i] = d.profit end
+        assert(table.concat(got, ',') == '2465,1507,580,271', table.concat(got, ','))''')
+
 
 if __name__ == '__main__':
     unittest.main()

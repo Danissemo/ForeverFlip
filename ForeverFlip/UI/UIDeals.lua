@@ -123,7 +123,7 @@ function UI.createDeals(p)
     headerTip(
         UI.dealTable.headers[5],
         "Profit",
-        "What the deal earns once every unit sells at its Sells at price, after the cut and the deposits. Sorted by what it is worth on average: the profit times Sure, less the deposits lost when it does not sell, so a big profit that rarely sells does not lead the list. The line under the table adds the expected sum."
+        "What the deal earns once every unit sells at its Sells at price, after the cut and the deposits. Sorting by it puts the largest profit first; to weigh it by the chance of a sale, sort by Sure. The line under the table adds the expected sum."
     )
     headerTip(
         UI.dealTable.headers[6],
@@ -1083,9 +1083,9 @@ function UI.refreshDeals()
         elseif field == 4 then
             return unitExit(d)
         elseif field == 5 then
-            -- A resale by what it is worth on average (profit times Sure), so a big profit that
-            -- rarely sells no longer leads the page.
-            return vendor and (d.offer and d.offer.cost or d.cost) or (U.finite(d.ev) and d.ev or d.profit)
+            -- The profit the column shows: sorting by the expected value (profit times Sure) put a
+            -- 271g row above a 580g one, and the column looked unsorted. Sure has its own column.
+            return vendor and (d.offer and d.offer.cost or d.cost) or d.profit
         elseif field == 6 then
             return vendor and (unitExit(d) - unitCost(d)) or estimates[d.key].perDay
         elseif field == 7 and not vendor then

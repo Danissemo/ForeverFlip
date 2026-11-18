@@ -23,6 +23,9 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Profit sorts by profit on Deals.** The column was sorted by the profit times Sure, so 271g
+  stood above 580g and the arrow looked broken. It now sorts by the profit it shows; Sure has its
+  own column for the chance of a sale. The other Profit columns already sorted by what they show.
 - **Posting commodities on Retail goes through.** Retail takes commodity prices in whole silver
   only, and its server drops a copper price without an answer, so an undercut like 2g 3s 99c
   ended in "The auction house did not confirm the post". `C_AuctionHouse.SupportsCopperValues()`
