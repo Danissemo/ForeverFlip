@@ -820,7 +820,7 @@ T.uk = {
     ["%s %d purchases, %d units (%d from lots bought in part, %d whole lots)  ·  paid %s - %s, median %s"] = "%s %d покупок, %d од. (%d з частково купених лотів, %d цілих лотів)  ·  платили %s - %s, медіана %s",
     ["%s %d x %s = %s  ·  %s %s each  ·  %s %s (%d%%), no risk"] = "%s %d x %s = %s  ·  %s %s за шт.  ·  %s %s (%d%%), без ризику",
     ["%s %d x %s = %s  ·  %s at %s each  ·  %s %s (%d%%) after the %d%% cut"] = "%s %d x %s = %s  ·  %s по %s за шт.  ·  %s %s (%d%%) після %d%% комісії",
-    ["%s ~%s a day at %s or more"] = "%s ~%s на день за %s чи дорожче",
+    ["%s %s a day at %s or more"] = "%s %s на день за %s чи дорожче",
     ["Items are bought one auction per click; the next lot is checked ahead."] = "Предмети купуються по одному аукціону за клік; наступний лот перевіряється заздалегідь.",
     ["The vendor price counts the safety margin of Settings → Safety."] = "Ціна торговця враховує запас безпеки з Налаштування → Безпека.",
     ["data %s old"] = "дані віком %s",

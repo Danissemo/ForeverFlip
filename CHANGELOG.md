@@ -30,7 +30,7 @@ All notable changes are listed here. The format follows
 - **Est./day is one number everywhere.** The Deals column showed a figure (10.2) while the
   line under the table and the item tooltip said only "No reliable data" for the same item and
   price. Every page now shows the same estimate in the same format; while it rests on too few
-  scans it is marked "?" and the reason is given, instead of being hidden on some pages.
+  scans it is marked "~" before the number and the reason is given, instead of being hidden on some pages.
 - **Market reset no longer offers items nobody buys.** An item whose price was known for less
   than three days was let through one unit on trust even when its sales were measured well and
   were zero: 5g lots showed 934g profit to relist at an asking price of 990g that never sold

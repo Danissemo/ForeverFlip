@@ -923,10 +923,10 @@ local function tooltipLines(tooltip, data)
             local s = F.Deals.saleability(key, h, at, now)
             -- T32: the sample behind Est./day and Sure; below the thresholds the reason, not a number.
             local q = F.Market.quality(h, at, now)
-            -- The same number as the Deals column (UI.perDayText); "?" and the reason while it rests
+            -- The same number as the Deals column (UI.perDayText); "~" and the reason while it rests
             -- on too few scans.
             if s.known then
-                line("Estimated sales / day", "~" .. UI.perDayText(s.perDay, q))
+                line("Estimated sales / day", UI.perDayText(s.perDay, q))
                 if not q.reliable then
                     tipLine(tooltip, " ", grey(UI.qualityReason(q)))
                 end

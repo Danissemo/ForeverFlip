@@ -578,7 +578,7 @@ local function rate(v)
 end
 
 -- Est./day as every page shows it: the same number (F.Deals.saleability at the price, one
--- formula; thin gear data leans on similar gear), the same format, and "?" after it while the sample is below the T32 thresholds
+-- formula; thin gear data leans on similar gear), the same format, and "~" before it while the sample is below the T32 thresholds
 -- (UI.noReliable says why). A thin sample still gives the best estimate there is (sales over the
 -- hours watched plus M.PRIOR_HOURS, which pulls a few early sales towards 0); hiding it on one page
 -- and showing it on another made two answers to one question.
@@ -586,7 +586,10 @@ function UI.perDayText(perDay, q)
     if not U.finite(perDay) then
         return "-"
     end
-    return rate(perDay) .. (q and not q.reliable and UI.C.warn .. "?|r" or "")
+    if q and not q.reliable then
+        return UI.C.warn .. "~|r" .. rate(perDay)
+    end
+    return rate(perDay)
 end
 
 -- "Est./day 3.2", units a day sold near the price; nil without a figure at the price. The 80%
@@ -687,15 +690,15 @@ local function estimateText(d, estimate, h, price, now)
         return UI.C.dim .. "~" .. value .. "|r"
     end
     local q = h and U.finite(price) and F.Market.quality(h, price, now) or nil
-    local mark = q and not q.reliable and "?" or ""
+    local mark = q and not q.reliable and "~" or ""
     if estimate.stale then
-        return UI.C.dim .. value .. mark .. "|r"
+        return UI.C.dim .. mark .. value .. "|r"
     end
     local e = h and U.finite(price) and F.Market.saleEvidence(h, 0.85 * price)
     if e and e.sure == 0 then
-        return UI.C.warn .. value .. mark .. "|r"
+        return UI.C.warn .. mark .. value .. "|r"
     end
-    return value .. (mark ~= "" and UI.C.warn .. mark .. "|r" or "")
+    return (mark ~= "" and UI.C.warn .. mark .. "|r" or "") .. value
 end
 
 -- The sales an estimate rests on, in words: units, buys, how sure, prices (UI.saleEvidenceLine).
@@ -995,12 +998,12 @@ function UI.dealDetail(d, estimate, h, now)
     end
     local floor = U.finite(d.exit) and math.floor(0.85 * d.exit) or nil
     -- T32: the sample behind Demand and Sure. Below the thresholds the same numbers as the columns,
-    -- marked "?", and the reason under them.
+    -- Demand marked "~" (Sure "?"), and the reason under them.
     local q = U.finite(d.exit) and F.Market.quality(h, d.exit, now) or nil
     local thin = q and not q.reliable and (q.reason ~= "no_data" or (estimate and estimate.known))
     if estimate and estimate.known then
         local line = string.format(
-            L("%s ~%s a day at %s or more"),
+            L("%s %s a day at %s or more"),
             gold("Demand"),
             UI.perDayText(estimate.perDay, thin and q or nil),
             U.money(floor or 0)

@@ -144,9 +144,9 @@ class SaleabilityTableTests(unittest.TestCase):
         assert(UI.dealTable.headers[6]:GetText()=='Est./day')
         local function cell(key) return row(key).cols[5]:GetText() end
         local function plain(key) return (cell(key):gsub('|c%x%x%x%x%x%x%x%x',''):gsub('|r','')) end
-        -- Lots that vanished only (no lot tracked in part): the number, marked "?" as thin data.
-        assert(plain('c:10')=='8.0?','must use history at resale exit, not purchase or cached rate: '..cell('c:10'))
-        assert(plain('c:20')=='0?','observed zero is known')
+        -- Lots that vanished only (no lot tracked in part): the number, marked "~" as thin data.
+        assert(plain('c:10')=='~8.0','must use history at resale exit, not purchase or cached rate: '..cell('c:10'))
+        assert(plain('c:20')=='~0','observed zero is known')
         assert(cell('c:30')=='-','unknown is not zero')
         assert(cell('c:40')=='vendor','vendor sale does not need AH demand')
         assert(cell('c:50'):find('|cff999999') and cell('c:50'):find('2.0',1,true))
@@ -154,11 +154,11 @@ class SaleabilityTableTests(unittest.TestCase):
 
     def test_the_detail_shows_the_columns_est_per_day_even_on_thin_data(self):
         # The column showed 10.2 while the line under the table and the tooltip said only "No
-        # reliable data": one question, two answers. Now the same number, marked "?", and why.
+        # reliable data": one question, two answers. Now the same number, marked "~", and why.
         runtime().execute(SALEABILITY + '''
         UI.selected='c:10';UI.refreshDeals()
         local detail=UI.dealText:GetText():gsub('|c%x%x%x%x%x%x%x%x',''):gsub('|r','')
-        assert(detail:find('Demand ~8.0? a day',1,true),detail)
+        assert(detail:find('Demand ~8.0 a day',1,true),detail)
         assert(detail:find('No reliable data',1,true),detail)
         ''')
 

@@ -42,7 +42,7 @@ class CheckLinesTests(unittest.TestCase):
         return table.concat(UI.checkLines(c), ' ## ')'''))
         # Sure and Est./day are shown with a question mark (a guess from too few pairs): the
         # same numbers as the Deals columns.
-        self.assertRegex(text, r'Sure \d+%\?, about [\d.]+\? a day sell')
+        self.assertRegex(text, r'Sure \d+%\?, about ~[\d.]+ a day sell')
         self.assertIn('No reliable data: too few scan pairs compared yet', text)
 
     def test_legacy_sales_say_an_older_version_measured_them(self):
@@ -66,8 +66,8 @@ class TooltipTests(unittest.TestCase):
         text = clean(run(BASE + '''fullScan()
         local h = market.history['c:10']
         h.sales = nil; M.recordSales(h, {[100] = 2}, 900, now); D.sureCache = {}''' + self.TIP))
-        # The same Est./day as the Deals column, marked "?", and why it is thin.
-        self.assertRegex(text, r'Estimated sales / day = ~[\d.]+\?')
+        # The same Est./day as the Deals column, marked "~", and why it is thin.
+        self.assertRegex(text, r'Estimated sales / day = ~[\d.]+')
         self.assertIn('too few scan pairs compared yet', text)
         self.assertNotIn('Sure to sell one', text)
 
