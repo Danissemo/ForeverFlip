@@ -51,6 +51,10 @@ All notable changes are listed here. The format follows
   estimate now counts the item's other endings, or gear of about its price, for the hours the
   estimate adds to its own; the more hours the item is watched, the less they count. The Deals
   column, the deal detail, Check Sure, the Sell page and the tooltip show that one figure.
+- **Fated Fortune Cards (Retail).** The unread card showed a 23g merchant price, but no merchant buys
+  it: it is no longer offered to one and goes to the auction house. Read cards are soulbound, and
+  Sell all left every bound item alone, so they had to be sold one by one. They are worth something
+  only to a merchant, so Sell all now takes them.
 - **Gear I can't use follows Retail's rules.** On Retail it used the Classic proficiencies (no
   polearms for druids, and Monks, Death Knights, Demon Hunters and Evokers were never checked). Now a
   piece counts only when no specialization of your class could wear it: a respec makes the other main

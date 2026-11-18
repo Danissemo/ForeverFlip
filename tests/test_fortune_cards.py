@@ -1,0 +1,37 @@
+"""Retail's Fated Fortune Cards: the unread card (194829) is priced by the item data but no merchant
+buys it, so it is never offered to one; a read card is soulbound and good only to a merchant, so Sell
+all takes it although it is bound."""
+
+import unittest
+
+from test_addon import run
+import test_audit
+
+CARDS = test_audit.BASE + '''local T = F.Trade
+F.db.settings.vendorMargin = 0
+addItem(194829, 'Fated Fortune Card', 230000, 'item'); addItem(199118, 'Fated Fortune Card', 10000, 'item')
+addItem(199132, 'Fated Fortune Card', 10000, 'item'); addItem(91, 'Bound Trinket', 5000, 'item')
+putBag(0, 1, 194829, 3); putBag(0, 2, 199118, 1); putBag(0, 3, 199132, 1); putBag(0, 4, 91, 1)
+bags[0][2].isBound = true; bags[0][3].isBound = true; bags[0][4].isBound = true
+'''
+
+
+class FortuneCardTests(unittest.TestCase):
+    def test_the_unread_card_is_never_offered_to_a_merchant(self):
+        run(CARDS + '''assert(F.AH.vendorPrice(194829) == nil, 'no merchant buys it')
+        for _, v in ipairs(T.vendorSellList()) do assert(v.id ~= 194829, 'not in Sell all') end''')
+
+    def test_read_cards_are_sold_although_bound(self):
+        run(CARDS + '''MerchantFrame:Show(); fire('MERCHANT_SHOW')
+        local ids = {}
+        for _, v in ipairs(T.vendorSellList()) do ids[#ids + 1] = v.id end
+        table.sort(ids)
+        assert(table.concat(ids, ',') == '199118,199132', table.concat(ids, ','))''')
+
+    def test_only_cards_are_junk(self):
+        run(CARDS + '''assert(F.AH.vendorJunk(199114) and F.AH.vendorJunk(199170))
+        assert(not F.AH.vendorJunk(199115) and not F.AH.vendorJunk(194829) and not F.AH.vendorJunk(91))''')
+
+
+if __name__ == '__main__':
+    unittest.main()

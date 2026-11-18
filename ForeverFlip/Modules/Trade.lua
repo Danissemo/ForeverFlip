@@ -3437,8 +3437,10 @@ function T.vendorSellList()
             if stock[b] then
                 eligible = price * p.qty >= p.cost
             else
-                -- An item both routes pay for waits for the player's choice (T.sellWay).
-                eligible = not b.bound and (T.sellWay(b.key, b.id, counts[b.key]) == "vendor" or vendorMarked(b.key))
+                -- An item both routes pay for waits for the player's choice (T.sellWay). A bound
+                -- item stays, unless a merchant is all it is good for (AH.vendorJunk: read cards).
+                eligible = F.AH.vendorJunk(b.id)
+                    or not b.bound and (T.sellWay(b.key, b.id, counts[b.key]) == "vendor" or vendorMarked(b.key))
             end
             if eligible then
                 out[#out + 1] = {

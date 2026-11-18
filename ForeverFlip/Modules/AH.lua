@@ -364,6 +364,21 @@ function A.clientVendorPrice(id)
     return price > 0 and price or nil
 end
 
+-- Items the item data prices but no merchant buys, whatever the client says. Retail's unread Fated
+-- Fortune Card (194829) shows a 23g sell price and is refused: it goes to the auction house.
+A.NO_MERCHANT = { [194829] = true }
+-- Bound items a merchant is the only use for: Sell all takes them although they are bound. The
+-- read Fated Fortune Cards (a card from 194829 once flipped): soulbound, a merchant pays for them.
+A.VENDOR_JUNK = {}
+for id = 199114, 199170 do
+    if id ~= 199115 and id ~= 199122 and id ~= 199128 then
+        A.VENDOR_JUNK[id] = true
+    end
+end
+function A.vendorJunk(id)
+    return A.VENDOR_JUNK[id] == true
+end
+
 -- What a merchant pays for one, and how it is known:
 --  "client"   the client's item data (the game's own "Sell Price" line): what merchants pay. Of 115
 --             items sold by hand and read back from the buyback list (17 November), 113 were paid
@@ -375,6 +390,9 @@ end
 --             default), for deals.
 -- nil when the vendor does not buy the item or its data has not loaded.
 function A.vendorPrice(id, raw)
+    if A.NO_MERCHANT[id] then
+        return nil, "seen"
+    end
     local seen = F.db and F.db.vendorSeen and F.db.vendorSeen[id]
     local price = A.clientVendorPrice(id)
     if type(seen) == "table" and U.finite(seen.p) and (not price or (seen.p ~= price and A.kindOf(id) ~= "gear")) then
