@@ -1391,7 +1391,10 @@ function A.readBags(merchant)
                 end
                 local key, kind = A.keyFor(info.itemID, info.hyperlink)
                 if valid and not key then
-                    kind = kindOfBagItem(info.itemID, loc)
+                    -- Bound items the auction house never sees (read Fated Fortune Cards) have no
+                    -- item key info and no commodity status: a merchant is their only use, and an
+                    -- unknown kind left them out of Sell all.
+                    kind = A.VENDOR_JUNK[info.itemID] and "item" or kindOfBagItem(info.itemID, loc)
                     if kind then
                         guesses[info.itemID] = kind
                         key = A.keyFor(info.itemID, info.hyperlink)

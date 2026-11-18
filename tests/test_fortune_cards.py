@@ -28,6 +28,19 @@ class FortuneCardTests(unittest.TestCase):
         table.sort(ids)
         assert(table.concat(ids, ',') == '199118,199132', table.concat(ids, ','))''')
 
+    def test_a_read_card_the_auction_house_does_not_know_is_still_sold(self):
+        run(CARDS + '''local keyInfo = C_AuctionHouse.GetItemKeyInfo
+        C_AuctionHouse.GetItemKeyInfo = function(key)
+            if key.itemID == 199121 then return nil end
+            return keyInfo(key)
+        end
+        C_AuctionHouse.GetItemCommodityStatus = function() return 0 end
+        addItem(199121, 'Fated Fortune Card', 10000, 'item'); putBag(1, 1, 199121, 1); bags[1][1].isBound = true
+        MerchantFrame:Show(); fire('MERCHANT_SHOW')
+        local found
+        for _, v in ipairs(T.vendorSellList()) do found = found or v.id == 199121 end
+        assert(found, 'the card is read from the bag and sold')''')
+
     def test_only_cards_are_junk(self):
         run(CARDS + '''assert(F.AH.vendorJunk(199114) and F.AH.vendorJunk(199170))
         assert(not F.AH.vendorJunk(199115) and not F.AH.vendorJunk(194829) and not F.AH.vendorJunk(91))''')
