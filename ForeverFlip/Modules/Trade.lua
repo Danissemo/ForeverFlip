@@ -2334,6 +2334,27 @@ local function postFirst(list, quantity)
     return false, "nothing_to_post"
 end
 
+-- Whether a click on the posting buttons would post: some item of the list has a price to post at
+-- (a check of the last 5 minutes, a fresh full scan, or no other seller). Otherwise the click only
+-- starts the price searches (postFirst's read-ahead) and the next click posts: the game takes a post
+-- only from a click, so it cannot follow on its own when the prices come. The buttons say which.
+function T.postReady(list)
+    local last = F.Scan.last
+    local scanFresh = last
+        and type(last.groups) == "table"
+        and last.scope == F.Engine.scope()
+        and clock() - (last.at or 0) <= 300
+    for _, item in ipairs(list) do
+        if not T.held[item.key] then
+            local check = T.prices[item.key]
+            if scanFresh or (check and clock() - check.at <= 300) or T.noSellers(item.key) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 -- The rank of the page's rows as the player sorted them (UI.order through Engine.screen), or nil.
 local function shownOrder(name)
     local order = F.Engine.screen().order

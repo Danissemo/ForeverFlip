@@ -48,7 +48,7 @@ responsive while parsing and network work run in the background; the ring at the
 while the helper works. Reading the game's saved file takes a few seconds even when it holds eight
 full scans: only the scans table is read, and scans already shared are not parsed again.
 
-**Keep syncing in the tray when closed** (under Prices, off by default): closing the window then
+**Keep running in the tray** (under Prices, on by default): closing the window then
 hides it into the notification area, and the helper goes on syncing prices and sharing new scans.
 Click the tray icon to open the window again; right-click it for **Sync now** and **Quit**.
 
@@ -72,12 +72,13 @@ not proof of an upload. See the [3.1.0 release checks](release-3.1.0-validation.
 ### Addon updates and beta testing
 
 The helper also keeps the ForeverFlip addon up to date from the
-[releases](https://github.com/Danissemo/ForeverFlip/releases). The **Addon** line of the window shows
-the installed version and whether a newer one is out.
+[releases](https://github.com/Danissemo/ForeverFlip/releases). The **Updater** section of the window
+shows the installed addon and helper versions and whether a newer one is out.
 
-- **Update automatically** (on by default): a newer release is installed as soon as it is found, at
-  start and every 6 hours. Off, the helper only announces it, and **Update now** installs it.
-- **Beta tester** (off by default): pre-releases (versions with a `-beta.N` suffix) are offered too. Betas bring new
+- **Install automatically** (on by default): a newer release is installed as soon as it is found, at
+  start and every 6 hours. Off, the helper only announces it, and **Install update** installs it.
+  With nothing to install the same button reads **Check now** and looks again at once.
+- **Beta versions** (off by default): pre-releases (versions with a `-beta.N` suffix) are offered too. Betas bring new
   features first and may have rough edges; see [the manual testing guide](testing.md) for what to
   check and how to report. Ticking it looks for a beta at once. Unticking it never downgrades: you
   keep the beta until a release newer than it comes out.

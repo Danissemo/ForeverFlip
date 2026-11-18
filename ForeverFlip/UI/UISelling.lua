@@ -874,7 +874,10 @@ function UI.refreshSell()
         if item then
             r.item, r.key, r.link = item, item.key, item.link
             r.icon:SetTexture(icon(item.id))
-            r.name:SetText(item.link or item.name or nameOf(item.key))
+            -- nameOf: a bag link named "[]" (the item not loaded, as during a scan) showed as "|...".
+            local linked = item.link and U.linkName(item.link) ~= "" and item.link
+            local named = type(item.name) == "string" and item.name ~= "" and item.name
+            r.name:SetText(linked or named or nameOf(item.key, item.link))
             r.cols[1]:SetText(item.away and "-" or item.count)
             local p = item.position
             -- Best is the route alone, Sells at one unit's price on it (both routes while the

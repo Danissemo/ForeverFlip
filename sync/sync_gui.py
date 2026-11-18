@@ -53,6 +53,7 @@ BUTTON = '#EBF2FF'
 BUTTON_HOVER = '#E2EDFF'
 BUTTON_LINE = '#ADC0E8'
 TRACK_OFF = '#BCCBE5'
+SUBTITLE = 'Community prices and updates for WoW Forever'
 TONES = {'ok': '#16A34A', 'busy': ACCENT, 'warn': '#F08C1A', 'error': '#DC2626', 'idle': FAINT}
 
 
@@ -149,15 +150,15 @@ def fonts(root):
     families = set(tkfont.families(root))
     base = 'Segoe UI' if 'Segoe UI' in families else 'TkDefaultFont'
     return {
-        'title': (base, 18, 'bold'),
-        'subtitle': (base, 10),
+        'title': (base, 16, 'bold'),
+        'subtitle': (base, 9),
         'status': (base, 10),
-        'label': (base, 10, 'bold'),
-        'body': (base, 11),
-        'hint': (base, 10),
+        'label': (base, 9, 'bold'),
+        'body': (base, 10),
+        'hint': (base, 9),
         'button': (base, 10),
         'switch': (base, 10),
-        'foot': (base, 10),
+        'foot': (base, 9),
         'code': ('Consolas', 18, 'bold'),
         'log': ('Consolas', 9),
     }
@@ -230,6 +231,18 @@ def icon(canvas, name, cx, cy, s, color, bg=TILE):
         canvas.create_oval(*P(2.5, 2.5), *P(21.5, 21.5), outline=color, width=w)
         canvas.create_line(*P(12, 10.5), *P(12, 17), fill=color, width=w * 1.2, capstyle='round')
         canvas.create_oval(*P(11, 6.4), *P(13, 8.4), fill=color, outline=color)
+    elif name == 'update':
+        # two arrows chasing each other round a circle
+        for start in (20, 200):
+            pts = []
+            for i in range(9):
+                a = math.radians(start + 130 * i / 8)
+                pts += [cx + 7.5 * u * math.cos(a), cy - 7.5 * u * math.sin(a)]
+            canvas.create_line(*pts, fill=color, width=w, smooth=True, capstyle='round', arrow='last',
+                               arrowshape=(4 * u, 4.5 * u, 2.6 * u))
+    elif name == 'caret':
+        canvas.create_line(*P(6, 9), *P(12, 15), *P(18, 9), fill=color, width=w * 1.2, capstyle='round',
+                           joinstyle='round')
     elif name == 'chevron':
         canvas.create_line(*P(9, 5), *P(16, 12), *P(9, 19), fill=color, width=w * 1.2, capstyle='round',
                            joinstyle='round')
@@ -424,6 +437,37 @@ class Switch(Widget, tk.Frame):
         self.label.configure(cursor=cursor)
 
 
+class Picker(Widget, tk.Canvas):
+    """A rounded field with a caret; a click calls `open(self)`, which posts a menu under it."""
+
+    def __init__(self, master, font, scale, open, bg=CARD):
+        self.text, self.font, self.s, self.open = '', font, scale, open
+        self.hover = False
+        tk.Canvas.__init__(self, master, bg=bg, highlightthickness=0, bd=0, height=scale(32), cursor='hand2')
+        self.bind('<Enter>', lambda _: self.set_hover(True))
+        self.bind('<Leave>', lambda _: self.set_hover(False))
+        self.bind('<ButtonRelease-1>', lambda _: not self.disabled and self.open(self))
+        self.bind('<Configure>', lambda _: self.redraw())
+
+    def set_hover(self, value):
+        self.hover = value
+        self.redraw()
+
+    def set(self, text):
+        self.text = text
+        self.redraw()
+
+    def redraw(self):
+        s, w, h = self.s, max(self.winfo_width(), self.s(200)), self.s(32)
+        self.delete('all')
+        line = '#CFD8E9' if self.disabled else ACCENT if self.hover else BUTTON_LINE
+        rounded(self, 1, 1, w - 1, h - 1, s(7), fill='#F7FAFF' if not self.disabled else '#F1F4FA', outline=line)
+        self.create_text(s(12), h / 2, text=self.text, font=self.font, fill=FAINT if self.disabled else TEXT,
+                         anchor='w', width=w - s(44))
+        icon(self, 'caret', w - s(18), h / 2, s(16), FAINT if self.disabled else ACCENT)
+        tk.Canvas.configure(self, cursor='arrow' if self.disabled else 'hand2')
+
+
 class LinkButton(Widget, tk.Label):
     def __init__(self, master, text, command, font, bg):
         tk.Label.__init__(self, master, text=text, font=font, bg=bg, fg=ACCENT, cursor='hand2', bd=0)
@@ -470,6 +514,12 @@ def tray_icons(folder=ASSETS):
     return [folder/'app-icon.ico', folder/'2x'/'app-icon.png', folder/'1x'/'app-icon.png']
 
 
+def community_lines(lines):
+    """The exchange's lines for the window, without the download line: the Prices line and the
+    footer already say when it came and that /reload reads it."""
+    return '\n'.join(line for line in lines if not line.startswith('Downloaded:'))
+
+
 def shorten(path: str, limit: int = 46) -> str:
     return path if len(path) <= limit else path[:16] + '…' + path[-(limit - 17):]
 
@@ -502,8 +552,7 @@ class SyncWindow:
         self.share = tk.BooleanVar(value=not args.download_only and (args.upload or bool(config.get('upload', False))))
         self.status = tk.StringVar(value='Finding your Forever installation…')
         self.last_sync = tk.StringVar(value='Not synced yet')
-        self.path = tk.StringVar()
-        self.path_text = tk.StringVar(value='Looking for WoW Forever…')
+        self.path_text = tk.StringVar(value='')
         self.share_hint = tk.StringVar()
         self.code_text = tk.StringVar()
         self.log_open = False
@@ -527,9 +576,9 @@ class SyncWindow:
             self.icon_image = self.icon_images[0]
         except tk.TclError:
             pass
-        self.width = s(664)
-        root.geometry(f'{self.width}x{s(600)}')
-        root.minsize(s(620), s(400))
+        self.width = s(560)
+        root.geometry(f'{self.width}x{s(560)}')
+        root.minsize(s(520), s(400))
 
         # The background: gradient and waves; the header and the card are drawn on it.
         self.bg = tk.Canvas(root, highlightthickness=0, bd=0)
@@ -539,90 +588,89 @@ class SyncWindow:
         self.progress = ActivityBar(self.bg, hexcolor(TOP))
         self.progress_item = self.bg.create_window(0, 0, anchor='nw', window=self.progress)
 
-        # The card's content: a white frame inside the rounded card.
+        # The card's content: a white frame inside the rounded card, one section after another.
         self.inner = tk.Frame(self.bg, bg=CARD)
         self.inner_item = self.bg.create_window(0, 0, anchor='nw', window=self.inner)
-        self.inner.columnconfigure(3, weight=1)
         self.inner.bind('<Configure>', lambda _: self.request_layout())
         self.row_count = 0
+        wrap = s(450)
 
+        # Game: one picker for every installation (each its own profile: market, state, addon backups).
         game = self.row('game', 'Game')
-        line = tk.Frame(game, bg=CARD)
-        line.pack(anchor='w', fill='x')
-        tk.Label(line, textvariable=self.path_text, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(side='left')
-        self.locations = ttk.Combobox(line, textvariable=self.path, state='readonly', width=40)
-        self.locations.bind('<<ComboboxSelected>>', lambda _: self.select_game(self.path.get()))
-        self.choose_button = RoundButton(self.actions, 'Change', self.choose_game, f['button'], s, accent=True,
-                                         width=s(106), images=img)
-        self.choose_button.pack(side='right')
-        # Several installations: each its own profile (its own market, state and addon backups).
-        installs = tk.Frame(game, bg=CARD)
-        installs.pack(anchor='w', pady=(s(8), 0))
-        self.installs_box = ttk.Combobox(installs, state='readonly', width=44)
-        self.installs_box.bind('<<ComboboxSelected>>', lambda _: self.switch_install(self.installs_box.current()))
-        self.installs_box.pack(side='left')
-        self.add_link = LinkButton(installs, '+', self.add_install, f['button'], CARD)
-        self.add_link.pack(side='left', padx=(s(10), 0))
-        self.remove_link = LinkButton(installs, '−', self.remove_install, f['button'], CARD)
-        self.remove_link.pack(side='left', padx=(s(8), 0))
+        self.candidates = []  # several installations found and none chosen yet
+        self.picker = Picker(game, f['body'], s, self.open_game_menu)
+        self.picker.pack(fill='x')
+        self.picker.set('Looking for WoW Forever…')
+        self.hint(game, self.path_text, wrap)
+        self.game_menu = tk.Menu(root, tearoff=0, font=f['body'])
 
-        github = self.row('github', 'GitHub')
-        tk.Label(github, textvariable=self.account_text, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(anchor='w')
-        self.code_box = tk.Frame(github, bg=TILE, padx=s(14), pady=s(8))
+        # Sharing: the GitHub account and the switch that needs it.
+        sharing = self.row('share', 'Sharing')
+        self.login_button = RoundButton(self.actions, 'Sign in with GitHub', self.sign_in_or_out, f['button'], s,
+                                        width=s(96), images=img)
+        self.login_button.pack(side='right')
+        tk.Label(sharing, textvariable=self.account_text, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(anchor='w')
+        self.code_box = tk.Frame(sharing, bg=TILE, padx=s(14), pady=s(8))
         tk.Label(self.code_box, textvariable=self.code_text, font=f['code'], bg=TILE, fg=ACCENT).pack(anchor='w')
         tk.Label(self.code_box, text='Copied. Paste it on the page that opened and approve ForeverFlip Sync.',
-                 font=f['hint'], bg=TILE, fg=HINT, justify='left', wraplength=s(300)).pack(anchor='w')
-        self.login_button = RoundButton(self.actions, 'Sign in with GitHub', self.sign_in_or_out, f['button'], s,
-                                        width=s(106), images=img)
-        self.login_button.pack(side='right')
+                 font=f['hint'], bg=TILE, fg=HINT, justify='left', wraplength=wrap - s(28)).pack(anchor='w')
+        self.share_button = Switch(sharing, 'Share my full scans', self.share, self.options_changed, f['switch'], s,
+                                   images=img)
+        self.share_button.pack(anchor='w', pady=(s(8), 0))
+        self.hint(sharing, self.share_hint, wrap)
 
-        sharing = self.row('share', 'Sharing')
-        self.share_button = Switch(sharing, 'Share my full scans', self.share, self.options_changed, f['body'], s, images=img)
-        self.share_button.pack(anchor='w')
-        tk.Label(sharing, textvariable=self.share_hint, font=f['hint'], bg=CARD, fg=HINT, anchor='w',
-                 justify='left', wraplength=s(320)).pack(anchor='w', pady=(s(6), 0))
-
-        addon = self.row('puzzle', 'Addon')
-        tk.Label(addon, textvariable=self.addon_text, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(anchor='w')
-        toggles = tk.Frame(addon, bg=CARD)
-        toggles.pack(anchor='w', pady=(s(10), 0))
-        Switch(toggles, 'Install updates', self.update_auto, self.addon_options_changed, f['switch'], s, images=img).pack(side='left')
-        Switch(toggles, 'Beta tester', self.beta, self.beta_changed, f['switch'], s, images=img).pack(
-            side='left', padx=(s(28), 0))
-        helper = tk.Frame(addon, bg=CARD)
-        helper.pack(anchor='w', pady=(s(8), 0))
-        tk.Label(helper, textvariable=self.helper_text, font=f['hint'], bg=CARD, fg=HINT, anchor='w').pack(side='left')
-        self.helper_link = LinkButton(helper, '', self.helper_action, f['hint'], CARD)
-        self.update_button = RoundButton(self.actions, 'Update', lambda: self.start_update(install=True), f['button'],
-                                         s, width=s(106), images=img)
+        # Updater: the addon and this app, side by side, and how they are kept current.
+        updater = self.row('update', 'Updater')
+        self.update_button = RoundButton(self.actions, 'Check now', self.update_pressed, f['button'], s,
+                                         width=s(96), images=img)
         self.update_button.pack(side='right')
         self.update_button.state(['disabled'])
+        versions = tk.Frame(updater, bg=CARD)
+        versions.pack(anchor='w', fill='x')
+        for r, (name, var) in enumerate((('Addon', self.addon_text), ('Sync app', self.helper_text))):
+            gap = (0 if r == 0 else s(2), 0)
+            tk.Label(versions, text=name, font=f['hint'], bg=CARD, fg=FAINT, anchor='w').grid(
+                row=r, column=0, sticky='w', padx=(0, s(12)), pady=gap)
+            cell = tk.Frame(versions, bg=CARD)
+            cell.grid(row=r, column=1, sticky='w', pady=gap)
+            tk.Label(cell, textvariable=var, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(side='left')
+            if r == 1:
+                self.helper_link = LinkButton(cell, '', self.helper_action, f['body'], CARD)
+        toggles = tk.Frame(updater, bg=CARD)
+        toggles.pack(anchor='w', pady=(s(8), 0))
+        Switch(toggles, 'Install automatically', self.update_auto, self.addon_options_changed, f['switch'], s,
+               images=img).pack(side='left')
+        Switch(toggles, 'Beta versions', self.beta, self.beta_changed, f['switch'], s, images=img).pack(
+            side='left', padx=(s(20), 0))
 
+        # Prices: the community exchange.
         prices = self.row('database', 'Prices', last=True)
-        tk.Label(prices, textvariable=self.last_sync, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(anchor='w')
-        self.community_text = tk.StringVar(value='')
-        tk.Label(prices, textvariable=self.community_text, font=f['hint'], bg=CARD, fg=HINT, anchor='w',
-                 justify='left', wraplength=s(320)).pack(anchor='w', pady=(s(4), 0))
-        self.auto_button = Switch(prices, 'Sync automatically', self.auto, self.options_changed, f['switch'], s, images=img)
-        self.auto_button.pack(anchor='w', pady=(s(10), 0))
-        self.tray_button = Switch(prices, 'Keep syncing in the tray when closed', self.tray_on, self.tray_changed,
-                                  f['switch'], s, images=img)
-        self.tray_button.pack(anchor='w', pady=(s(8), 0))
-        if not tray.available():
-            self.tray_button.state(['disabled'])
         self.sync_button = RoundButton(self.actions, 'Sync now', lambda: self.start_sync(force=True), f['button'], s,
-                                       width=s(106), images=img)
+                                       width=s(96), images=img)
         self.sync_button.pack(side='right')
         self.sync_button.state(['disabled'])
+        tk.Label(prices, textvariable=self.last_sync, font=f['body'], bg=CARD, fg=TEXT, anchor='w').pack(anchor='w')
+        self.community_text = tk.StringVar(value='')
+        toggles = tk.Frame(prices, bg=CARD)
+        toggles.pack(anchor='w', pady=(s(8), 0))
+        self.hint(prices, self.community_text, wrap, before=toggles)
+        self.auto_button = Switch(toggles, 'Sync automatically', self.auto, self.options_changed, f['switch'], s,
+                                  images=img)
+        self.auto_button.pack(side='left')
+        self.tray_button = Switch(toggles, 'Keep running in the tray', self.tray_on, self.tray_changed,
+                                  f['switch'], s, images=img)
+        self.tray_button.pack(side='left', padx=(s(20), 0))
+        if not tray.available():
+            self.tray_button.state(['disabled'])
 
         # Footer: the in-game step, and the activity log behind a link.
         self.foot = tk.Frame(self.bg, bg=hexcolor(BOTTOM))
         self.foot_item = self.bg.create_window(0, 0, anchor='nw', window=self.foot)
         info = self.picture(self.foot, 'info', s(22), hexcolor(BOTTOM),
                             lambda c, n: icon(c, 'info', n / 2, n / 2, n, ACCENT, hexcolor(BOTTOM)))
-        info.pack(side='left', padx=(0, s(8)))
-        tk.Label(self.foot, text='After a sync, type /reload in game to read the new prices.', font=f['foot'],
-                 bg=hexcolor(BOTTOM), fg=TEXT).pack(side='left')
+        info.pack(side='left', padx=(0, s(6)))
+        tk.Label(self.foot, text='/reload in game to read new prices', font=f['foot'],
+                 bg=hexcolor(BOTTOM), fg=HINT).pack(side='left')
         self.chevron = self.picture(self.foot, 'chevron-right', s(16), hexcolor(BOTTOM),
                                     lambda c, n: icon(c, 'chevron', n / 2, n / 2, n, ACCENT, hexcolor(BOTTOM)),
                                     cursor='hand2')
@@ -654,32 +702,46 @@ class SyncWindow:
     # --- Drawing ----------------------------------------------------------------------------------
 
     def row(self, glyph, title, last=False):
-        """A settings row: icon tile, title, a vertical rule, a content frame (returned), self.actions."""
+        """A section: icon tile, title and the action button on one line (self.actions), the content
+        frame (returned) under the title, across the full width."""
         s, f = self.s, self.f
-        r = 2 * self.row_count
         self.row_count += 1
-        pad = (s(14), s(14))
-        badge = {'game': 'badge-game', 'github': 'badge-github', 'share': 'badge-sharing', 'puzzle': 'badge-addon',
-                 'database': 'badge-prices'}[glyph]
-        tile = self.picture(self.inner, badge, s(32), CARD, lambda c, n: (
+        # 'update' has no badge in the kit: drawn, so the tile matches its meaning.
+        badge = {'game': 'badge-game', 'share': 'badge-sharing', 'database': 'badge-prices'}.get(glyph, '')
+        section = tk.Frame(self.inner, bg=CARD)
+        section.pack(fill='x', padx=(s(14), s(14)), pady=(s(10), s(10)))
+        section.columnconfigure(1, weight=1)
+        tile = self.picture(section, badge, s(32), CARD, lambda c, n: (
             rounded(c, 0, 0, n, n, s(8), fill=TILE, outline=TILE), icon(c, glyph, n / 2, n / 2, s(22), ACCENT, TILE)))
-        tile.grid(row=r, column=0, sticky='nw', padx=(s(17), s(13)), pady=pad)
-        tk.Label(self.inner, text=title.upper(), font=f['label'], bg=CARD, fg=NAVY, anchor='w', width=8).grid(
-            row=r, column=1, sticky='nw', pady=(s(19), s(14)))
-        rule = tk.Frame(self.inner, bg=DIVIDER, width=1)
-        rule.grid(row=r, column=2, sticky='ns', padx=(s(8), s(20)), pady=pad)
-        content = tk.Frame(self.inner, bg=CARD)
-        content.grid(row=r, column=3, sticky='ew', pady=(s(18), s(14)))
-        self.actions = tk.Frame(self.inner, bg=CARD)
-        self.actions.grid(row=r, column=4, sticky='ne', padx=(s(12), s(14)), pady=(s(14), s(14)))
+        tile.grid(row=0, column=0, sticky='w', padx=(0, s(12)))
+        tk.Label(section, text=title.upper(), font=f['label'], bg=CARD, fg=NAVY, anchor='w').grid(
+            row=0, column=1, sticky='w')
+        self.actions = tk.Frame(section, bg=CARD)
+        self.actions.grid(row=0, column=2, sticky='e')
+        content = tk.Frame(section, bg=CARD)
+        content.grid(row=1, column=1, columnspan=2, sticky='ew', pady=(s(4), 0))
         if not last:
-            tk.Frame(self.inner, bg=DIVIDER, height=1).grid(row=r + 1, column=0, columnspan=5, sticky='ew',
-                                                            padx=(s(17), s(14)))
+            tk.Frame(self.inner, bg=DIVIDER, height=1).pack(fill='x', padx=(s(14), s(14)))
         return content
+
+    def hint(self, parent, variable, wrap, before=None):
+        """A small grey note that takes room only while it has something to say."""
+        label = tk.Label(parent, textvariable=variable, font=self.f['hint'], bg=CARD, fg=HINT, anchor='w',
+                         justify='left', wraplength=wrap)
+        place = dict(anchor='w', pady=(self.s(3), 0), **({'before': before} if before else {}))
+
+        def show(*_):
+            if variable.get():
+                label.pack(**place)
+            else:
+                label.pack_forget()
+        variable.trace_add('write', show)
+        show()
+        return label
 
     def picture(self, parent, name, size, bg, draw, cursor=''):
         """A canvas showing one of the kit's images, or `draw(canvas, size)` when the image is missing."""
-        image = self.img.get(name)
+        image = self.img.get(name) if name else None
         w, h = (image.width(), image.height()) if image else (size, size)
         canvas = tk.Canvas(parent, width=w, height=h, bg=bg, highlightthickness=0, bd=0, cursor=cursor)
         if image:
@@ -708,14 +770,14 @@ class SyncWindow:
             c.create_polygon(pts, smooth=True, splinesteps=24, fill=WAVE2, outline='', tags='backdrop')
         c.tag_lower('backdrop')
 
-    # The header of the kit: a 48 px app icon at (27, 24), the title 18 px to its right.
-    HEADER_X, HEADER_Y, HEADER_ICON, HEADER_GAP = 27, 24, 48, 18
+    # The header: the kit's 48 px app icon, the title 14 px to its right.
+    HEADER_X, HEADER_Y, HEADER_ICON, HEADER_GAP = 22, 16, 48, 14
 
     def title_end(self):
         s, f = self.s, self.f
         return s(self.HEADER_X + self.HEADER_ICON + self.HEADER_GAP) + max(
             measure(f['title'], 'ForeverFlip Sync'),
-            measure(f['subtitle'], 'Community prices and addon updates for WoW Forever'))
+            measure(f['subtitle'], SUBTITLE))
 
     def draw_header(self, w):
         c, s, f = self.bg, self.s, self.f
@@ -728,8 +790,8 @@ class SyncWindow:
             c.create_image(x + size / 2, y + size / 2, image=logo, anchor='center', tags='header')
         else:
             self.draw_app_icon(x, y, size)
-        c.create_text(tx, y - s(6), text='ForeverFlip Sync', font=f['title'], fill=NAVY, anchor='nw', tags='header')
-        c.create_text(tx, y + s(31), text='Community prices and addon updates for WoW Forever', font=f['subtitle'],
+        c.create_text(tx, y + s(1), text='ForeverFlip Sync', font=f['title'], fill=NAVY, anchor='nw', tags='header')
+        c.create_text(tx, y + s(29), text=SUBTITLE, font=f['subtitle'],
                       fill=MUTED, anchor='nw', tags='header')
         self.draw_status()
 
@@ -758,7 +820,8 @@ class SyncWindow:
         w = max(self.bg.winfo_width(), self.width)
         c.delete('status')
         text = self.status.get()
-        width = min(measure(f['status'], text), s(240))
+        room = max(s(90), w - s(22) - self.title_end() - s(46))  # never over the subtitle
+        width = min(measure(f['status'], text), s(240), room)
         right = w - s(22)
         tx = right - width
         cy = s(self.HEADER_Y + self.HEADER_ICON / 2)
@@ -781,7 +844,7 @@ class SyncWindow:
             icon(c, glyph, icon_x, cy, s(24), tone, hexcolor(TOP))
             for item in set(c.find_all()) - before:
                 c.addtag_withtag('status', item)
-        c.create_text(tx, cy, text=text, font=f['status'], fill=TEXT, anchor='w', width=s(240), tags='status')
+        c.create_text(tx, cy, text=text, font=f['status'], fill=TEXT, anchor='w', width=width + 1, tags='status')
         self.tray.title(text)
 
     def request_layout(self):
@@ -798,12 +861,12 @@ class SyncWindow:
     def layout(self):
         c, s = self.bg, self.s
         self.inner.update_idletasks()
-        margin = s(22)  # the kit's panel: x 22, y 100 under the title bar, radius 11
+        margin = s(18)
         need = self.inner.winfo_reqwidth() + 2 * margin + s(12)
         w = max(c.winfo_width(), need)
-        card_top = s(100)
+        card_top = s(82)
         card_w = w - 2 * margin
-        inner_pad = s(6)
+        inner_pad = s(2)
         inner_h = self.inner.winfo_reqheight()
         card_h = inner_h + 2 * inner_pad
         c.delete('card')
@@ -815,7 +878,7 @@ class SyncWindow:
         c.itemconfigure(self.inner_item, width=card_w - 2 * inner_pad)
         c.coords(self.progress_item, margin + s(16), card_top - s(10))
         c.itemconfigure(self.progress_item, width=card_w - s(32))
-        foot_y = card_top + card_h + s(22)
+        foot_y = card_top + card_h + s(14)
         c.coords(self.foot_item, margin + s(14), foot_y)
         c.itemconfigure(self.foot_item, width=card_w - s(24))
         bottom = foot_y + self.foot.winfo_reqheight()
@@ -831,7 +894,7 @@ class SyncWindow:
         elif self.log_item is not None:
             c.delete(self.log_item)
             self.log_item = None
-        height = bottom + s(28)
+        height = bottom + s(16)
         h = max(c.winfo_height(), height)
         # The backdrop (48 bands and the waves) and the header change only with the size.
         if self.drawn_size != (w, h):
@@ -873,9 +936,8 @@ class SyncWindow:
 
     def set_busy(self, value):
         self.busy = value
-        self.choose_button.state(['disabled'] if value else ['!disabled'])
+        self.picker.state(['disabled'] if value else ['!disabled'])
         self.refresh_share_state()
-        self.locations.configure(state='disabled' if value else 'readonly')
         self.sync_button.state(['disabled'] if value or not self.game else ['!disabled'])
         if value:
             self.progress.start()
@@ -922,7 +984,7 @@ class SyncWindow:
         if self.core.apply_beta_choice(self.config, status):  # a beta build is installed: offer betas
             self.beta.set(True)
             self.core.log('The installed ForeverFlip is a beta, so the beta channel is on. Switch '
-                          '"Beta tester" off to stay on stable releases.')
+                          '"Beta versions" off to stay on stable releases.')
             try:
                 self.core.save_json(self.folder/'config.json', self.config)
             except OSError as error:
@@ -940,7 +1002,20 @@ class SyncWindow:
             self.addon_text.set(f'{installed}{beta} — {release["version"]}{" (beta)" if release["beta"] else ""} available')
         else:
             self.addon_text.set(f'{installed}{beta} — up to date')
-        self.update_button.state(['!disabled'] if self.addon_release else ['disabled'])
+        self.refresh_update_button()
+
+    def refresh_update_button(self):
+        """One button: Install update when there is one, Check now otherwise (also for the app)."""
+        self.update_button.configure(text='Install update' if self.addon_release else 'Check now')
+        self.update_button.state(['disabled'] if self.updating or not (self.game or self.addon_release) else ['!disabled'])
+
+    def update_pressed(self):
+        if self.addon_release:
+            self.start_update(install=True)
+        else:
+            self.addon_text.set('Checking…')
+            self.start_update()
+            self.check_helper()
 
     # --- ForeverFlip Sync's own updates -----------------------------------------------------------
 
@@ -962,16 +1037,16 @@ class SyncWindow:
         self.helper_link.pack_forget()
         if not release:
             self.helper_release = None
-            self.helper_text.set(f'ForeverFlip Sync {status.get("current")}')
+            self.helper_text.set(f'{status.get("current")} — up to date')
             return
         self.helper_release = release
         beta = ' (beta)' if release.get('beta') else ''
         if status.get('frozen'):
-            self.helper_text.set(f'ForeverFlip Sync {release["version"]}{beta} is available')
+            self.helper_text.set(f'{status.get("current")} — {release["version"]}{beta} available')
             self.helper_link.configure(text='Download')
             self.helper_link.pack(side='left', padx=(self.s(8), 0))
         else:
-            self.helper_text.set(f'ForeverFlip Sync {release["version"]}{beta} is out (running from the sources)')
+            self.helper_text.set(f'{status.get("current")} (sources) — {release["version"]}{beta} is out')
 
     def helper_action(self):
         if self.helper_running:
@@ -981,7 +1056,7 @@ class SyncWindow:
         if not release or exe is None:
             return
         self.helper_running, self.helper_cancel = True, False
-        self.helper_text.set(f'Downloading ForeverFlip Sync {release["version"]}…')
+        self.helper_text.set(f'Downloading {release["version"]}…')
         self.helper_link.configure(text='Cancel')
         agent = f'ForeverFlipSync/{self.core.VERSION}'
 
@@ -1001,37 +1076,57 @@ class SyncWindow:
 
     # --- Installations ----------------------------------------------------------------------------
 
-    def refresh_installs(self):
-        installs = self.config.get('installs') or []
-        self.installs_box.configure(values=[profiles.describe(i) for i in installs])
-        ids = [i['id'] for i in installs]
-        if self.config.get('active') in ids:
-            self.installs_box.current(ids.index(self.config['active']))
-        else:
-            self.installs_box.set('')
-        self.remove_link.disabled = len(installs) <= 1
-        self.remove_link.redraw()
+    @staticmethod
+    def install_name(game):
+        """"WoW Forever 1.60.1.70938" for the Forever client, else the folder's name and its version."""
+        info = profiles.client_info(game)
+        name = 'WoW Forever' if info['product'] == 'wowf' else info['flavor']
+        return f'{name} {info["version"]}' if info['version'] else name
 
-    def add_install(self):
+    def refresh_installs(self):
+        active = profiles.active_install(self.config)
+        if active and self.game:
+            count = len(self.config.get('installs') or [])
+            more = f'   (+{count - 1} more)' if count > 1 else ''
+            self.picker.set(f'{self.install_name(active["game"])}   ·   {shorten(str(active["game"]), 40)}{more}')
+
+    def open_game_menu(self, widget):
+        """The picker's menu: the installations (or the ones found), then adding, opening, removing."""
         if self.busy:
             return
-        chosen = filedialog.askdirectory(title='Add another WoW Forever installation', parent=self.root)
-        if chosen:
-            self.select_game(chosen)
-
-    def switch_install(self, index):
-        installs = self.config.get('installs') or []
-        if self.busy or not 0 <= index < len(installs):
-            self.refresh_installs()
-            return
-        self.select_game(installs[index]['game'])
+        menu = self.game_menu
+        menu.delete(0, 'end')
+        if self.candidates:
+            for path in self.candidates:
+                menu.add_command(label=f'{self.install_name(path)}  —  {shorten(path, 56)}',
+                                 command=lambda p=path: self.select_game(p))
+        else:
+            installs = self.config.get('installs') or []
+            active = self.config.get('active')
+            for install in installs:
+                mark = '✓  ' if install['id'] == active and self.game else '     '
+                menu.add_command(label=f'{mark}{self.install_name(install["game"])}  —  {shorten(install["game"], 56)}',
+                                 command=lambda g=install['game']: self.select_game(g))
+        if menu.index('end') is not None:
+            menu.add_separator()
+        menu.add_command(label='Add a game folder…', command=self.choose_game)
+        if self.game:
+            if hasattr(os, 'startfile'):
+                menu.add_command(label='Open the game folder', command=lambda: os.startfile(str(self.game)))
+            many = len(self.config.get('installs') or []) > 1
+            menu.add_command(label='Remove from the list', command=self.remove_install,
+                             state='normal' if many else 'disabled')
+        try:
+            menu.tk_popup(widget.winfo_rootx(), widget.winfo_rooty() + widget.winfo_height() + self.s(2))
+        finally:
+            menu.grab_release()
 
     def remove_install(self, ask=True):
         active = profiles.active_install(self.config)
         if self.busy or not active or len(self.config.get('installs') or []) <= 1:
             return
         if ask and not messagebox.askyesno('Remove installation', f'Stop syncing {active["game"]}?\n\nThe game '
-                                           'folder and its files stay; you can add it again with +.', parent=self.root):
+                                           'folder and its files stay; you can add it again from this list.', parent=self.root):
             return
         profiles.remove_install(self.config, active['id'])
         self.select_game(self.config['game'])
@@ -1046,7 +1141,7 @@ class SyncWindow:
                 state = self.core.load_json(self.state_file(), {}) if self.game else {}
             except OSError:
                 state = {}
-        self.community_text.set('\n'.join(self.core.community_status(state if isinstance(state, dict) else {})))
+        self.community_text.set(community_lines(self.core.community_status(state if isinstance(state, dict) else {})))
 
     # --- GitHub sign-in ---------------------------------------------------------------------------
 
@@ -1059,7 +1154,7 @@ class SyncWindow:
         elif self.account is None:
             self.share_hint.set('Sign in to GitHub first.')
         else:
-            self.share_hint.set('New full scans are checked, then shared from your account.')
+            self.share_hint.set('')  # signed in: the switch says it all
         if self.login_running:
             self.login_button.configure(text='Cancel')
         elif self.account and self.account[1] == 'helper':
@@ -1161,15 +1256,12 @@ class SyncWindow:
         if changed:  # another installation: its own addon, prices and state
             self.addon_release, self.next_update, self.next_check = None, 0.0, 0.0
             self.addon_text.set('Checking for updates…')
-            self.update_button.state(['disabled'])
             self.last_sync.set('Not synced yet')
         self.refresh_installs()
         self.show_community()
-        self.path.set(str(game))
-        self.path_text.set(shorten(str(game)))
-        self.locations.pack_forget()
-        if str(game) not in self.locations['values']:
-            self.locations.configure(values=(*self.locations['values'], str(game)))
+        self.candidates = []
+        self.path_text.set('')
+        self.refresh_update_button()
         self.status.set('Ready' if self.auto.get() else 'Automatic sync paused')
         self.tone('ok' if self.auto.get() else 'idle')
         self.sync_button.state(['!disabled'])
@@ -1275,34 +1367,37 @@ class SyncWindow:
                 self.set_busy(False)
                 self.status.set(str(value))
                 self.tone('warn')
-                self.path_text.set('Not found — press Change to choose it')
+                self.candidates = []
+                self.picker.set('Choose the game folder…')
+                self.path_text.set('')
+                self.addon_text.set('Waiting for the game folder')
                 if isinstance(value, AmbiguousGame):
-                    self.path_text.set('Several installations — choose one:')
-                    self.locations.configure(values=[str(p) for p in value.candidates])
-                    self.locations.pack(side='left', padx=(self.s(8), 0))
+                    self.candidates = [str(p) for p in value.candidates]
+                    self.picker.set('Choose an installation…')
+                    self.path_text.set(f'{len(self.candidates)} installations found')
             elif kind == 'addon':
                 self.updating = False
                 self.show_addon(value)
             elif kind == 'community':
-                self.community_text.set('\n'.join(value))
+                self.community_text.set(community_lines(value))
             elif kind == 'helper':
                 self.helper_running = False
                 self.show_helper(value)
             elif kind == 'helper_progress':
                 done, total = value
                 if total:
-                    self.helper_text.set(f'Downloading ForeverFlip Sync… {100 * done // total}%')
+                    self.helper_text.set(f'Downloading… {100 * done // total}%')
             elif kind == 'helper_done':
                 self.helper_running, self.helper_release = False, None
                 self.helper_link.pack_forget()
-                self.helper_text.set(f'ForeverFlip Sync {value["version"]} is ready: restart the helper to use it')
+                self.helper_text.set(f'{value["version"]} downloaded — restart the app to use it')
                 self.core.log(f'ForeverFlip Sync {value["version"]} was downloaded and matches its published SHA-256. '
                               'It runs from the next start; your settings stay as they are.')
             elif kind == 'helper_error':
                 self.helper_running = False
                 if self.helper_release:
                     self.helper_link.configure(text='Download')
-                    self.helper_text.set(f'ForeverFlip Sync {self.helper_release["version"]} is available'
+                    self.helper_text.set(f'{self.helper_release["version"]} available'
                                          + (' (download cancelled)' if value == 'cancelled' else ' (download failed)'))
                 else:
                     self.helper_text.set('')
@@ -1312,7 +1407,7 @@ class SyncWindow:
                 self.updating = False
                 self.addon_text.set('Could not check for updates')
                 self.core.log(f'Addon update: {value}.')
-                self.update_button.state(['!disabled'] if self.addon_release else ['disabled'])
+                self.refresh_update_button()
             elif kind == 'account':
                 self.account = value
                 self.refresh_share_state()
@@ -1376,7 +1471,7 @@ class SyncWindow:
         self.poll_job = self.root.after(250, self.poll)
 
     def close(self):
-        # With "Keep syncing in the tray" the window only hides: syncing and sharing go on.
+        # With "Keep running in the tray" the window only hides: syncing and sharing go on.
         if self.tray_on.get() and tray.available() and not self.quitting:
             # Hide only with the icon there: a hidden window without an icon could not come back.
             if self.tray.show('ForeverFlip Sync keeps syncing here. Right-click the icon to open it or quit.') \

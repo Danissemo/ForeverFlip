@@ -15,6 +15,9 @@ All notable changes are listed here. The format follows
   cannot be trusted for this (Retail did not answer false and a 2s 99c post was still dropped), so
   a Retail client is told by its version. The addon undercuts by a whole silver on Retail and
   rounds every commodity post down to it; WoW Forever keeps the copper.
+- **Item names no longer show as "|..." on the Sell page during a scan.** A scan makes the client
+  drop items from its cache, and Retail then hands out bag links with an empty name; the row put
+  the link as it was. It now shows the item's name, or the last one it showed.
 - **The merchant window no longer errors on Retail** when some items there are not bought by
   merchants: Retail gives no text for an empty note, and adding to it failed.
 - **The Sell to vendor button no longer covers the merchant's class filter.** A merchant with
@@ -33,6 +36,21 @@ All notable changes are listed here. The format follows
   `2.1.0-beta.2` through 3.0.0 and 3.1.0, in its requests to GitHub and in the uploads, and a build
   it could not find among the releases measured updates against that. A release now writes the
   addon's version into the helper too, and the build stops when they differ.
+
+### Changed
+
+- **Post all and Post AH-worthy say "Check prices" while no item has a price yet.** The game takes
+  a post only from a click, so the first click reads the prices and the next one posts; with the
+  same label on both, the button looked like it needed two presses to work.
+- **ForeverFlip Sync's window is smaller and better ordered.** Each section now has its title and
+  button on one line with the content underneath, so the window is narrower and shorter. The game
+  is one list showing the client and its version ("WoW Forever 1.60.1.70938 · C:\…"); it adds,
+  opens and removes installations, in place of the Change button, the second list and the +/−
+  marks. GitHub and Sharing are one section, since sharing needs the sign-in. Addon became
+  **Updater**: the addon and the helper versions side by side, **Install automatically** and **Beta
+  versions**, and one button that reads **Install update** when there is one and **Check now**
+  otherwise. Hints show only when they have something to say, and the Prices section no longer
+  repeats the /reload note the footer gives.
 
 ### Development
 

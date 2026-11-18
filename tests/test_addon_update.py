@@ -250,6 +250,22 @@ class WindowTests(unittest.TestCase):
         w.show_addon({'installed': '1.2.0', 'release': None, 'result': {'restart': True}})
         self.assertIn('restart the game', w.addon_text.get())
 
+    def test_one_button_installs_an_update_or_checks_again(self):
+        w = self.window
+        w.game = pathlib.Path(self.tmp.name)
+        w.show_addon({'installed': '1.1.0', 'release': au.candidates([release('1.2.0')], False)[0]})
+        self.assertEqual(w.update_button.cget('text'), 'Install update')
+        with patch.object(w, 'start_update') as start:
+            w.update_pressed()
+        start.assert_called_once_with(install=True)
+        w.show_addon({'installed': '1.2.0', 'release': None})
+        self.assertEqual(w.update_button.cget('text'), 'Check now')
+        self.assertFalse(w.update_button.instate(['disabled']), 'up to date, it can still look again')
+        with patch.object(w, 'start_update') as start, patch.object(w, 'check_helper') as helper_check:
+            w.update_pressed()
+        start.assert_called_once_with()
+        helper_check.assert_called_once_with()
+
     def test_switching_the_beta_on_looks_again_at_once(self):
         w = self.window
         w.next_update = 10 ** 12

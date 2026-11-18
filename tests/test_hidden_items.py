@@ -70,8 +70,9 @@ class BestWayTests(unittest.TestCase):
         assert(has(T.toPostAll(), 'i:30') and has(T.toPostAll(), 'c:10'), 'Post all: everything')
         assert(not has(T.toPostAll(true), 'i:30') and has(T.toPostAll(true), 'c:10'), 'AH-worthy: no vendor item')
         UI.refresh()
-        assert(UI.postAll:GetText() == 'Post all (2)', UI.postAll:GetText())
-        assert(UI.postAuction:GetText() == 'Post AH-worthy (1)', UI.postAuction:GetText())
+        -- No price read yet: the first click reads them (Trade.postReady).
+        assert(UI.postAll:GetText() == 'Check prices (2)', UI.postAll:GetText())
+        assert(UI.postAuction:GetText() == 'Check prices (1)', UI.postAuction:GetText())
         -- Both routes clear their thresholds, but a vendor pays more: Best is the vendor, not AH / V.
         local best = row('i:30').cols[2]:GetText()
         assert(best:find('Vendor', 1, true), 'a vendor pays more: ' .. best)

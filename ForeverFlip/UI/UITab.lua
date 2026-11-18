@@ -284,10 +284,19 @@ function UI.attach()
 end
 
 function UI.refreshPostAll()
-    local all, worthy = #F.Trade.toPostAll(), #F.Trade.toPostAll(true)
-    UI.postAll:SetText(L("Post all") .. " (" .. all .. ")")
+    local allList, worthyList = F.Trade.toPostAll(), F.Trade.toPostAll(true)
+    local all, worthy = #allList, #worthyList
+    -- Without a price for any item the click only reads the prices (Trade.postReady): the label
+    -- says so, and the next click posts.
+    local function label(name, list)
+        if #list > 0 and not F.Trade.postReady(list) then
+            return L("Check prices") .. " (" .. #list .. ")"
+        end
+        return L(name) .. " (" .. #list .. ")"
+    end
+    UI.postAll:SetText(label("Post all", allList))
     UI.postAll:SetEnabled(all > 0 and not F.Trade.posting and F.Trade.wayReady())
-    UI.postAuction:SetText(L("Post AH-worthy") .. " (" .. worthy .. ")")
+    UI.postAuction:SetText(label("Post AH-worthy", worthyList))
     UI.postAuction:SetEnabled(worthy > 0 and not F.Trade.posting and F.Trade.wayReady())
 end
 
