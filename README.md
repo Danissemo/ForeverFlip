@@ -94,7 +94,7 @@
    - open each profession window once, so the Crafting page knows your recipes.
 
 > [!NOTE]
-> **Current stable release: [3.1.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.1.0)** (17 November 2026).
+> **Current stable release: [3.2.0](https://github.com/Danissemo/ForeverFlip/releases/tag/v3.2.0)** (17 November 2026).
 > This release adds separate Alliance, Horde, Neutral and Server auction-house scopes, Retail
 > compatibility checks, update notices delivered by ForeverFlip Sync, and optional developer traces.
 > It also improves multi-version gear checks, Quick scan with the sniper running, sorted bulk actions,

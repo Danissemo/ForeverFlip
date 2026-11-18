@@ -1,6 +1,6 @@
 ForeverFlip = ForeverFlip or {}
 local F = ForeverFlip
-F.version = "3.1.0"
+F.version = "3.2.0"
 
 -- The ways stock is bought and sold, in the one order every page lists them (Deals, Journal and
 -- profit, the Selling note). `id` is the saved name (positions, lots, the log: old names kept, so
