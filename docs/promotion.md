@@ -25,6 +25,14 @@ moderation. WoWInterface takes its first file through the upload form (category 
 its addon ID becomes `WOWI_PROJECT_ID`. Wago's developer site needs a Battle.net or GitHub sign-in
 before its project can be made.
 
+A release reads the project IDs when its tag is pushed. A site set up later gets that version
+through **Actions → Upload to the addon sites → Run workflow** (`.github/workflows/catalogs.yml`),
+which sends the zip from the GitHub release:
+
+```powershell
+gh workflow run catalogs.yml -f version=3.3.0
+```
+
 A site without its token or ID is skipped, not failed. The packager maps `## Interface: 16001` to
 the *Forever* game version and `120105` to Retail; WoWInterface has no Forever version and gets
 the Retail one only.

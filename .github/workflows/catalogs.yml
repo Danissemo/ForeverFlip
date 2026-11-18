@@ -1,0 +1,59 @@
+name: Upload to the addon sites
+
+# Sends a version that is already released on GitHub to CurseForge, Wago and WoWInterface, for a
+# site set up after its release (a release reads the project IDs when its tag is pushed).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Released version, such as 3.3.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+      WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: v${{ inputs.version }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Package and stage
+        id: catalogs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CF_PROJECT_ID: ${{ vars.CF_PROJECT_ID }}
+          WAGO_PROJECT_ID: ${{ vars.WAGO_PROJECT_ID }}
+          WOWI_PROJECT_ID: ${{ vars.WOWI_PROJECT_ID }}
+        run: |
+          # The zip players got from the GitHub release, not a new build of it.
+          gh release download "v$VERSION" --pattern "ForeverFlip-$VERSION.zip" --dir dist
+          python tools/release_notes.py --version "$VERSION" --repository "$GITHUB_REPOSITORY" \
+            --output release-notes.md
+          top=$(python tools/catalog_stage.py --zip "dist/ForeverFlip-$VERSION.zip" \
+            --notes release-notes.md --out "$RUNNER_TEMP/stage")
+          args="-t $top"
+          sites=0
+          if [ -n "$CF_API_KEY" ] && [ -n "$CF_PROJECT_ID" ]; then args="$args -p $CF_PROJECT_ID"; sites=$((sites+1)); else args="$args -L"; fi
+          if [ -n "$WAGO_API_TOKEN" ] && [ -n "$WAGO_PROJECT_ID" ]; then args="$args -a $WAGO_PROJECT_ID"; sites=$((sites+1)); fi
+          if [ -n "$WOWI_API_TOKEN" ] && [ -n "$WOWI_PROJECT_ID" ]; then args="$args -w $WOWI_PROJECT_ID"; sites=$((sites+1)); fi
+          if [ "$sites" = 0 ]; then
+            echo "No site has both its token and its project ID: nothing to upload." >&2
+            exit 1
+          fi
+          echo "args=$args" >> "$GITHUB_OUTPUT"
+
+      - uses: BigWigsMods/packager@v2
+        with:
+          args: ${{ steps.catalogs.outputs.args }}
