@@ -37,6 +37,9 @@ All notable changes are listed here. The format follows
 - **An install keeps a copy first.** Before the commit hook copies the addon into the game, the
   installed addon and its `ForeverFlip*.lua` saved data go to `C:\FF\backups\auto-install-<time>`
   (the last five are kept; other backups are never touched). Install and push stay automatic.
+- **The testers' workbook names the version its cards were written for**, read from
+  `docs/testing.md`, not the TOC: rebuilt for 3.1.0, it labelled the archived 2.3.0-beta.1 cards
+  as checks for 3.1.0.
 - The user guide no longer dates the click priority to 1.2.0-beta.4.
 
 ## [3.1.0] - 2026-11-17

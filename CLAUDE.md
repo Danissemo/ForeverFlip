@@ -33,8 +33,12 @@ python tools/build.py
   protected actions, client secrets or real server behavior.
 - Keep current documentation consistent with the code; keep historical release
   notes in `CHANGELOG.md`.
-- Use a branch and pull request for review. Do not force-push, tag, release,
-  install the addon into someone's game or merge without authorization.
+- The maintainer's own work goes straight to `main` with `python tools/devflow.py commit`:
+  the hooks run the checks, back up the installed addon and its saved data, install it into
+  the game and push. Outside contributors use a branch and a pull request.
+- Commit messages are a plain sentence saying what changed and why, like the existing
+  history, without `feat:`/`fix:`/`docs:` prefixes.
+- Never force-push, and never tag or release unless the maintainer names the version.
 - Local editor and assistant hook configuration is machine-specific and is
   intentionally not tracked. Optional Git hooks live in `.githooks/`;
   see [CONTRIBUTING.md](CONTRIBUTING.md) for how they work.

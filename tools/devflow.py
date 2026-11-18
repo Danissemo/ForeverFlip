@@ -687,7 +687,7 @@ def release(version: str, note: str = "", yes: bool = False, ci: bool = True) ->
             "and docs/testing.md")
         return 1
     workbook = ROOT / "tools" / "make_tester_workbook.py"
-    if workbook.exists():  # the testers' workbook carries the version; a test checks it
+    if workbook.exists():  # the testers' workbook follows the cards; a test checks it
         subprocess.run([sys.executable, str(workbook)], cwd=ROOT, capture_output=True, text=True)
 
     build = subprocess.run([sys.executable, str(ROOT / "tools" / "build.py"), "--output", "dist"],

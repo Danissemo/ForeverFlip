@@ -1,8 +1,9 @@
 """Builds the tester workbook (docs/tester-checklist.uk.xlsx) from the cards of docs/testing.md.
 
 The workbook is its own template: the "Як почати" sheet keeps its layout and gets the version and
-release links of the TOC version; the "Перевірки" sheet is filled again with every card of the
-in-game checklist (ID, section, importance, what is needed, steps, expected result), with the same
+release links of the version the cards were written for (the "призначені для" line of the guide,
+not the TOC: a stable release must not relabel an older beta's cards as its own); the "Перевірки"
+sheet is filled again with every card of the in-game checklist (ID, section, importance, what is needed, steps, expected result), with the same
 styles, the result list, its colours, the filter and the progress formulas sized to the cards.
 
     python tools/make_tester_workbook.py            # writes docs/tester-checklist.uk.xlsx
@@ -26,7 +27,6 @@ from openpyxl.worksheet.datavalidation import DataValidation
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 GUIDE = ROOT / "docs" / "testing.md"
 BOOK = ROOT / "docs" / "tester-checklist.uk.xlsx"
-TOC = ROOT / "ForeverFlip" / "ForeverFlip.toc"
 RELEASES = "https://github.com/Danissemo/ForeverFlip/releases/tag/v"
 
 MUST, MAYBE = "Обов’язково", "За можливості"
@@ -49,9 +49,11 @@ BORDER = Border(left=EDGE, right=EDGE, top=EDGE, bottom=EDGE)
 
 
 def version() -> str:
-    match = re.search(r"^## Version:\s*(\S+)", TOC.read_text(encoding="utf-8"), re.M)
+    """The version the checklist's cards were written for, as docs/testing.md names it."""
+    text = GUIDE.read_text(encoding="utf-8")
+    match = re.search(r"призначені для \*\*ForeverFlip і ForeverFlip Sync (\S+?)\*\*", text)
     if not match:
-        sys.exit("no version in the TOC")
+        sys.exit("docs/testing.md does not say which version its cards are for")
     return match.group(1)
 
 
@@ -202,7 +204,7 @@ def content(wb) -> dict:
 
 
 def compare(have: dict, want: dict) -> list[str]:
-    """The cells that differ from what the guide and the TOC give, in sheet order."""
+    """The cells that differ from what the guide gives, in sheet order."""
     out = []
     for place in list(want) + [p for p in have if p not in want]:
         if have.get(place) != want.get(place):
