@@ -293,6 +293,10 @@ end
 local replicated = {}
 throttleReady = true
 C_AuctionHouse = {
+    -- WoW Forever takes copper commodity prices; Retail answers false.
+    SupportsCopperValues = function()
+        return true
+    end,
     IsThrottledMessageSystemReady = function()
         return throttleReady
     end,

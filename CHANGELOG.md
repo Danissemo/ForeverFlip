@@ -9,6 +9,11 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Posting commodities on Retail goes through.** Retail takes commodity prices in whole silver
+  only (`C_AuctionHouse.SupportsCopperValues()` is false there), and its server drops a copper
+  price without an answer, so an undercut like 2g 3s 99c ended in "The auction house did not
+  confirm the post". The addon now asks the game which prices it takes, undercuts by a whole
+  silver on Retail and rounds every commodity post down to it. WoW Forever keeps the copper.
 - **The ignore list no longer shows the game's blocked-action records.** Both were kept in one
   table (`db.blocked`): items you ignore by key, and the "blocked from an action" events by number,
   so those events turned up as nameless rows among the ignored items. They are now apart

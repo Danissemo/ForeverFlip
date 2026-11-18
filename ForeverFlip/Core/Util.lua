@@ -167,33 +167,35 @@ function U.linkName(link)
     return type(link) == "string" and link:match("|h%[(.-)%]|h") or nil
 end
 
--- Gear and plain items are listed in whole silver only; commodities may use copper.
+-- Gear and plain items are listed in whole silver only. Commodities go to the copper on WoW Forever;
+-- Retail takes whole silver for them too (C_AuctionHouse.SupportsCopperValues() is false there), and
+-- its server drops a copper price without an answer: the undercut post of 2g 3s 99c was never made.
+-- AH.lua sets U.commodityStep from the game (AH.readPriceStep).
+U.commodityStep = 1
+local function priceStep(kind)
+    return kind == "commodity" and U.commodityStep or 100
+end
+
 function U.stepDown(price, kind)
     if not U.finite(price) or price <= 0 then
         return 0
     end
-    if kind == "commodity" then
-        return math.floor(price)
-    end
-    return math.floor(price / 100) * 100
+    local s = priceStep(kind)
+    return math.floor(price / s) * s
 end
 
 function U.stepUp(price, kind)
     if not U.finite(price) or price <= 0 then
         return 0
     end
-    if kind == "commodity" then
-        return math.ceil(price)
-    end
-    return math.ceil(price / 100) * 100
+    local s = priceStep(kind)
+    return math.ceil(price / s) * s
 end
 
 -- The highest legal price strictly below `price`.
 function U.below(price, kind)
-    if kind == "commodity" then
-        return math.max(0, math.ceil(price) - 1)
-    end
-    return math.max(0, (math.ceil(price / 100) - 1) * 100)
+    local s = priceStep(kind)
+    return math.max(0, (math.ceil(price / s) - 1) * s)
 end
 
 -- Money as shown: digits with gold, silver and copper coins (as the game shows money). Without

@@ -1517,11 +1517,10 @@ function T.post(item, qty, price, duration)
     if not U.finite(qty) or qty < 1 or qty > F.AH.postCount(item) or not U.finite(price) or price < 1 then
         return false, "values"
     end
-    if item.kind ~= "commodity" then
-        price = U.stepDown(price, item.kind)
-        if price < 100 then
-            return false, "values"
-        end
+    -- On the game's price grid (U.stepDown): a price off it is dropped by the server without an answer.
+    price = U.stepDown(price, item.kind)
+    if price < (item.kind == "commodity" and U.commodityStep or 100) then
+        return false, "values"
     end
     local confirm = T.pendingPost
         and T.pendingPost.key == item.key

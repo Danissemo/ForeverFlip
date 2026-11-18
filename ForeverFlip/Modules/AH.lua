@@ -346,6 +346,15 @@ end
 -- a name with another realm is somebody else. The names are worked out once (A.refreshPlayer, at
 -- each scan and when the auction house opens): this runs for every row of a full scan.
 local myName, myFullName
+-- Whether commodity prices may carry copper (U.commodityStep). A client without the call is WoW
+-- Forever's kind, which takes copper.
+function A.readPriceStep()
+    local ok, copper = pcall(function()
+        return AH.SupportsCopperValues()
+    end)
+    U.commodityStep = (ok and copper == false) and 100 or 1
+end
+
 function A.refreshPlayer()
     myName = UnitName and UnitName("player") or nil
     local realm = (GetNormalizedRealmName and GetNormalizedRealmName())
