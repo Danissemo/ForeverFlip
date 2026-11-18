@@ -68,6 +68,25 @@ class SearchStallTests(unittest.TestCase):
         assert(not F.AH.cachedKeys(F.Util.parseKey('i:30')),'a silent stale key must not be reused forever')
         ''')
 
+    def test_a_sold_out_remembered_version_is_dropped_by_one_price_query(self):
+        # Check all's last vendor deals each waited 13 s on a second remembered version that had
+        # sold out: WoW Forever does not answer the search of a version nobody sells.
+        run(BASE + '''enableBrowse();F.db.itemKeys={[30]={at=now,list={{l=5,s=0},{l=7,s=0}}}}
+        local asked,sent=0,{}
+        F.AH.searchVersions=function(keys) asked=#keys end
+        F.AH.browseFull=function() return true end
+        F.AH.searchKey=function(key) sent[#sent+1]=key.itemLevel end
+        T.checkPrice('i:30',function() end,true)
+        for _=1,60 do if D.search and D.search.key=='i:30' then break end run(0.05) end
+        assert(D.search and D.search.phase=='prices' and asked==2,'both versions priced in one query first')
+        F.AH.versionPrices=function() return {['5:0']=300} end
+        D.onBrowse()
+        local s=D.search
+        assert(s.phase=='keys' and #s.keys==1 and s.keys[1].itemLevel==5,'only the listed version is read')
+        run(0.3);run(0.3)
+        assert(#sent==1 and sent[1]==5,'the sold-out version is never asked: '..#sent)
+        ''')
+
     def test_owned_recipe_uses_its_real_key_without_plain_search_timeout(self):
         run(BASE + '''enableBrowse()
         addItem(12226,'Recipe: Crispy Bat Wing',10,'item');addAuction(12226,9799,1)

@@ -60,9 +60,12 @@ D.SLOW_SEARCH = 5
 -- the player's own lot included) is at most D.VERSION_REACH times what the deal sells for: lots of
 -- the others cannot change the deal, as a page past that price already ends a version's reading.
 -- Every version waited ~0.65 s for the throttle: a gear row of 30 versions took 20 s of Check all.
--- A remembered list of D.VERSION_QUERY versions or more is priced first, all in one query.
+-- A remembered list of D.VERSION_QUERY versions or more is priced first, all in one query, gear
+-- or not. A remembered version sold out since gets no answer at all on WoW Forever: the last
+-- vendor deals of Check all waited 13 s each on such a second version (10 items, 137 s), where the
+-- price query costs one throttle wait (~0.7 s) and drops it.
 D.VERSION_REACH = 1.2
-D.VERSION_QUERY = 4
+D.VERSION_QUERY = 2
 D.VERSION_WAIT = 3
 
 local function clock()
@@ -1303,7 +1306,7 @@ local function startRequest(r)
         -- Many versions: their prices first, in one query, and only the versions listed are read
         -- (a deal check: only those within its reach). A ring of 35 versions took 25 s of My
         -- auctions' Check prices, one version after another, all but one of them empty.
-        if r.item.kind == "gear" and #cached >= D.VERSION_QUERY and not (r.dealCheck and not D.get(r.key)) then
+        if #cached >= D.VERSION_QUERY and not (r.dealCheck and not D.get(r.key)) then
             r.phase, r.foreign = "prices", browseForeign(r.item.id)
             F.Sniper.yield()
             if pcall(F.AH.searchVersions, cached) then
@@ -1593,7 +1596,7 @@ end
 -- the item now (a deal check: the deal's lot is gone). No price read (a foreign or partial
 -- answer): all stay.
 local function keepVersions(s)
-    if s.item.kind ~= "gear" or s.foreign or not F.AH.browseFull() then
+    if s.item.kind == "commodity" or s.foreign or not F.AH.browseFull() then
         return
     end
     local limit = math.huge

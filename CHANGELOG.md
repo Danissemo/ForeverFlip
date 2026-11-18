@@ -23,6 +23,12 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Check all no longer waits 13 s on a sold-out version.** The addon remembers each item's
+  versions (item level and ending) for six hours, and searched an item with two or three of them
+  one by one. When one had sold out since, the WoW Forever server sent no answer at all, and the
+  check waited 12 s, asked again and only then went on: the last ten vendor deals of one Check all
+  took 137 s. Every item with two remembered versions or more, not only gear with four, now asks
+  for all their lowest prices in one query first and reads only the versions still listed.
 - **The crafting plan stops at 100 crafts on the auction route too.** A product that sells fast
   could plan more crafts than the 100 the rule allows; the plan also spends the same money a deal
   may use (`Deals.budget`) instead of its own copy of that sum.
