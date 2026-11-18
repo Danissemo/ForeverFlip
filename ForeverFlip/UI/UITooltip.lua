@@ -774,11 +774,16 @@ local function tooltipLines(tooltip, data)
 
     section("Selling")
     local vendor, vendorHow = advice and advice.vendor, advice and advice.vendorHow
-    if not vendor then
+    -- The item data prices some items no merchant buys (Retail's unread Fated Fortune Card): said
+    -- so, not the item data's price.
+    local noMerchant = F.AH.NO_MERCHANT and F.AH.NO_MERCHANT[id]
+    if not vendor and not noMerchant then
         local sell = select(11, U.itemInfo(id))
         vendor = U.finite(sell) and sell > 0 and sell or nil
     end
-    if vendor then
+    if noMerchant then
+        line("Vendor price", L("not bought by merchants"))
+    elseif vendor then
         -- The client's item data is what merchants pay (AH.vendorPrice); a note only when a merchant
         -- was seen paying another price for it.
         local client = vendorHow == "seen" and F.AH.clientVendorPrice(id)

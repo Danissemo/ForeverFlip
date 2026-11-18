@@ -4,7 +4,7 @@ all takes it although it is bound."""
 
 import unittest
 
-from test_addon import run
+from test_addon import SETUP, run
 import test_audit
 
 CARDS = test_audit.BASE + '''local T = F.Trade
@@ -40,6 +40,16 @@ class FortuneCardTests(unittest.TestCase):
         local found
         for _, v in ipairs(T.vendorSellList()) do found = found or v.id == 199121 end
         assert(found, 'the card is read from the bag and sold')''')
+
+    def test_the_tooltip_says_merchants_do_not_buy_the_unread_card(self):
+        text = run(SETUP + """addItem(194829, 'Fated Fortune Card', 230000, 'commodity')
+        addAuction(194829, 124100, 5); fullScan()
+        tooltipLines = {}
+        GameTooltip.itemLink = link(194829)
+        for _, fn in ipairs(tooltipCalls) do fn(GameTooltip, { lines = { { type = 11, price = 230000 } } }) end
+        return table.concat(tooltipLines, ' ## ')""")
+        self.assertIn('not bought by merchants', text)
+        self.assertNotIn('23g', text)
 
     def test_only_cards_are_junk(self):
         run(CARDS + '''assert(F.AH.vendorJunk(199114) and F.AH.vendorJunk(199170))

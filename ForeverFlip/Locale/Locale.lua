@@ -595,6 +595,7 @@ T.uk = {
     ["%d item(s) here are not bought by merchants and are left out."] = "%d предм. тут торговці не купують, їх не пропоновано.",
     ["A merchant has refused this item before: check that it can be sold before buying."] = "Торговець уже відмовлявся від цього предмета: перевірте, чи його можна продати, перш ніж купувати.",
     ["vendor, refuses"] = "торговець, відмова",
+    ["not bought by merchants"] = "торговці не купують",
     ["+ vendor"] = "+ торговцю",
     ["Why %s: just under the next lot still on sale (%s)."] = "Чому %s: трохи нижче наступного лоту, що лишається в продажу (%s).",
     ["Why %s: what buyers really paid lately reaches %s; the median asking price %s rarely sells."] = "Чому %s: реальні покупці останнім часом платили до %s; за медіанну ціну лотів %s продається рідко.",
