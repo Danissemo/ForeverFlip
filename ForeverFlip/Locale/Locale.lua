@@ -1105,6 +1105,7 @@ T.uk = {
     ["none seen"] = "не бачено",
     ["Recommendation"] = "Рекомендація",
     ["Auction at %s"] = "Аукціон за %s",
+    ["Quick check: %d deals nobody sells any more or without profit removed."] = "Швидка перевірка: прибрано угод, яких уже ніхто не продає або без прибутку: %d.",
     ["Check all: %d items in %d s (%d settled by one query, %d without an answer)."] = "Перевірити все: %d предметів за %d с (%d вирішено одним запитом, %d без відповіді).",
     ["about Sure %s, Est./day %.1f from %d other endings of the item"] = "приблизно Sure %s, Est./day %.1f за %d іншими закінченнями предмета",
     ["bought for a market reset: the median price"] = "куплено для скидання ринку: медіанна ціна",

@@ -23,6 +23,12 @@ All notable changes are listed here. The format follows
 
 ### Fixed
 
+- **Stale deals leave the list before Check all.** Opening the auction house with deals from a scan
+  of an hour ago listed them all until Check all, which then emptied the page at once: most items
+  were sold or cheaper by then. When the list is two minutes old or more and nothing else is
+  searching, one query now asks for the lowest price of every item, and the deals nobody sells any
+  more, or whose lowest price leaves no profit, are removed. A deal checked since stays, an answer
+  that is not whole removes nothing, and your own searches never wait for it.
 - **No sales a day or Sure for an item the auction house never takes.** A soulbound dungeon drop
   showed Est./day and Sure from gear of about its price, though nobody can buy it there. Items that
   bind when picked up, quest items, heirlooms and warband items, and any copy the tooltip calls

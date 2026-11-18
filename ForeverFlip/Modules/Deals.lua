@@ -37,6 +37,11 @@ D.FAST_WAIT = 5
 D.PRE_IDS = 100
 D.PRE_WAIT = 4
 D.PRE_PAGES = 5
+-- The quick check: the deals listed are D.QUICK_AGE seconds old or more (a scan of an hour ago, the
+-- auction house opened again) and nothing else is going on: the same one query for the lowest price
+-- of every item takes out the deals nobody sells any more and those whose lowest price leaves no
+-- profit. Check all removed them all at once the moment it was pressed; now they go first.
+D.QUICK_AGE = 120
 -- Checking the bags (Check all on My items): a full scan up to this old stands for the searches of
 -- the items it did not see, and one item's search gets at most D.BAG_SEARCH_TIME seconds of waiting
 -- (a gear item with many remembered versions nobody sells waited 5 s for each, up to 30 s).
@@ -639,6 +644,7 @@ function D.replace(deals, scope)
         end
     end
     D.list = {}
+    D.listAt, D.quickDone = clock(), nil
     for _, d in ipairs(deals) do
         D.list[#D.list + 1] = keep[d.key] or d
         keep[d.key] = nil
@@ -1188,7 +1194,8 @@ local function refusal(r, now)
         return "clearing"
     elseif D.search then
         return "another_search"
-    elseif D.pre then
+    -- The quick check gives way to the player's searches (it is asked again later).
+    elseif D.pre and not (D.pre.quick and priority(r) < 2) then
         return "pre_query"
     elseif priority(r) > 0 and D.buyHolding(r.key) then
         return "buy_hold"
@@ -1229,6 +1236,9 @@ local function startRequest(r)
     if why then
         noteHeld(r, why, now)
         return false
+    end
+    if D.pre and D.pre.quick then
+        D.pre, D.quickDone = nil, nil
     end
     -- An item the client has no auction house data for yet: asked for, and the search waits up to
     -- two seconds for it (the server often ignores the search of such an item).
@@ -2163,6 +2173,9 @@ end
 -- Check all's first query: the lowest price of every item of the batch at once. Sent only when it
 -- can go now; otherwise every item gets its exact search as before.
 function D.startPre(batch)
+    if D.pre and D.pre.quick then
+        D.pre = nil -- Check all asks for its own items now
+    end
     if
         D.pre
         or D.search
@@ -2196,6 +2209,24 @@ function D.startPre(batch)
     return true
 end
 
+-- The lowest price of each item of a first query's answer: item id -> copper.
+local function lowestOf(pre)
+    local low = {}
+    for _, r in ipairs(pre.answered and F.AH.browseRows and pre.rows or {}) do
+        local id = r.itemKey and r.itemKey.itemID or r.id
+        local price = r.minPrice
+        if id and pre.idSet[id] and U.finite(price) and (r.totalQuantity or r.qty or 0) > 0 then
+            low[id] = math.min(low[id] or price, price)
+        end
+    end
+    return low
+end
+
+-- The lowest price of the item is at or above what the deal sells for: no profit is left.
+local function above(x, price)
+    return x ~= nil and U.finite(x.exit) and x.exit > 0 and price >= x.exit
+end
+
 -- Called every frame while the first query waits: once it is answered (or D.PRE_WAIT passed),
 -- each item is settled from it or gets its exact search.
 function D.preStep(batch)
@@ -2211,14 +2242,7 @@ function D.preStep(batch)
     end
     batch.pre = nil
     local trusted = pre.full and not pre.foreign
-    local low = {}
-    for _, r in ipairs(pre.answered and F.AH.browseRows and pre.rows or {}) do
-        local id = r.itemKey and r.itemKey.itemID or r.id
-        local price = r.minPrice
-        if id and pre.idSet[id] and U.finite(price) and (r.totalQuantity or r.qty or 0) > 0 then
-            low[id] = math.min(low[id] or price, price)
-        end
-    end
+    local low = lowestOf(pre)
     batch.preAnswered = pre.answered or false
     for _, key in ipairs(batch.keys) do
         if D.batch ~= batch then
@@ -2233,10 +2257,7 @@ function D.preStep(batch)
             elseif item.kind ~= "item" then
                 -- Gear and commodities: the browse price is one unit's (an item stack's is not).
                 local d = D.get(key)
-                local function above(x)
-                    return x ~= nil and U.finite(x.exit) and x.exit > 0 and price >= x.exit
-                end
-                if above(d) and (not d.alt or above(d.alt)) then
+                if above(d, price) and (not d.alt or above(d.alt, price)) then
                     settled = "price"
                 end
             end
@@ -2245,6 +2266,107 @@ function D.preStep(batch)
     end
     F.Engine.changed()
     return true
+end
+
+-- Starts the quick check (D.QUICK_AGE) when it is due and nothing else waits; true when sent.
+-- More than D.PRE_IDS items: the next query goes the next idle frame (D.quickDone: ids asked).
+function D.quickCheck(now)
+    if
+        D.pre
+        or D.search
+        or #D.list == 0
+        or (D.batch and D.batch.active)
+        or not F.AH.canBrowse()
+        -- Peeked: the one message a stuck throttle lets through is not spent on background work.
+        or not F.AH.ready(true)
+        or F.Scan.blocking()
+        or F.Trade.busy()
+        or F.Sniper.inFlight()
+        or (F.AH.nativeShown and F.AH.nativeShown())
+    then
+        return false
+    end
+    if not D.quickDone then
+        if now - math.max(D.listAt or 0, D.quickAt or 0) < D.QUICK_AGE then
+            return false
+        end
+        D.quickDone = {}
+    end
+    local ids, idSet = {}, {}
+    for _, d in ipairs(D.list) do
+        local item = U.parseKey(d.key)
+        if item and not idSet[item.id] and not D.quickDone[item.id] and #ids < D.PRE_IDS then
+            idSet[item.id] = true
+            ids[#ids + 1] = item.id
+        end
+    end
+    if #ids == 0 then
+        D.quickDone, D.quickAt = nil, now
+        return false
+    end
+    for _, id in ipairs(ids) do
+        D.quickDone[id] = true
+    end
+    local pre = { quick = true, ids = ids, idSet = idSet, rows = {}, pages = 0, at = now }
+    D.pre = pre
+    if not pcall(F.AH.searchKeys, ids) then
+        D.pre, D.quickDone, D.quickAt = nil, nil, now
+        return false
+    end
+    F.Log.trace("quick.check", "%d items asked", #ids)
+    return true
+end
+
+-- Every frame while the quick check waits: once answered (or D.PRE_WAIT passed), the deals the
+-- answer proves stale leave the list. An answer not whole, or another query's, removes nothing.
+function D.quickStep()
+    local pre = D.pre
+    if not F.AH.isOpen() then
+        D.pre, D.quickDone = nil, nil
+        return
+    end
+    if not pre.full and clock() - pre.at < D.PRE_WAIT then
+        return
+    end
+    D.pre = nil
+    if not (pre.full and not pre.foreign) then
+        D.quickDone, D.quickAt = nil, clock()
+        F.Log.trace("quick.check", "no whole answer: nothing removed")
+        return
+    end
+    local low = lowestOf(pre)
+    local removed = 0
+    for i = #D.list, 1, -1 do
+        local d = D.list[i]
+        local item = U.parseKey(d.key)
+        local price = item and low[item.id]
+        local fresh = (d.verified or 0) >= pre.at or (d.found or 0) >= pre.at
+        local stale = false
+        if item and pre.idSet[item.id] and not fresh then
+            if not price then
+                stale = true
+            elseif item.kind ~= "item" then
+                -- Gear and commodities: the browse price is one unit's (an item stack's is not).
+                local m = D.medianOf(d)
+                stale = above(d, price) and (not d.alt or above(d.alt, price)) and (not m or above(m, price))
+            end
+        end
+        if stale then
+            table.remove(D.list, i)
+            removed = removed + 1
+        end
+    end
+    F.Log.trace("quick.check", "%d items answered, %d deals removed", #pre.ids, removed)
+    if removed > 0 then
+        F.Log.add(
+            "scan",
+            string.format(
+                F.Locale.text("Quick check: %d deals nobody sells any more or without profit removed."),
+                removed
+            )
+        )
+        F.Engine.changed()
+    end
 end
 
 -- How long Check all took, in the log: the measure the 30 seconds are judged by in the game.
@@ -2292,7 +2414,9 @@ end
 -- game was busy), and the second try of its unanswered ones. Called every frame.
 function D.batchRetry()
     local batch = D.batch
-    if D.pre and (D.pre.batch ~= batch or not F.AH.isOpen()) then
+    if D.pre and D.pre.quick then
+        D.quickStep()
+    elseif D.pre and (D.pre.batch ~= batch or not F.AH.isOpen()) then
         D.pre = nil -- its batch ended or was cancelled: nothing waits for the answer
     end
     if not batch or not F.AH.isOpen() then
@@ -2728,6 +2852,9 @@ function D.step()
         else
             return
         end
+    end
+    if D.quickCheck(now) then
+        return
     end
     if settings().autoVerify then
         for _, d in ipairs(D.list) do
