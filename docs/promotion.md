@@ -19,18 +19,18 @@ push). For each site:
    | Wago        | `WAGO_API_TOKEN`  | `WAGO_PROJECT_ID`     | addons.wago.io → account → API keys; the project URL |
    | WoWInterface| `WOWI_API_TOKEN`  | `WOWI_PROJECT_ID`     | wowinterface.com → Author Portal → API tokens; the addon ID |
 
-Where it stands (18 November 2026): all three tokens are set. CurseForge has the project
-[1814511](https://authors.curseforge.com/#/projects/1814511) (`CF_PROJECT_ID`), waiting for
-moderation. WoWInterface takes its first file through the upload form (category Forever), and
-its addon ID becomes `WOWI_PROJECT_ID`. Wago's developer site needs a Battle.net or GitHub sign-in
-before its project can be made.
+Where it stands (18 November 2026): all three projects exist, the first two waiting for moderators:
+CurseForge [1814511](https://authors.curseforge.com/#/projects/1814511) (`CF_PROJECT_ID`),
+WoWInterface 27314 (`WOWI_PROJECT_ID`) and Wago `qGYBxzNg` (`WAGO_PROJECT_ID`). 3.3.0 went to
+CurseForge and WoWInterface through their upload forms. The CurseForge token is refused by its API
+(`Error fetching game version info`): make a new one and replace `CF_API_KEY` before the next release.
 
 A release reads the project IDs when its tag is pushed. A site set up later gets that version
 through **Actions → Upload to the addon sites → Run workflow** (`.github/workflows/catalogs.yml`),
 which sends the zip from the GitHub release:
 
 ```powershell
-gh workflow run catalogs.yml -f version=3.3.0
+gh workflow run catalogs.yml -f version=3.3.0 -f sites="wago"
 ```
 
 A site without its token or ID is skipped, not failed. The packager maps `## Interface: 16001` to

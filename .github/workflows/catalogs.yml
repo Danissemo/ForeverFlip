@@ -8,6 +8,10 @@ on:
       version:
         description: "Released version, such as 3.3.0"
         required: true
+      sites:
+        description: "Sites to send it to, any of: curseforge wago wowinterface"
+        required: true
+        default: "curseforge wago wowinterface"
 
 permissions:
   contents: read
@@ -20,6 +24,7 @@ jobs:
       WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
       WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
       VERSION: ${{ inputs.version }}
+      SITES: ${{ inputs.sites }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -45,9 +50,12 @@ jobs:
             --notes release-notes.md --out "$RUNNER_TEMP/stage")
           args="-t $top"
           sites=0
-          if [ -n "$CF_API_KEY" ] && [ -n "$CF_PROJECT_ID" ]; then args="$args -p $CF_PROJECT_ID"; sites=$((sites+1)); else args="$args -L"; fi
-          if [ -n "$WAGO_API_TOKEN" ] && [ -n "$WAGO_PROJECT_ID" ]; then args="$args -a $WAGO_PROJECT_ID"; sites=$((sites+1)); fi
-          if [ -n "$WOWI_API_TOKEN" ] && [ -n "$WOWI_PROJECT_ID" ]; then args="$args -w $WOWI_PROJECT_ID"; sites=$((sites+1)); fi
+          # A site left out of the list is skipped: one that already has this version, or whose token
+          # is broken, does not stop the others (the packager aborts on the first failed site).
+          wants() { case " $SITES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+          if wants curseforge && [ -n "$CF_API_KEY" ] && [ -n "$CF_PROJECT_ID" ]; then args="$args -p $CF_PROJECT_ID"; sites=$((sites+1)); else args="$args -L"; fi
+          if wants wago && [ -n "$WAGO_API_TOKEN" ] && [ -n "$WAGO_PROJECT_ID" ]; then args="$args -a $WAGO_PROJECT_ID"; sites=$((sites+1)); fi
+          if wants wowinterface && [ -n "$WOWI_API_TOKEN" ] && [ -n "$WOWI_PROJECT_ID" ]; then args="$args -w $WOWI_PROJECT_ID"; sites=$((sites+1)); fi
           if [ "$sites" = 0 ]; then
             echo "No site has both its token and its project ID: nothing to upload." >&2
             exit 1
