@@ -35,6 +35,7 @@ BLOCK = re.compile(
 )
 # TSM keeps sale rate and sold per day multiplied by 1000 (its tooltip divides them back).
 THOUSANDTHS = {"regionSalePercent", "regionSoldPerDay"}
+BANDS = ((0, 0.5), (0.5, 2), (2, 10), (10, 50), (50, math.inf))
 
 
 def tsm_number(text: str) -> int:
@@ -107,12 +108,20 @@ def ff_estimates(lua, scope: str | None) -> tuple[str, list[dict]]:
             continue
         at = h.scan and h.scan.at or 0
         sale = M.saleability(h, usual, at)
+        lots = M.lotDemand(h, usual)
+        low = high = hours = None
+        if lots:
+            hours = float(lots.hours)
+            low, high = M.rateRange(lots.sold, lots.hours)
         rows.append({
             "key": key,
             "id": int(key.split(":")[1]),
             "usual": float(usual),
             "perDay": float(sale.perDay) if sale.known and sale.perDay is not None else None,
             "pairs": float(sale.pairs or 0),
+            "hours": hours,  # decayed hours of lot-by-lot watching
+            "low": None if low is None else float(low),  # Est./day's 80% limits
+            "high": None if high is None else float(high),
         })
     return scope, rows
 
@@ -158,15 +167,33 @@ def compare(rows: list[dict], tsm: dict, region: str) -> dict:
                            tsmRate=s and s.get("regionSalePercent") or 0.0,
                            tsmSale=s and s.get("regionSale") or 0,
                            tsmMarket=m and m.get("regionMarketValue") or 0))
-    both = [j for j in joined if j["perDay"] and j["tsmPerDay"]]
+    known = [j for j in joined if j["perDay"] is not None and j["tsmPerDay"]]
+    both = [j for j in known if j["perDay"] > 0]
+    ranged = [j for j in known if j["low"] is not None]
+    bands = []
+    for lo, hi in BANDS:
+        v = [j for j in known if lo <= j["tsmPerDay"] < hi]
+        nz = [math.log(j["perDay"] / j["tsmPerDay"]) for j in v if j["perDay"] > 0]
+        bands.append({
+            "band": (lo, hi), "n": len(v),
+            "zero": sum(1 for j in v if j["perDay"] == 0),
+            "median": math.exp(statistics.median(nz)) if nz else None,
+            "sum": sum(j["perDay"] for j in v) / sum(j["tsmPerDay"] for j in v) if v else None,
+        })
+    hours = sorted(j["hours"] for j in ranged)
     return {
         "items": len(rows),
         "joined": joined,
+        "known": len(known),
         "perDay": [j["perDay"] / j["tsmPerDay"] for j in both],
+        "bands": bands,
+        "hours": statistics.median(hours) if hours else None,
+        "inside": sum(1 for j in ranged if j["low"] <= j["tsmPerDay"] <= j["high"]),
+        "ranged": len(ranged),
         "perDayRank": spearman([j["perDay"] for j in both], [j["tsmPerDay"] for j in both]),
         "sale": [j["usual"] / j["tsmSale"] for j in joined if j["tsmSale"]],
         "market": [j["usual"] / j["tsmMarket"] for j in joined if j["tsmMarket"]],
-        "cold": [j for j in joined if not j["perDay"] and j["tsmPerDay"] >= 1],
+        "cold": [j for j in joined if not j["perDay"] and j["tsmPerDay"] >= 1],  # none seen or 0
         "unseen": [j for j in joined if j["perDay"] and j["perDay"] >= 1 and not j["tsmPerDay"]],
     }
 
@@ -174,9 +201,22 @@ def compare(rows: list[dict], tsm: dict, region: str) -> dict:
 def report(scope: str, region: str, result: dict, top: int) -> None:
     print("house %s against TSM %s: %d items with a usual price, %d also in TSM"
           % (scope, region, result["items"], len(result["joined"])))
-    print(ratio_line("sold per day, ForeverFlip / region", result["perDay"]))
+    if result["hours"] is not None:
+        print("sales watched lot by lot: median %.1f decayed hours per item" % result["hours"])
+    print("sold per day: %d items with an estimate, %d of them 0" % (result["known"], result["known"] - len(result["perDay"])))
+    print(ratio_line("  not 0, ForeverFlip / region", result["perDay"]))
     rank = result["perDayRank"]
-    print("  same order of items (Spearman): %s" % ("%.2f" % rank if rank is not None else "n/a"))
+    print("  same order of items (Spearman, not 0): %s" % ("%.2f" % rank if rank is not None else "n/a"))
+    print("  by the region's daily sales (items, shown as 0, median of the rest, sum / region sum):")
+    for b in result["bands"]:
+        if b["n"]:
+            lo, hi = b["band"]
+            print("    %-9s %5d  %3d%%  %s  %s" % (
+                "%g-%g" % (lo, hi) if hi < math.inf else "%g+" % lo, b["n"], 100 * b["zero"] // b["n"],
+                "x%.2f" % b["median"] if b["median"] else "  -  ", "x%.2f" % b["sum"]))
+    if result["ranged"]:
+        print("  region's figure inside Est./day's 80%% limits: %d%% of %d items"
+              % (100 * result["inside"] // result["ranged"], result["ranged"]))
     print(ratio_line("usual price / region sale price", result["sale"]))
     print(ratio_line("usual price / region market value", result["market"]))
     print("no ForeverFlip sales yet, region sells 1+/day: %d items" % len(result["cold"]))
@@ -190,7 +230,7 @@ def report(scope: str, region: str, result: dict, top: int) -> None:
 
 
 def write_csv(path: pathlib.Path, joined: list[dict]) -> None:
-    fields = ["key", "usual", "perDay", "pairs", "tsmSale", "tsmMarket", "tsmPerDay", "tsmRate"]
+    fields = ["key", "usual", "perDay", "low", "high", "hours", "pairs", "tsmSale", "tsmMarket", "tsmPerDay", "tsmRate"]
     with path.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()

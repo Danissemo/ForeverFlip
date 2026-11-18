@@ -162,6 +162,12 @@ All notable changes are listed here. The format follows
   the region really sold. First run: daily sales right on the median (x0.98) but off by more than 3x
   for a quarter of items, and 549 items the region sells that ForeverFlip has no sales for yet.
   The proposals that follow from it are in `docs/improvement-proposals.uk.md`.
+- **Calibration now shows what the sales figures rest on, and no parameter was tuned.** It reports
+  the hours of watching behind each item (median 6.7), how many items read 0, sales by the region's
+  volume band, and how often the region's figure falls inside Est./day's 80% limits (34%). With
+  every item watched about as long, the prior, the 0.85 level and the lot weight only scale all
+  items alike, so tuning them now would fit noise; slow items read 0 or about 10x too high, which is
+  a job for a prior from similar items. Re-run after a week of scans.
 - **Consistency audit, `docs/consistency-audit.uk.md`.** Which formulas have one source and
   which differ on purpose, the repeated work found in the traces, the replay of the last full scan
   and what the check timings mean. The tooltip's DEV line about its rules is traced only when it

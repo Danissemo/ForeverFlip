@@ -19,6 +19,8 @@ fields={"itemString","regionMarketValue"},data={{789,1000000A},{2589,C8}}}]]) --
 SAVE = '''ForeverFlipData = { markets = {
   ["Realm-Alliance"] = { history = {
     ["c:2589"] = { scan = { at = 1000, market = 400, above = { 0, 0, 0, 0 }, low = 390 } },
+    ["i:789"] = { scan = { at = 1000, market = 2000, above = { 0, 0, 0, 0 } },
+      sales = { hours = 20, pairs = 10, at = 1000, watched = 20, b = { [10] = 8, [11] = 1900 } } },
     ["g:15210:raider's shortsword"] = { scan = { at = 1000, market = 9000, above = { 0, 0, 0, 0 } } },
   } },
 } }
@@ -60,18 +62,32 @@ class CalibrateToolTests(unittest.TestCase):
     def test_an_item_without_own_sales_but_selling_in_the_region_is_counted_as_cold(self):
         scope, rows = self.cal.ff_estimates(self.cal.load_addon(self.save), None)
         self.assertEqual(scope, 'Realm-Alliance')
-        self.assertEqual([r['key'] for r in rows], ['c:2589'])  # gear versions are left out
+        self.assertEqual(sorted(r['key'] for r in rows), ['c:2589', 'i:789'])  # gear versions are left out
         result = self.cal.compare(rows, self.cal.read_tsm(self.tsm), 'Forever-EU')
         self.assertEqual([j['key'] for j in result['cold']], ['c:2589'])
-        self.assertEqual(result['sale'], [400 / 1024])
-        self.assertEqual(result['market'], [400 / 392])
+        self.assertIn(400 / 1024, result['sale'])
+        self.assertIn(400 / 392, result['market'])
+
+    def test_sales_are_compared_with_their_limits_and_by_the_regions_volume(self):
+        _, rows = self.cal.ff_estimates(self.cal.load_addon(self.save), None)
+        sold = next(r for r in rows if r['key'] == 'i:789')
+        self.assertAlmostEqual(sold['perDay'], 8 / (20 + 4) * 24)  # 8 units in 20 hours, 4 prior hours
+        self.assertEqual(sold['hours'], 20)
+        self.assertLess(sold['low'], sold['perDay'])
+        self.assertGreater(sold['high'], sold['perDay'])
+        result = self.cal.compare(rows, self.cal.read_tsm(self.tsm), 'Forever-EU')
+        self.assertEqual(result['perDay'], [8.0 / 14.895])
+        self.assertEqual((result['inside'], result['ranged']), (0, 1))  # 14.9 a day is past 8 a day's upper limit
+        band = next(b for b in result['bands'] if b['band'] == (10, 50))
+        self.assertEqual((band['n'], band['zero']), (1, 0))
 
     def test_the_report_runs_from_the_command_line_and_writes_its_rows(self):
         out, table = io.StringIO(), pathlib.Path(self.tmp.name) / 'rows.csv'
         with redirect_stdout(out):
             code = self.cal.main(['--save', str(self.save), '--tsm', str(self.tsm), '--csv', str(table)])
         self.assertEqual(code, 0, out.getvalue())
-        self.assertIn('1 items with a usual price, 1 also in TSM', out.getvalue())
+        self.assertIn('2 items with a usual price, 2 also in TSM', out.getvalue())
+        self.assertIn("inside Est./day's 80% limits: 0% of 1 items", out.getvalue())
         self.assertIn('c:2589', table.read_text(encoding='utf-8'))
 
     def test_an_unknown_region_is_refused(self):
